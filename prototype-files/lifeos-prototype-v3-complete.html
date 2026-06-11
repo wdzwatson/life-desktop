@@ -1,0 +1,1109 @@
+
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LifeOS · Full Prototype v3</title>
+<style>
+:root{--bg:#FAFAFA;--fg:#111;--accent:#2F6FEB;--muted:#6B6B6B;--border:#E5E5E5;--surface:#fff;--success:#17A34A;--warn:#EAB308;--danger:#DC2626;--sidebar:#F7F7F7;--font:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;--mono:ui-monospace,"JetBrains Mono",Menlo,monospace;--shadow:0 2px 8px rgba(17,17,17,.08)}
+body.dark{--bg:#111;--fg:#FAFAFA;--surface:#171717;--sidebar:#0F0F0F;--muted:#A3A3A3;--border:#2A2A2A}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 var(--font);overflow:hidden}
+button,input,textarea,select{font:inherit;color:inherit}button{border:0;background:none;cursor:pointer}
+.app{height:100vh;display:grid;grid-template-rows:38px 1fr 28px}
+.titlebar{display:grid;grid-template-columns:110px 1fr 170px;align-items:center;background:var(--surface);border-bottom:1px solid var(--border)}
+.traffic{display:flex;gap:8px;padding-left:18px}.dot{width:12px;height:12px;border-radius:50%;border:1px solid rgba(0,0,0,.12)}
+.red{background:#ff5f57}.yellow{background:#febc2e}.green{background:#28c840}
+.title{text-align:center;color:var(--muted);font-size:12px;font-weight:600}
+.meta{font:11px var(--mono);color:var(--muted);text-align:right;padding-right:14px}
+.shell{min-height:0;display:grid;grid-template-columns:64px 1fr;transition:.18s}.shell:has(.sidebar:hover){grid-template-columns:202px 1fr}
+.sidebar{background:var(--sidebar);border-right:1px solid var(--border);display:grid;grid-template-rows:auto 1fr auto;overflow:hidden}
+.nav{display:flex;flex-direction:column;gap:4px;padding:10px 8px}
+.nav-title{opacity:0;color:var(--muted);font:11px var(--mono);text-transform:uppercase;letter-spacing:.08em;padding:14px 12px 6px;white-space:nowrap}
+.sidebar:hover .nav-title,.sidebar:hover .nav-label{opacity:1}
+.nav-btn{height:42px;display:grid;grid-template-columns:46px 1fr;align-items:center;border-radius:8px;color:var(--muted);text-align:left;white-space:nowrap}
+.nav-btn:hover,.jump-card:hover{background:color-mix(in srgb,var(--accent) 7%,transparent);color:var(--fg)}
+.nav-btn.active{color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);font-weight:600}
+.nav-ico{text-align:center;font-size:17px}.nav-label{opacity:0;transition:.12s}
+.main{min-width:0;min-height:0;display:grid;grid-template-rows:58px 1fr}
+.topbar{display:grid;grid-template-columns:minmax(300px,520px) 1fr auto;gap:16px;align-items:center;padding:10px 24px;background:var(--surface);border-bottom:1px solid var(--border)}
+.search{height:38px;border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:10px;padding:0 12px;background:var(--bg);color:var(--muted);text-align:left}
+.kbd{margin-left:auto;border:1px solid var(--border);border-radius:6px;padding:2px 6px;font:11px var(--mono);background:var(--surface)}
+.actions{display:flex;gap:8px;align-items:center}
+.btn{min-height:36px;padding:8px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-weight:600}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:hover{border-color:color-mix(in srgb,var(--accent) 35%,var(--border))}
+.btn.sm{min-height:30px;padding:5px 10px;font-size:12px}
+.icon-btn{width:36px;height:36px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--muted)}
+.content{min-height:0;overflow:auto;padding:24px}
+.screen{display:none;max-width:1360px;margin:0 auto}.screen.active{display:block;animation:enter .14s ease both}
+@keyframes enter{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em;line-height:1.2}h1{font-size:30px}h2{font-size:22px}h3{font-size:15px}
+.sub{margin:8px 0 0;color:var(--muted);max-width:780px}.muted{color:var(--muted)}.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.page-head{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap}
+.grid{display:grid;gap:16px}.dash-grid{grid-template-columns:1.2fr .9fr .9fr}.two{grid-template-columns:1fr 1fr}.three{grid-template-columns:repeat(3,1fr)}.four{grid-template-columns:repeat(4,1fr)}
+.card,.jump-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px}
+.jump-card{text-align:left;width:100%;transition:.12s}
+.card-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
+.pill{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:999px;border:1px solid var(--border);color:var(--muted);background:var(--surface);font-size:11.5px;white-space:nowrap}
+.pill.blue{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,var(--border));background:color-mix(in srgb,var(--accent) 9%,transparent)}
+.pill.green{color:var(--success);border-color:color-mix(in srgb,var(--success) 30%,var(--border));background:color-mix(in srgb,var(--success) 8%,transparent)}
+.pill.warn{color:#8A6400;border-color:color-mix(in srgb,var(--warn) 45%,var(--border));background:color-mix(in srgb,var(--warn) 14%,transparent)}
+.pill.red{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 35%,var(--border));background:color-mix(in srgb,var(--danger) 8%,transparent)}
+.pill.gray{color:var(--muted);background:var(--bg)}
+.tag{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:5px;font-size:11px;font-weight:500;background:color-mix(in srgb,var(--c) 14%,transparent);color:var(--c);border:1px solid color-mix(in srgb,var(--c) 28%,transparent)}
+.tag.t1{--c:#2F6FEB}.tag.t2{--c:#9333EA}.tag.t3{--c:#DC2626}.tag.t4{--c:#EA580C}.tag.t5{--c:#16A34A}.tag.t6{--c:#0891B2}.tag.t7{--c:#BE185D}.tag.t8{--c:#65A30D}
+.task-tags{display:inline-flex;gap:3px;flex-wrap:wrap}
+.list{display:flex;flex-direction:column;gap:10px}
+.line{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;min-height:42px;border:1px solid var(--border);border-radius:10px;padding:10px;background:var(--surface)}
+.line.link{cursor:pointer}.line.link:hover{border-color:color-mix(in srgb,var(--accent) 35%,var(--border));background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.check{width:18px;height:18px;border:1.5px solid var(--border);border-radius:5px;flex-shrink:0;cursor:pointer}.check.done{background:var(--success);border-color:var(--success);display:grid;place-items:center}.check.done:after{content:"✓";color:#fff;font-size:12px;font-weight:700}
+.metric-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.metric{border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--bg)}.metric strong{display:block;font-size:24px;line-height:1.1}
+.progress{height:8px;background:var(--border);border-radius:999px;overflow:hidden}.bar{height:100%;background:var(--accent);border-radius:inherit}
+.cover{width:64px;height:90px;border-radius:8px;border:1px solid var(--border);background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 16%,var(--surface)),var(--surface));display:grid;place-items:center;color:var(--accent);font-weight:600}
+.book-mini{display:grid;grid-template-columns:64px 1fr;gap:14px;align-items:center}
+.timer{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center}.timer-num{font:48px/1 var(--mono);letter-spacing:-.03em}
+.ring{width:94px;height:94px;border-radius:50%;background:conic-gradient(var(--accent) 0 72%,var(--border) 72%);display:grid;place-items:center}.ring:after{content:"";width:70px;height:70px;border-radius:50%;background:var(--surface);border:1px solid var(--border)}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:18px;flex-wrap:wrap}
+.tab{padding:10px 14px;color:var(--muted);border-bottom:2px solid transparent;font-weight:600}.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-count{display:inline-block;margin-left:6px;font-size:11px;color:var(--muted);background:var(--bg);padding:1px 6px;border-radius:99px;border:1px solid var(--border)}
+.tab.active .tab-count{color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);border-color:transparent}
+.filterbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px}
+.filter-group{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 10px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:12.5px;font-weight:500;cursor:pointer}
+.chip:hover{border-color:color-mix(in srgb,var(--accent) 35%,var(--border));color:var(--fg)}
+.chip.active{background:color-mix(in srgb,var(--accent) 10%,transparent);border-color:color-mix(in srgb,var(--accent) 38%,var(--border));color:var(--accent)}
+.divider-v{width:1px;height:20px;background:var(--border);margin:0 4px}
+.quick-add{display:grid;grid-template-columns:1fr auto auto auto auto;gap:8px;margin-bottom:14px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:10px}
+.field{min-height:36px;border:1px solid var(--border);border-radius:7px;background:var(--surface);padding:7px 10px;outline:none}.field:focus{border-color:var(--accent)}
+.kanban{display:grid;grid-template-columns:repeat(5,minmax(220px,1fr));gap:12px;overflow-x:auto;padding-bottom:6px}
+.lane{min-height:430px;padding:12px;border:1px solid var(--border);border-radius:12px;background:color-mix(in srgb,var(--surface) 72%,var(--bg))}
+.lane-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-weight:600}
+.kanban-card{padding:12px;margin-bottom:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);cursor:pointer}
+.kanban-card:hover{border-color:color-mix(in srgb,var(--accent) 35%,var(--border))}
+.kanban-card h3{font-size:14px;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.kanban-card p{margin:0 0 8px;color:var(--muted);font-size:12.5px}
+.card-meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.kanban-card .tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+.priority-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
+.high{background:var(--danger)}.mid{background:var(--warn)}.low{background:var(--success)}
+.recur-icon{font-family:var(--mono);font-size:11px;color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent);padding:1px 5px;border-radius:4px}
+.task-list{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.task-row{display:grid;grid-template-columns:24px 18px 1fr auto auto auto auto auto;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer}
+.task-row:last-child{border-bottom:0}.task-row:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.task-row.selected{background:color-mix(in srgb,var(--accent) 9%,transparent)}
+.task-row[data-depth="1"]{padding-left:38px;background:color-mix(in srgb,var(--bg) 50%,var(--surface))}
+.task-row[data-depth="2"]{padding-left:62px;background:color-mix(in srgb,var(--bg) 70%,var(--surface))}
+.expand-arrow{width:20px;height:20px;display:grid;place-items:center;color:var(--muted);transition:transform .15s;font-size:10px}
+.expand-arrow.open{transform:rotate(90deg)}.expand-arrow.empty{visibility:hidden}
+.task-title{display:flex;flex-direction:column;gap:3px;min-width:0;overflow:hidden}
+.task-title strong{font-weight:500;text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
+.task-title.done strong{text-decoration:line-through;color:var(--muted)}
+.tags-cell{display:flex;gap:3px;flex-wrap:wrap;max-width:240px}
+.due{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap}.due.overdue{color:var(--danger);font-weight:600}.due.today{color:var(--warn);font-weight:600}
+.subtask-progress{font:11px var(--mono);color:var(--muted);background:var(--bg);padding:2px 7px;border-radius:99px;border:1px solid var(--border);white-space:nowrap}
+.list-header{display:grid;grid-template-columns:24px 18px 1fr auto auto auto auto auto;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-family:var(--mono)}
+.list-header span{cursor:pointer}.list-header span.sort-active{color:var(--accent)}
+.sort-arrow{font-size:10px;margin-left:2px}
+.task-page{display:grid;grid-template-columns:1fr 360px;gap:16px;align-items:start}
+.detail-panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px}
+.detail-row{display:grid;grid-template-columns:80px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);align-items:center;font-size:13px}
+.detail-row:last-child{border-bottom:0}.detail-label{color:var(--muted);font-size:12px}
+.subtask-mini{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-bottom:6px}
+.cal-controls{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap}
+.cal-grid{display:grid;gap:8px}.day-view{grid-template-columns:80px 1fr}.week-view,.month-view{grid-template-columns:repeat(7,1fr)}
+.time-slot,.cal-cell{border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:10px;min-height:80px}
+.time-slot{font:11px var(--mono);color:var(--muted);background:var(--bg)}
+.event{margin-top:6px;border-radius:6px;padding:6px 8px;background:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--accent);font-weight:500;font-size:11.5px;border-left:2px solid var(--accent)}
+.event.recur{border-left-color:var(--success);background:color-mix(in srgb,var(--success) 9%,transparent);color:var(--success)}
+.event.overdue{background:color-mix(in srgb,var(--danger) 9%,transparent);color:var(--danger);border-left-color:var(--danger)}
+.cal-day-num{font-size:13px;font-weight:600;color:var(--muted)}.cal-day-num.today{color:var(--accent)}
+.recur-layout{display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start}
+.recur-list{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.recur-item{padding:14px;border-bottom:1px solid var(--border);cursor:pointer;display:grid;gap:6px}
+.recur-item:last-child{border-bottom:0}.recur-item.active{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.recur-item:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.recur-item h3{font-size:14px;display:flex;align-items:center;gap:8px;justify-content:space-between}
+.recur-rule{font:11.5px var(--mono);color:var(--muted)}
+.recur-editor{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:22px}
+.field-group{display:grid;gap:8px;margin-bottom:18px}
+.field-group label{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.weekday-picker{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.wd{padding:8px;border:1px solid var(--border);border-radius:7px;text-align:center;font-size:12.5px;font-weight:600;color:var(--muted);cursor:pointer;background:var(--surface)}
+.wd.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.row-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.radio-group{display:grid;gap:6px}
+.radio-row{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer}
+.radio-row.active{background:color-mix(in srgb,var(--accent) 8%,transparent);border-color:color-mix(in srgb,var(--accent) 38%,var(--border));color:var(--accent)}
+.preview-strip{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-top:8px}
+.preview-day{padding:10px 8px;border:1px solid var(--border);border-radius:8px;text-align:center;background:var(--surface)}
+.preview-day.hit{background:color-mix(in srgb,var(--accent) 12%,transparent);border-color:color-mix(in srgb,var(--accent) 40%,var(--border));color:var(--accent)}
+.preview-day .pd-date{font:11px var(--mono);color:var(--muted)}.preview-day.hit .pd-date{color:var(--accent)}
+.preview-day .pd-num{font-weight:600;font-size:18px;margin-top:2px}.preview-day .pd-time{font:10.5px var(--mono);margin-top:3px}
+.tpl-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.tpl-card{padding:18px;background:var(--surface);border:1px solid var(--border);border-radius:12px;cursor:pointer}
+.tpl-card:hover{border-color:color-mix(in srgb,var(--accent) 35%,var(--border))}
+.tpl-card h3{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.tpl-ico{width:32px;height:32px;border-radius:7px;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent);display:grid;place-items:center;font-weight:700;flex-shrink:0}
+.tpl-subtasks{margin:10px 0 0;padding:0;font-size:12.5px;color:var(--muted)}
+.tpl-subtasks li{padding:3px 0;list-style:none;display:flex;align-items:center;gap:6px}
+.tpl-subtasks li::before{content:"·";color:var(--muted)}
+.sched-table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.sched-table th,.sched-table td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--border);font-size:13px}
+.sched-table th{background:var(--bg);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-family:var(--mono);font-weight:600}
+.sched-table tr:last-child td{border-bottom:0}.sched-table tr:hover td{background:color-mix(in srgb,var(--accent) 4%,transparent)}
+.toggle{width:34px;height:20px;background:var(--border);border-radius:99px;position:relative;cursor:pointer;flex-shrink:0;display:inline-block}
+.toggle::after{content:"";position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;top:2px;left:2px;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.toggle.on{background:var(--accent)}.toggle.on::after{left:16px}
+.notes-layout{height:calc(100vh - 196px);min-height:560px;display:grid;grid-template-columns:200px 250px 1fr 1fr;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--surface)}
+.pane{min-width:0;min-height:0;overflow:auto;border-right:1px solid var(--border)}.pane:last-child{border-right:0}
+.pane-head{height:50px;display:flex;justify-content:space-between;align-items:center;padding:0 14px;border-bottom:1px solid var(--border)}
+.tree{padding:12px}.tree-item{min-height:34px;display:flex;gap:8px;align-items:center;border-radius:8px;padding:7px 8px;color:var(--muted)}
+.tree-item.active{background:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--accent);font-weight:600}
+.note-preview{padding:12px;border-bottom:1px solid var(--border);cursor:pointer}.note-preview.active{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.editor{display:grid;grid-template-rows:50px 1fr;min-height:0}
+.editor-toolbar{display:flex;gap:8px;align-items:center;padding:0 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.tool-chip{height:28px;border:1px solid var(--border);border-radius:8px;padding:0 10px;color:var(--muted);background:var(--surface);font-size:12px}
+.editor-body{padding:20px;overflow:auto}.doc-title{width:100%;border:0;outline:0;background:transparent;font-size:26px;font-weight:600;margin-bottom:14px}
+textarea.doc{width:100%;min-height:420px;border:0;outline:0;resize:none;background:transparent;line-height:1.7;font-family:var(--font)}
+.preview-md{padding:20px;overflow:auto}.preview-md article{max-width:680px}
+.preview-md h1{font-size:26px;margin-top:0}.preview-md h2{font-size:20px;margin-top:20px}.preview-md h3{font-size:16px;margin-top:16px}
+.preview-md code{font-family:var(--mono);background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:1px 5px;font-size:13px}
+.preview-md blockquote{border-left:3px solid var(--accent);margin:14px 0;padding:6px 14px;color:var(--muted);background:color-mix(in srgb,var(--accent) 6%,transparent)}
+.preview-md ul{padding-left:22px}.preview-md p{margin:10px 0}
+.book-layout{display:grid;grid-template-columns:230px 1fr;gap:16px}.cat-row{display:flex;justify-content:space-between;align-items:center;padding:10px 8px;border-radius:8px;color:var(--muted);width:100%;text-align:left;border:0;background:transparent;cursor:pointer}
+.cat-row.active,.cat-row:hover{background:color-mix(in srgb,var(--accent) 9%,transparent);color:var(--accent)}
+.book-grid,.tool-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.book-card{display:grid;grid-template-columns:82px 1fr;gap:14px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px}
+.book-card .cover{width:82px;height:116px}
+.tool-card{padding:18px;background:var(--surface);border:1px solid var(--border);border-radius:12px}
+.tool-ico{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--accent);margin-bottom:14px;font-weight:600}
+.settings-layout{display:grid;grid-template-columns:220px 1fr;gap:16px}
+.settings-menu{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px;height:max-content}
+.settings-item{display:block;width:100%;text-align:left;border-radius:8px;padding:10px 12px;color:var(--muted)}
+.settings-item.active{color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent);font-weight:600}
+.setting-row{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:center;padding:16px 0;border-bottom:1px solid var(--border)}
+.status-manager{display:grid;gap:10px;margin-top:12px}
+.status-row{display:grid;grid-template-columns:1fr 140px auto;gap:10px;align-items:center}
+.modal-bg{position:fixed;inset:0;background:rgba(17,17,17,.32);display:none;align-items:center;justify-content:center;z-index:50}
+.modal-bg.open{display:flex}
+.modal{width:min(560px,calc(100vw - 40px));background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);max-height:90vh;overflow:auto}
+.modal-head{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.modal-body{padding:18px 22px}
+.modal-foot{padding:14px 22px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end}
+.scope-radio{display:grid;gap:8px;margin-top:10px}
+.toast{position:fixed;right:24px;bottom:46px;padding:12px 14px;border-radius:10px;background:var(--fg);color:var(--bg);box-shadow:var(--shadow);transform:translateY(20px);opacity:0;transition:.18s;z-index:60;pointer-events:none}
+.toast.show{opacity:1;transform:none}
+.statusbar{display:grid;grid-template-columns:1fr auto auto;gap:18px;align-items:center;border-top:1px solid var(--border);background:var(--surface);color:var(--muted);font:11px var(--mono);padding:0 14px}
+@media(max-width:1100px){.dash-grid,.two{grid-template-columns:1fr 1fr}.four,.book-grid,.tool-grid{grid-template-columns:repeat(2,1fr)}.notes-layout{grid-template-columns:180px 220px 1fr}.preview-md{display:none}.book-layout,.task-page,.recur-layout{grid-template-columns:1fr}.kanban{grid-template-columns:repeat(3,minmax(220px,1fr))}.tpl-grid{grid-template-columns:repeat(2,1fr)}.preview-strip{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:760px){body{overflow:auto}.app{height:auto;min-height:100vh}.shell{grid-template-columns:1fr}.sidebar{display:none}.main{min-height:100vh}.topbar{grid-template-columns:1fr;padding:12px}.content{padding:14px}.page-head,.setting-row{display:block}.dash-grid,.two,.three,.four,.metric-row,.notes-layout,.settings-layout,.book-layout,.book-grid,.tool-grid,.week-view,.month-view{grid-template-columns:1fr}.notes-layout{height:auto}.pane{border-right:0;border-bottom:1px solid var(--border);max-height:300px}.kanban{grid-template-columns:1fr}.list-header{display:none}.task-row{grid-template-columns:24px 18px 1fr;grid-template-rows:auto auto;gap:6px}.task-row > *:nth-child(n+4){grid-column:1/-1;padding-left:42px}.tpl-grid{grid-template-columns:1fr}.preview-strip{grid-template-columns:repeat(2,1fr)}.statusbar{display:none}}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="titlebar">
+  <div class="traffic"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div>
+  <div class="title">LifeOS — Local Workspace</div>
+  <div class="meta">SQLite · Local</div>
+</header>
+
+<div class="shell">
+<aside class="sidebar">
+  <div class="nav">
+    <button class="nav-btn active" data-target="dashboard"><span class="nav-ico">⌂</span><span class="nav-label">仪表盘</span></button>
+    <button class="nav-btn" data-target="tasks"><span class="nav-ico">✓</span><span class="nav-label">任务</span></button>
+    <button class="nav-btn" data-target="notes"><span class="nav-ico">✎</span><span class="nav-label">笔记</span></button>
+    <button class="nav-btn" data-target="books"><span class="nav-ico">▣</span><span class="nav-label">书库</span></button>
+    <button class="nav-btn" data-target="videos"><span class="nav-ico">▶</span><span class="nav-label">视频</span></button>
+    <button class="nav-btn" data-target="toolbox"><span class="nav-ico">⌘</span><span class="nav-label">工具箱</span></button>
+  </div>
+  <div>
+    <div class="nav-title">Pinned</div>
+    <div class="nav">
+      <button class="nav-btn" data-target="tasks" data-task-tab="calendar"><span class="nav-ico">◷</span><span class="nav-label">任务日历</span></button>
+      <button class="nav-btn" data-target="tasks" data-task-tab="recurring"><span class="nav-ico">↻</span><span class="nav-label">周期任务</span></button>
+    </div>
+  </div>
+  <div class="nav">
+    <button class="nav-btn" id="openSearchSide"><span class="nav-ico">⌕</span><span class="nav-label">全局搜索</span></button>
+    <button class="nav-btn" data-target="settings"><span class="nav-ico">⚙</span><span class="nav-label">设置</span></button>
+  </div>
+</aside>
+
+<main class="main">
+<section class="topbar">
+  <button class="search" id="openSearch"><span>⌕</span><span>搜索任务、笔记、书籍、视频或输入 /task /recur</span><span class="kbd">⌘ K</span></button>
+  <div class="actions"><button class="btn primary" id="primaryAction">新建任务</button><button class="btn" id="secondaryAction">导入文件</button></div>
+  <div class="actions"><button class="icon-btn" id="themeQuick">◐</button><button class="icon-btn" id="langToggle">中</button></div>
+</section>
+
+<section class="content">
+
+<!-- DASHBOARD -->
+<div class="screen active" id="dashboard">
+  <div class="page-head">
+    <div><h1>早上好，今天从一个清晰的工作台开始。</h1><p class="sub">仪表盘不仅展示信息，也作为进入任务、笔记、书库、视频与工具的快速入口。</p></div>
+    <span class="pill blue">本地数据目录：~/LifeOS</span>
+  </div>
+  <div class="grid dash-grid">
+    <button class="jump-card" data-target="tasks">
+      <div class="card-head"><h2>今日日程</h2><span class="pill blue">进入任务</span></div>
+      <div class="list">
+        <div class="line"><span class="check"></span><div><strong>09:30 周计划复盘 <span class="recur-icon">↻ 每周一</span></strong><div class="task-tags"><span class="tag t1">LifeOS</span><span class="tag t8">复盘</span></div></div><span class="pill warn">高</span></div>
+        <div class="line"><span class="check"></span><div><strong>14:00 全局搜索评审</strong><div class="task-tags"><span class="tag t1">LifeOS</span><span class="tag t3">开发</span></div></div><span class="pill blue">日程</span></div>
+        <div class="line"><span class="check done"></span><div><strong>整理本地优先数据结构</strong><div class="muted">点击打开关联笔记</div></div><span class="pill green">完成</span></div>
+      </div>
+    </button>
+    <div class="grid">
+      <button class="jump-card" data-target="books">
+        <div class="card-head"><h2>当前在读</h2><span class="mono muted">62%</span></div>
+        <div class="book-mini"><div class="cover">EPUB</div><div><h3>Designing Data-Intensive Applications</h3><p class="muted">点击进入书库 / 阅读器</p><div class="progress"><div class="bar" style="width:62%"></div></div></div></div>
+      </button>
+      <button class="jump-card" data-target="settings">
+        <div class="card-head"><h2>流程配置</h2><span class="pill">可管理</span></div>
+        <div class="metric-row"><div class="metric"><strong>5</strong><span class="muted">任务状态</span></div><div class="metric"><strong>6</strong><span class="muted">书籍分类</span></div><div class="metric"><strong>2</strong><span class="muted">工具类型</span></div></div>
+      </button>
+    </div>
+    <div class="grid">
+      <button class="jump-card" data-target="toolbox">
+        <div class="card-head"><h2>固定小工具</h2><span class="pill green">专注中</span></div>
+        <div class="timer"><div><div class="timer-num">18:00</div><p class="muted">点击进入工具箱</p></div><div class="ring"></div></div>
+      </button>
+      <button class="jump-card" data-target="videos">
+        <div class="card-head"><h2>最近视频</h2><span class="pill blue">打开视频</span></div>
+        <div class="line"><span>▶</span><div><strong>Electron + SQLite 离线应用实战</strong><div class="muted">字幕已索引，可搜索</div></div><span class="pill green">已下载</span></div>
+      </button>
+    </div>
+    <button class="jump-card" data-target="tasks" data-task-tab="recurring">
+      <div class="card-head"><h2>周期任务</h2><span class="pill blue">6 条规则</span></div>
+      <div class="list">
+        <div class="line"><span>↻</span><div><strong>每日复盘记录</strong><div class="muted">每天 22:00 · 跳过节假日</div></div><span class="pill green">启用</span></div>
+        <div class="line"><span>↻</span><div><strong>月度财务结算</strong><div class="muted">每月 1 号 10:00 · 节假日顺延</div></div><span class="pill green">启用</span></div>
+      </div>
+    </button>
+    <button class="jump-card" data-target="tasks" data-task-tab="calendar">
+      <div class="card-head"><h2>日历</h2><span class="pill blue">日 / 周 / 月</span></div>
+      <div class="list">
+        <div class="line"><span>◷</span><div><strong>今天 09:30</strong><div class="muted">周计划复盘</div></div><span class="pill warn">任务</span></div>
+        <div class="line"><span>◷</span><div><strong>周五 16:00</strong><div class="muted">视频下载队列测试</div></div><span class="pill">提醒</span></div>
+      </div>
+    </button>
+    <button class="jump-card" data-target="notes">
+      <div class="card-head"><h2>最近笔记</h2><span class="pill blue">同步预览</span></div>
+      <div class="list">
+        <div class="line"><span>✎</span><div><strong>LifeOS 插件系统草案</strong><div class="muted">Markdown 同步预览</div></div><span class="pill">产品</span></div>
+      </div>
+    </button>
+  </div>
+</div>
+
+<!-- TASKS -->
+<div class="screen" id="tasks">
+  <div class="page-head">
+    <div><h1>任务</h1><p class="sub">支持多标签、多级子任务、按优先级与到期时间排序，以及周期任务、模板和定时任务管理。</p></div>
+    <button class="btn" data-target="settings">管理状态</button>
+  </div>
+  <div class="tabs" id="taskTabs">
+    <button class="tab active" data-task-tab="kanban">看板 <span class="tab-count">14</span></button>
+    <button class="tab" data-task-tab="list">列表 <span class="tab-count">14</span></button>
+    <button class="tab" data-task-tab="calendar">日历</button>
+    <button class="tab" data-task-tab="recurring">周期任务 <span class="tab-count">6</span></button>
+    <button class="tab" data-task-tab="templates">模板 <span class="tab-count">5</span></button>
+    <button class="tab" data-task-tab="scheduled">定时任务 <span class="tab-count">4</span></button>
+  </div>
+
+  <!-- KANBAN -->
+  <div class="task-pane" id="pane-kanban">
+    <div class="filterbar">
+      <div class="filter-group">
+        <span class="muted" style="font-size:12px">标签：</span>
+        <button class="chip active">全部</button>
+        <button class="chip"><span class="tag t1">LifeOS</span></button>
+        <button class="chip"><span class="tag t2">设计</span></button>
+        <button class="chip"><span class="tag t3">开发</span></button>
+        <button class="chip"><span class="tag t5">Q2</span></button>
+        <button class="chip"><span class="tag t4">运维</span></button>
+      </div>
+    </div>
+    <div class="kanban">
+      <div class="lane"><div class="lane-head">待收集 <span class="pill gray">2</span></div>
+        <div class="kanban-card"><h3><span class="priority-dot mid"></span>规划书库批量整理</h3><p>支持选中多本书改分类、改进度。</p><div class="card-meta"><span class="due">未排期</span></div><div class="tags"><span class="tag t1">LifeOS</span><span class="tag t2">设计</span></div></div>
+        <div class="kanban-card"><h3><span class="priority-dot low"></span>整理 LifeOS 周报模板</h3><div class="card-meta"><span class="due">下周</span><span class="recur-icon">每周</span></div><div class="tags"><span class="tag t6">运营</span></div></div>
+      </div>
+      <div class="lane"><div class="lane-head">待处理 <span class="pill blue">3</span></div>
+        <div class="kanban-card"><h3><span class="priority-dot high"></span>设计全局搜索命令面板</h3><p>跨模块检索 + 动作执行。</p><div class="card-meta"><span class="due today">今天</span><span class="subtask-progress">2/5</span></div><div class="tags"><span class="tag t1">LifeOS</span><span class="tag t3">开发</span><span class="tag t5">Q2</span></div></div>
+        <div class="kanban-card"><h3><span class="priority-dot high"></span>Markdown 同步预览优化</h3><div class="card-meta"><span class="due today">今天</span></div><div class="tags"><span class="tag t2">设计</span><span class="tag t3">开发</span></div></div>
+        <div class="kanban-card"><h3><span class="priority-dot mid"></span>书库分类 API</h3><div class="card-meta"><span class="due">周五</span><span class="subtask-progress">0/3</span></div><div class="tags"><span class="tag t3">开发</span></div></div>
+      </div>
+      <div class="lane"><div class="lane-head">进行中 <span class="pill warn">2</span></div>
+        <div class="kanban-card"><h3><span class="priority-dot high"></span>Electron 数据备份</h3><p>每日凌晨自动快照。</p><div class="card-meta"><span class="due today">今天</span><span class="recur-icon">每天 03:00</span></div><div class="tags"><span class="tag t3">开发</span><span class="tag t4">运维</span></div></div>
+        <div class="kanban-card"><h3><span class="priority-dot mid"></span>多标签过滤逻辑</h3><div class="card-meta"><span class="due">明天</span></div><div class="tags"><span class="tag t1">LifeOS</span><span class="tag t3">开发</span></div></div>
+      </div>
+      <div class="lane"><div class="lane-head">待验收 <span class="pill">2</span></div>
+        <div class="kanban-card"><h3><span class="priority-dot mid"></span>子任务树渲染</h3><div class="card-meta"><span class="due">周三</span><span class="subtask-progress">3/3</span></div><div class="tags"><span class="tag t2">设计</span><span class="tag t3">开发</span></div></div>
+        <div class="kanban-card"><h3><span class="priority-dot low"></span>任务排序规则</h3><div class="card-meta"><span class="due">周四</span></div><div class="tags"><span class="tag t1">LifeOS</span></div></div>
+      </div>
+      <div class="lane"><div class="lane-head">已关闭 <span class="pill green">5</span></div>
+        <div class="kanban-card"><h3><span class="priority-dot low"></span>左侧模块栏</h3><div class="card-meta"><span class="muted" style="font-size:12px">关闭 3 天前</span></div><div class="tags"><span class="tag t2">设计</span></div></div>
+        <div class="kanban-card"><h3><span class="priority-dot mid"></span>主题系统</h3><div class="card-meta"><span class="muted" style="font-size:12px">关闭 5 天前</span></div><div class="tags"><span class="tag t2">设计</span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LIST -->
+  <div class="task-pane" id="pane-list" style="display:none">
+    <div class="quick-add">
+      <input class="field" id="quickTitle" placeholder="新建任务，回车提交（输入 #标签 添加标签）">
+      <select class="field" id="quickPriority"><option value="high">高</option><option value="mid" selected>中</option><option value="low">低</option></select>
+      <input type="date" class="field">
+      <select class="field" id="quickRecur"><option value="">不重复</option><option>每天</option><option>每周</option><option>每月</option></select>
+      <button class="btn primary" id="quickAddBtn">添加</button>
+    </div>
+    <div class="filterbar">
+      <div class="filter-group">
+        <span class="muted" style="font-size:12px">标签：</span>
+        <button class="chip active">全部</button>
+        <button class="chip"><span class="tag t1">LifeOS</span></button>
+        <button class="chip"><span class="tag t2">设计</span></button>
+        <button class="chip"><span class="tag t3">开发</span></button>
+        <button class="chip"><span class="tag t5">Q2</span></button>
+      </div>
+      <div class="divider-v"></div>
+      <div class="filter-group">
+        <span class="muted" style="font-size:12px">状态：</span>
+        <button class="chip active">全部</button>
+        <button class="chip">待处理</button>
+        <button class="chip">进行中</button>
+        <button class="chip">已关闭</button>
+      </div>
+    </div>
+    <div class="task-page">
+      <div class="task-list">
+        <div class="list-header">
+          <span></span><span></span><span>任务</span>
+          <span class="sort-active">优先级<span class="sort-arrow">↓</span></span>
+          <span class="sort-active">到期<span class="sort-arrow">↑</span></span>
+          <span>子任务</span><span>标签</span><span>状态</span>
+        </div>
+        <div id="taskRows"></div>
+      </div>
+      <aside class="detail-panel" id="detailPanel">
+        <div class="card-head"><h2 id="dpTitle">设计全局搜索命令面板</h2><button class="icon-btn">⋯</button></div>
+        <p class="muted" id="dpDesc" style="margin:0 0 14px;font-size:13px">支持跨模块检索、动作执行和最近访问记录。</p>
+        <div class="detail-row"><span class="detail-label">状态</span><span><span class="pill blue">待处理</span></span></div>
+        <div class="detail-row"><span class="detail-label">优先级</span><span><span class="priority-dot high"></span> 高</span></div>
+        <div class="detail-row"><span class="detail-label">到期</span><span class="due today">今天 18:00</span></div>
+        <div class="detail-row"><span class="detail-label">标签</span><span class="task-tags"><span class="tag t1">LifeOS</span><span class="tag t3">开发</span><span class="tag t5">Q2</span></span></div>
+        <div class="detail-row"><span class="detail-label">周期</span><span><span class="pill gray">单次任务</span></span></div>
+        <div class="detail-row" style="grid-template-columns:1fr;align-items:flex-start">
+          <span class="detail-label">子任务（2/5）</span>
+          <div style="margin-top:8px;width:100%">
+            <div class="subtask-mini"><span class="check done"></span><span style="text-decoration:line-through;color:var(--muted)">定义命令面板交互稿</span></div>
+            <div class="subtask-mini"><span class="check done"></span><span style="text-decoration:line-through;color:var(--muted)">收集快捷键候选</span></div>
+            <div class="subtask-mini"><span class="check"></span><span>实现快捷键路由</span><span class="due" style="margin-left:auto">明天</span></div>
+            <div class="subtask-mini"><span class="check"></span><span>结果分组与高亮</span><span class="due" style="margin-left:auto">周四</span></div>
+            <div class="subtask-mini"><span class="check"></span><span>编写测试用例</span><span class="due" style="margin-left:auto">下周</span></div>
+            <button class="btn sm" style="width:100%;margin-top:6px">＋ 添加子任务</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- CALENDAR -->
+  <div class="task-pane" id="pane-calendar" style="display:none">
+    <div class="cal-controls">
+      <div class="tabs" style="margin:0;border:0">
+        <button class="tab cal-tab active" data-cal="day">日</button>
+        <button class="tab cal-tab" data-cal="week">周</button>
+        <button class="tab cal-tab" data-cal="month">月</button>
+      </div>
+      <div class="actions"><button class="btn">‹</button><span style="padding:0 8px;font-weight:600">2025 年 1 月</span><button class="btn">›</button><button class="btn">今天</button></div>
+    </div>
+    <div id="dayCal" class="cal-grid day-view cal-view">
+      <div class="time-slot">09:00</div><div class="cal-cell"><strong>周计划复盘</strong><div class="event recur">周期 · 每周一</div></div>
+      <div class="time-slot">10:30</div><div class="cal-cell"><strong>设计评审</strong><div class="event">单次 · 待处理</div></div>
+      <div class="time-slot">14:00</div><div class="cal-cell"><strong>全局搜索评审</strong><div class="event overdue">超时 · 高优</div></div>
+      <div class="time-slot">16:00</div><div class="cal-cell"><strong>视频下载队列测试</strong><div class="event">任务 · 进行中</div></div>
+      <div class="time-slot">22:00</div><div class="cal-cell"><strong>每日复盘记录</strong><div class="event recur">周期 · 每天</div></div>
+    </div>
+    <div id="weekCal" class="cal-grid week-view cal-view" style="display:none">
+      <div class="cal-cell"><div class="cal-day-num today">周一 · 13</div><div class="event recur">周计划复盘</div><div class="event">设计评审</div></div>
+      <div class="cal-cell"><div class="cal-day-num">周二 · 14</div><div class="event">书库分类 API</div></div>
+      <div class="cal-cell"><div class="cal-day-num">周三 · 15</div><div class="event">Markdown 预览</div></div>
+      <div class="cal-cell"><div class="cal-day-num">周四 · 16</div><div class="event">数据备份</div></div>
+      <div class="cal-cell"><div class="cal-day-num">周五 · 17</div><div class="event">下载队列测试</div><div class="event recur">月度结算</div></div>
+      <div class="cal-cell"><div class="cal-day-num">周六 · 18</div></div>
+      <div class="cal-cell"><div class="cal-day-num">周日 · 19</div><div class="event recur">周复盘</div></div>
+    </div>
+    <div id="monthCal" class="cal-grid month-view cal-view" style="display:none">
+      <!-- header rows -->
+      <div class="cal-cell muted" style="min-height:auto;padding:6px;text-align:center;font-size:11px">一</div>
+      <div class="cal-cell muted" style="min-height:auto;padding:6px;text-align:center;font-size:11px">二</div>
+      <div class="cal-cell muted" style="min-height:auto;padding:6px;text-align:center;font-size:11px">三</div>
+      <div class="cal-cell muted" style="min-height:auto;padding:6px;text-align:center;font-size:11px">四</div>
+      <div class="cal-cell muted" style="min-height:auto;padding:6px;text-align:center;font-size:11px">五</div>
+      <div class="cal-cell muted" style="min-height:auto;padding:6px;text-align:center;font-size:11px">六</div>
+      <div class="cal-cell muted" style="min-height:auto;padding:6px;text-align:center;font-size:11px">日</div>
+      <div class="cal-cell"><div class="cal-day-num">1</div><div class="event recur">月度结算</div></div>
+      <div class="cal-cell"><div class="cal-day-num">2</div></div>
+      <div class="cal-cell"><div class="cal-day-num">3</div><div class="event">书库整理</div></div>
+      <div class="cal-cell"><div class="cal-day-num">4</div></div>
+      <div class="cal-cell"><div class="cal-day-num">5</div></div>
+      <div class="cal-cell"><div class="cal-day-num">6</div></div>
+      <div class="cal-cell"><div class="cal-day-num">7</div><div class="event recur">周复盘</div></div>
+      <div class="cal-cell"><div class="cal-day-num">8</div></div>
+      <div class="cal-cell"><div class="cal-day-num">9</div><div class="event">搜索面板评审</div></div>
+      <div class="cal-cell"><div class="cal-day-num">10</div></div>
+      <div class="cal-cell"><div class="cal-day-num">11</div></div>
+      <div class="cal-cell"><div class="cal-day-num">12</div></div>
+      <div class="cal-cell"><div class="cal-day-num today">13</div><div class="event">设计评审</div><div class="event recur">周一复盘</div></div>
+      <div class="cal-cell"><div class="cal-day-num">14</div><div class="event">书库 API</div></div>
+      <div class="cal-cell"><div class="cal-day-num">15</div><div class="event recur">月中检查</div></div>
+      <div class="cal-cell"><div class="cal-day-num">16</div></div>
+      <div class="cal-cell"><div class="cal-day-num">17</div><div class="event">下载队列</div></div>
+      <div class="cal-cell"><div class="cal-day-num">18</div></div>
+      <div class="cal-cell"><div class="cal-day-num">19</div><div class="event recur">周复盘</div></div>
+      <div class="cal-cell"><div class="cal-day-num">20</div></div><div class="cal-cell"><div class="cal-day-num">21</div></div><div class="cal-cell"><div class="cal-day-num">22</div></div><div class="cal-cell"><div class="cal-day-num">23</div></div><div class="cal-cell"><div class="cal-day-num">24</div></div><div class="cal-cell"><div class="cal-day-num">25</div></div><div class="cal-cell"><div class="cal-day-num">26</div><div class="event recur">周复盘</div></div>
+      <div class="cal-cell"><div class="cal-day-num">27</div></div><div class="cal-cell"><div class="cal-day-num">28</div></div><div class="cal-cell"><div class="cal-day-num">29</div></div><div class="cal-cell"><div class="cal-day-num">30</div></div><div class="cal-cell"><div class="cal-day-num">31</div><div class="event recur">月末归档</div></div>
+    </div>
+  </div>
+
+  <!-- RECURRING -->
+  <div class="task-pane" id="pane-recurring" style="display:none">
+    <div class="recur-layout">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><strong>周期任务规则</strong><button class="btn sm primary">＋ 新建规则</button></div>
+        <div class="recur-list">
+          <div class="recur-item active"><h3>每日复盘记录 <span class="pill green">启用</span></h3><div class="recur-rule">每天 22:00 · 永不结束</div><div class="task-tags"><span class="tag t6">个人</span><span class="tag t8">复盘</span></div></div>
+          <div class="recur-item"><h3>周计划复盘 <span class="pill green">启用</span></h3><div class="recur-rule">每周一 09:30 · 跳过节假日</div><div class="task-tags"><span class="tag t1">LifeOS</span><span class="tag t8">复盘</span></div></div>
+          <div class="recur-item"><h3>月度财务结算 <span class="pill green">启用</span></h3><div class="recur-rule">每月 1 号 10:00 · 节假日顺延</div><div class="task-tags"><span class="tag t4">财务</span></div></div>
+          <div class="recur-item"><h3>季度 OKR 评审 <span class="pill warn">暂停</span></h3><div class="recur-rule">每季度第一周周五 14:00</div><div class="task-tags"><span class="tag t1">LifeOS</span><span class="tag t5">Q2</span></div></div>
+          <div class="recur-item"><h3>每两周 1:1 <span class="pill green">启用</span></h3><div class="recur-rule">每 2 周 周三 16:00</div><div class="task-tags"><span class="tag t6">团队</span></div></div>
+          <div class="recur-item"><h3>每月最后一个工作日归档 <span class="pill green">启用</span></h3><div class="recur-rule">每月最后一个工作日 18:00</div><div class="task-tags"><span class="tag t4">运维</span></div></div>
+        </div>
+      </div>
+
+      <div class="recur-editor">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+          <h2>编辑规则</h2>
+          <div class="actions"><div class="toggle on" id="recurToggle"></div><button class="btn sm">复制</button><button class="btn sm">删除</button></div>
+        </div>
+        <div class="field-group"><label>任务名称</label><input class="field" value="每日复盘记录"></div>
+        <div class="field-group"><label>描述</label><textarea class="field" rows="2" style="resize:vertical">睡前回顾一天，记录三件值得留下的事和一件可以改进的事。</textarea></div>
+        <div class="field-group">
+          <label>频率</label>
+          <div class="row-3">
+            <select class="field" id="freqSelect">
+              <option value="daily" selected>每天</option>
+              <option value="weekday">仅工作日</option>
+              <option value="weekly">每周</option>
+              <option value="monthly">每月</option>
+              <option value="yearly">每年</option>
+              <option value="custom">自定义间隔</option>
+              <option value="cron">Cron 表达式</option>
+            </select>
+            <input class="field" placeholder="间隔" value="1">
+            <input type="time" class="field" value="22:00">
+          </div>
+        </div>
+        <div class="field-group" id="weeklyGroup" style="display:none">
+          <label>周内星期几</label>
+          <div class="weekday-picker">
+            <div class="wd">一</div><div class="wd">二</div><div class="wd">三</div><div class="wd">四</div><div class="wd">五</div><div class="wd">六</div><div class="wd">日</div>
+          </div>
+        </div>
+        <div class="field-group" id="monthlyGroup" style="display:none">
+          <label>月内规则</label>
+          <div class="radio-group">
+            <label class="radio-row active"><input type="radio" name="mrule" checked> 每月第 <input class="field" style="width:60px;min-height:28px;display:inline-block;margin:0 4px" value="1"> 天</label>
+            <label class="radio-row"><input type="radio" name="mrule"> 每月第
+              <select class="field" style="width:80px;min-height:28px;display:inline-block;margin:0 4px"><option>1</option><option>2</option><option>3</option><option>最后一个</option></select>
+              <select class="field" style="width:80px;min-height:28px;display:inline-block;margin:0 4px"><option>周一</option><option>周五</option><option>工作日</option></select>
+            </label>
+            <label class="radio-row"><input type="radio" name="mrule"> 每月最后一天</label>
+            <label class="radio-row"><input type="radio" name="mrule"> 每月最后一个工作日</label>
+          </div>
+        </div>
+        <div class="field-group" id="cronGroup" style="display:none">
+          <label>Cron 表达式</label>
+          <input class="field mono" value="0 22 * * *">
+          <p class="muted" style="font-size:12px;margin:4px 0 0">分 时 日 月 周 — 本地解析</p>
+        </div>
+        <div class="field-group">
+          <label>结束条件</label>
+          <div class="radio-group">
+            <label class="radio-row active"><input type="radio" name="end" checked> 永不结束</label>
+            <label class="radio-row"><input type="radio" name="end"> 重复 <input class="field" style="width:60px;min-height:28px;display:inline-block;margin:0 4px" value="30"> 次后结束</label>
+            <label class="radio-row"><input type="radio" name="end"> 截止于 <input type="date" class="field" style="min-height:28px;display:inline-block;margin:0 4px"></label>
+          </div>
+        </div>
+        <div class="row-2">
+          <div class="field-group">
+            <label>节假日处理</label>
+            <select class="field"><option>不处理</option><option selected>跳过节假日</option><option>顺延到下个工作日</option><option>提前到上个工作日</option></select>
+          </div>
+          <div class="field-group">
+            <label>错过处理</label>
+            <select class="field"><option>跳过</option><option selected>累积成补做任务</option><option>提醒并由用户决定</option></select>
+          </div>
+        </div>
+        <div class="field-group">
+          <label>例外日期（不生成）</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <span class="pill blue">2025-02-10 ✕</span><span class="pill blue">2025-04-04 ✕</span>
+            <button class="btn sm">＋ 添加日期</button>
+          </div>
+        </div>
+        <div class="field-group">
+          <label>实例默认值</label>
+          <div class="row-2"><select class="field"><option>低</option><option selected>中</option><option>高</option></select><input class="field" placeholder="标签" value="个人, 复盘"></div>
+          <p class="muted" style="font-size:12px;margin:4px 0 0">每次生成的任务实例会继承这些字段。</p>
+        </div>
+        <div class="field-group">
+          <label>生成策略</label>
+          <select class="field"><option selected>提前 7 天生成实例</option><option>提前 30 天生成</option><option>到期当天生成</option></select>
+        </div>
+        <div class="field-group">
+          <label style="display:flex;justify-content:space-between;align-items:center">未来 8 次预览 <span class="pill blue">实时计算</span></label>
+          <div class="preview-strip">
+            <div class="preview-day hit"><div class="pd-date">今天</div><div class="pd-num">13</div><div class="pd-time">22:00</div></div>
+            <div class="preview-day hit"><div class="pd-date">明天</div><div class="pd-num">14</div><div class="pd-time">22:00</div></div>
+            <div class="preview-day hit"><div class="pd-date">周三</div><div class="pd-num">15</div><div class="pd-time">22:00</div></div>
+            <div class="preview-day hit"><div class="pd-date">周四</div><div class="pd-num">16</div><div class="pd-time">22:00</div></div>
+            <div class="preview-day hit"><div class="pd-date">周五</div><div class="pd-num">17</div><div class="pd-time">22:00</div></div>
+            <div class="preview-day"><div class="pd-date">周六</div><div class="pd-num">18</div><div class="pd-time">跳过</div></div>
+            <div class="preview-day hit"><div class="pd-date">周日</div><div class="pd-num">19</div><div class="pd-time">22:00</div></div>
+            <div class="preview-day hit"><div class="pd-date">周一</div><div class="pd-num">20</div><div class="pd-time">22:00</div></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn">取消</button><button class="btn primary" id="saveRecur">保存规则</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEMPLATES -->
+  <div class="task-pane" id="pane-templates" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <p class="muted" style="margin:0;max-width:680px">模板让你一键创建带子任务的复杂任务，支持变量（如 <code style="font-family:var(--mono);background:var(--bg);padding:1px 5px;border-radius:4px">{{name}}</code>、<code style="font-family:var(--mono);background:var(--bg);padding:1px 5px;border-radius:4px">{{date}}</code>）。</p>
+      <button class="btn primary">＋ 新建模板</button>
+    </div>
+    <div class="tpl-grid">
+      <div class="tpl-card"><h3><span class="tpl-ico">入</span> 新员工入职</h3><p class="muted" style="font-size:12.5px">10 个子任务，覆盖账号开通、培训、OKR。</p>
+        <ul class="tpl-subtasks"><li>开通邮箱 / 工卡 / 内部账号</li><li>组内介绍 + 安排 mentor</li><li>第 1 周培训计划</li><li>30 天 OKR 与目标对齐</li></ul>
+        <div class="task-tags" style="margin-top:10px"><span class="tag t6">HR</span><span class="tag t1">流程</span></div>
+        <div style="display:flex;gap:6px;margin-top:12px"><button class="btn sm primary">使用模板</button><button class="btn sm">编辑</button></div>
+      </div>
+      <div class="tpl-card"><h3><span class="tpl-ico">启</span> 项目启动</h3><p class="muted" style="font-size:12.5px">从 Kickoff 到设计评审到开发排期。</p>
+        <ul class="tpl-subtasks"><li>Kickoff 会议（{{date}}）</li><li>需求文档定稿</li><li>设计评审</li><li>开发排期 + 提测</li><li>上线检查清单</li></ul>
+        <div class="task-tags" style="margin-top:10px"><span class="tag t1">流程</span><span class="tag t3">开发</span></div>
+        <div style="display:flex;gap:6px;margin-top:12px"><button class="btn sm primary">使用模板</button><button class="btn sm">编辑</button></div>
+      </div>
+      <div class="tpl-card"><h3><span class="tpl-ico">周</span> 周复盘</h3><p class="muted" style="font-size:12.5px">绑定到周期任务"周一 09:30"，自动生成。</p>
+        <ul class="tpl-subtasks"><li>过完成事项与延期事项</li><li>记录三个亮点</li><li>明确下周三个重点</li></ul>
+        <div class="task-tags" style="margin-top:10px"><span class="tag t8">复盘</span></div>
+        <div style="display:flex;gap:6px;margin-top:12px"><button class="btn sm primary">使用模板</button><button class="btn sm">编辑</button></div>
+      </div>
+      <div class="tpl-card"><h3><span class="tpl-ico">读</span> 阅读一本书</h3><p class="muted" style="font-size:12.5px">把一本书拆成阅读、笔记、摘录、分享 4 步。</p>
+        <ul class="tpl-subtasks"><li>读完 {{book}}</li><li>整理章节笔记</li><li>提取 5 条摘录</li><li>写一篇分享</li></ul>
+        <div class="task-tags" style="margin-top:10px"><span class="tag t6">个人</span><span class="tag t2">阅读</span></div>
+        <div style="display:flex;gap:6px;margin-top:12px"><button class="btn sm primary">使用模板</button><button class="btn sm">编辑</button></div>
+      </div>
+      <div class="tpl-card"><h3><span class="tpl-ico">出</span> 出差准备</h3><p class="muted" style="font-size:12.5px">预订、行李、文件、行程通知一次理顺。</p>
+        <ul class="tpl-subtasks"><li>订机票 / 酒店</li><li>整理行李清单</li><li>同步行程给团队</li><li>准备会议材料</li></ul>
+        <div class="task-tags" style="margin-top:10px"><span class="tag t6">个人</span></div>
+        <div style="display:flex;gap:6px;margin-top:12px"><button class="btn sm primary">使用模板</button><button class="btn sm">编辑</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCHEDULED -->
+  <div class="task-pane" id="pane-scheduled" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <p class="muted" style="margin:0;max-width:680px">定时任务在指定时间触发一次性动作：延迟提醒、自动生成任务、自动归档、自动发送日报。状态会从"已排期 → 运行中 → 完成 / 失败"流转。</p>
+      <button class="btn primary">＋ 新建定时任务</button>
+    </div>
+    <table class="sched-table">
+      <thead><tr><th>名称</th><th>动作</th><th>触发时间</th><th>状态</th><th>下次运行</th><th>操作</th></tr></thead>
+      <tbody>
+        <tr><td><strong>每日 03:00 数据备份</strong><div class="muted" style="font-size:11.5px">关联周期规则</div></td><td><span class="pill blue">运行脚本</span></td><td class="mono">每天 03:00</td><td><span class="pill green">已排期</span></td><td class="mono">明天 03:00</td><td><button class="btn sm">编辑</button> <button class="btn sm">立即运行</button></td></tr>
+        <tr><td><strong>季度财报提醒</strong></td><td><span class="pill blue">创建任务</span></td><td class="mono">2025-03-31 09:00</td><td><span class="pill green">已排期</span></td><td class="mono">3-31 09:00</td><td><button class="btn sm">编辑</button></td></tr>
+        <tr><td><strong>设计评审延后提醒</strong><div class="muted" style="font-size:11.5px">2 小时后</div></td><td><span class="pill blue">发送提醒</span></td><td class="mono">今天 16:30</td><td><span class="pill warn">运行中</span></td><td class="mono">—</td><td><button class="btn sm">取消</button></td></tr>
+        <tr><td><strong>本周日报</strong></td><td><span class="pill blue">生成报告</span></td><td class="mono">每周五 17:00</td><td><span class="pill green">已完成</span></td><td class="mono">下周五 17:00</td><td><button class="btn sm">查看日志</button></td></tr>
+        <tr><td><strong>过期任务自动归档</strong></td><td><span class="pill blue">归档动作</span></td><td class="mono">每天 23:55</td><td><span class="pill red">失败 (1)</span></td><td class="mono">今天 23:55</td><td><button class="btn sm">查看错误</button> <button class="btn sm">重试</button></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- NOTES -->
+<div class="screen" id="notes">
+  <div class="page-head">
+    <div><h1>笔记</h1><p class="sub">Markdown 编辑器支持同步预览；编辑左侧内容，右侧实时渲染。</p></div>
+    <button class="btn primary" id="newNoteBtn">新建笔记</button>
+  </div>
+  <div class="notes-layout">
+    <aside class="pane"><div class="pane-head"><strong>笔记本</strong><button class="icon-btn">＋</button></div><div class="tree"><div class="tree-item active">▾ LifeOS</div><div class="tree-item">　产品设计</div><div class="tree-item">　技术架构</div><div class="tree-item">▸ Reading</div></div></aside>
+    <aside class="pane"><div class="pane-head"><strong>产品设计</strong><span class="pill">12</span></div>
+      <div class="note-preview active" data-title="LifeOS 插件系统草案"><h3>LifeOS 插件系统草案</h3><p class="muted">同步预览、双链、附件…</p></div>
+      <div class="note-preview" data-title="本地优先数据结构"><h3>本地优先数据结构</h3><p class="muted">SQLite、附件目录…</p></div>
+    </aside>
+    <section class="editor">
+      <div class="editor-toolbar"><button class="tool-chip">B</button><button class="tool-chip">I</button><button class="tool-chip">H2</button><button class="tool-chip">链接</button><button class="tool-chip">[[ 双链 ]]</button><span class="pill blue">Markdown</span></div>
+      <div class="editor-body">
+        <input class="doc-title" id="noteTitle" value="LifeOS 插件系统草案">
+        <textarea class="doc" id="mdInput"># 插件系统目标
+
+LifeOS 的工具箱不应该只是静态入口，而应该允许每个工具以"小应用"的方式运行。
+
+## 能力边界
+
+- 在侧栏或工具箱中注册入口
+- 支持 **内嵌工具** 与 **外链工具**
+- 默认不联网，外链需明确标识
+- 与任务、笔记、文件引用打通
+
+> 本地优先是核心约束：用户的数据始终保存在本机。
+
+关联：[[本地优先数据结构]]、[[任务闭环流程]]
+
+`plugin.register(tool)`</textarea>
+      </div>
+    </section>
+    <section class="preview-md"><div class="pane-head" style="margin:-20px -20px 18px"><strong>同步预览</strong><span class="pill green">Live</span></div><article id="mdPreview"></article></section>
+  </div>
+</div>
+
+<!-- BOOKS -->
+<div class="screen" id="books">
+  <div class="page-head">
+    <div><h1>书库</h1><p class="sub">书库支持分类筛选与分类管理，分类配置可在设置中维护。</p></div>
+    <div class="actions"><button class="btn" data-target="settings">管理分类</button><button class="btn primary">导入书籍</button></div>
+  </div>
+  <div class="book-layout">
+    <aside class="card"><div class="card-head"><h2>分类</h2><button class="icon-btn">＋</button></div>
+      <div id="bookCats">
+        <button class="cat-row active" data-cat="all"><span>全部</span><span class="pill">24</span></button>
+        <button class="cat-row" data-cat="tech"><span>技术</span><span class="pill">8</span></button>
+        <button class="cat-row" data-cat="design"><span>设计</span><span class="pill">5</span></button>
+        <button class="cat-row" data-cat="business"><span>商业</span><span class="pill">4</span></button>
+        <button class="cat-row" data-cat="todo"><span>待读</span><span class="pill">7</span></button>
+      </div>
+    </aside>
+    <section>
+      <div class="book-grid" id="bookGrid">
+        <div class="book-card" data-cat="tech"><div class="cover">EPUB</div><div><h3>Designing Data-Intensive Applications</h3><p class="muted">技术 · Martin Kleppmann</p><div class="progress"><div class="bar" style="width:62%"></div></div><p class="mono muted">62%</p></div></div>
+        <div class="book-card" data-cat="tech"><div class="cover">PDF</div><div><h3>Electron in Action</h3><p class="muted">技术 · Steve Kinney</p><div class="progress"><div class="bar" style="width:31%"></div></div><p class="mono muted">31%</p></div></div>
+        <div class="book-card" data-cat="design"><div class="cover">PDF</div><div><h3>Designing Interfaces</h3><p class="muted">设计 · Jenifer Tidwell</p><div class="progress"><div class="bar" style="width:84%"></div></div><p class="mono muted">84%</p></div></div>
+        <div class="book-card" data-cat="business"><div class="cover">EPUB</div><div><h3>Building a Second Brain</h3><p class="muted">商业 · Tiago Forte</p><div class="progress"><div class="bar" style="width:18%"></div></div><p class="mono muted">18%</p></div></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- VIDEOS -->
+<div class="screen" id="videos">
+  <div class="page-head"><div><h1>视频</h1><p class="sub">在线视频收藏、本地视频管理和下载队列。</p></div><button class="btn primary">添加下载链接</button></div>
+  <div class="grid four">
+    <div class="card"><h3>Electron + SQLite 离线应用实战</h3><p class="muted">Bilibili · 42:16 · 已收藏</p><span class="pill green">已下载</span></div>
+    <div class="card"><h3>桌面端设计系统拆解</h3><p class="muted">YouTube · 下载中</p><span class="pill warn">48%</span></div>
+    <div class="card"><h3>SQLite FTS 全文检索</h3><p class="muted">本地文件 · 已索引字幕</p><span class="pill blue">可搜索</span></div>
+    <div class="card"><h3>个人知识管理工作流</h3><p class="muted">收藏夹 · 待整理</p><span class="pill">未分类</span></div>
+  </div>
+</div>
+
+<!-- TOOLBOX -->
+<div class="screen" id="toolbox">
+  <div class="page-head">
+    <div><h1>工具箱</h1><p class="sub">工具分为内嵌工具与外链工具。内嵌工具在 LifeOS 内直接使用；外链工具明确标识打开外部地址。</p></div>
+    <button class="btn primary">添加工具入口</button>
+  </div>
+  <div class="tabs"><button class="tab tool-tab active" data-tool-type="all">全部</button><button class="tab tool-tab" data-tool-type="internal">内嵌工具</button><button class="tab tool-tab" data-tool-type="external">外链工具</button></div>
+  <div class="tool-grid">
+    <div class="tool-card" data-tool="internal"><div class="tool-ico">25</div><div class="card-head"><h3>番茄钟</h3><span class="pill green">内嵌</span></div><p class="muted">与任务联动，记录专注时长。</p><button class="btn">开始 25 分钟</button></div>
+    <div class="tool-card" data-tool="internal"><div class="tool-ico">⇄</div><div class="card-head"><h3>单位换算</h3><span class="pill green">内嵌</span></div><p class="muted">长度、重量、时间、货币的离线换算。</p></div>
+    <div class="tool-card" data-tool="internal"><div class="tool-ico">{}</div><div class="card-head"><h3>JSON 格式化</h3><span class="pill green">内嵌</span></div><p class="muted">格式化、压缩、校验 JSON。</p><button class="btn">打开工具</button></div>
+    <div class="tool-card" data-tool="external"><div class="tool-ico">API</div><div class="card-head"><h3>API 文档</h3><span class="pill blue">外链</span></div><p class="muted">打开团队接口文档或 Swagger 地址。</p><button class="btn external-link">打开外链</button></div>
+    <div class="tool-card" data-tool="external"><div class="tool-ico">AI</div><div class="card-head"><h3>AI 助手</h3><span class="pill blue">外链</span></div><p class="muted">跳转到配置好的外部 AI 工具。</p><button class="btn external-link">打开外链</button></div>
+    <div class="tool-card" data-tool="external"><div class="tool-ico">Git</div><div class="card-head"><h3>代码仓库</h3><span class="pill blue">外链</span></div><p class="muted">打开项目 Git 仓库、Issue 或 CI 面板。</p><button class="btn external-link">打开外链</button></div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div class="screen" id="settings">
+  <div class="page-head"><div><h1>设置</h1><p class="sub">管理外观、任务状态、书籍分类、工具入口和本地数据。</p></div></div>
+  <div class="settings-layout">
+    <aside class="settings-menu">
+      <button class="settings-item active">外观</button>
+      <button class="settings-item">任务状态</button>
+      <button class="settings-item">书籍分类</button>
+      <button class="settings-item">工具入口</button>
+      <button class="settings-item">数据与备份</button>
+    </aside>
+    <div class="grid">
+      <div class="card">
+        <h2>任务状态管理</h2>
+        <p class="sub">看板列由这里控制。建议保留"已关闭"作为流程终点。</p>
+        <div class="status-manager" id="statusManager">
+          <div class="status-row"><input class="field" value="待收集"><select><option>开始状态</option></select><button class="btn">删除</button></div>
+          <div class="status-row"><input class="field" value="待处理"><select><option>处理中前</option></select><button class="btn">删除</button></div>
+          <div class="status-row"><input class="field" value="进行中"><select><option>处理中</option></select><button class="btn">删除</button></div>
+          <div class="status-row"><input class="field" value="待验收"><select><option>验收</option></select><button class="btn">删除</button></div>
+          <div class="status-row"><input class="field" value="已关闭"><select><option>结束状态</option></select><button class="btn">锁定</button></div>
+        </div>
+        <br><button class="btn primary" id="addStatus">添加状态</button>
+      </div>
+      <div class="card">
+        <h2>书籍分类管理</h2>
+        <p class="sub">分类用于书库筛选、批量整理和阅读统计。</p>
+        <div class="status-manager" id="categoryManager">
+          <div class="status-row"><input class="field" value="技术"><select><option>默认显示</option></select><button class="btn">删除</button></div>
+          <div class="status-row"><input class="field" value="设计"><select><option>默认显示</option></select><button class="btn">删除</button></div>
+          <div class="status-row"><input class="field" value="商业"><select><option>默认显示</option></select><button class="btn">删除</button></div>
+          <div class="status-row"><input class="field" value="待读"><select><option>智能分类</option></select><button class="btn">删除</button></div>
+        </div>
+        <br><button class="btn primary" id="addCategory">添加分类</button>
+      </div>
+      <div class="card">
+        <h2>工具入口管理</h2>
+        <div class="setting-row"><div><h3>外链打开方式</h3><p class="muted">外链工具可选择系统浏览器或应用内弹窗。</p></div><select class="field"><option>系统浏览器</option><option>应用内弹窗</option></select></div>
+        <div class="setting-row"><div><h3>内嵌工具权限</h3><p class="muted">默认只允许访问本地临时数据。</p></div><button class="btn">管理权限</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</section>
+</main>
+</div>
+
+<footer class="statusbar"><span id="statusText">Ready · 离线模式</span><span>Tasks 14</span><span>Recurring 6</span></footer>
+</div>
+
+<!-- Scope modal for recurring instance -->
+<div class="modal-bg" id="scopeModal">
+  <div class="modal">
+    <div class="modal-head"><h2>编辑周期任务</h2><button class="icon-btn" onclick="closeScope()">✕</button></div>
+    <div class="modal-body">
+      <p class="muted" style="margin:0 0 4px">这是一个由"每日复盘记录"规则生成的任务实例。修改的影响范围：</p>
+      <div class="scope-radio">
+        <label class="radio-row active"><input type="radio" name="scope" checked> 仅本次 — 不影响其他实例</label>
+        <label class="radio-row"><input type="radio" name="scope"> 本次及以后 — 从今天起调整规则</label>
+        <label class="radio-row"><input type="radio" name="scope"> 所有实例 — 包括已完成的</label>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeScope()">取消</button><button class="btn primary" onclick="closeScope()">继续编辑</button></div>
+  </div>
+</div>
+
+<!-- Command palette -->
+<div class="modal-bg" id="commandModal" style="align-items:flex-start;padding-top:96px">
+  <div class="command">
+    <div class="command-input"><span>⌕</span><input id="commandInput" placeholder="搜索或输入命令，例如 /task、/recur、/note"><span class="kbd">Esc</span></div>
+    <div class="results">
+      <div class="result-group">快速动作</div>
+      <div class="result"><span>✓</span><div><strong>新建任务</strong><div class="muted">创建并关联到当前工作区</div></div><span class="kbd">N</span></div>
+      <div class="result"><span>↻</span><div><strong>新建周期任务</strong><div class="muted">打开规则编辑器</div></div><span class="kbd">R</span></div>
+      <div class="result"><span>✎</span><div><strong>新建笔记</strong><div class="muted">打开 Markdown 编辑器</div></div><span class="kbd">⌘ N</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">已完成</div>
+
+<script>
+/* === Data === */
+const tasks = [
+  {id:1, title:"设计全局搜索命令面板", desc:"支持跨模块检索、动作执行和最近访问记录。", priority:"high", due:"今天", dueSort:0, status:"待处理", tags:[1,3,5], recur:null, parent:null, done:false, subProgress:"2/5"},
+  {id:2, title:"定义命令面板交互稿", priority:"high", due:"昨天", dueSort:-1, status:"已关闭", tags:[2], parent:1, done:true},
+  {id:3, title:"收集快捷键候选", priority:"mid", due:"今天", dueSort:0, status:"已关闭", tags:[3], parent:1, done:true},
+  {id:4, title:"实现快捷键路由", priority:"high", due:"明天", dueSort:1, status:"待处理", tags:[3], parent:1, done:false},
+  {id:5, title:"结果分组与高亮", priority:"mid", due:"周四", dueSort:3, status:"待处理", tags:[2,3], parent:1, done:false},
+  {id:6, title:"编写测试用例", priority:"low", due:"下周", dueSort:7, status:"待处理", tags:[3], parent:1, done:false},
+  {id:7, title:"Electron 数据备份", desc:"每日凌晨自动快照。", priority:"high", due:"今天", dueSort:0, status:"进行中", tags:[3,4], recur:"每天 03:00", parent:null, done:false, subProgress:"1/3"},
+  {id:8, title:"配置 SQLite WAL 模式", priority:"mid", due:"今天", dueSort:0, status:"已关闭", tags:[3], parent:7, done:true},
+  {id:9, title:"编写备份脚本", priority:"high", due:"今天", dueSort:0, status:"进行中", tags:[3,4], parent:7, done:false},
+  {id:10, title:"添加备份失败重试", priority:"mid", due:"明天", dueSort:1, status:"待处理", tags:[4], parent:7, done:false},
+  {id:11, title:"Markdown 同步预览优化", priority:"high", due:"今天", dueSort:0, status:"待处理", tags:[2,3], parent:null, done:false},
+  {id:12, title:"书库分类 API", priority:"mid", due:"周五", dueSort:4, status:"待处理", tags:[3], parent:null, done:false, subProgress:"0/3"},
+  {id:13, title:"多标签过滤逻辑", priority:"mid", due:"明天", dueSort:1, status:"进行中", tags:[1,3], parent:null, done:false},
+  {id:14, title:"子任务树渲染", priority:"mid", due:"周三", dueSort:2, status:"待验收", tags:[2,3], parent:null, done:false, subProgress:"3/3"},
+  {id:15, title:"任务排序规则", priority:"low", due:"周四", dueSort:3, status:"待验收", tags:[1], parent:null, done:false},
+  {id:16, title:"每日复盘记录", priority:"mid", due:"今天 22:00", dueSort:0.9, status:"待处理", tags:[6,8], recur:"每天 22:00", parent:null, done:false}
+];
+const tagNames = {1:"LifeOS",2:"设计",3:"开发",4:"运维",5:"Q2",6:"个人",7:"团队",8:"复盘"};
+const tagClass = {1:"t1",2:"t2",3:"t3",4:"t4",5:"t5",6:"t6",7:"t7",8:"t8"};
+const priorityRank = {high:3, mid:2, low:1};
+const statusToneMap = {"待收集":"gray","待处理":"blue","进行中":"warn","待验收":"","已关闭":"green"};
+
+/* === Screen / tab routing === */
+function switchScreen(id, taskTab){
+  document.querySelectorAll(".screen").forEach(s => s.classList.toggle("active", s.id === id));
+  document.querySelectorAll(".nav-btn[data-target]").forEach(b =>
+    b.classList.toggle("active", b.dataset.target === id && !b.dataset.taskTab)
+  );
+  if(id === "tasks" && taskTab) switchTaskTab(taskTab);
+  document.getElementById("statusText").textContent = `Ready · ${id} · 离线模式`;
+}
+function switchTaskTab(tab){
+  document.querySelectorAll("#taskTabs .tab").forEach(t => t.classList.toggle("active", t.dataset.taskTab === tab));
+  document.querySelectorAll(".task-pane").forEach(p => p.style.display = "none");
+  const el = document.getElementById("pane-" + tab);
+  if(el) el.style.display = (tab === "kanban") ? "block" : "block";
+}
+document.querySelectorAll("[data-target]").forEach(el => {
+  el.addEventListener("click", e => {
+    if(e.currentTarget.tagName === "BUTTON" || e.currentTarget.classList.contains("jump-card") || e.currentTarget.classList.contains("line")){
+      e.stopPropagation();
+      switchScreen(el.dataset.target, el.dataset.taskTab);
+    }
+  });
+});
+document.querySelectorAll("#taskTabs .tab").forEach(t => t.addEventListener("click", () => switchTaskTab(t.dataset.taskTab)));
+
+/* === Task list rendering with subtree === */
+const expanded = new Set([1, 7]);
+let selectedTask = 1;
+
+function renderTaskList(){
+  const wrap = document.getElementById("taskRows");
+  if(!wrap) return;
+  wrap.innerHTML = "";
+  const roots = tasks.filter(t => !t.parent)
+    .sort((a,b) => priorityRank[b.priority]-priorityRank[a.priority] || a.dueSort-b.dueSort);
+  roots.forEach(t => {
+    wrap.appendChild(renderTaskRow(t, 0));
+    if(expanded.has(t.id)){
+      tasks.filter(s => s.parent === t.id)
+        .sort((a,b) => priorityRank[b.priority]-priorityRank[a.priority] || a.dueSort-b.dueSort)
+        .forEach(s => wrap.appendChild(renderTaskRow(s, 1)));
+    }
+  });
+}
+function renderTaskRow(t, depth){
+  const row = document.createElement("div");
+  row.className = "task-row" + (selectedTask === t.id ? " selected" : "");
+  row.dataset.depth = depth;
+  const hasChildren = tasks.some(s => s.parent === t.id);
+  const isExpanded = expanded.has(t.id);
+  const dueClass = (t.due === "今天" || t.due.startsWith("今天")) ? "today" : (t.due === "昨天" ? "overdue" : "");
+  const tagsHtml = t.tags.map(id => `<span class="tag ${tagClass[id]}">${tagNames[id]}</span>`).join("");
+  const priText = t.priority === "high" ? "高" : t.priority === "mid" ? "中" : "低";
+  const statusTone = statusToneMap[t.status] || "";
+  row.innerHTML = `
+    <span class="expand-arrow ${isExpanded?"open":""} ${hasChildren?"":"empty"}">▶</span>
+    <span class="check ${t.done?"done":""}"></span>
+    <div class="task-title ${t.done?"done":""}">
+      <strong>${t.title}</strong>
+      ${t.recur?`<span class="recur-icon" style="align-self:flex-start">↻ ${t.recur}</span>`:""}
+    </div>
+    <span><span class="priority-dot ${t.priority}"></span> <span class="muted" style="font-size:12px">${priText}</span></span>
+    <span class="due ${dueClass}">${t.due}</span>
+    <span>${t.subProgress?`<span class="subtask-progress">${t.subProgress}</span>`:`<span class="muted" style="font-size:11px">—</span>`}</span>
+    <span class="tags-cell">${tagsHtml}</span>
+    <span><span class="pill ${statusTone}">${t.status}</span></span>
+  `;
+  row.querySelector(".expand-arrow").addEventListener("click", e => {
+    e.stopPropagation();
+    if(!hasChildren) return;
+    if(expanded.has(t.id)) expanded.delete(t.id); else expanded.add(t.id);
+    renderTaskList();
+  });
+  row.querySelector(".check").addEventListener("click", e => {
+    e.stopPropagation();
+    t.done = !t.done;
+    if(t.done){
+      t.status = "已关闭";
+      if(t.recur) document.getElementById("scopeModal").classList.add("open");
+    }
+    renderTaskList();
+    showToast(t.done ? "任务已完成" : "任务已恢复");
+  });
+  row.addEventListener("click", () => {
+    selectedTask = t.id;
+    document.getElementById("dpTitle").textContent = t.title;
+    document.getElementById("dpDesc").textContent = t.desc || "（无描述）";
+    renderTaskList();
+  });
+  return row;
+}
+
+/* === Quick add === */
+document.getElementById("quickAddBtn").addEventListener("click", () => {
+  const titleEl = document.getElementById("quickTitle");
+  const v = titleEl.value.trim();
+  if(!v){ showToast("请输入任务内容"); return; }
+  const matches = v.match(/#(\S+)/g) || [];
+  const tagIds = matches.map(s => {
+    const name = s.slice(1);
+    const found = Object.entries(tagNames).find(([k,n]) => n === name);
+    return found ? +found[0] : null;
+  }).filter(Boolean);
+  const cleanTitle = v.replace(/#\S+/g, "").trim();
+  const id = Math.max(...tasks.map(t => t.id)) + 1;
+  const recurMap = {"每天":"每天 09:00","每周":"每周一","每月":"每月 1 号"};
+  const recur = document.getElementById("quickRecur").value;
+  tasks.unshift({
+    id, title: cleanTitle,
+    priority: document.getElementById("quickPriority").value,
+    due:"今天", dueSort:0, status:"待收集",
+    tags: tagIds.length ? tagIds : [1],
+    recur: recur ? recurMap[recur] || recur : null,
+    parent:null, done:false
+  });
+  titleEl.value = "";
+  renderTaskList();
+  showToast("任务已添加");
+});
+
+/* === Calendar tabs === */
+document.querySelectorAll(".cal-tab").forEach(t => t.addEventListener("click", () => {
+  document.querySelectorAll(".cal-tab").forEach(x => x.classList.remove("active"));
+  t.classList.add("active");
+  document.querySelectorAll(".cal-view").forEach(v => v.style.display = "none");
+  document.getElementById(t.dataset.cal + "Cal").style.display = "grid";
+}));
+
+/* === Recur freq switch === */
+document.getElementById("freqSelect").addEventListener("change", e => {
+  const v = e.target.value;
+  document.getElementById("weeklyGroup").style.display = (v === "weekly") ? "grid" : "none";
+  document.getElementById("monthlyGroup").style.display = (v === "monthly") ? "grid" : "none";
+  document.getElementById("cronGroup").style.display = (v === "cron") ? "grid" : "none";
+});
+document.querySelectorAll(".wd").forEach(w => w.addEventListener("click", () => w.classList.toggle("active")));
+document.querySelectorAll(".radio-row").forEach(r => {
+  r.addEventListener("click", () => {
+    const group = r.parentElement;
+    group.querySelectorAll(".radio-row").forEach(x => x.classList.remove("active"));
+    r.classList.add("active");
+    const radio = r.querySelector("input[type=radio]");
+    if(radio) radio.checked = true;
+  });
+});
+document.getElementById("recurToggle").addEventListener("click", e => {
+  e.target.classList.toggle("on");
+  showToast(e.target.classList.contains("on") ? "规则已启用" : "规则已暂停");
+});
+document.querySelectorAll(".recur-item").forEach(it => it.addEventListener("click", () => {
+  document.querySelectorAll(".recur-item").forEach(x => x.classList.remove("active"));
+  it.classList.add("active");
+}));
+document.getElementById("saveRecur").addEventListener("click", () => showToast("规则已保存"));
+
+/* === Tool tabs === */
+document.querySelectorAll(".tool-tab").forEach(tab => tab.addEventListener("click", () => {
+  document.querySelectorAll(".tool-tab").forEach(t => t.classList.remove("active"));
+  tab.classList.add("active");
+  const type = tab.dataset.toolType;
+  document.querySelectorAll(".tool-card").forEach(c => c.style.display = (type === "all" || c.dataset.tool === type) ? "block" : "none");
+}));
+document.querySelectorAll(".external-link").forEach(b => b.addEventListener("click", () => showToast("将使用系统浏览器打开外链工具")));
+
+/* === Book categories === */
+document.querySelectorAll(".cat-row").forEach(c => c.addEventListener("click", () => {
+  document.querySelectorAll(".cat-row").forEach(x => x.classList.remove("active"));
+  c.classList.add("active");
+  const k = c.dataset.cat;
+  document.querySelectorAll(".book-card").forEach(b =>
+    b.style.display = (k === "all" || b.dataset.cat === k) ? "grid" : "none"
+  );
+}));
+
+/* === Filter chips === */
+document.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => {
+  const g = c.parentElement;
+  g.querySelectorAll(".chip").forEach(x => x.classList.remove("active"));
+  c.classList.add("active");
+}));
+
+/* === Settings: add status / category === */
+document.getElementById("addStatus").addEventListener("click", () => {
+  const r = document.createElement("div"); r.className = "status-row";
+  r.innerHTML = '<input class="field" value="新状态"><select><option>自定义</option></select><button class="btn">删除</button>';
+  document.getElementById("statusManager").appendChild(r);
+  showToast("已添加状态");
+});
+document.getElementById("addCategory").addEventListener("click", () => {
+  const r = document.createElement("div"); r.className = "status-row";
+  r.innerHTML = '<input class="field" value="新分类"><select><option>默认显示</option></select><button class="btn">删除</button>';
+  document.getElementById("categoryManager").appendChild(r);
+  showToast("已添加分类");
+});
+
+/* === Markdown sync preview === */
+function mdToHtml(md){
+  let h = md.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/^### (.*)$/gm,"<h3>$1</h3>")
+    .replace(/^## (.*)$/gm,"<h2>$1</h2>")
+    .replace(/^# (.*)$/gm,"<h1>$1</h1>")
+    .replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>")
+    .replace(/`([^`]+)`/g,"<code>$1</code>")
+    .replace(/\[\[(.*?)\]\]/g,'<span class="pill blue">$1</span>')
+    .replace(/^&gt; (.*)$/gm,"<blockquote>$1</blockquote>")
+    .replace(/^- (.*)$/gm,"<li>$1</li>");
+  h = h.replace(/(<li>.*?<\/li>(\n<li>.*?<\/li>)*)/gs,"<ul>$1</ul>");
+  h = h.split(/\n{2,}/).map(b => /^<\/?(h1|h2|h3|ul|blockquote)/.test(b.trim()) ? b : "<p>"+b.replace(/\n/g,"<br>")+"</p>").join("");
+  return h;
+}
+const mdInput = document.getElementById("mdInput");
+const mdPreview = document.getElementById("mdPreview");
+function renderMd(){ mdPreview.innerHTML = mdToHtml(mdInput.value); }
+mdInput.addEventListener("input", renderMd);
+renderMd();
+
+/* === Notes === */
+document.querySelectorAll(".note-preview").forEach(n => n.addEventListener("click", () => {
+  document.querySelectorAll(".note-preview").forEach(x => x.classList.remove("active"));
+  n.classList.add("active");
+  document.getElementById("noteTitle").value = n.dataset.title;
+  showToast("已切换笔记");
+}));
+document.getElementById("newNoteBtn").addEventListener("click", () => {
+  document.getElementById("noteTitle").value = "未命名笔记";
+  mdInput.value = "# 未命名笔记\n\n开始记录...";
+  renderMd();
+  showToast("已创建新笔记");
+});
+
+/* === Top bar actions === */
+document.getElementById("primaryAction").addEventListener("click", () => {
+  switchScreen("tasks");
+  switchTaskTab("list");
+  document.getElementById("quickTitle")?.focus();
+});
+document.getElementById("secondaryAction").addEventListener("click", () => showToast("打开本地文件选择器"));
+document.getElementById("themeQuick").addEventListener("click", () => {
+  document.body.classList.toggle("dark");
+  showToast(document.body.classList.contains("dark") ? "已切换到深色" : "已切换到浅色");
+});
+document.getElementById("langToggle").addEventListener("click", e => {
+  e.target.textContent = e.target.textContent === "中" ? "En" : "中";
+  showToast(e.target.textContent === "中" ? "语言：中文" : "Language: English");
+});
+
+/* === Command palette === */
+const commandModal = document.getElementById("commandModal");
+function openCommand(){ commandModal.classList.add("open"); setTimeout(() => document.getElementById("commandInput").focus(), 40); }
+function closeCommand(){ commandModal.classList.remove("open"); document.getElementById("commandInput").value = ""; }
+document.getElementById("openSearch").addEventListener("click", openCommand);
+document.getElementById("openSearchSide").addEventListener("click", openCommand);
+commandModal.addEventListener("click", e => { if(e.target === commandModal) closeCommand(); });
+document.addEventListener("keydown", e => {
+  if((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k"){ e.preventDefault(); openCommand(); }
+  if(e.key === "Escape"){ closeCommand(); closeScope(); }
+});
+
+/* === Scope modal === */
+function closeScope(){ document.getElementById("scopeModal").classList.remove("open"); }
+document.getElementById("scopeModal").addEventListener("click", e => { if(e.target.id === "scopeModal") closeScope(); });
+
+/* === Toast === */
+const toastEl = document.getElementById("toast");
+function showToast(t){ toastEl.textContent = t; toastEl.classList.add("show"); setTimeout(() => toastEl.classList.remove("show"), 1600); }
+
+renderTaskList();
+</script>
+</body>
+</html>
