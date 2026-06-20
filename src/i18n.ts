@@ -14,7 +14,7 @@ const lazyLoadingBackend = {
       .catch((err) => {
         callback(err, null)
       })
-  }
+  },
 }
 
 i18n
@@ -24,12 +24,11 @@ i18n
     lng: 'zh-CN', // Default language
     fallbackLng: 'zh-CN',
     interpolation: {
-      escapeValue: false // React already escapes values
+      escapeValue: false, // React already escapes values
     },
     react: {
-      useSuspense: false // Disable suspense to prevent layout disruption during lazy loading
-    }
+      useSuspense: false, // Disable suspense to prevent layout disruption during lazy loading
+    },
   })
 
 export default i18n
-

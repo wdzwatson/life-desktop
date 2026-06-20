@@ -3,35 +3,35 @@ import i18n from '../i18n'
 
 // Centralized type definitions
 interface UserProfile {
-  nickname: string;
-  avatar: string;
+  nickname: string
+  avatar: string
 }
 
 interface AppState {
-  activeScreen: string;
-  taskTab: string;
-  theme: string;
-  language: string;
-  userId: string;
-  userNickname: string;
-  userAvatar: string;
-  toastMessage: string | null;
-  isAuthenticated: boolean;
-  registeredUsers: any[];
-  
+  activeScreen: string
+  taskTab: string
+  theme: string
+  language: string
+  userId: string
+  userNickname: string
+  userAvatar: string
+  toastMessage: string | null
+  isAuthenticated: boolean
+  registeredUsers: any[]
+
   // Actions
-  setActiveScreen: (screen: string) => void;
-  setTaskTab: (tab: string) => void;
-  setTheme: (theme: string) => Promise<void>;
-  setLanguage: (lang: string) => Promise<void>;
-  showToast: (msg: string) => void;
-  switchUser: (userId: string) => Promise<void>;
-  login: (userId: string, password?: string) => Promise<{ success: boolean; error?: string }>;
-  register: (userData: any) => Promise<{ success: boolean; error?: string }>;
-  signOut: () => Promise<void>;
-  resetPassword: (data: any) => Promise<{ success: boolean; error?: string }>;
-  loadProfileList: () => Promise<void>;
-  loadInitialConfig: () => Promise<void>;
+  setActiveScreen: (screen: string) => void
+  setTaskTab: (tab: string) => void
+  setTheme: (theme: string) => Promise<void>
+  setLanguage: (lang: string) => Promise<void>
+  showToast: (msg: string) => void
+  switchUser: (userId: string) => Promise<void>
+  login: (userId: string, password?: string) => Promise<{ success: boolean; error?: string }>
+  register: (userData: any) => Promise<{ success: boolean; error?: string }>
+  signOut: () => Promise<void>
+  resetPassword: (data: any) => Promise<{ success: boolean; error?: string }>
+  loadProfileList: () => Promise<void>
+  loadInitialConfig: () => Promise<void>
 }
 
 const getElectronAPI = () => (window as any).electronAPI
@@ -44,8 +44,8 @@ const getMockProfiles = () => {
     const initial = {
       guest: {
         nickname: '访客模式',
-        avatar: 'G'
-      }
+        avatar: 'G',
+      },
     }
     localStorage.setItem('mock_user_profiles', JSON.stringify(initial))
     return initial
@@ -67,7 +67,7 @@ const getMockSettings = () => {
     const initial = {
       theme: 'Minimal',
       language: 'zh-CN',
-      lastUserId: 'guest'
+      lastUserId: 'guest',
     }
     localStorage.setItem('mock_settings', JSON.stringify(initial))
     return initial
@@ -82,7 +82,6 @@ const getMockSettings = () => {
 const saveMockSettings = (settings: any) => {
   localStorage.setItem('mock_settings', JSON.stringify(settings))
 }
-
 
 export const useAppStore = create<AppState>((set, get) => ({
   activeScreen: 'dashboard',
@@ -112,7 +111,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       saveMockSettings(settings)
     }
     set({ theme })
-    get().showToast(get().language === 'zh-CN' ? `已切换主题: ${theme}` : `Theme switched to: ${theme}`)
+    get().showToast(
+      get().language === 'zh-CN' ? `已切换主题: ${theme}` : `Theme switched to: ${theme}`,
+    )
   },
 
   setLanguage: async (language) => {
@@ -149,14 +150,18 @@ export const useAppStore = create<AppState>((set, get) => ({
           userId: res.userId,
           userNickname: res.profile.nickname,
           userAvatar: res.profile.avatar,
-          isAuthenticated: !res.profile.passwordHash
+          isAuthenticated: !res.profile.passwordHash,
         })
-        get().showToast(get().language === 'zh-CN' ? `切换用户成功: ${res.profile.nickname}` : `User switched successfully: ${res.profile.nickname}`)
+        get().showToast(
+          get().language === 'zh-CN'
+            ? `切换用户成功: ${res.profile.nickname}`
+            : `User switched successfully: ${res.profile.nickname}`,
+        )
       } else {
         // Password-protected, redirect to lock screen
         set({
           userId,
-          isAuthenticated: false
+          isAuthenticated: false,
         })
       }
     } else {
@@ -168,18 +173,22 @@ export const useAppStore = create<AppState>((set, get) => ({
           const settings = getMockSettings()
           settings.lastUserId = userId
           saveMockSettings(settings)
-          
+
           set({
             userId,
             userNickname: profile.nickname,
             userAvatar: profile.avatar,
-            isAuthenticated: true
+            isAuthenticated: true,
           })
-          get().showToast(get().language === 'zh-CN' ? `切换用户成功: ${profile.nickname}` : `User switched successfully: ${profile.nickname}`)
+          get().showToast(
+            get().language === 'zh-CN'
+              ? `切换用户成功: ${profile.nickname}`
+              : `User switched successfully: ${profile.nickname}`,
+          )
         } else {
           set({
             userId,
-            isAuthenticated: false
+            isAuthenticated: false,
           })
         }
       }
@@ -195,12 +204,16 @@ export const useAppStore = create<AppState>((set, get) => ({
           userId: res.userId,
           userNickname: res.profile.nickname,
           userAvatar: res.profile.avatar,
-          isAuthenticated: true
+          isAuthenticated: true,
         })
         const profiles = await api.getUserProfileList()
         if (profiles) set({ registeredUsers: profiles })
-        
-        get().showToast(get().language === 'zh-CN' ? `欢迎回来, ${res.profile.nickname}!` : `Welcome back, ${res.profile.nickname}!`)
+
+        get().showToast(
+          get().language === 'zh-CN'
+            ? `欢迎回来, ${res.profile.nickname}!`
+            : `Welcome back, ${res.profile.nickname}!`,
+        )
         return { success: true }
       }
       return { success: false, error: res?.error || 'Authentication failed' }
@@ -209,34 +222,44 @@ export const useAppStore = create<AppState>((set, get) => ({
       const profiles = getMockProfiles()
       const profile = profiles[userId]
       if (!profile) {
-        return { success: false, error: get().language === 'zh-CN' ? '用户不存在' : 'User not found' }
+        return {
+          success: false,
+          error: get().language === 'zh-CN' ? '用户不存在' : 'User not found',
+        }
       }
       if (profile.password && profile.password !== password) {
-        return { success: false, error: get().language === 'zh-CN' ? '密码错误' : 'Incorrect password' }
+        return {
+          success: false,
+          error: get().language === 'zh-CN' ? '密码错误' : 'Incorrect password',
+        }
       }
-      
+
       const settings = getMockSettings()
       settings.lastUserId = userId
       saveMockSettings(settings)
-      
+
       set({
         userId,
         userNickname: profile.nickname,
         userAvatar: profile.avatar,
-        isAuthenticated: true
+        isAuthenticated: true,
       })
-      
+
       const list = Object.entries(profiles).map(([id, p]: [string, any]) => ({
         userId: id,
         nickname: p.nickname,
         avatar: p.avatar,
         hasPassword: !!p.password,
         passwordHint: p.passwordHint,
-        securityQuestion: p.securityQuestion
+        securityQuestion: p.securityQuestion,
       }))
       set({ registeredUsers: list })
-      
-      get().showToast(get().language === 'zh-CN' ? `欢迎回来, ${profile.nickname}!` : `Welcome back, ${profile.nickname}!`)
+
+      get().showToast(
+        get().language === 'zh-CN'
+          ? `欢迎回来, ${profile.nickname}!`
+          : `Welcome back, ${profile.nickname}!`,
+      )
       return { success: true }
     }
   },
@@ -250,26 +273,32 @@ export const useAppStore = create<AppState>((set, get) => ({
           userId: res.userId,
           userNickname: res.profile.nickname,
           userAvatar: res.profile.avatar,
-          isAuthenticated: true
+          isAuthenticated: true,
         })
         const profiles = await api.getUserProfileList()
         if (profiles) set({ registeredUsers: profiles })
-        
-        get().showToast(get().language === 'zh-CN' ? '新账户注册成功!' : 'Account registered successfully!')
+
+        get().showToast(
+          get().language === 'zh-CN' ? '新账户注册成功!' : 'Account registered successfully!',
+        )
         return { success: true }
       }
       return { success: false, error: res?.error || 'Registration failed' }
     } else {
       // Browser Mock Fallback
-      const { userId, nickname, avatar, password, passwordHint, securityQuestion, securityAnswer } = userData
+      const { userId, nickname, avatar, password, passwordHint, securityQuestion, securityAnswer } =
+        userData
       const profiles = getMockProfiles()
       if (profiles[userId]) {
-        return { success: false, error: get().language === 'zh-CN' ? '该用户名已存在' : 'Username already exists' }
+        return {
+          success: false,
+          error: get().language === 'zh-CN' ? '该用户名已存在' : 'Username already exists',
+        }
       }
-      
+
       const newProfile: any = {
         nickname,
-        avatar
+        avatar,
       }
       if (password) {
         newProfile.password = password
@@ -277,32 +306,34 @@ export const useAppStore = create<AppState>((set, get) => ({
         newProfile.securityQuestion = securityQuestion
         newProfile.securityAnswer = securityAnswer
       }
-      
+
       profiles[userId] = newProfile
       saveMockProfiles(profiles)
-      
+
       const settings = getMockSettings()
       settings.lastUserId = userId
       saveMockSettings(settings)
-      
+
       set({
         userId,
         userNickname: nickname,
         userAvatar: avatar,
-        isAuthenticated: true
+        isAuthenticated: true,
       })
-      
+
       const list = Object.entries(profiles).map(([id, p]: [string, any]) => ({
         userId: id,
         nickname: p.nickname,
         avatar: p.avatar,
         hasPassword: !!p.password,
         passwordHint: p.passwordHint,
-        securityQuestion: p.securityQuestion
+        securityQuestion: p.securityQuestion,
       }))
       set({ registeredUsers: list })
-      
-      get().showToast(get().language === 'zh-CN' ? '新账户注册成功!' : 'Account registered successfully!')
+
+      get().showToast(
+        get().language === 'zh-CN' ? '新账户注册成功!' : 'Account registered successfully!',
+      )
       return { success: true }
     }
   },
@@ -310,7 +341,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   signOut: async () => {
     set({
       isAuthenticated: false,
-      activeScreen: 'dashboard'
+      activeScreen: 'dashboard',
     })
     get().showToast(get().language === 'zh-CN' ? '已退出登录' : 'Logged out')
   },
@@ -322,7 +353,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (res && res.success) {
         const profiles = await api.getUserProfileList()
         if (profiles) set({ registeredUsers: profiles })
-        
+
         get().showToast(get().language === 'zh-CN' ? '密码重置成功' : 'Password reset successfully')
         return { success: true }
       }
@@ -333,15 +364,27 @@ export const useAppStore = create<AppState>((set, get) => ({
       const profiles = getMockProfiles()
       const profile = profiles[userId]
       if (!profile) {
-        return { success: false, error: get().language === 'zh-CN' ? '用户不存在' : 'User not found' }
+        return {
+          success: false,
+          error: get().language === 'zh-CN' ? '用户不存在' : 'User not found',
+        }
       }
       if (!profile.securityQuestion || !profile.securityAnswer) {
-        return { success: false, error: get().language === 'zh-CN' ? '该账户未设置密保问题，无法重置密码' : 'Security question not set' }
+        return {
+          success: false,
+          error:
+            get().language === 'zh-CN'
+              ? '该账户未设置密保问题，无法重置密码'
+              : 'Security question not set',
+        }
       }
       if (profile.securityAnswer !== securityAnswer) {
-        return { success: false, error: get().language === 'zh-CN' ? '密保问题答案错误' : 'Incorrect answer' }
+        return {
+          success: false,
+          error: get().language === 'zh-CN' ? '密保问题答案错误' : 'Incorrect answer',
+        }
       }
-      
+
       if (newPassword) {
         profile.password = newPassword
       } else {
@@ -350,20 +393,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         delete profile.securityQuestion
         delete profile.securityAnswer
       }
-      
+
       profiles[userId] = profile
       saveMockProfiles(profiles)
-      
+
       const list = Object.entries(profiles).map(([id, p]: [string, any]) => ({
         userId: id,
         nickname: p.nickname,
         avatar: p.avatar,
         hasPassword: !!p.password,
         passwordHint: p.passwordHint,
-        securityQuestion: p.securityQuestion
+        securityQuestion: p.securityQuestion,
       }))
       set({ registeredUsers: list })
-      
+
       get().showToast(get().language === 'zh-CN' ? '密码重置成功' : 'Password reset successfully')
       return { success: true }
     }
@@ -383,7 +426,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         avatar: p.avatar,
         hasPassword: !!p.password,
         passwordHint: p.passwordHint,
-        securityQuestion: p.securityQuestion
+        securityQuestion: p.securityQuestion,
       }))
       set({ registeredUsers: list })
     }
@@ -398,10 +441,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           userId: userRes.userId,
           userNickname: userRes.profile.nickname,
           userAvatar: userRes.profile.avatar,
-          isAuthenticated: !userRes.profile.hasPassword
+          isAuthenticated: !userRes.profile.hasPassword,
         })
       }
-      
+
       const profiles = await api.getUserProfileList()
       if (profiles) set({ registeredUsers: profiles })
 
@@ -409,7 +452,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (settings) {
         set({
           theme: settings.theme || 'Minimal',
-          language: settings.language || 'zh-CN'
+          language: settings.language || 'zh-CN',
         })
         const themeClass = `theme-${(settings.theme || 'Minimal').toLowerCase().replace(' ', '-')}`
         document.body.className = themeClass
@@ -421,29 +464,29 @@ export const useAppStore = create<AppState>((set, get) => ({
       const profiles = getMockProfiles()
       const currentUserId = settings.lastUserId || 'guest'
       const profile = profiles[currentUserId] || { nickname: '访客模式', avatar: 'G' }
-      
+
       set({
         userId: currentUserId,
         userNickname: profile.nickname,
         userAvatar: profile.avatar,
         isAuthenticated: !profile.password,
         theme: settings.theme || 'Minimal',
-        language: settings.language || 'zh-CN'
+        language: settings.language || 'zh-CN',
       })
-      
+
       const themeClass = `theme-${(settings.theme || 'Minimal').toLowerCase().replace(' ', '-')}`
       document.body.className = themeClass
       await i18n.changeLanguage(settings.language || 'zh-CN')
-      
+
       const list = Object.entries(profiles).map(([id, p]: [string, any]) => ({
         userId: id,
         nickname: p.nickname,
         avatar: p.avatar,
         hasPassword: !!p.password,
         passwordHint: p.passwordHint,
-        securityQuestion: p.securityQuestion
+        securityQuestion: p.securityQuestion,
       }))
       set({ registeredUsers: list })
     }
-  }
+  },
 }))

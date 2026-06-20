@@ -5,12 +5,12 @@ import { Search, Plus, Upload, Globe, Palette } from 'lucide-react'
 
 export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch }) => {
   const { t } = useTranslation()
-  const theme = useAppStore(state => state.theme)
-  const setTheme = useAppStore(state => state.setTheme)
-  const language = useAppStore(state => state.language)
-  const setLanguage = useAppStore(state => state.setLanguage)
-  const setActiveScreen = useAppStore(state => state.setActiveScreen)
-  const setTaskTab = useAppStore(state => state.setTaskTab)
+  const theme = useAppStore((state) => state.theme)
+  const setTheme = useAppStore((state) => state.setTheme)
+  const language = useAppStore((state) => state.language)
+  const setLanguage = useAppStore((state) => state.setLanguage)
+  const setActiveScreen = useAppStore((state) => state.setActiveScreen)
+  const setTaskTab = useAppStore((state) => state.setTaskTab)
 
   const themes = ['Minimal', 'Dense', 'Card', 'Dark Tech']
 

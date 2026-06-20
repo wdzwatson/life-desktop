@@ -9,7 +9,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // User Authentication & Workspace Settings
   switchUser: (userId: string) => ipcRenderer.invoke('user:switch', userId),
-  loginUser: (userId: string, password?: string) => ipcRenderer.invoke('user:login', { userId, password }),
+  loginUser: (userId: string, password?: string) =>
+    ipcRenderer.invoke('user:login', { userId, password }),
   registerUser: (userData: any) => ipcRenderer.invoke('user:register', userData),
   resetUserPassword: (data: any) => ipcRenderer.invoke('user:resetPassword', data),
   getUserProfileList: () => ipcRenderer.invoke('user:getProfileList'),
@@ -20,7 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   revealInFinder: (filePath: string) => ipcRenderer.send('fs:reveal', filePath),
 
   // Database IPC Bridge
-  dbQuery: (dbName: string, sql: string, params?: any[]) => 
+  dbQuery: (dbName: string, sql: string, params?: any[]) =>
     ipcRenderer.invoke('db:query', { dbName, sql, params }),
 
   // Video parsing & downloading
@@ -39,5 +40,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => {
       ipcRenderer.removeListener('video:download-finished', subscription)
     }
-  }
+  },
 })

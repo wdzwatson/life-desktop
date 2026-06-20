@@ -1,0 +1,11 @@
+node_modules
+dist
+dist-electron
+dist-ssr
+package-lock.json
+*.local
+.vscode
+.idea
+.DS_Store
+release
+coverage
