@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
-import { KeyRound, ShieldAlert, ArrowLeft, UserPlus, Eye, EyeOff } from 'lucide-react'
+import { ShieldAlert, ArrowLeft, UserPlus, Eye, EyeOff } from 'lucide-react'
 
 export const AuthScreen: React.FC = () => {
   const { t } = useTranslation()
@@ -223,18 +223,27 @@ export const AuthScreen: React.FC = () => {
             >
               <div
                 style={{
-                  width: '48px',
-                  height: '48px',
-                  borderRadius: '12px',
-                  backgroundColor: 'rgba(59, 130, 246, 0.08)',
-                  color: 'var(--color-accent)',
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '14px',
+                  backgroundColor: 'transparent',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  marginBottom: '4px',
+                  marginBottom: '8px',
+                  overflow: 'hidden',
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
                 }}
               >
-                <KeyRound size={24} />
+                <img
+                  src="/logo.png"
+                  alt="LifeOS Logo"
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                  }}
+                />
               </div>
               <h2 style={{ fontSize: '18px', fontWeight: 800 }}>
                 {t('auth.title_welcome') || '欢迎使用 LifeOS'}

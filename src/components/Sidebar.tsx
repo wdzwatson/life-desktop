@@ -9,7 +9,6 @@ import {
   Video,
   Grid,
   Settings,
-  Search,
   Calendar,
   RotateCcw,
   LogOut,
@@ -32,6 +31,47 @@ export const Sidebar: React.FC = () => {
   return (
     <aside className="sidebar-nav">
       <div className="nav-group">
+        {/* App Logo & Title */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            padding: '8px 10px',
+            marginBottom: '4px',
+            borderBottom: '1px solid var(--color-border)',
+            paddingBottom: '12px',
+          }}
+        >
+          <img
+            src="/logo.png"
+            alt="LifeOS Logo"
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '8px',
+              objectFit: 'cover',
+              flexShrink: 0,
+            }}
+          />
+          <span
+            className="nav-label"
+            style={{
+              fontSize: '16px',
+              fontWeight: 700,
+              letterSpacing: '0.03em',
+              background: 'linear-gradient(135deg, var(--color-accent) 0%, #60a5fa 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            LifeOS
+          </span>
+        </div>
+
         {/* User Profile Summary */}
         <div
           style={{
