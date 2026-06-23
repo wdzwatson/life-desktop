@@ -1,7 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
-import { Palette, Globe, User, BookOpen, Shield, Database, Plus, Trash2 } from 'lucide-react'
+import { Palette, Globe, User, BookOpen, Shield, Database, Plus, Trash2, RefreshCw } from 'lucide-react'
+
+interface UpdateInfo {
+  version: string
+  releaseNotes?: string
+  releaseDate?: string
+}
 
 export const Settings: React.FC = () => {
   const { t } = useTranslation()
@@ -19,8 +25,18 @@ export const Settings: React.FC = () => {
 
   // Settings tab switching
   const [activeMenu, setActiveMenu] = useState<
-    'appearance' | 'categories' | 'profile' | 'security'
+    'appearance' | 'categories' | 'profile' | 'security' | 'updates'
   >('appearance')
+
+  // Update states
+  const [appVersion, setAppVersion] = useState('1.0.0')
+  const [updateStatus, setUpdateStatus] = useState<
+    'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
+  >('idle')
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
+  const [downloadPercent, setDownloadPercent] = useState(0)
+  const [updateErrorMsg, setUpdateErrorMsg] = useState('')
+  const [autoCheckUpdates, setAutoCheckUpdates] = useState(true)
 
   // Categories list state
   const [categories, setCategories] = useState<any[]>([])
@@ -65,6 +81,101 @@ export const Settings: React.FC = () => {
     }
     loadProfileSecurity()
   }, [userId])
+
+  // System updates listeners & triggers
+  useEffect(() => {
+    if (!api) return
+
+    api.getAppVersion().then((v: string) => {
+      if (v) setAppVersion(v)
+    })
+
+    api.getSettings().then((s: unknown) => {
+      const settings = s as { autoCheckUpdates?: boolean }
+      if (settings) {
+        setAutoCheckUpdates(settings.autoCheckUpdates !== false)
+      }
+    })
+
+    const unsubChecking = api.onUpdateChecking(() => {
+      setUpdateStatus('checking')
+      setUpdateErrorMsg('')
+    })
+
+    const unsubAvailable = api.onUpdateAvailable((info: unknown) => {
+      setUpdateStatus('available')
+      setUpdateInfo(info as UpdateInfo)
+      setUpdateErrorMsg('')
+    })
+
+    const unsubNotAvailable = api.onUpdateNotAvailable(() => {
+      setUpdateStatus('not-available')
+      setUpdateErrorMsg('')
+    })
+
+    const unsubProgress = api.onUpdateProgress((progress: unknown) => {
+      const prog = progress as { percent: number }
+      setUpdateStatus('downloading')
+      setDownloadPercent(prog.percent || 0)
+      setUpdateErrorMsg('')
+    })
+
+    const unsubDownloaded = api.onUpdateDownloaded((info: unknown) => {
+      setUpdateStatus('downloaded')
+      setUpdateInfo(info as UpdateInfo)
+      setUpdateErrorMsg('')
+    })
+
+    const unsubError = api.onUpdateError((err: unknown) => {
+      setUpdateStatus('error')
+      setUpdateErrorMsg(String(err))
+    })
+
+    return () => {
+      unsubChecking()
+      unsubAvailable()
+      unsubNotAvailable()
+      unsubProgress()
+      unsubDownloaded()
+      unsubError()
+    }
+  }, [])
+
+  const handleCheckForUpdates = async () => {
+    if (!api) return
+    setUpdateStatus('checking')
+    setUpdateErrorMsg('')
+    await api.checkForUpdates()
+  }
+
+  const handleDownloadUpdate = async () => {
+    if (!api) return
+    setUpdateStatus('downloading')
+    setDownloadPercent(0)
+    await api.downloadUpdate()
+  }
+
+  const handleInstallUpdate = () => {
+    if (!api) return
+    api.installUpdate()
+  }
+
+  const handleManualDownload = () => {
+    window.open('https://github.com/wdzwatson/life-desktop/releases', '_blank')
+  }
+
+  const handleToggleAutoCheck = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked
+    setAutoCheckUpdates(checked)
+    if (api) {
+      const current = await api.getSettings()
+      const currentSettings = current as Record<string, any>
+      await api.saveSettings({
+        ...currentSettings,
+        autoCheckUpdates: checked,
+      })
+    }
+  }
 
   // Category management
   const handleAddCategory = async () => {
@@ -220,6 +331,16 @@ export const Settings: React.FC = () => {
                 <Shield size={15} />
               </span>
               <span className="nav-label">{t('settings.menu_data')}</span>
+            </button>
+            <button
+              className={`nav-item ${activeMenu === 'updates' ? 'active' : ''}`}
+              onClick={() => setActiveMenu('updates')}
+              style={{ width: '100%', border: 'none', background: 'none' }}
+            >
+              <span className="nav-icon">
+                <RefreshCw size={15} />
+              </span>
+              <span className="nav-label">{t('settings.menu_updates')}</span>
             </button>
           </div>
         </aside>
@@ -648,6 +769,175 @@ export const Settings: React.FC = () => {
                   >
                     {t('settings.security_migrate_btn')}
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: SYSTEM UPDATES */}
+          {activeMenu === 'updates' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div>
+                <h3 style={{ fontSize: '15px', fontWeight: 800, marginBottom: '4px' }}>
+                  {t('settings.updates_title')}
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', marginBottom: '16px' }}>
+                  {t('settings.updates_subtitle')}
+                </p>
+
+                <div
+                  style={{
+                    padding: '16px',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--bg-app)',
+                    maxWidth: '600px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600 }}>
+                      {t('settings.updates_current_version')}: <span style={{ color: 'var(--color-accent)' }}>v{appVersion}</span>
+                    </span>
+                    {updateStatus === 'idle' || updateStatus === 'not-available' || updateStatus === 'error' ? (
+                      <button className="btn primary sm" onClick={handleCheckForUpdates}>
+                        {t('settings.updates_check_btn')}
+                      </button>
+                    ) : updateStatus === 'checking' ? (
+                      <button className="btn sm" disabled style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <RefreshCw size={12} className="animate-spin" />
+                        {t('settings.updates_checking')}
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '10px', marginTop: '4px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={autoCheckUpdates}
+                        onChange={handleToggleAutoCheck}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <span>{t('settings.updates_auto_check')}</span>
+                    </label>
+                  </div>
+
+                  {/* Update Status Details */}
+                  {updateStatus === 'not-available' && (
+                    <div style={{ color: 'var(--color-success)', fontSize: '12.5px', marginTop: '4px' }}>
+                      ✓ {t('settings.updates_not_available')}
+                    </div>
+                  )}
+
+                  {updateStatus === 'error' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                      <div style={{ color: 'var(--color-danger)', fontSize: '12.5px' }}>
+                        ⚠️ {t('settings.updates_error', { error: updateErrorMsg })}
+                      </div>
+                      <button className="btn sm" onClick={handleManualDownload} style={{ width: 'max-content' }}>
+                        手动前往 GitHub 下载
+                      </button>
+                    </div>
+                  )}
+
+                  {updateStatus === 'available' && updateInfo && (
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        borderTop: '1px solid var(--color-border)',
+                        paddingTop: '12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                      }}
+                    >
+                      <div style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--color-accent)' }}>
+                        🎉 {t('settings.updates_available', { version: updateInfo.version })}
+                      </div>
+                      {updateInfo.releaseNotes && (
+                        <div
+                          style={{
+                            backgroundColor: 'var(--bg-surface)',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: '6px',
+                            padding: '12px',
+                            fontSize: '12px',
+                            maxHeight: '180px',
+                            overflowY: 'auto',
+                            whiteSpace: 'pre-wrap',
+                            lineHeight: '1.6',
+                          }}
+                        >
+                          {updateInfo.releaseNotes}
+                        </div>
+                      )}
+                      <button className="btn primary sm" onClick={handleDownloadUpdate} style={{ width: 'max-content' }}>
+                        {t('settings.updates_download_btn')}
+                      </button>
+                    </div>
+                  )}
+
+                  {updateStatus === 'downloading' && (
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        borderTop: '1px solid var(--color-border)',
+                        paddingTop: '12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px' }}>
+                        <span>{t('settings.updates_downloading', { percent: downloadPercent })}</span>
+                      </div>
+                      <div
+                        style={{
+                          height: '6px',
+                          backgroundColor: 'var(--color-border)',
+                          borderRadius: '3px',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: '100%',
+                            width: `${downloadPercent}%`,
+                            backgroundColor: 'var(--color-accent)',
+                            transition: 'width 0.2s ease',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {updateStatus === 'downloaded' && (
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        borderTop: '1px solid var(--color-border)',
+                        paddingTop: '12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px',
+                      }}
+                    >
+                      <div style={{ color: 'var(--color-success)', fontSize: '12.5px' }}>
+                        ✓ {t('settings.updates_downloaded')}
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="btn primary sm" onClick={handleInstallUpdate}>
+                          {t('settings.updates_install_btn')}
+                        </button>
+                        <button className="btn sm" onClick={handleManualDownload}>
+                          手动下载包
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

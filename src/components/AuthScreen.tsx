@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { ShieldAlert, ArrowLeft, UserPlus, Eye, EyeOff } from 'lucide-react'
+import logoImg from '../assets/logo.png'
 
 export const AuthScreen: React.FC = () => {
   const { t } = useTranslation()
@@ -236,7 +237,7 @@ export const AuthScreen: React.FC = () => {
                 }}
               >
                 <img
-                  src="/logo.png"
+                  src={logoImg}
                   alt="LifeOS Logo"
                   style={{
                     width: '100%',

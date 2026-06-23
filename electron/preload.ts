@@ -41,4 +41,52 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('video:download-finished', subscription)
     }
   },
+
+  // App version & updates
+  getAppVersion: () => ipcRenderer.invoke('app:version'),
+  checkForUpdates: (isAutoCheck?: boolean) => ipcRenderer.invoke('app:check-for-updates', isAutoCheck),
+  downloadUpdate: () => ipcRenderer.invoke('app:download-update'),
+  installUpdate: () => ipcRenderer.invoke('app:install-update'),
+  onUpdateChecking: (callback: () => void) => {
+    const sub = () => callback()
+    ipcRenderer.on('update:checking', sub)
+    return () => {
+      ipcRenderer.removeListener('update:checking', sub)
+    }
+  },
+  onUpdateAvailable: (callback: (info: unknown) => void) => {
+    const sub = (_event: unknown, info: unknown) => callback(info)
+    ipcRenderer.on('update:available', sub)
+    return () => {
+      ipcRenderer.removeListener('update:available', sub)
+    }
+  },
+  onUpdateNotAvailable: (callback: () => void) => {
+    const sub = () => callback()
+    ipcRenderer.on('update:not-available', sub)
+    return () => {
+      ipcRenderer.removeListener('update:not-available', sub)
+    }
+  },
+  onUpdateProgress: (callback: (progress: unknown) => void) => {
+    const sub = (_event: unknown, progress: unknown) => callback(progress)
+    ipcRenderer.on('update:download-progress', sub)
+    return () => {
+      ipcRenderer.removeListener('update:download-progress', sub)
+    }
+  },
+  onUpdateDownloaded: (callback: (info: unknown) => void) => {
+    const sub = (_event: unknown, info: unknown) => callback(info)
+    ipcRenderer.on('update:downloaded', sub)
+    return () => {
+      ipcRenderer.removeListener('update:downloaded', sub)
+    }
+  },
+  onUpdateError: (callback: (err: unknown) => void) => {
+    const sub = (_event: unknown, err: unknown) => callback(err)
+    ipcRenderer.on('update:error', sub)
+    return () => {
+      ipcRenderer.removeListener('update:error', sub)
+    }
+  },
 })

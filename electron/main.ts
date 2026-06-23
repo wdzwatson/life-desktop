@@ -6,6 +6,7 @@ import { initializeUserDatabase } from './db/schema'
 import { spawn } from 'child_process'
 import { fileURLToPath } from 'url'
 import crypto from 'crypto'
+import { autoUpdater } from 'electron-updater'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -38,6 +39,7 @@ function initConfig() {
       language: 'zh-CN',
       lastUserId: 'guest',
       maxDownloads: 3,
+      autoCheckUpdates: true,
       baseFolder: BASE_DIR,
       userProfiles: {
         guest: { nickname: '访客模式', avatar: 'G' },
@@ -254,6 +256,7 @@ function createWindow() {
     mainWindow = null
   })
 
+  setupAutoUpdater()
   startScheduler()
 }
 
@@ -556,4 +559,134 @@ ipcMain.handle('video:download', async (_, videoData: any) => {
   }, 800)
 
   return { success: true, message: '下载已加入后台队列' }
+})
+
+// Auto-Updater Config & IPC Bindings
+function setupAutoUpdater() {
+  autoUpdater.autoDownload = false
+  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.logger = console
+
+  autoUpdater.on('checking-for-update', () => {
+    mainWindow?.webContents.send('update:checking')
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    mainWindow?.webContents.send('update:available', {
+      version: info.version,
+      releaseNotes: info.releaseNotes,
+      releaseDate: info.releaseDate,
+    })
+  })
+
+  autoUpdater.on('update-not-available', () => {
+    mainWindow?.webContents.send('update:not-available')
+  })
+
+  autoUpdater.on('error', (err) => {
+    mainWindow?.webContents.send('update:error', err?.message || 'Unknown update error')
+  })
+
+  autoUpdater.on('download-progress', (progressObj) => {
+    mainWindow?.webContents.send('update:download-progress', {
+      percent: Math.round(progressObj.percent),
+      bytesPerSecond: progressObj.bytesPerSecond,
+      transferred: progressObj.transferred,
+      total: progressObj.total,
+    })
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    mainWindow?.webContents.send('update:downloaded', {
+      version: info.version,
+    })
+  })
+}
+
+ipcMain.handle('app:version', () => {
+  return app.getVersion()
+})
+
+ipcMain.handle('app:check-for-updates', async (_, isAutoCheck?: boolean) => {
+  const isDev = process.env.VITE_DEV_SERVER_URL !== undefined || !app.isPackaged
+  if (isDev) {
+    if (isAutoCheck) {
+      console.log('Auto update check skipped in dev mode')
+      return { success: true, skipped: true }
+    }
+    mainWindow?.webContents.send('update:checking')
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    mainWindow?.webContents.send('update:available', {
+      version: '1.1.0',
+      releaseNotes: '### 🚀 新特性\n- 新增了应用自动更新功能，从此告别手动下载！\n- 优化的系统设置菜单，增加了“系统更新”模块。\n- 修复了一些已知的性能和样式微调问题。\n\n### 🛠 修复与改进\n- 改进了 SQLite 在多账户环境下的稳定性。\n- 修复了 macOS 无边框窗口控制按钮重叠问题。',
+      releaseDate: new Date().toISOString(),
+    })
+    return { success: true, isMock: true }
+  } else {
+    try {
+      const result = await autoUpdater.checkForUpdates()
+      return { success: true, result }
+    } catch (err) {
+      const error = err as Error
+      console.error('Check for updates error:', error)
+      mainWindow?.webContents.send('update:error', error.message || 'Failed to check updates')
+      return { success: false, error: error.message }
+    }
+  }
+})
+
+ipcMain.handle('app:download-update', async () => {
+  const isDev = process.env.VITE_DEV_SERVER_URL !== undefined || !app.isPackaged
+  if (isDev) {
+    let percent = 0
+    const interval = setInterval(() => {
+      percent += Math.floor(Math.random() * 20) + 5
+      if (percent >= 100) {
+        percent = 100
+        clearInterval(interval)
+        mainWindow?.webContents.send('update:download-progress', {
+          percent: 100,
+          bytesPerSecond: 1024 * 1024 * 2.5,
+          transferred: 50 * 1024 * 1024,
+          total: 50 * 1024 * 1024,
+        })
+        mainWindow?.webContents.send('update:downloaded', { version: '1.1.0' })
+      } else {
+        mainWindow?.webContents.send('update:download-progress', {
+          percent,
+          bytesPerSecond: 1024 * 1024 * 1.5,
+          transferred: Math.round((percent / 100) * 50 * 1024 * 1024),
+          total: 50 * 1024 * 1024,
+        })
+      }
+    }, 600)
+    return { success: true, isMock: true }
+  } else {
+    try {
+      const result = await autoUpdater.downloadUpdate()
+      return { success: true, result }
+    } catch (err) {
+      const error = err as Error
+      console.error('Download update error:', error)
+      mainWindow?.webContents.send('update:error', error.message || 'Failed to download update')
+      return { success: false, error: error.message }
+    }
+  }
+})
+
+ipcMain.handle('app:install-update', () => {
+  const isDev = process.env.VITE_DEV_SERVER_URL !== undefined || !app.isPackaged
+  if (isDev) {
+    console.log('App install update mock triggered. App would restart here in production.')
+    return { success: true, isMock: true }
+  } else {
+    try {
+      autoUpdater.quitAndInstall()
+      return { success: true }
+    } catch (err) {
+      const error = err as Error
+      console.error('Install update error:', error)
+      return { success: false, error: error.message }
+    }
+  }
 })

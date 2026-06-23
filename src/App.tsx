@@ -50,6 +50,8 @@ function App() {
     window.addEventListener('keydown', handleKeyDown)
 
     // 3. Register scheduler notifications from IPC
+    let unsubUpdate: (() => void) | undefined
+
     if (api) {
       api.onDownloadFinished?.((data: any) => {
         showToast(t('app.download_finished', { title: data.title }))
@@ -61,13 +63,26 @@ function App() {
       const handleOverdueNotif = (_event: any, data: any) => {
         showToast(t('app.task_overdue_warning', { title: data.title }))
       }
-      // Since contextBridge exposes these events if we define them,
-      // we can listen via ipcRenderer if exposed or standard window callbacks.
-      // (For this mock setup we handle notifications via the main thread logger).
+
+      // Auto check updates if enabled
+      api.getSettings().then((settings: unknown) => {
+        const s = settings as { autoCheckUpdates?: boolean }
+        const autoCheck = s?.autoCheckUpdates !== false
+        if (autoCheck) {
+          api.checkForUpdates(true)
+        }
+      })
+
+      // Listen to update available event
+      unsubUpdate = api.onUpdateAvailable?.((info: unknown) => {
+        const inf = info as { version: string }
+        showToast(t('app.update_available_toast', { version: inf.version }))
+      })
     }
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
+      if (unsubUpdate) unsubUpdate()
     }
   }, [])
 

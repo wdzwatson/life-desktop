@@ -1,6 +1,7 @@
 import React from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
+import logoImg from '../assets/logo.png'
 import {
   LayoutDashboard,
   CheckSquare,
@@ -44,7 +45,7 @@ export const Sidebar: React.FC = () => {
           }}
         >
           <img
-            src="/logo.png"
+            src={logoImg}
             alt="LifeOS Logo"
             style={{
               width: '32px',
