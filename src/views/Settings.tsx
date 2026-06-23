@@ -1,7 +1,17 @@
 import React, { useEffect, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
-import { Palette, Globe, User, BookOpen, Shield, Database, Plus, Trash2, RefreshCw } from 'lucide-react'
+import {
+  Palette,
+  Globe,
+  User,
+  BookOpen,
+  Shield,
+  Database,
+  Plus,
+  Trash2,
+  RefreshCw,
+} from 'lucide-react'
 
 interface UpdateInfo {
   version: string
@@ -253,6 +263,30 @@ export const Settings: React.FC = () => {
       showToast(t('settings.toast_profile_saved'))
     } else {
       showToast(res?.error || 'Profile update failed')
+    }
+  }
+
+  const handleClearAppData = async () => {
+    if (!api) return
+
+    const confirm1 = window.confirm(t('settings.security_clear_confirm_1'))
+    if (!confirm1) return
+
+    const confirm2 = window.confirm(t('settings.security_clear_confirm_2'))
+    if (!confirm2) return
+
+    try {
+      const res = await api.clearAppData()
+      if (res && res.success) {
+        showToast(t('settings.security_clear_success'))
+        setTimeout(() => {
+          window.location.reload()
+        }, 1000)
+      } else {
+        showToast(res?.error || 'Clear data failed')
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Error clearing data')
     }
   }
 
@@ -771,6 +805,36 @@ export const Settings: React.FC = () => {
                   </button>
                 </div>
               </div>
+
+              <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '20px' }}>
+                <h3
+                  style={{
+                    fontSize: '15px',
+                    fontWeight: 800,
+                    marginBottom: '4px',
+                    color: 'var(--color-danger)',
+                  }}
+                >
+                  {t('settings.security_clear_data_title')}
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', marginBottom: '12px' }}>
+                  {t('settings.security_clear_data_desc')}
+                </p>
+                <button
+                  className="btn"
+                  onClick={handleClearAppData}
+                  style={{
+                    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                    color: 'var(--color-danger)',
+                    border: '1px solid rgba(239, 68, 68, 0.2)',
+                    fontWeight: 'bold',
+                    height: '34px',
+                    width: 'max-content',
+                  }}
+                >
+                  {t('settings.security_clear_data_btn')}
+                </button>
+              </div>
             </div>
           )}
 
@@ -797,24 +861,51 @@ export const Settings: React.FC = () => {
                     gap: '12px',
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
                     <span style={{ fontSize: '13px', fontWeight: 600 }}>
-                      {t('settings.updates_current_version')}: <span style={{ color: 'var(--color-accent)' }}>v{appVersion}</span>
+                      {t('settings.updates_current_version')}:{' '}
+                      <span style={{ color: 'var(--color-accent)' }}>v{appVersion}</span>
                     </span>
-                    {updateStatus === 'idle' || updateStatus === 'not-available' || updateStatus === 'error' ? (
+                    {updateStatus === 'idle' ||
+                    updateStatus === 'not-available' ||
+                    updateStatus === 'error' ? (
                       <button className="btn primary sm" onClick={handleCheckForUpdates}>
                         {t('settings.updates_check_btn')}
                       </button>
                     ) : updateStatus === 'checking' ? (
-                      <button className="btn sm" disabled style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <button
+                        className="btn sm"
+                        disabled
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
                         <RefreshCw size={12} className="animate-spin" />
                         {t('settings.updates_checking')}
                       </button>
                     ) : null}
                   </div>
 
-                  <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '10px', marginTop: '4px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', cursor: 'pointer' }}>
+                  <div
+                    style={{
+                      borderTop: '1px solid var(--color-border)',
+                      paddingTop: '10px',
+                      marginTop: '4px',
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '12.5px',
+                        cursor: 'pointer',
+                      }}
+                    >
                       <input
                         type="checkbox"
                         checked={autoCheckUpdates}
@@ -827,17 +918,34 @@ export const Settings: React.FC = () => {
 
                   {/* Update Status Details */}
                   {updateStatus === 'not-available' && (
-                    <div style={{ color: 'var(--color-success)', fontSize: '12.5px', marginTop: '4px' }}>
+                    <div
+                      style={{
+                        color: 'var(--color-success)',
+                        fontSize: '12.5px',
+                        marginTop: '4px',
+                      }}
+                    >
                       ✓ {t('settings.updates_not_available')}
                     </div>
                   )}
 
                   {updateStatus === 'error' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        marginTop: '4px',
+                      }}
+                    >
                       <div style={{ color: 'var(--color-danger)', fontSize: '12.5px' }}>
                         ⚠️ {t('settings.updates_error', { error: updateErrorMsg })}
                       </div>
-                      <button className="btn sm" onClick={handleManualDownload} style={{ width: 'max-content' }}>
+                      <button
+                        className="btn sm"
+                        onClick={handleManualDownload}
+                        style={{ width: 'max-content' }}
+                      >
                         手动前往 GitHub 下载
                       </button>
                     </div>
@@ -854,7 +962,13 @@ export const Settings: React.FC = () => {
                         gap: '12px',
                       }}
                     >
-                      <div style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--color-accent)' }}>
+                      <div
+                        style={{
+                          fontSize: '13px',
+                          fontWeight: 'bold',
+                          color: 'var(--color-accent)',
+                        }}
+                      >
                         🎉 {t('settings.updates_available', { version: updateInfo.version })}
                       </div>
                       {updateInfo.releaseNotes && (
@@ -874,7 +988,11 @@ export const Settings: React.FC = () => {
                           {updateInfo.releaseNotes}
                         </div>
                       )}
-                      <button className="btn primary sm" onClick={handleDownloadUpdate} style={{ width: 'max-content' }}>
+                      <button
+                        className="btn primary sm"
+                        onClick={handleDownloadUpdate}
+                        style={{ width: 'max-content' }}
+                      >
                         {t('settings.updates_download_btn')}
                       </button>
                     </div>
@@ -891,8 +1009,16 @@ export const Settings: React.FC = () => {
                         gap: '8px',
                       }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px' }}>
-                        <span>{t('settings.updates_downloading', { percent: downloadPercent })}</span>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          fontSize: '12.5px',
+                        }}
+                      >
+                        <span>
+                          {t('settings.updates_downloading', { percent: downloadPercent })}
+                        </span>
                       </div>
                       <div
                         style={{

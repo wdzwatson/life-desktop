@@ -238,7 +238,7 @@ function createWindow() {
     frame: false, // Custom frameless title bar
     titleBarStyle: 'hidden',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
     },
@@ -479,6 +479,35 @@ ipcMain.handle('settings:save', async (_, newSettings: any) => {
   return saveSettings(newSettings)
 })
 
+ipcMain.handle('settings:clearAppData', async () => {
+  try {
+    // 1. Close all active database connections
+    closeUserDbs()
+
+    // 2. Delete the user files directory completely
+    const usersDir = path.join(BASE_DIR, 'users')
+    if (fs.existsSync(usersDir)) {
+      fs.rmSync(usersDir, { recursive: true, force: true })
+    }
+
+    // 3. Reset the user profiles inside settings.json
+    const settings = getSettings()
+    settings.userProfiles = {
+      guest: { nickname: '访客模式', avatar: 'G' },
+    }
+    settings.lastUserId = 'guest'
+    saveSettings(settings)
+
+    // 4. Re-initialize the session for guest user
+    switchUserSession('guest')
+
+    return { success: true }
+  } catch (err: any) {
+    console.error('Failed to clear app data:', err)
+    return { success: false, error: err.message }
+  }
+})
+
 ipcMain.on('fs:reveal', (_, filePath: string) => {
   // Safe reveal in finder
   if (fs.existsSync(filePath)) {
@@ -618,7 +647,8 @@ ipcMain.handle('app:check-for-updates', async (_, isAutoCheck?: boolean) => {
     await new Promise((resolve) => setTimeout(resolve, 1500))
     mainWindow?.webContents.send('update:available', {
       version: '1.1.0',
-      releaseNotes: '### 🚀 新特性\n- 新增了应用自动更新功能，从此告别手动下载！\n- 优化的系统设置菜单，增加了“系统更新”模块。\n- 修复了一些已知的性能和样式微调问题。\n\n### 🛠 修复与改进\n- 改进了 SQLite 在多账户环境下的稳定性。\n- 修复了 macOS 无边框窗口控制按钮重叠问题。',
+      releaseNotes:
+        '### 🚀 新特性\n- 新增了应用自动更新功能，从此告别手动下载！\n- 优化的系统设置菜单，增加了“系统更新”模块。\n- 修复了一些已知的性能和样式微调问题。\n\n### 🛠 修复与改进\n- 改进了 SQLite 在多账户环境下的稳定性。\n- 修复了 macOS 无边框窗口控制按钮重叠问题。',
       releaseDate: new Date().toISOString(),
     })
     return { success: true, isMock: true }

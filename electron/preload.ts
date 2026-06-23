@@ -1,4 +1,5 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import type { IpcRenderer } from 'electron'
+const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Window controls
@@ -18,6 +19,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getCurrentUser: () => ipcRenderer.invoke('user:getCurrent'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: any) => ipcRenderer.invoke('settings:save', settings),
+  clearAppData: () => ipcRenderer.invoke('settings:clearAppData'),
   revealInFinder: (filePath: string) => ipcRenderer.send('fs:reveal', filePath),
 
   // Database IPC Bridge
@@ -44,7 +46,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // App version & updates
   getAppVersion: () => ipcRenderer.invoke('app:version'),
-  checkForUpdates: (isAutoCheck?: boolean) => ipcRenderer.invoke('app:check-for-updates', isAutoCheck),
+  checkForUpdates: (isAutoCheck?: boolean) =>
+    ipcRenderer.invoke('app:check-for-updates', isAutoCheck),
   downloadUpdate: () => ipcRenderer.invoke('app:download-update'),
   installUpdate: () => ipcRenderer.invoke('app:install-update'),
   onUpdateChecking: (callback: () => void) => {

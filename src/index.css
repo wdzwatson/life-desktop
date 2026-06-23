@@ -500,3 +500,19 @@ body.theme-dense .tab:hover {
 .animate-spin {
   animation: spin 1s linear infinite;
 }
+
+/* Notebook sidebar item styles with hover actions */
+.notebook-item {
+  position: relative;
+}
+
+.notebook-item .notebook-actions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.notebook-item:hover .notebook-actions {
+  opacity: 1;
+  pointer-events: auto;
+}

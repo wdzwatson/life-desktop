@@ -53,10 +53,18 @@ export function initializeUserDatabase(userDbDir: string) {
   notesDb.pragma('journal_mode = WAL')
 
   notesDb.exec(`
+    CREATE TABLE IF NOT EXISTS notebooks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      category TEXT DEFAULT '默认',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS notes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
       content TEXT DEFAULT '',
+      notebook TEXT DEFAULT '未分类',
       note_type TEXT DEFAULT 'markdown', -- 'markdown', 'richtext', 'canvas', 'code', 'table'
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -93,6 +101,44 @@ export function initializeUserDatabase(userDbDir: string) {
       INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
     END;
   `)
+
+  // Migrate existing notes table if notebook column is missing
+  try {
+    const pragma = notesDb.prepare('PRAGMA table_info(notes)').all() as { name: string }[]
+    const hasNotebook = pragma.some((col) => col.name === 'notebook')
+    if (!hasNotebook) {
+      notesDb.exec("ALTER TABLE notes ADD COLUMN notebook TEXT DEFAULT '未分类'")
+    }
+  } catch (err) {
+    console.error('Failed to migrate notes table (notebook column):', err)
+  }
+
+  // Migrate notebooks table if category column is missing
+  try {
+    const pragmaNb = notesDb.prepare('PRAGMA table_info(notebooks)').all() as { name: string }[]
+    const hasCategory = pragmaNb.some((col) => col.name === 'category')
+    if (!hasCategory) {
+      notesDb.exec("ALTER TABLE notebooks ADD COLUMN category TEXT DEFAULT '默认'")
+    }
+  } catch (err) {
+    console.error('Failed to migrate notebooks table (category column):', err)
+  }
+
+  // Seed default notebooks if empty
+  try {
+    const nbCountStmt = notesDb.prepare('SELECT count(*) as count FROM notebooks')
+    const nbCountResult = nbCountStmt.get() as { count: number }
+    if (nbCountResult.count === 0) {
+      const insertNb = notesDb.prepare('INSERT INTO notebooks (name, category) VALUES (?, ?)')
+      insertNb.run('LifeOS', '生活')
+      insertNb.run('产品设计', '工作')
+      insertNb.run('技术架构', '工作')
+      insertNb.run('Reading', '阅读')
+    }
+  } catch (err) {
+    console.error('Failed to seed default notebooks:', err)
+  }
+
   notesDb.close()
 
   // 3. Initialize Books Database (books.db)

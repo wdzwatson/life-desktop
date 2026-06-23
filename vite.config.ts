@@ -1,41 +1,36 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import electron from 'vite-plugin-electron'
-import renderer from 'vite-plugin-electron-renderer'
+import electronSimple from 'vite-plugin-electron/simple'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
-    electron([
-      {
+    electronSimple({
+      main: {
         // Source file for the main process
         entry: 'electron/main.ts',
         vite: {
           build: {
-            rollupOptions: {
+            rolldownOptions: {
               external: ['better-sqlite3'],
             },
           },
         },
       },
-      {
-        entry: 'electron/preload.ts',
-        onstart(options) {
-          // Notify the Renderer-Process to reload the page when the Preload-Script build is complete
-          options.reload()
-        },
+      preload: {
+        input: 'electron/preload.ts',
         vite: {
           build: {
-            rollupOptions: {
+            rolldownOptions: {
               output: {
-                format: 'cjs',
+                entryFileNames: '[name].cjs',
               },
             },
           },
         },
       },
-    ]),
-    renderer(),
+      renderer: {},
+    }),
   ],
 })
