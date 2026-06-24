@@ -516,3 +516,154 @@ body.theme-dense .tab:hover {
   opacity: 1;
   pointer-events: auto;
 }
+
+/* Markdown Preview Styles */
+.preview-md {
+  font-family: var(--font-sans);
+  color: var(--text-main);
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+.preview-md h1 {
+  font-size: 1.8em;
+  font-weight: 800;
+  margin-top: 24px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 6px;
+}
+
+.preview-md h2 {
+  font-size: 1.4em;
+  font-weight: 700;
+  margin-top: 20px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 4px;
+}
+
+.preview-md h3 {
+  font-size: 1.2em;
+  font-weight: 600;
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.preview-md h4,
+.preview-md h5,
+.preview-md h6 {
+  font-size: 1em;
+  font-weight: 600;
+  margin-top: 12px;
+  margin-bottom: 6px;
+}
+
+.preview-md p {
+  margin-bottom: 12px;
+}
+
+.preview-md strong {
+  font-weight: 700;
+}
+
+.preview-md em {
+  font-style: italic;
+}
+
+.preview-md blockquote {
+  border-left: 4px solid var(--color-accent);
+  padding: 8px 16px;
+  background-color: rgba(59, 130, 246, 0.05);
+  color: var(--text-muted);
+  margin: 16px 0;
+  border-radius: 0 4px 4px 0;
+}
+
+.preview-md ul,
+.preview-md ol {
+  margin: 12px 0;
+  padding-left: 24px;
+}
+
+.preview-md li {
+  margin-bottom: 6px;
+}
+
+.preview-md ul li {
+  list-style-type: disc;
+}
+
+.preview-md ol li {
+  list-style-type: decimal;
+}
+
+.preview-md code {
+  font-family: var(--font-mono);
+  background-color: rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--color-border);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+body.theme-dense .preview-md code,
+body.theme-dark-tech .preview-md code {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.preview-md pre {
+  background-color: var(--bg-app);
+  border: 1px solid var(--color-border);
+  padding: 14px;
+  border-radius: 8px;
+  margin: 16px 0;
+  overflow-x: auto;
+}
+
+.preview-md pre code {
+  border: none;
+  padding: 0;
+  background-color: transparent;
+  font-size: 0.85em;
+  display: block;
+}
+
+.preview-md a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.preview-md a:hover {
+  text-decoration: underline;
+}
+
+.preview-md hr {
+  height: 1px;
+  border: none;
+  background-color: var(--color-border);
+  margin: 24px 0;
+}
+
+.preview-md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+}
+
+.preview-md th,
+.preview-md td {
+  border: 1px solid var(--color-border);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.preview-md th {
+  background-color: rgba(0, 0, 0, 0.02);
+  font-weight: 600;
+}
+
+body.theme-dense .preview-md th,
+body.theme-dark-tech .preview-md th {
+  background-color: rgba(255, 255, 255, 0.04);
+}

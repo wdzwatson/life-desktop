@@ -198,6 +198,7 @@
     "default_title": "Uncategorized",
     "default_content": "# New Note\n\nStart writing here...",
     "toast_created": "New note created",
+    "created_at_label": "Created: {{time}}",
     "prompt_delete_confirm": "Are you sure you want to delete this note?",
     "toast_deleted": "Note deleted",
     "toast_navigated_linked": "Navigated to linked note: {{title}}",

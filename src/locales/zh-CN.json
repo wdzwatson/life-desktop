@@ -198,6 +198,7 @@
     "default_title": "未分类",
     "default_content": "# 新建笔记\n\n在此开始撰写...",
     "toast_created": "新笔记已创建",
+    "created_at_label": "创建时间: {{time}}",
     "prompt_delete_confirm": "确定要删除此笔记吗？",
     "toast_deleted": "笔记已删除",
     "toast_navigated_linked": "已穿梭至链接笔记: {{title}}",

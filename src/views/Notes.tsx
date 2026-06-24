@@ -2,6 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { Folder, FolderOpen, FolderPlus, FileText, Plus, Eye, Edit2, Trash2 } from 'lucide-react'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
 interface Notebook {
   id: number
@@ -61,6 +63,20 @@ export const Notes: React.FC = () => {
     setNoteTitle(note.title)
     setNoteContent(note.content || '')
   }, [])
+
+  const formatTime = (timeStr: string) => {
+    if (!timeStr) return ''
+    try {
+      const isoStr = timeStr.includes('T') ? timeStr : timeStr.replace(' ', 'T') + 'Z'
+      const date = new Date(isoStr)
+      if (isNaN(date.getTime())) {
+        return timeStr
+      }
+      return date.toLocaleString()
+    } catch (e) {
+      return timeStr
+    }
+  }
 
   const loadNotes = useCallback(async () => {
     if (!api) {
@@ -148,7 +164,7 @@ export const Notes: React.FC = () => {
       return
     }
     const query = 'INSERT INTO notes (title, content, note_type, notebook) VALUES (?, ?, ?, ?)'
-    const defaultTitle = t('notes.default_title')
+    const defaultTitle = t('notes.new_note')
     const defaultContent = t('notes.default_content')
     const res = await api.dbQuery('notes', query, [
       defaultTitle,
@@ -213,7 +229,9 @@ export const Notes: React.FC = () => {
         setIsNbModalOpen(false)
         // activeNotebook state change will trigger the useEffect automatically to reload notebooks & notes
       } else {
-        alert('数据库错误: ' + (res?.error || '未知错误\n请确保已彻底重启应用以应用最新的数据库补丁！'))
+        alert(
+          '数据库错误: ' + (res?.error || '未知错误\n请确保已彻底重启应用以应用最新的数据库补丁！'),
+        )
         showToast(t('notes.toast_notebook_exists') || res?.error || '创建笔记本失败，名称可能重复')
       }
     } else if (nbModalAction === 'rename' && targetNotebook) {
@@ -235,7 +253,9 @@ export const Notes: React.FC = () => {
           loadNotes() // activeNotebook didn't change, trigger manually to update sidebar
         }
       } else {
-        alert('数据库错误: ' + (res?.error || '未知错误\n请确保已彻底重启应用以应用最新的数据库补丁！'))
+        alert(
+          '数据库错误: ' + (res?.error || '未知错误\n请确保已彻底重启应用以应用最新的数据库补丁！'),
+        )
         showToast(t('notes.toast_notebook_exists') || res?.error || '重命名失败')
       }
     }
@@ -334,71 +354,29 @@ export const Notes: React.FC = () => {
     [notes, selectNote, showToast, t, setActiveScreen],
   )
 
-  // Very simple Markdown parser for the Live Preview side
+  // Mature Markdown parser using 'marked' and sanitized with 'DOMPurify'
   const parseMarkdown = (md: string) => {
-    let html = md
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(
-        /^### (.*)$/gm,
-        '<h3 style="margin-top: 12px; margin-bottom: 6px; font-size: 15px; border-bottom: 1px solid var(--color-border); padding-bottom: 4px;">$1</h3>',
-      )
-      .replace(
-        /^## (.*)$/gm,
-        '<h2 style="margin-top: 18px; margin-bottom: 8px; font-size: 18px;">$1</h2>',
-      )
-      .replace(
-        /^# (.*)$/gm,
-        '<h1 style="margin-top: 24px; margin-bottom: 12px; font-size: 22px; font-weight: 800;">$1</h1>',
-      )
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(
-        /`([^`]+)`/g,
-        '<code style="font-family: var(--font-mono); background-color: var(--bg-app); border: 1px solid var(--color-border); padding: 2px 4px; borderRadius: 4px; fontSize: 12px;">$1</code>',
-      )
-      .replace(
-        /^&gt; (.*)$/gm,
-        '<blockquote style="border-left: 3px solid var(--color-accent); padding: 8px 12px; background-color: rgba(59, 130, 246, 0.04); color: var(--text-muted); margin: 12px 0;">$1</blockquote>',
-      )
-      .replace(
-        /^- (.*)$/gm,
-        '<li style="margin-left: 20px; font-size: 13.5px; margin-top: 4px;">$1</li>',
-      )
-
-    // Parse Double Links [[Note Title]] or [[book:BookID#Chapter]]
+    // 1. Process double links before parsing, so they are not treated as plain text or wrapped incorrectly.
     const doubleLinkRegex = /\[\[(.*?)\]\]/g
-    html = html.replace(doubleLinkRegex, (_, inner) => {
+    const mdWithLinks = md.replace(doubleLinkRegex, (_, inner) => {
       const isBook = inner.startsWith('book:')
       const bookLabel = t('notes.book_ref_label', { id: inner.replace('book:', '') })
-      return `<button 
-        class="deep-link-btn" 
-        data-link="${inner}" 
-        style="color: var(--color-accent); font-weight: bold; background: none; border: none; cursor: pointer; text-decoration: underline; display: inline-flex; align-items: center; gap: 4px;"
-      >
-        <span style="font-size: 11px;">🔗</span>
-        ${isBook ? bookLabel : inner}
-      </button>`
+      return `<button class="deep-link-btn" data-link="${inner}" style="color: var(--color-accent); font-weight: bold; background: none; border: none; cursor: pointer; text-decoration: underline; display: inline-flex; align-items: center; gap: 4px;"><span style="font-size: 11px;">🔗</span>${isBook ? bookLabel : inner}</button>`
     })
 
-    // Group LI elements into UL
-    html = html.replace(
-      /(<li.*?>.*?<\/li>(\n<li.*?>.*?<\/li>)*)/gs,
-      '<ul style="margin: 12px 0;">$1</ul>',
-    )
+    // 2. Parse Markdown to HTML using marked
+    const rawHtml = marked.parse(mdWithLinks, {
+      gfm: true,
+      breaks: true,
+    }) as string
 
-    // Group paragraphs
-    html = html
-      .split(/\n{2,}/)
-      .map((block) => {
-        if (/^<\/?(h1|h2|h3|ul|blockquote|button)/.test(block.trim())) {
-          return block
-        }
-        return `<p style="margin-bottom: 10px; font-size: 13.5px; line-height: 1.6;">${block.replace(/\n/g, '<br/>')}</p>`
-      })
-      .join('')
+    // 3. Sanitize HTML using DOMPurify to prevent XSS but allow our custom buttons and style/class attributes.
+    const cleanHtml = DOMPurify.sanitize(rawHtml, {
+      ADD_TAGS: ['button', 'span'],
+      ADD_ATTR: ['data-link', 'style', 'class'],
+    })
 
-    return html
+    return cleanHtml
   }
 
   // Attach event handlers to dynamic HTML buttons
@@ -644,7 +622,7 @@ export const Notes: React.FC = () => {
               </h4>
               <p
                 style={{
-                  fontSize: '11.5px',
+                  fontSize: '11px',
                   color: 'var(--text-muted)',
                   marginTop: '4px',
                   overflow: 'hidden',
@@ -652,7 +630,7 @@ export const Notes: React.FC = () => {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {note.content?.replace(/[#*`]/g, '').slice(0, 30) || t('notes.empty_note_label')}
+                {t('notes.created_at_label', { time: formatTime(note.created_at) })}
               </p>
             </div>
           ))}
@@ -701,7 +679,7 @@ export const Notes: React.FC = () => {
                   value={noteTitle}
                   onChange={(e) => setNoteTitle(e.target.value)}
                   onBlur={handleSaveNote}
-                  placeholder={t('notes.default_title')}
+                  placeholder={t('notes.new_note')}
                 />
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <button className="btn sm" onClick={() => setIsEditMode(!isEditMode)}>
@@ -865,12 +843,18 @@ export const Notes: React.FC = () => {
                   onClick={() => {
                     const isDirty =
                       nbModalAction === 'create'
-                        ? nbModalName.trim() !== '' || (nbModalCategory.trim() !== '默认' && nbModalCategory.trim() !== '')
+                        ? nbModalName.trim() !== '' ||
+                          (nbModalCategory.trim() !== '默认' && nbModalCategory.trim() !== '')
                         : targetNotebook
-                          ? nbModalName.trim() !== targetNotebook.name || nbModalCategory.trim() !== targetNotebook.category
+                          ? nbModalName.trim() !== targetNotebook.name ||
+                            nbModalCategory.trim() !== targetNotebook.category
                           : false
                     if (isDirty) {
-                      if (window.confirm(t('notes.prompt_discard_changes') || '您有未保存的修改，确定要放弃吗？')) {
+                      if (
+                        window.confirm(
+                          t('notes.prompt_discard_changes') || '您有未保存的修改，确定要放弃吗？',
+                        )
+                      ) {
                         setIsNbModalOpen(false)
                       }
                     } else {
@@ -880,7 +864,11 @@ export const Notes: React.FC = () => {
                 >
                   {t('notes.cancel') || '取消'}
                 </button>
-                <button type="button" className="btn sm primary" onClick={(e) => handleNbModalSubmit(e as unknown as React.FormEvent)}>
+                <button
+                  type="button"
+                  className="btn sm primary"
+                  onClick={(e) => handleNbModalSubmit(e as unknown as React.FormEvent)}
+                >
                   {t('notes.confirm') || '确认'}
                 </button>
               </div>
