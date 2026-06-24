@@ -26,6 +26,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbQuery: (dbName: string, sql: string, params?: any[]) =>
     ipcRenderer.invoke('db:query', { dbName, sql, params }),
 
+  // Note Export IPC Bridge
+  exportNote: (data: { title: string; content: string; htmlContent: string; format: string }) =>
+    ipcRenderer.invoke('note:export', data),
+
   // Video parsing & downloading
   parseVideoUrl: (url: string) => ipcRenderer.invoke('video:parseUrl', url),
   startDownload: (videoData: any) => ipcRenderer.invoke('video:download', videoData),

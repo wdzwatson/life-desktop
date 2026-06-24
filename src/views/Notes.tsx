@@ -1,7 +1,17 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
-import { Folder, FolderOpen, FolderPlus, FileText, Plus, Eye, Edit2, Trash2 } from 'lucide-react'
+import {
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  FileText,
+  Plus,
+  Eye,
+  Edit2,
+  Trash2,
+  Download,
+} from 'lucide-react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -30,6 +40,12 @@ interface DBResponse {
 
 interface ElectronAPI {
   dbQuery: (dbName: string, sql: string, params?: unknown[]) => Promise<DBResponse>
+  exportNote?: (data: {
+    title: string
+    content: string
+    htmlContent: string
+    format: string
+  }) => Promise<{ success: boolean; filePath?: string; error?: string }>
 }
 
 export const Notes: React.FC = () => {
@@ -48,6 +64,8 @@ export const Notes: React.FC = () => {
   const [noteTitle, setNoteTitle] = useState('')
   const [noteContent, setNoteContent] = useState('')
   const [isEditMode, setIsEditMode] = useState(true)
+  const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
 
   // Notebook Modal States
   const [isNbModalOpen, setIsNbModalOpen] = useState(false)
@@ -189,6 +207,39 @@ export const Notes: React.FC = () => {
       showToast(t('notes.toast_deleted'))
       setActiveNoteId(null)
       loadNotes()
+    }
+  }
+
+  const handleExportNote = async (format: 'md' | 'html' | 'doc' | 'pdf' | 'txt') => {
+    if (!api || !activeNoteId) return
+    setIsExporting(true)
+
+    // Convert markdown to HTML for formats like HTML/Doc/PDF
+    const parsedHtml = parseMarkdown(noteContent)
+
+    try {
+      const res = await api.exportNote?.({
+        title: noteTitle,
+        content: noteContent,
+        htmlContent: parsedHtml,
+        format,
+      })
+
+      if (res?.success) {
+        showToast(
+          t('notes.toast_export_success', { path: res.filePath }) ||
+            `已成功导出到: ${res.filePath}`,
+        )
+      } else if (res?.error !== 'Canceled') {
+        showToast(
+          t('notes.toast_export_failed', { error: res?.error }) || `导出失败: ${res?.error}`,
+        )
+      }
+    } catch (err: any) {
+      showToast(`导出错误: ${err.message}`)
+    } finally {
+      setIsExporting(false)
+      setIsExportDropdownOpen(false)
     }
   }
 
@@ -686,6 +737,167 @@ export const Notes: React.FC = () => {
                     {isEditMode ? <Eye size={12} /> : <Edit2 size={12} />}
                     {isEditMode ? t('notes.focus_mode') : t('notes.split_edit')}
                   </button>
+
+                  {/* Export Button & Dropdown */}
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      className="btn sm"
+                      onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                      disabled={isExporting}
+                    >
+                      <Download size={12} />
+                      {isExporting ? t('notes.exporting') : t('notes.export_note')}
+                    </button>
+                    {isExportDropdownOpen && (
+                      <>
+                        <div
+                          style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            zIndex: 9,
+                          }}
+                          onClick={() => setIsExportDropdownOpen(false)}
+                        />
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '100%',
+                            right: 0,
+                            marginTop: '4px',
+                            backgroundColor: 'var(--bg-surface)',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: '6px',
+                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                            zIndex: 10,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            minWidth: '135px',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <button
+                            style={{
+                              padding: '8px 12px',
+                              background: 'none',
+                              border: 'none',
+                              textAlign: 'left',
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                              color: 'var(--text-main)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                            onClick={() => handleExportNote('md')}
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                            }
+                            onMouseLeave={(e) =>
+                              (e.currentTarget.style.backgroundColor = 'transparent')
+                            }
+                          >
+                            📄 Markdown (.md)
+                          </button>
+                          <button
+                            style={{
+                              padding: '8px 12px',
+                              background: 'none',
+                              border: 'none',
+                              textAlign: 'left',
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                              color: 'var(--text-main)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                            onClick={() => handleExportNote('html')}
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                            }
+                            onMouseLeave={(e) =>
+                              (e.currentTarget.style.backgroundColor = 'transparent')
+                            }
+                          >
+                            🌐 Web Page (.html)
+                          </button>
+                          <button
+                            style={{
+                              padding: '8px 12px',
+                              background: 'none',
+                              border: 'none',
+                              textAlign: 'left',
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                              color: 'var(--text-main)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                            onClick={() => handleExportNote('doc')}
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                            }
+                            onMouseLeave={(e) =>
+                              (e.currentTarget.style.backgroundColor = 'transparent')
+                            }
+                          >
+                            📝 Word Doc (.doc)
+                          </button>
+                          <button
+                            style={{
+                              padding: '8px 12px',
+                              background: 'none',
+                              border: 'none',
+                              textAlign: 'left',
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                              color: 'var(--text-main)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                            onClick={() => handleExportNote('pdf')}
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                            }
+                            onMouseLeave={(e) =>
+                              (e.currentTarget.style.backgroundColor = 'transparent')
+                            }
+                          >
+                            📕 PDF Document (.pdf)
+                          </button>
+                          <button
+                            style={{
+                              padding: '8px 12px',
+                              background: 'none',
+                              border: 'none',
+                              textAlign: 'left',
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                              color: 'var(--text-main)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                            onClick={() => handleExportNote('txt')}
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                            }
+                            onMouseLeave={(e) =>
+                              (e.currentTarget.style.backgroundColor = 'transparent')
+                            }
+                          >
+                            ✏️ Plain Text (.txt)
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
                   <button className="btn sm" onClick={() => handleDeleteNote(activeNoteId)}>
                     <Trash2 size={12} />
                   </button>
