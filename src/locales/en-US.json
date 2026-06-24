@@ -222,6 +222,7 @@
     "select_note_tip": "Select or create a note to begin",
     "focus_mode": "Focus Mode",
     "split_edit": "Split Edit",
+    "preview_mode": "Preview Mode",
     "create_notebook": "Create Notebook",
     "rename_notebook": "Rename Notebook",
     "notebook_name": "Notebook Name",

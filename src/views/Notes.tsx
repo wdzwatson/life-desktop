@@ -9,6 +9,7 @@ import {
   Plus,
   Eye,
   Edit2,
+  Columns,
   Trash2,
   Download,
 } from 'lucide-react'
@@ -63,7 +64,7 @@ export const Notes: React.FC = () => {
   // Editor States
   const [noteTitle, setNoteTitle] = useState('')
   const [noteContent, setNoteContent] = useState('')
-  const [isEditMode, setIsEditMode] = useState(true)
+  const [viewMode, setViewMode] = useState<'edit' | 'split' | 'preview'>('split')
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
 
@@ -442,7 +443,7 @@ export const Notes: React.FC = () => {
         })
       })
     }
-  }, [noteContent, isEditMode, handleDeepLinkClick])
+  }, [noteContent, viewMode, handleDeepLinkClick])
 
   return (
     <div
@@ -691,271 +692,365 @@ export const Notes: React.FC = () => {
         {activeNoteId ? (
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: isEditMode ? '1fr 1fr' : '1fr',
+              display: 'flex',
+              flexDirection: 'column',
               height: '100%',
               minHeight: 0,
             }}
           >
-            {/* Editor Input panel */}
+            {/* Common Header */}
             <div
               style={{
+                height: '42px',
+                borderBottom: '1px solid var(--color-border)',
                 display: 'flex',
-                flexDirection: 'column',
-                borderRight: isEditMode ? '1px solid var(--color-border)' : 'none',
-                height: '100%',
-                minHeight: 0,
+                alignItems: 'center',
+                padding: '0 12px',
+                justifyContent: 'space-between',
+                flexShrink: 0,
+                backgroundColor: 'var(--bg-surface)',
               }}
             >
-              <div
+              <input
                 style={{
-                  height: '42px',
-                  borderBottom: '1px solid var(--color-border)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '0 12px',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <input
-                  style={{
-                    border: 'none',
-                    outline: 'none',
-                    fontWeight: 'bold',
-                    fontSize: '14px',
-                    width: '60%',
-                    backgroundColor: 'transparent',
-                    color: 'var(--text-main)',
-                  }}
-                  value={noteTitle}
-                  onChange={(e) => setNoteTitle(e.target.value)}
-                  onBlur={handleSaveNote}
-                  placeholder={t('notes.new_note')}
-                />
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button className="btn sm" onClick={() => setIsEditMode(!isEditMode)}>
-                    {isEditMode ? <Eye size={12} /> : <Edit2 size={12} />}
-                    {isEditMode ? t('notes.focus_mode') : t('notes.split_edit')}
-                  </button>
-
-                  {/* Export Button & Dropdown */}
-                  <div style={{ position: 'relative' }}>
-                    <button
-                      className="btn sm"
-                      onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
-                      disabled={isExporting}
-                    >
-                      <Download size={12} />
-                      {isExporting ? t('notes.exporting') : t('notes.export_note')}
-                    </button>
-                    {isExportDropdownOpen && (
-                      <>
-                        <div
-                          style={{
-                            position: 'fixed',
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            zIndex: 9,
-                          }}
-                          onClick={() => setIsExportDropdownOpen(false)}
-                        />
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: '100%',
-                            right: 0,
-                            marginTop: '4px',
-                            backgroundColor: 'var(--bg-surface)',
-                            border: '1px solid var(--color-border)',
-                            borderRadius: '6px',
-                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-                            zIndex: 10,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            minWidth: '135px',
-                            overflow: 'hidden',
-                          }}
-                        >
-                          <button
-                            style={{
-                              padding: '8px 12px',
-                              background: 'none',
-                              border: 'none',
-                              textAlign: 'left',
-                              fontSize: '12px',
-                              cursor: 'pointer',
-                              color: 'var(--text-main)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                            }}
-                            onClick={() => handleExportNote('md')}
-                            onMouseEnter={(e) =>
-                              (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
-                            }
-                            onMouseLeave={(e) =>
-                              (e.currentTarget.style.backgroundColor = 'transparent')
-                            }
-                          >
-                            📄 Markdown (.md)
-                          </button>
-                          <button
-                            style={{
-                              padding: '8px 12px',
-                              background: 'none',
-                              border: 'none',
-                              textAlign: 'left',
-                              fontSize: '12px',
-                              cursor: 'pointer',
-                              color: 'var(--text-main)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                            }}
-                            onClick={() => handleExportNote('html')}
-                            onMouseEnter={(e) =>
-                              (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
-                            }
-                            onMouseLeave={(e) =>
-                              (e.currentTarget.style.backgroundColor = 'transparent')
-                            }
-                          >
-                            🌐 Web Page (.html)
-                          </button>
-                          <button
-                            style={{
-                              padding: '8px 12px',
-                              background: 'none',
-                              border: 'none',
-                              textAlign: 'left',
-                              fontSize: '12px',
-                              cursor: 'pointer',
-                              color: 'var(--text-main)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                            }}
-                            onClick={() => handleExportNote('doc')}
-                            onMouseEnter={(e) =>
-                              (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
-                            }
-                            onMouseLeave={(e) =>
-                              (e.currentTarget.style.backgroundColor = 'transparent')
-                            }
-                          >
-                            📝 Word Doc (.doc)
-                          </button>
-                          <button
-                            style={{
-                              padding: '8px 12px',
-                              background: 'none',
-                              border: 'none',
-                              textAlign: 'left',
-                              fontSize: '12px',
-                              cursor: 'pointer',
-                              color: 'var(--text-main)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                            }}
-                            onClick={() => handleExportNote('pdf')}
-                            onMouseEnter={(e) =>
-                              (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
-                            }
-                            onMouseLeave={(e) =>
-                              (e.currentTarget.style.backgroundColor = 'transparent')
-                            }
-                          >
-                            📕 PDF Document (.pdf)
-                          </button>
-                          <button
-                            style={{
-                              padding: '8px 12px',
-                              background: 'none',
-                              border: 'none',
-                              textAlign: 'left',
-                              fontSize: '12px',
-                              cursor: 'pointer',
-                              color: 'var(--text-main)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                            }}
-                            onClick={() => handleExportNote('txt')}
-                            onMouseEnter={(e) =>
-                              (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
-                            }
-                            onMouseLeave={(e) =>
-                              (e.currentTarget.style.backgroundColor = 'transparent')
-                            }
-                          >
-                            ✏️ Plain Text (.txt)
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  <button className="btn sm" onClick={() => handleDeleteNote(activeNoteId)}>
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              </div>
-              <textarea
-                style={{
-                  flexGrow: 1,
                   border: 'none',
                   outline: 'none',
-                  resize: 'none',
-                  padding: '16px',
-                  lineHeight: '1.6',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '13px',
+                  fontWeight: 'bold',
+                  fontSize: '14px',
+                  width: '35%',
                   backgroundColor: 'transparent',
                   color: 'var(--text-main)',
                 }}
-                value={noteContent}
-                onChange={(e) => setNoteContent(e.target.value)}
+                value={noteTitle}
+                onChange={(e) => setNoteTitle(e.target.value)}
                 onBlur={handleSaveNote}
-                placeholder={t('notes.editor_placeholder')}
+                placeholder={t('notes.new_note')}
               />
-            </div>
-
-            {/* Sync live preview panel */}
-            {isEditMode && (
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  height: '100%',
-                  minHeight: 0,
-                  backgroundColor: 'var(--bg-app)',
-                }}
-              >
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                {/* Segmented Control for Editor View Mode */}
                 <div
                   style={{
-                    height: '42px',
-                    borderBottom: '1px solid var(--color-border)',
                     display: 'flex',
+                    backgroundColor: 'var(--bg-app)',
+                    padding: '2px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--color-border)',
                     alignItems: 'center',
-                    padding: '0 12px',
-                    color: 'var(--text-muted)',
-                    fontSize: '11px',
-                    fontWeight: 'bold',
+                    gap: '2px',
                   }}
                 >
-                  {t('notes.live_preview')}
+                  <button
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '4px 8px',
+                      border: 'none',
+                      borderRadius: '4px',
+                      backgroundColor: viewMode === 'edit' ? 'var(--bg-surface)' : 'transparent',
+                      color: viewMode === 'edit' ? 'var(--text-main)' : 'var(--text-muted)',
+                      fontSize: '11px',
+                      fontWeight: viewMode === 'edit' ? 'bold' : 'normal',
+                      cursor: 'pointer',
+                      boxShadow: viewMode === 'edit' ? '0 1px 3px rgba(0, 0, 0, 0.08)' : 'none',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onClick={() => setViewMode('edit')}
+                    title={t('notes.focus_mode')}
+                  >
+                    <Edit2 size={11} />
+                    <span>{t('notes.focus_mode')}</span>
+                  </button>
+                  <button
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '4px 8px',
+                      border: 'none',
+                      borderRadius: '4px',
+                      backgroundColor: viewMode === 'split' ? 'var(--bg-surface)' : 'transparent',
+                      color: viewMode === 'split' ? 'var(--text-main)' : 'var(--text-muted)',
+                      fontSize: '11px',
+                      fontWeight: viewMode === 'split' ? 'bold' : 'normal',
+                      cursor: 'pointer',
+                      boxShadow: viewMode === 'split' ? '0 1px 3px rgba(0, 0, 0, 0.08)' : 'none',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onClick={() => setViewMode('split')}
+                    title={t('notes.split_edit')}
+                  >
+                    <Columns size={11} />
+                    <span>{t('notes.split_edit')}</span>
+                  </button>
+                  <button
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '4px 8px',
+                      border: 'none',
+                      borderRadius: '4px',
+                      backgroundColor: viewMode === 'preview' ? 'var(--bg-surface)' : 'transparent',
+                      color: viewMode === 'preview' ? 'var(--text-main)' : 'var(--text-muted)',
+                      fontSize: '11px',
+                      fontWeight: viewMode === 'preview' ? 'bold' : 'normal',
+                      cursor: 'pointer',
+                      boxShadow: viewMode === 'preview' ? '0 1px 3px rgba(0, 0, 0, 0.08)' : 'none',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onClick={() => setViewMode('preview')}
+                    title={t('notes.preview_mode')}
+                  >
+                    <Eye size={11} />
+                    <span>{t('notes.preview_mode')}</span>
+                  </button>
                 </div>
-                <div
-                  id="markdown-preview"
-                  className="preview-md"
-                  style={{ flexGrow: 1, overflowY: 'auto', padding: '16px' }}
-                  dangerouslySetInnerHTML={{ __html: parseMarkdown(noteContent) }}
-                />
+
+                {/* Export Button & Dropdown */}
+                <div style={{ position: 'relative' }}>
+                  <button
+                    className="btn sm"
+                    onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                    disabled={isExporting}
+                  >
+                    <Download size={12} />
+                    {isExporting ? t('notes.exporting') : t('notes.export_note')}
+                  </button>
+                  {isExportDropdownOpen && (
+                    <>
+                      <div
+                        style={{
+                          position: 'fixed',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          zIndex: 9,
+                        }}
+                        onClick={() => setIsExportDropdownOpen(false)}
+                      />
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          right: 0,
+                          marginTop: '4px',
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid var(--color-border)',
+                          borderRadius: '6px',
+                          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                          zIndex: 10,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          minWidth: '135px',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <button
+                          style={{
+                            padding: '8px 12px',
+                            background: 'none',
+                            border: 'none',
+                            textAlign: 'left',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            color: 'var(--text-main)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}
+                          onClick={() => handleExportNote('md')}
+                          onMouseEnter={(e) =>
+                            (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                          }
+                          onMouseLeave={(e) =>
+                            (e.currentTarget.style.backgroundColor = 'transparent')
+                          }
+                        >
+                          📄 Markdown (.md)
+                        </button>
+                        <button
+                          style={{
+                            padding: '8px 12px',
+                            background: 'none',
+                            border: 'none',
+                            textAlign: 'left',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            color: 'var(--text-main)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}
+                          onClick={() => handleExportNote('html')}
+                          onMouseEnter={(e) =>
+                            (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                          }
+                          onMouseLeave={(e) =>
+                            (e.currentTarget.style.backgroundColor = 'transparent')
+                          }
+                        >
+                          🌐 Web Page (.html)
+                        </button>
+                        <button
+                          style={{
+                            padding: '8px 12px',
+                            background: 'none',
+                            border: 'none',
+                            textAlign: 'left',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            color: 'var(--text-main)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}
+                          onClick={() => handleExportNote('doc')}
+                          onMouseEnter={(e) =>
+                            (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                          }
+                          onMouseLeave={(e) =>
+                            (e.currentTarget.style.backgroundColor = 'transparent')
+                          }
+                        >
+                          📝 Word Doc (.doc)
+                        </button>
+                        <button
+                          style={{
+                            padding: '8px 12px',
+                            background: 'none',
+                            border: 'none',
+                            textAlign: 'left',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            color: 'var(--text-main)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}
+                          onClick={() => handleExportNote('pdf')}
+                          onMouseEnter={(e) =>
+                            (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                          }
+                          onMouseLeave={(e) =>
+                            (e.currentTarget.style.backgroundColor = 'transparent')
+                          }
+                        >
+                          📕 PDF Document (.pdf)
+                        </button>
+                        <button
+                          style={{
+                            padding: '8px 12px',
+                            background: 'none',
+                            border: 'none',
+                            textAlign: 'left',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            color: 'var(--text-main)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}
+                          onClick={() => handleExportNote('txt')}
+                          onMouseEnter={(e) =>
+                            (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                          }
+                          onMouseLeave={(e) =>
+                            (e.currentTarget.style.backgroundColor = 'transparent')
+                          }
+                        >
+                          ✏️ Plain Text (.txt)
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <button className="btn sm" onClick={() => handleDeleteNote(activeNoteId)}>
+                  <Trash2 size={12} />
+                </button>
               </div>
-            )}
+            </div>
+
+            {/* Split / Editor / Preview Panels */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: viewMode === 'split' ? '1fr 1fr' : '1fr',
+                flexGrow: 1,
+                minHeight: 0,
+              }}
+            >
+              {/* Editor panel (visible in 'edit' and 'split' mode) */}
+              {(viewMode === 'edit' || viewMode === 'split') && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    borderRight: viewMode === 'split' ? '1px solid var(--color-border)' : 'none',
+                    height: '100%',
+                    minHeight: 0,
+                  }}
+                >
+                  <textarea
+                    style={{
+                      flexGrow: 1,
+                      border: 'none',
+                      outline: 'none',
+                      resize: 'none',
+                      padding: '16px',
+                      lineHeight: '1.6',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '13px',
+                      backgroundColor: 'transparent',
+                      color: 'var(--text-main)',
+                    }}
+                    value={noteContent}
+                    onChange={(e) => setNoteContent(e.target.value)}
+                    onBlur={handleSaveNote}
+                    placeholder={t('notes.editor_placeholder')}
+                  />
+                </div>
+              )}
+
+              {/* Preview panel (visible in 'preview' and 'split' mode) */}
+              {(viewMode === 'preview' || viewMode === 'split') && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    height: '100%',
+                    minHeight: 0,
+                    backgroundColor: 'var(--bg-app)',
+                  }}
+                >
+                  {viewMode === 'split' && (
+                    <div
+                      style={{
+                        height: '24px',
+                        borderBottom: '1px solid var(--color-border)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '0 12px',
+                        color: 'var(--text-muted)',
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        backgroundColor: 'var(--bg-surface)',
+                      }}
+                    >
+                      {t('notes.live_preview')}
+                    </div>
+                  )}
+                  <div
+                    id="markdown-preview"
+                    className="preview-md"
+                    style={{ flexGrow: 1, overflowY: 'auto', padding: '16px' }}
+                    dangerouslySetInnerHTML={{ __html: parseMarkdown(noteContent) }}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div

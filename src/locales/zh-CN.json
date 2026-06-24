@@ -222,6 +222,7 @@
     "select_note_tip": "选择或新建一篇笔记以开始",
     "focus_mode": "专注模式",
     "split_edit": "分屏编辑",
+    "preview_mode": "预览模式",
     "create_notebook": "新建笔记本",
     "rename_notebook": "重命名笔记本",
     "notebook_name": "笔记本名称",
