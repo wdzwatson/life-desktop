@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getUserProfileList: () => ipcRenderer.invoke('user:getProfileList'),
   updateUserProfile: (data: any) => ipcRenderer.invoke('user:updateProfile', data),
   getCurrentUser: () => ipcRenderer.invoke('user:getCurrent'),
+  logoutUser: () => ipcRenderer.invoke('user:logout'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: any) => ipcRenderer.invoke('settings:save', settings),
   clearAppData: () => ipcRenderer.invoke('settings:clearAppData'),

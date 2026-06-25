@@ -238,6 +238,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       settings.lastUserId = userId
       saveMockSettings(settings)
 
+      profile.sessionValid = true
+      profile.lastActiveTime = Date.now()
+      profiles[userId] = profile
+      saveMockProfiles(profiles)
+
       set({
         userId,
         userNickname: profile.nickname,
@@ -305,6 +310,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         newProfile.passwordHint = passwordHint
         newProfile.securityQuestion = securityQuestion
         newProfile.securityAnswer = securityAnswer
+        newProfile.sessionValid = true
+        newProfile.lastActiveTime = Date.now()
       }
 
       profiles[userId] = newProfile
@@ -339,6 +346,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   signOut: async () => {
+    const api = getElectronAPI()
+    if (api) {
+      try {
+        await api.logoutUser()
+      } catch (e) {
+        console.error('Failed to logout on backend:', e)
+      }
+    } else {
+      // Browser Mock Fallback
+      const settings = getMockSettings()
+      const profiles = getMockProfiles()
+      const currentUserId = settings.lastUserId || 'guest'
+      if (profiles[currentUserId]) {
+        profiles[currentUserId].sessionValid = false
+        saveMockProfiles(profiles)
+      }
+    }
     set({
       isAuthenticated: false,
       activeScreen: 'dashboard',
@@ -387,11 +411,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       if (newPassword) {
         profile.password = newPassword
+        profile.sessionValid = true
+        profile.lastActiveTime = Date.now()
       } else {
         delete profile.password
         delete profile.passwordHint
         delete profile.securityQuestion
         delete profile.securityAnswer
+        delete profile.sessionValid
+        delete profile.lastActiveTime
       }
 
       profiles[userId] = profile
@@ -441,7 +469,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           userId: userRes.userId,
           userNickname: userRes.profile.nickname,
           userAvatar: userRes.profile.avatar,
-          isAuthenticated: !userRes.profile.hasPassword,
+          isAuthenticated: userRes.isAuthenticated,
         })
       }
 
@@ -465,11 +493,26 @@ export const useAppStore = create<AppState>((set, get) => ({
       const currentUserId = settings.lastUserId || 'guest'
       const profile = profiles[currentUserId] || { nickname: '访客模式', avatar: 'G' }
 
+      let isAuthenticated = false
+      if (!profile.password) {
+        isAuthenticated = true
+      } else {
+        const FIFTEEN_DAYS = 15 * 24 * 60 * 60 * 1000
+        const now = Date.now()
+        const lastActive = profile.lastActiveTime || 0
+        if (profile.sessionValid && (now - lastActive < FIFTEEN_DAYS)) {
+          isAuthenticated = true
+          profile.lastActiveTime = now
+          profiles[currentUserId] = profile
+          saveMockProfiles(profiles)
+        }
+      }
+
       set({
         userId: currentUserId,
         userNickname: profile.nickname,
         userAvatar: profile.avatar,
-        isAuthenticated: !profile.password,
+        isAuthenticated: isAuthenticated,
         theme: settings.theme || 'Minimal',
         language: settings.language || 'zh-CN',
       })

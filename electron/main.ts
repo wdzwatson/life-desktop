@@ -322,6 +322,11 @@ ipcMain.handle('user:login', async (_, { userId, password }) => {
   if (hash !== profile.passwordHash) {
     return { success: false, error: '密码错误' }
   }
+  profile.sessionValid = true
+  profile.lastActiveTime = Date.now()
+  settings.userProfiles[userId] = profile
+  saveSettings(settings)
+
   switchUserSession(userId)
   return { success: true, userId, profile }
 })
@@ -347,6 +352,8 @@ ipcMain.handle(
       profile.passwordHash = hash
       profile.salt = salt
       profile.passwordHint = passwordHint
+      profile.sessionValid = true
+      profile.lastActiveTime = Date.now()
 
       if (securityQuestion && securityAnswer) {
         const ansCrypto = hashPassword(securityAnswer)
@@ -383,6 +390,8 @@ ipcMain.handle('user:resetPassword', async (_, { userId, securityAnswer, newPass
     const passCrypto = hashPassword(newPassword)
     profile.passwordHash = passCrypto.hash
     profile.salt = passCrypto.salt
+    profile.sessionValid = true
+    profile.lastActiveTime = Date.now()
   } else {
     delete profile.passwordHash
     delete profile.salt
@@ -390,6 +399,8 @@ ipcMain.handle('user:resetPassword', async (_, { userId, securityAnswer, newPass
     delete profile.securityQuestion
     delete profile.recoveryAnswerHash
     delete profile.recoveryAnswerSalt
+    delete profile.sessionValid
+    delete profile.lastActiveTime
   }
 
   settings.userProfiles[userId] = profile
@@ -416,6 +427,8 @@ ipcMain.handle(
         profile.passwordHash = hash
         profile.salt = salt
         profile.passwordHint = passwordHint
+        profile.sessionValid = true
+        profile.lastActiveTime = Date.now()
 
         if (securityQuestion && securityAnswer) {
           const ansCrypto = hashPassword(securityAnswer)
@@ -430,6 +443,8 @@ ipcMain.handle(
         delete profile.securityQuestion
         delete profile.recoveryAnswerHash
         delete profile.recoveryAnswerSalt
+        delete profile.sessionValid
+        delete profile.lastActiveTime
       }
     }
 
@@ -458,8 +473,26 @@ ipcMain.handle('user:getProfileList', async () => {
 ipcMain.handle('user:getCurrent', async () => {
   const settings = getSettings()
   const profile = settings.userProfiles[activeUserId] || { nickname: 'Guest', avatar: 'G' }
+
+  let isAuthenticated = false
+  if (!profile.passwordHash) {
+    isAuthenticated = true
+  } else {
+    const FIFTEEN_DAYS = 15 * 24 * 60 * 60 * 1000
+    const now = Date.now()
+    const lastActive = profile.lastActiveTime || 0
+    if (profile.sessionValid && (now - lastActive < FIFTEEN_DAYS)) {
+      isAuthenticated = true
+      // Update last active time to slide the session window
+      profile.lastActiveTime = now
+      settings.userProfiles[activeUserId] = profile
+      saveSettings(settings)
+    }
+  }
+
   return {
     userId: activeUserId,
+    isAuthenticated,
     profile: {
       nickname: profile.nickname,
       avatar: profile.avatar,
@@ -468,6 +501,17 @@ ipcMain.handle('user:getCurrent', async () => {
       securityQuestion: profile.securityQuestion,
     },
   }
+})
+
+ipcMain.handle('user:logout', async () => {
+  const settings = getSettings()
+  const profile = settings.userProfiles[activeUserId]
+  if (profile) {
+    profile.sessionValid = false
+    settings.userProfiles[activeUserId] = profile
+    saveSettings(settings)
+  }
+  return { success: true }
 })
 
 // IPC Handlers: Settings Config
