@@ -11,7 +11,12 @@
     "imported": "导入文件",
     "new_task": "新建任务",
     "new_note": "新建笔记",
-    "close": "关闭"
+    "close": "关闭",
+    "error_electron_required": "请在 Electron 桌面环境中运行",
+    "error_db_connect": "无法连接本地数据库：请确保在 Electron 桌面应用内运行，而不是普通浏览器！",
+    "default_category": "默认",
+    "db_error": "数据库错误",
+    "db_error_hint": "未知错误\n请确保已彻底重启应用以应用最新的数据库补丁！"
   },
   "sidebar": {
     "dashboard": "仪表盘",
@@ -236,7 +241,15 @@
     "prompt_delete_notebook_confirm": "确定要删除笔记本 \"{{name}}\" 吗？该操作不会删除笔记，笔记将被归类到 \"未分类\" 中。",
     "prompt_discard_changes": "您有未保存的修改，确定要放弃吗？",
     "cancel": "取消",
-    "confirm": "确认"
+    "confirm": "确认",
+    "delete_note": "删除笔记",
+    "delete_notebook": "删除笔记本",
+    "error_save_failed": "保存笔记失败",
+    "error_create_failed": "创建笔记失败",
+    "error_delete_failed": "删除失败",
+    "error_export_failed": "导出错误",
+    "error_rename_failed": "重命名失败",
+    "error_delete_notebook_failed": "删除笔记本失败"
   },
   "books": {
     "title": "书库",

@@ -11,7 +11,12 @@
     "imported": "Import File",
     "new_task": "New Task",
     "new_note": "New Note",
-    "close": "Close"
+    "close": "Close",
+    "error_electron_required": "Please run in the Electron desktop environment",
+    "error_db_connect": "Failed to connect to local database. Please run inside the Electron desktop app, not a normal browser!",
+    "default_category": "Default",
+    "db_error": "Database Error",
+    "db_error_hint": "Unknown error\nPlease make sure to completely restart the app to apply the latest database patches!"
   },
   "sidebar": {
     "dashboard": "Dashboard",
@@ -236,7 +241,15 @@
     "prompt_delete_notebook_confirm": "Are you sure you want to delete the notebook \"{{name}}\"? Notes will not be deleted, they will be moved to \"Uncategorized\".",
     "prompt_discard_changes": "You have unsaved changes. Are you sure you want to discard them?",
     "cancel": "Cancel",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "delete_note": "Delete Note",
+    "delete_notebook": "Delete Notebook",
+    "error_save_failed": "Failed to save note",
+    "error_create_failed": "Failed to create note",
+    "error_delete_failed": "Failed to delete",
+    "error_export_failed": "Export error",
+    "error_rename_failed": "Failed to rename",
+    "error_delete_notebook_failed": "Failed to delete notebook"
   },
   "books": {
     "title": "Books",

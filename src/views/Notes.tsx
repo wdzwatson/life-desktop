@@ -23,6 +23,10 @@ interface Notebook {
   created_at?: string
 }
 
+interface NotebookWithNotes extends Notebook {
+  notes: Note[]
+}
+
 interface Note {
   id: number
   title: string
@@ -57,9 +61,10 @@ export const Notes: React.FC = () => {
 
   // DB States
   const [notebooks, setNotebooks] = useState<Notebook[]>([])
-  const [activeNotebook, setActiveNotebook] = useState('产品设计')
+  const [activeNotebook, setActiveNotebook] = useState('')
   const [notes, setNotes] = useState<Note[]>([])
   const [activeNoteId, setActiveNoteId] = useState<number | null>(null)
+  const [expandedNotebooks, setExpandedNotebooks] = useState<{ [key: string]: boolean }>({})
 
   // Editor States
   const [noteTitle, setNoteTitle] = useState('')
@@ -75,12 +80,25 @@ export const Notes: React.FC = () => {
   const [nbModalCategory, setNbModalCategory] = useState('')
   const [targetNotebook, setTargetNotebook] = useState<Notebook | null>(null)
 
+  // Deletion Modal States
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
+    type: 'note' | 'notebook'
+    id: number
+    name?: string
+    nb?: Notebook
+  } | null>(null)
+
   const api = (window as Window & { electronAPI?: ElectronAPI }).electronAPI
 
   const selectNote = useCallback((note: Note) => {
     setActiveNoteId(note.id)
     setNoteTitle(note.title)
     setNoteContent(note.content || '')
+    setActiveNotebook(note.notebook)
+    setExpandedNotebooks((prev) => ({
+      ...prev,
+      [note.notebook]: true,
+    }))
   }, [])
 
   const formatTime = (timeStr: string) => {
@@ -92,7 +110,7 @@ export const Notes: React.FC = () => {
         return timeStr
       }
       return date.toLocaleString()
-    } catch (e) {
+    } catch {
       return timeStr
     }
   }
@@ -127,27 +145,26 @@ export const Notes: React.FC = () => {
       setActiveNotebook('')
     }
 
-    // Load notes for active notebook
-    if (currentActive) {
-      const notesRes = await api.dbQuery(
-        'notes',
-        'SELECT * FROM notes WHERE notebook = ? ORDER BY updated_at DESC',
-        [currentActive],
-      )
-      if (notesRes?.success && Array.isArray(notesRes.data)) {
-        const notesList = notesRes.data as Note[]
-        setNotes(notesList)
-        // Auto select first note if none selected or if active note is not in this notebook
-        if (notesList.length > 0) {
-          const hasActive = notesList.some((n: Note) => n.id === activeNoteId)
-          if (!hasActive || activeNoteId === null) {
-            selectNote(notesList[0])
+    // Load ALL notes
+    const notesRes = await api.dbQuery('notes', 'SELECT * FROM notes ORDER BY updated_at DESC')
+    if (notesRes?.success && Array.isArray(notesRes.data)) {
+      const notesList = notesRes.data as Note[]
+      setNotes(notesList)
+      // Auto select first note if none selected or if active note is not in database
+      if (notesList.length > 0) {
+        const hasActive = notesList.some((n: Note) => n.id === activeNoteId)
+        if (!hasActive || activeNoteId === null) {
+          // Select first note under active notebook if possible, otherwise first note overall
+          let defaultNote = notesList.find((n: Note) => n.notebook === currentActive)
+          if (!defaultNote) {
+            defaultNote = notesList[0]
           }
-        } else {
-          setActiveNoteId(null)
-          setNoteTitle('')
-          setNoteContent('')
+          selectNote(defaultNote)
         }
+      } else {
+        setActiveNoteId(null)
+        setNoteTitle('')
+        setNoteContent('')
       }
     } else {
       setNotes([])
@@ -164,7 +181,9 @@ export const Notes: React.FC = () => {
 
   const handleSaveNote = async () => {
     if (!api) {
-      showToast('⚠️ 无法保存：请在 Electron 桌面环境中运行')
+      showToast(
+        `⚠️ ${t('notes.error_save_failed') || 'Save failed'}: ${t('common.error_electron_required') || 'Please run in the Electron desktop environment'}`,
+      )
       return
     }
     if (!activeNoteId) return
@@ -179,17 +198,38 @@ export const Notes: React.FC = () => {
 
   const handleCreateNote = async () => {
     if (!api) {
-      showToast('⚠️ 无法创建：请在 Electron 桌面环境中运行')
+      showToast(
+        `⚠️ ${t('notes.error_create_failed') || 'Create failed'}: ${t('common.error_electron_required') || 'Please run in the Electron desktop environment'}`,
+      )
       return
     }
     const query = 'INSERT INTO notes (title, content, note_type, notebook) VALUES (?, ?, ?, ?)'
     const defaultTitle = t('notes.new_note')
     const defaultContent = t('notes.default_content')
+    const targetNotebookName = activeNotebook || '未分类'
+    // Ensure the notebook exists in the notebooks table
+    const checkNb = await api.dbQuery(
+      'notes',
+      'SELECT count(*) as count FROM notebooks WHERE name = ?',
+      [targetNotebookName],
+    )
+    if (
+      checkNb?.success &&
+      Array.isArray(checkNb.data) &&
+      checkNb.data.length > 0 &&
+      (checkNb.data[0] as { count: number }).count === 0
+    ) {
+      await api.dbQuery('notes', 'INSERT INTO notebooks (name, category) VALUES (?, ?)', [
+        targetNotebookName,
+        '默认',
+      ])
+    }
+
     const res = await api.dbQuery('notes', query, [
       defaultTitle,
       defaultContent,
       'markdown',
-      activeNotebook || '产品设计',
+      targetNotebookName,
     ])
     if (res?.success && res.data) {
       const newId = (res.data as { lastInsertRowid: number }).lastInsertRowid
@@ -201,131 +241,25 @@ export const Notes: React.FC = () => {
     }
   }
 
-  const handleDeleteNote = async (id: number) => {
-    if (!api || !window.confirm(t('notes.prompt_delete_confirm'))) return
+  const handleDeleteNote = (id: number) => {
+    setDeleteConfirmTarget({ type: 'note', id })
+  }
+
+  const executeDeleteNote = async (id: number) => {
+    if (!api) return
     const res = await api.dbQuery('notes', 'DELETE FROM notes WHERE id = ?', [id])
     if (res?.success) {
       showToast(t('notes.toast_deleted'))
       setActiveNoteId(null)
       loadNotes()
+    } else {
+      showToast(res?.error || t('notes.error_delete_failed') || 'Delete failed')
     }
+    setDeleteConfirmTarget(null)
   }
 
-  const handleExportNote = async (format: 'md' | 'html' | 'doc' | 'pdf' | 'txt') => {
-    if (!api || !activeNoteId) return
-    setIsExporting(true)
-
-    // Convert markdown to HTML for formats like HTML/Doc/PDF
-    const parsedHtml = parseMarkdown(noteContent)
-
-    try {
-      const res = await api.exportNote?.({
-        title: noteTitle,
-        content: noteContent,
-        htmlContent: parsedHtml,
-        format,
-      })
-
-      if (res?.success) {
-        showToast(
-          t('notes.toast_export_success', { path: res.filePath }) ||
-            `已成功导出到: ${res.filePath}`,
-        )
-      } else if (res?.error !== 'Canceled') {
-        showToast(
-          t('notes.toast_export_failed', { error: res?.error }) || `导出失败: ${res?.error}`,
-        )
-      }
-    } catch (err: any) {
-      showToast(`导出错误: ${err.message}`)
-    } finally {
-      setIsExporting(false)
-      setIsExportDropdownOpen(false)
-    }
-  }
-
-  // Notebook CRUD handlers
-  const handleCreateNotebook = () => {
-    setNbModalAction('create')
-    setNbModalName('')
-    setNbModalCategory('默认')
-    setTargetNotebook(null)
-    setIsNbModalOpen(true)
-  }
-
-  const handleRenameNotebook = (nb: Notebook) => {
-    setNbModalAction('rename')
-    setNbModalName(nb.name)
-    setNbModalCategory(nb.category)
-    setTargetNotebook(nb)
-    setIsNbModalOpen(true)
-  }
-
-  const handleNbModalSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!api) {
-      showToast('⚠️ 无法连接本地数据库：请确保在 Electron 桌面应用内运行，而不是普通浏览器！')
-      return
-    }
-    if (!nbModalName.trim()) return
-
-    if (nbModalAction === 'create') {
-      const res = await api.dbQuery(
-        'notes',
-        'INSERT INTO notebooks (name, category) VALUES (?, ?)',
-        [nbModalName.trim(), nbModalCategory.trim()],
-      )
-      if (res?.success) {
-        showToast(t('notes.toast_notebook_created') || `成功创建笔记本: ${nbModalName}`)
-        setActiveNotebook(nbModalName.trim())
-        setIsNbModalOpen(false)
-        // activeNotebook state change will trigger the useEffect automatically to reload notebooks & notes
-      } else {
-        alert(
-          '数据库错误: ' + (res?.error || '未知错误\n请确保已彻底重启应用以应用最新的数据库补丁！'),
-        )
-        showToast(t('notes.toast_notebook_exists') || res?.error || '创建笔记本失败，名称可能重复')
-      }
-    } else if (nbModalAction === 'rename' && targetNotebook) {
-      const res = await api.dbQuery(
-        'notes',
-        'UPDATE notebooks SET name = ?, category = ? WHERE id = ?',
-        [nbModalName.trim(), nbModalCategory.trim(), targetNotebook.id],
-      )
-      if (res?.success) {
-        await api.dbQuery('notes', 'UPDATE notes SET notebook = ? WHERE notebook = ?', [
-          nbModalName.trim(),
-          targetNotebook.name,
-        ])
-        showToast(t('notes.toast_notebook_renamed') || '笔记本已重命名')
-        setIsNbModalOpen(false)
-        if (activeNotebook === targetNotebook.name) {
-          setActiveNotebook(nbModalName.trim())
-        } else {
-          loadNotes() // activeNotebook didn't change, trigger manually to update sidebar
-        }
-      } else {
-        alert(
-          '数据库错误: ' + (res?.error || '未知错误\n请确保已彻底重启应用以应用最新的数据库补丁！'),
-        )
-        showToast(t('notes.toast_notebook_exists') || res?.error || '重命名失败')
-      }
-    }
-  }
-
-  const handleDeleteNotebook = async (nb: Notebook) => {
-    if (!api) {
-      showToast('⚠️ 操作失败：请在 Electron 桌面环境中运行')
-      return
-    }
-    if (
-      !window.confirm(
-        t('notes.prompt_delete_notebook_confirm', { name: nb.name }) ||
-          `确定要删除笔记本 "${nb.name}" 吗？该操作不会删除笔记，笔记将被归类到 "未分类" 中。`,
-      )
-    )
-      return
-
+  const executeDeleteNotebook = async (nb: Notebook) => {
+    if (!api) return
     const res = await api.dbQuery('notes', 'DELETE FROM notebooks WHERE id = ?', [nb.id])
     if (res?.success) {
       await api.dbQuery('notes', 'UPDATE notes SET notebook = ? WHERE notebook = ?', [
@@ -350,28 +284,181 @@ export const Notes: React.FC = () => {
         ])
       }
 
-      showToast(t('notes.toast_notebook_deleted') || '笔记本已成功删除')
+      showToast(t('notes.toast_notebook_deleted') || 'Notebook deleted successfully')
       if (activeNotebook === nb.name) {
         setActiveNotebook('未分类')
       } else {
-        loadNotes() // activeNotebook didn't change, trigger manually to update sidebar
+        loadNotes()
       }
     } else {
-      showToast(res?.error || '删除笔记本失败')
+      showToast(
+        res?.error || t('notes.error_delete_notebook_failed') || 'Failed to delete notebook',
+      )
+    }
+    setDeleteConfirmTarget(null)
+  }
+
+  const handleExportNote = async (format: 'md' | 'html' | 'doc' | 'pdf' | 'txt') => {
+    if (!api || !activeNoteId) return
+    setIsExporting(true)
+
+    // Convert markdown to HTML for formats like HTML/Doc/PDF
+    const parsedHtml = parseMarkdown(noteContent)
+
+    try {
+      const res = await api.exportNote?.({
+        title: noteTitle,
+        content: noteContent,
+        htmlContent: parsedHtml,
+        format,
+      })
+
+      if (res?.success) {
+        showToast(
+          t('notes.toast_export_success', { path: res.filePath }) ||
+            `Successfully exported to: ${res.filePath}`,
+        )
+      } else if (res?.error !== 'Canceled') {
+        showToast(
+          t('notes.toast_export_failed', { error: res?.error }) || `Export failed: ${res?.error}`,
+        )
+      }
+    } catch (err) {
+      showToast(`${t('notes.error_export_failed') || 'Export failed'}: ${(err as Error).message}`)
+    } finally {
+      setIsExporting(false)
+      setIsExportDropdownOpen(false)
     }
   }
 
+  // Notebook CRUD handlers
+  const handleCreateNotebook = () => {
+    setNbModalAction('create')
+    setNbModalName('')
+    setNbModalCategory(t('common.default_category') || '默认')
+    setTargetNotebook(null)
+    setIsNbModalOpen(true)
+  }
+
+  const handleRenameNotebook = (nb: Notebook) => {
+    setNbModalAction('rename')
+    setNbModalName(nb.name)
+    setNbModalCategory(
+      nb.category === '默认' ? t('common.default_category') || '默认' : nb.category,
+    )
+    setTargetNotebook(nb)
+    setIsNbModalOpen(true)
+  }
+
+  const handleNbModalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!api) {
+      showToast(`⚠️ ${t('common.error_db_connect') || 'Failed to connect to local database'}`)
+      return
+    }
+    if (!nbModalName.trim()) return
+
+    let categoryToSave = nbModalCategory.trim()
+    if (
+      categoryToSave === (t('common.default_category') || '默认') ||
+      categoryToSave.toLowerCase() === 'default' ||
+      categoryToSave === '默认'
+    ) {
+      categoryToSave = '默认'
+    }
+
+    if (nbModalAction === 'create') {
+      const res = await api.dbQuery(
+        'notes',
+        'INSERT INTO notebooks (name, category) VALUES (?, ?)',
+        [nbModalName.trim(), categoryToSave],
+      )
+      if (res?.success) {
+        showToast(
+          t('notes.toast_notebook_created') || `Notebook "${nbModalName}" created successfully`,
+        )
+        setActiveNotebook(nbModalName.trim())
+        setExpandedNotebooks((prev) => ({
+          ...prev,
+          [nbModalName.trim()]: true,
+        }))
+        setIsNbModalOpen(false)
+      } else {
+        const errMsg = `${t('common.db_error') || 'Database Error'}: ${res?.error || t('common.db_error_hint') || 'Unknown error'}`
+        alert(errMsg)
+        showToast(t('notes.toast_notebook_exists') || res?.error || 'Failed to create notebook')
+      }
+    } else if (nbModalAction === 'rename' && targetNotebook) {
+      const res = await api.dbQuery(
+        'notes',
+        'UPDATE notebooks SET name = ?, category = ? WHERE id = ?',
+        [nbModalName.trim(), categoryToSave, targetNotebook.id],
+      )
+      if (res?.success) {
+        await api.dbQuery('notes', 'UPDATE notes SET notebook = ? WHERE notebook = ?', [
+          nbModalName.trim(),
+          targetNotebook.name,
+        ])
+        showToast(t('notes.toast_notebook_renamed') || 'Notebook renamed successfully')
+        setIsNbModalOpen(false)
+        if (activeNotebook === targetNotebook.name) {
+          setActiveNotebook(nbModalName.trim())
+        } else {
+          loadNotes()
+        }
+      } else {
+        const errMsg = `${t('common.db_error') || 'Database Error'}: ${res?.error || t('common.db_error_hint') || 'Unknown error'}`
+        alert(errMsg)
+        showToast(t('notes.toast_notebook_exists') || res?.error || 'Failed to rename notebook')
+      }
+    }
+  }
+
+  const handleDeleteNotebook = (nb: Notebook) => {
+    if (!api) {
+      showToast(
+        `⚠️ ${t('common.error_electron_required') || 'Please run in the Electron desktop environment'}`,
+      )
+      return
+    }
+    setDeleteConfirmTarget({ type: 'notebook', id: nb.id, name: nb.name, nb })
+  }
+
+  const handleNotebookHeaderClick = (notebookName: string) => {
+    setActiveNotebook(notebookName)
+    setExpandedNotebooks((prev) => ({
+      ...prev,
+      [notebookName]: !prev[notebookName],
+    }))
+  }
+
   const groupedNotebooks = React.useMemo(() => {
-    const groups: { [key: string]: Notebook[] } = {}
+    const groups: { [key: string]: NotebookWithNotes[] } = {}
+
+    // Group notes by notebook in memory
+    const notesByNotebook: { [key: string]: Note[] } = {}
+    notes.forEach((note) => {
+      const nbName = note.notebook || '未分类'
+      if (!notesByNotebook[nbName]) {
+        notesByNotebook[nbName] = []
+      }
+      notesByNotebook[nbName].push(note)
+    })
+
+    // Group notebooks by category and assign their corresponding notes
     notebooks.forEach((nb) => {
       const cat = nb.category || '默认'
       if (!groups[cat]) {
         groups[cat] = []
       }
-      groups[cat].push(nb)
+      groups[cat].push({
+        ...nb,
+        notes: notesByNotebook[nb.name] || [],
+      })
     })
+
     return groups
-  }, [notebooks])
+  }, [notebooks, notes])
 
   // Handle Double Link Click or E-book Deep Link Click
   const handleDeepLinkClick = useCallback(
@@ -472,19 +559,19 @@ export const Notes: React.FC = () => {
         </button>
       </div>
 
-      {/* Main 3-column layout */}
+      {/* Main 2-column layout */}
       <div
         style={{
           flexGrow: 1,
           minHeight: 0,
           display: 'grid',
-          gridTemplateColumns: '200px 240px 1fr',
+          gridTemplateColumns: '280px 1fr',
           border: '1px solid var(--color-border)',
           borderRadius: '8px',
           backgroundColor: 'var(--bg-surface)',
         }}
       >
-        {/* Column 1: Notebook list */}
+        {/* Combined Navigation Column (Tree Explorer) */}
         <div
           style={{
             borderRight: '1px solid var(--color-border)',
@@ -508,7 +595,7 @@ export const Notes: React.FC = () => {
             </h3>
             <button
               onClick={handleCreateNotebook}
-              title={t('notes.prompt_create_notebook') || '新建笔记本'}
+              title={t('notes.create_notebook') || 'Create Notebook'}
               style={{
                 background: 'none',
                 border: 'none',
@@ -537,155 +624,188 @@ export const Notes: React.FC = () => {
                     letterSpacing: '0.05em',
                   }}
                 >
-                  {category}
+                  {category === '默认' ? t('common.default_category') || 'Default' : category}
                 </div>
-                {items.map((nb: Notebook) => (
-                  <div
-                    key={nb.id}
-                    className="notebook-item"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      borderRadius: '6px',
-                      background: activeNotebook === nb.name ? 'rgba(59, 130, 246, 0.06)' : 'none',
-                      paddingRight: '6px',
-                    }}
-                  >
-                    <button
-                      onClick={() => setActiveNotebook(nb.name)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '8px',
-                        borderRadius: '6px',
-                        border: 'none',
-                        background: 'none',
-                        color:
-                          activeNotebook === nb.name ? 'var(--color-accent)' : 'var(--text-main)',
-                        fontWeight: activeNotebook === nb.name ? 'bold' : 'normal',
-                        textAlign: 'left',
-                        cursor: 'pointer',
-                        flexGrow: 1,
-                        minWidth: 0,
-                        overflow: 'hidden',
-                      }}
-                    >
-                      {activeNotebook === nb.name ? <FolderOpen size={15} /> : <Folder size={15} />}
-                      <span
+                {items.map((nb) => {
+                  const isExpanded = !!expandedNotebooks[nb.name]
+                  const isActive = activeNotebook === nb.name
+                  return (
+                    <div key={nb.id} style={{ display: 'flex', flexDirection: 'column' }}>
+                      {/* Notebook Header Row */}
+                      <div
+                        className="notebook-item"
                         style={{
-                          fontSize: '13px',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          borderRadius: '6px',
+                          background: isActive ? 'rgba(59, 130, 246, 0.06)' : 'none',
+                          paddingRight: '6px',
                         }}
                       >
-                        {nb.name === '产品设计'
-                          ? t('notes.product_design')
-                          : nb.name === '技术架构'
-                            ? t('notes.tech_architecture')
-                            : nb.name === '未分类'
-                              ? t('notes.default_title')
-                              : nb.name}
-                      </span>
-                    </button>
-                    <div className="notebook-actions" style={{ display: 'flex', gap: '2px' }}>
-                      <button
-                        onClick={() => handleRenameNotebook(nb)}
-                        title={t('common.edit') || '编辑'}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          padding: '2px',
-                          color: 'var(--text-muted)',
-                        }}
-                      >
-                        <Edit2 size={11} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteNotebook(nb)}
-                        title={t('common.delete') || '删除'}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          padding: '2px',
-                          color: 'var(--text-muted)',
-                        }}
-                      >
-                        <Trash2 size={11} />
-                      </button>
+                        <button
+                          onClick={() => handleNotebookHeaderClick(nb.name)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '8px',
+                            borderRadius: '6px',
+                            border: 'none',
+                            background: 'none',
+                            color: isActive ? 'var(--color-accent)' : 'var(--text-main)',
+                            fontWeight: isActive ? 'bold' : 'normal',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            flexGrow: 1,
+                            minWidth: 0,
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {isExpanded ? <FolderOpen size={15} /> : <Folder size={15} />}
+                          <span
+                            style={{
+                              fontSize: '13px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {nb.name === '未分类' ? t('notes.default_title') : nb.name}
+                            {` (${nb.notes.length})`}
+                          </span>
+                        </button>
+                        <div className="notebook-actions" style={{ display: 'flex', gap: '2px' }}>
+                          <button
+                            onClick={() => handleRenameNotebook(nb)}
+                            title={t('common.edit') || 'Edit'}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '2px',
+                              color: 'var(--text-muted)',
+                            }}
+                          >
+                            <Edit2 size={11} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteNotebook(nb)}
+                            title={t('common.delete') || 'Delete'}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '2px',
+                              color: 'var(--text-muted)',
+                            }}
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Collapsible Notes List */}
+                      {isExpanded && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '2px',
+                            paddingLeft: '18px',
+                            marginTop: '2px',
+                            borderLeft: '1px dashed var(--color-border)',
+                            marginLeft: '15px',
+                          }}
+                        >
+                          {nb.notes.length === 0 ? (
+                            <div
+                              style={{
+                                padding: '6px 8px',
+                                fontSize: '11px',
+                                color: 'var(--text-muted)',
+                                fontStyle: 'italic',
+                              }}
+                            >
+                              {t('notes.empty_note_placeholder')}
+                            </div>
+                          ) : (
+                            nb.notes.map((note) => {
+                              const isNoteActive = activeNoteId === note.id
+                              return (
+                                <div
+                                  key={note.id}
+                                  onClick={() => selectNote(note)}
+                                  style={{
+                                    padding: '6px 8px',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '2px',
+                                    backgroundColor: isNoteActive ? 'var(--bg-app)' : 'transparent',
+                                    border:
+                                      '1px solid ' +
+                                      (isNoteActive ? 'var(--color-accent)' : 'transparent'),
+                                    transition: 'all 0.1s ease',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (!isNoteActive) {
+                                      e.currentTarget.style.backgroundColor =
+                                        'rgba(255, 255, 255, 0.03)'
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (!isNoteActive) {
+                                      e.currentTarget.style.backgroundColor = 'transparent'
+                                    }
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      fontSize: '12px',
+                                      fontWeight: isNoteActive ? 600 : 'normal',
+                                      color: isNoteActive ? 'var(--text-main)' : 'var(--text-main)',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                    }}
+                                  >
+                                    <FileText
+                                      size={12}
+                                      style={{ color: 'var(--text-muted)', flexShrink: 0 }}
+                                    />
+                                    <span
+                                      style={{
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                      }}
+                                    >
+                                      {note.title || t('notes.title_placeholder')}
+                                    </span>
+                                  </div>
+                                  <span
+                                    style={{
+                                      fontSize: '10px',
+                                      color: 'var(--text-muted)',
+                                      paddingLeft: '18px',
+                                    }}
+                                  >
+                                    {formatTime(note.created_at)}
+                                  </span>
+                                </div>
+                              )
+                            })
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             ))}
           </div>
-        </div>
-
-        {/* Column 2: Note list */}
-        <div
-          style={{
-            borderRight: '1px solid var(--color-border)',
-            padding: '12px',
-            overflowY: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-          }}
-        >
-          <h3
-            style={{
-              fontSize: '11px',
-              color: 'var(--text-muted)',
-              textTransform: 'uppercase',
-              marginBottom: '4px',
-            }}
-          >
-            {t('notes.notes_list_title')} ({notes.length})
-          </h3>
-          {notes.map((note) => (
-            <div
-              key={note.id}
-              onClick={() => selectNote(note)}
-              style={{
-                padding: '10px',
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                backgroundColor: activeNoteId === note.id ? 'var(--bg-app)' : 'transparent',
-                borderColor:
-                  activeNoteId === note.id ? 'var(--color-accent)' : 'var(--color-border)',
-              }}
-            >
-              <h4
-                style={{
-                  fontSize: '12.5px',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}
-              >
-                <FileText size={13} color="var(--text-muted)" />
-                {note.title}
-              </h4>
-              <p
-                style={{
-                  fontSize: '11px',
-                  color: 'var(--text-muted)',
-                  marginTop: '4px',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {t('notes.created_at_label', { time: formatTime(note.created_at) })}
-              </p>
-            </div>
-          ))}
         </div>
 
         {/* Column 3: Rich Markdown editor + preview */}
@@ -1144,42 +1264,93 @@ export const Notes: React.FC = () => {
                   marginTop: '8px',
                 }}
               >
-                <button
-                  type="button"
-                  className="btn sm"
-                  onClick={() => {
-                    const isDirty =
-                      nbModalAction === 'create'
-                        ? nbModalName.trim() !== '' ||
-                          (nbModalCategory.trim() !== '默认' && nbModalCategory.trim() !== '')
-                        : targetNotebook
-                          ? nbModalName.trim() !== targetNotebook.name ||
-                            nbModalCategory.trim() !== targetNotebook.category
-                          : false
-                    if (isDirty) {
-                      if (
-                        window.confirm(
-                          t('notes.prompt_discard_changes') || '您有未保存的修改，确定要放弃吗？',
-                        )
-                      ) {
-                        setIsNbModalOpen(false)
-                      }
-                    } else {
-                      setIsNbModalOpen(false)
-                    }
-                  }}
-                >
-                  {t('notes.cancel') || '取消'}
+                <button type="button" className="btn sm" onClick={() => setIsNbModalOpen(false)}>
+                  {t('notes.cancel') || 'Cancel'}
                 </button>
                 <button
                   type="button"
                   className="btn sm primary"
                   onClick={(e) => handleNbModalSubmit(e as unknown as React.FormEvent)}
                 >
-                  {t('notes.confirm') || '确认'}
+                  {t('notes.confirm') || 'Confirm'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {deleteConfirmTarget && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.4)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => setDeleteConfirmTarget(null)}
+        >
+          <div
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--color-border)',
+              borderRadius: '8px',
+              padding: '20px',
+              width: '360px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-main)' }}>
+              {deleteConfirmTarget.type === 'note'
+                ? t('notes.delete_note') || 'Delete Note'
+                : t('notes.delete_notebook') || 'Delete Notebook'}
+            </h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+              {deleteConfirmTarget.type === 'note'
+                ? t('notes.prompt_delete_confirm') || 'Are you sure you want to delete this note?'
+                : t('notes.prompt_delete_notebook_confirm', { name: deleteConfirmTarget.name }) ||
+                  `Are you sure you want to delete the notebook "${deleteConfirmTarget.name}"? Notes will not be deleted, they will be moved to "Uncategorized".`}
+            </p>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '8px',
+                marginTop: '8px',
+              }}
+            >
+              <button type="button" className="btn sm" onClick={() => setDeleteConfirmTarget(null)}>
+                {t('notes.cancel') || 'Cancel'}
+              </button>
+              <button
+                type="button"
+                className="btn sm primary"
+                style={{
+                  backgroundColor: 'var(--color-danger, #ff4d4f)',
+                  borderColor: 'var(--color-danger, #ff4d4f)',
+                }}
+                onClick={() => {
+                  if (deleteConfirmTarget.type === 'note') {
+                    executeDeleteNote(deleteConfirmTarget.id)
+                  } else if (deleteConfirmTarget.type === 'notebook' && deleteConfirmTarget.nb) {
+                    executeDeleteNotebook(deleteConfirmTarget.nb)
+                  }
+                }}
+              >
+                {t('notes.confirm') || 'Confirm'}
+              </button>
+            </div>
           </div>
         </div>
       )}

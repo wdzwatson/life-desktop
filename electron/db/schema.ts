@@ -124,20 +124,7 @@ export function initializeUserDatabase(userDbDir: string) {
     console.error('Failed to migrate notebooks table (category column):', err)
   }
 
-  // Seed default notebooks if empty
-  try {
-    const nbCountStmt = notesDb.prepare('SELECT count(*) as count FROM notebooks')
-    const nbCountResult = nbCountStmt.get() as { count: number }
-    if (nbCountResult.count === 0) {
-      const insertNb = notesDb.prepare('INSERT INTO notebooks (name, category) VALUES (?, ?)')
-      insertNb.run('LifeOS', '生活')
-      insertNb.run('产品设计', '工作')
-      insertNb.run('技术架构', '工作')
-      insertNb.run('Reading', '阅读')
-    }
-  } catch (err) {
-    console.error('Failed to seed default notebooks:', err)
-  }
+  // Seed default notebooks if empty (None seeded per user request)
 
   notesDb.close()
 
