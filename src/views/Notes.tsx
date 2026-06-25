@@ -182,7 +182,7 @@ export const Notes: React.FC = () => {
   const handleSaveNote = async () => {
     if (!api) {
       showToast(
-        `⚠️ ${t('notes.error_save_failed') || 'Save failed'}: ${t('common.error_electron_required') || 'Please run in the Electron desktop environment'}`,
+        `⚠️ ${t('notes.error_save_failed')}: ${t('common.error_electron_required')}`,
       )
       return
     }
@@ -199,7 +199,7 @@ export const Notes: React.FC = () => {
   const handleCreateNote = async () => {
     if (!api) {
       showToast(
-        `⚠️ ${t('notes.error_create_failed') || 'Create failed'}: ${t('common.error_electron_required') || 'Please run in the Electron desktop environment'}`,
+        `⚠️ ${t('notes.error_create_failed')}: ${t('common.error_electron_required')}`,
       )
       return
     }
@@ -253,7 +253,7 @@ export const Notes: React.FC = () => {
       setActiveNoteId(null)
       loadNotes()
     } else {
-      showToast(res?.error || t('notes.error_delete_failed') || 'Delete failed')
+      showToast(res?.error || t('notes.error_delete_failed'))
     }
     setDeleteConfirmTarget(null)
   }
@@ -284,7 +284,7 @@ export const Notes: React.FC = () => {
         ])
       }
 
-      showToast(t('notes.toast_notebook_deleted') || 'Notebook deleted successfully')
+      showToast(t('notes.toast_notebook_deleted'))
       if (activeNotebook === nb.name) {
         setActiveNotebook('未分类')
       } else {
@@ -292,7 +292,7 @@ export const Notes: React.FC = () => {
       }
     } else {
       showToast(
-        res?.error || t('notes.error_delete_notebook_failed') || 'Failed to delete notebook',
+        res?.error || t('notes.error_delete_notebook_failed'),
       )
     }
     setDeleteConfirmTarget(null)
@@ -314,17 +314,12 @@ export const Notes: React.FC = () => {
       })
 
       if (res?.success) {
-        showToast(
-          t('notes.toast_export_success', { path: res.filePath }) ||
-            `Successfully exported to: ${res.filePath}`,
-        )
+        showToast(t('notes.toast_export_success', { path: res.filePath }))
       } else if (res?.error !== 'Canceled') {
-        showToast(
-          t('notes.toast_export_failed', { error: res?.error }) || `Export failed: ${res?.error}`,
-        )
+        showToast(t('notes.toast_export_failed', { error: res?.error }))
       }
     } catch (err) {
-      showToast(`${t('notes.error_export_failed') || 'Export failed'}: ${(err as Error).message}`)
+      showToast(`${t('notes.error_export_failed')}: ${(err as Error).message}`)
     } finally {
       setIsExporting(false)
       setIsExportDropdownOpen(false)
@@ -335,7 +330,7 @@ export const Notes: React.FC = () => {
   const handleCreateNotebook = () => {
     setNbModalAction('create')
     setNbModalName('')
-    setNbModalCategory(t('common.default_category') || '默认')
+    setNbModalCategory(t('common.default_category'))
     setTargetNotebook(null)
     setIsNbModalOpen(true)
   }
@@ -344,7 +339,7 @@ export const Notes: React.FC = () => {
     setNbModalAction('rename')
     setNbModalName(nb.name)
     setNbModalCategory(
-      nb.category === '默认' ? t('common.default_category') || '默认' : nb.category,
+      nb.category === '默认' ? t('common.default_category') : nb.category,
     )
     setTargetNotebook(nb)
     setIsNbModalOpen(true)
@@ -353,14 +348,14 @@ export const Notes: React.FC = () => {
   const handleNbModalSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!api) {
-      showToast(`⚠️ ${t('common.error_db_connect') || 'Failed to connect to local database'}`)
+      showToast(`⚠️ ${t('common.error_db_connect')}`)
       return
     }
     if (!nbModalName.trim()) return
 
     let categoryToSave = nbModalCategory.trim()
     if (
-      categoryToSave === (t('common.default_category') || '默认') ||
+      categoryToSave === t('common.default_category') ||
       categoryToSave.toLowerCase() === 'default' ||
       categoryToSave === '默认'
     ) {
@@ -374,9 +369,7 @@ export const Notes: React.FC = () => {
         [nbModalName.trim(), categoryToSave],
       )
       if (res?.success) {
-        showToast(
-          t('notes.toast_notebook_created') || `Notebook "${nbModalName}" created successfully`,
-        )
+        showToast(t('notes.toast_notebook_created'))
         setActiveNotebook(nbModalName.trim())
         setExpandedNotebooks((prev) => ({
           ...prev,
@@ -384,9 +377,9 @@ export const Notes: React.FC = () => {
         }))
         setIsNbModalOpen(false)
       } else {
-        const errMsg = `${t('common.db_error') || 'Database Error'}: ${res?.error || t('common.db_error_hint') || 'Unknown error'}`
+        const errMsg = `${t('common.db_error')}: ${res?.error || t('common.db_error_hint')}`
         alert(errMsg)
-        showToast(t('notes.toast_notebook_exists') || res?.error || 'Failed to create notebook')
+        showToast(t('notes.toast_notebook_exists') || res?.error || '')
       }
     } else if (nbModalAction === 'rename' && targetNotebook) {
       const res = await api.dbQuery(
@@ -399,7 +392,7 @@ export const Notes: React.FC = () => {
           nbModalName.trim(),
           targetNotebook.name,
         ])
-        showToast(t('notes.toast_notebook_renamed') || 'Notebook renamed successfully')
+        showToast(t('notes.toast_notebook_renamed'))
         setIsNbModalOpen(false)
         if (activeNotebook === targetNotebook.name) {
           setActiveNotebook(nbModalName.trim())
@@ -407,9 +400,9 @@ export const Notes: React.FC = () => {
           loadNotes()
         }
       } else {
-        const errMsg = `${t('common.db_error') || 'Database Error'}: ${res?.error || t('common.db_error_hint') || 'Unknown error'}`
+        const errMsg = `${t('common.db_error')}: ${res?.error || t('common.db_error_hint')}`
         alert(errMsg)
-        showToast(t('notes.toast_notebook_exists') || res?.error || 'Failed to rename notebook')
+        showToast(t('notes.toast_notebook_exists') || res?.error || '')
       }
     }
   }
@@ -417,7 +410,7 @@ export const Notes: React.FC = () => {
   const handleDeleteNotebook = (nb: Notebook) => {
     if (!api) {
       showToast(
-        `⚠️ ${t('common.error_electron_required') || 'Please run in the Electron desktop environment'}`,
+        `⚠️ ${t('common.error_electron_required')}`,
       )
       return
     }
@@ -595,7 +588,7 @@ export const Notes: React.FC = () => {
             </h3>
             <button
               onClick={handleCreateNotebook}
-              title={t('notes.create_notebook') || 'Create Notebook'}
+              title={t('notes.create_notebook')}
               style={{
                 background: 'none',
                 border: 'none',
@@ -624,7 +617,7 @@ export const Notes: React.FC = () => {
                     letterSpacing: '0.05em',
                   }}
                 >
-                  {category === '默认' ? t('common.default_category') || 'Default' : category}
+                  {category === '默认' ? t('common.default_category') : category}
                 </div>
                 {items.map((nb) => {
                   const isExpanded = !!expandedNotebooks[nb.name]
@@ -678,7 +671,7 @@ export const Notes: React.FC = () => {
                         <div className="notebook-actions" style={{ display: 'flex', gap: '2px' }}>
                           <button
                             onClick={() => handleRenameNotebook(nb)}
-                            title={t('common.edit') || 'Edit'}
+                            title={t('common.edit')}
                             style={{
                               background: 'none',
                               border: 'none',
@@ -691,7 +684,7 @@ export const Notes: React.FC = () => {
                           </button>
                           <button
                             onClick={() => handleDeleteNotebook(nb)}
-                            title={t('common.delete') || 'Delete'}
+                            title={t('common.delete')}
                             style={{
                               background: 'none',
                               border: 'none',
@@ -1265,14 +1258,14 @@ export const Notes: React.FC = () => {
                 }}
               >
                 <button type="button" className="btn sm" onClick={() => setIsNbModalOpen(false)}>
-                  {t('notes.cancel') || 'Cancel'}
+                  {t('notes.cancel')}
                 </button>
                 <button
                   type="button"
                   className="btn sm primary"
                   onClick={(e) => handleNbModalSubmit(e as unknown as React.FormEvent)}
                 >
-                  {t('notes.confirm') || 'Confirm'}
+                  {t('notes.confirm')}
                 </button>
               </div>
             </form>
@@ -1313,14 +1306,13 @@ export const Notes: React.FC = () => {
           >
             <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-main)' }}>
               {deleteConfirmTarget.type === 'note'
-                ? t('notes.delete_note') || 'Delete Note'
-                : t('notes.delete_notebook') || 'Delete Notebook'}
+                ? t('notes.delete_note')
+                : t('notes.delete_notebook')}
             </h3>
             <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
               {deleteConfirmTarget.type === 'note'
-                ? t('notes.prompt_delete_confirm') || 'Are you sure you want to delete this note?'
-                : t('notes.prompt_delete_notebook_confirm', { name: deleteConfirmTarget.name }) ||
-                  `Are you sure you want to delete the notebook "${deleteConfirmTarget.name}"? Notes will not be deleted, they will be moved to "Uncategorized".`}
+                ? t('notes.prompt_delete_confirm')
+                : t('notes.prompt_delete_notebook_confirm', { name: deleteConfirmTarget.name })}
             </p>
             <div
               style={{
@@ -1331,7 +1323,7 @@ export const Notes: React.FC = () => {
               }}
             >
               <button type="button" className="btn sm" onClick={() => setDeleteConfirmTarget(null)}>
-                {t('notes.cancel') || 'Cancel'}
+                {t('notes.cancel')}
               </button>
               <button
                 type="button"
@@ -1348,7 +1340,7 @@ export const Notes: React.FC = () => {
                   }
                 }}
               >
-                {t('notes.confirm') || 'Confirm'}
+                {t('notes.confirm')}
               </button>
             </div>
           </div>

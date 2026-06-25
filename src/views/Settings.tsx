@@ -223,11 +223,11 @@ export const Settings: React.FC = () => {
 
     if (editPassword) {
       if (editPassword !== editConfirmPassword) {
-        showToast(t('auth.err_pass_mismatch') || '两次输入的密码不一致')
+        showToast(t('auth.err_pass_mismatch'))
         return
       }
       if (!editQuestion || !editAnswer.trim()) {
-        showToast(t('auth.err_security_needed') || '设置密码时必须填写密保问题以防遗忘')
+        showToast(t('auth.err_security_needed'))
         return
       }
     }
@@ -245,7 +245,7 @@ export const Settings: React.FC = () => {
       payload.securityAnswer = editAnswer.trim()
     } else if (hasPassword && editPassword === '' && editConfirmPassword === '') {
       const confirmClear = window.confirm(
-        t('settings.confirm_clear_password') || '确定要清除当前账户的密码保护吗？',
+        t('settings.confirm_clear_password'),
       )
       if (confirmClear) {
         payload.password = '' // empty password string tells main process to clear credentials
@@ -594,7 +594,7 @@ export const Settings: React.FC = () => {
                   }}
                 >
                   <h4 style={{ fontSize: '13px', fontWeight: 700 }}>
-                    {t('settings.password_security_title') || '账户密保与安全'}
+                    {t('settings.password_security_title')}
                   </h4>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -607,7 +607,7 @@ export const Settings: React.FC = () => {
                           marginBottom: '4px',
                         }}
                       >
-                        {t('settings.new_password_label') || '修改新密码'}
+                        {t('settings.new_password_label')}
                       </label>
                       <input
                         className="form-field"
@@ -626,7 +626,7 @@ export const Settings: React.FC = () => {
                           marginBottom: '4px',
                         }}
                       >
-                        {t('settings.confirm_password_label') || '确认新密码'}
+                        {t('settings.confirm_password_label')}
                       </label>
                       <input
                         className="form-field"
@@ -649,7 +649,7 @@ export const Settings: React.FC = () => {
                             marginBottom: '4px',
                           }}
                         >
-                          {t('settings.password_hint_label') || '密码提示信息'}
+                          {t('settings.password_hint_label')}
                         </label>
                         <input
                           className="form-field"
@@ -668,7 +668,7 @@ export const Settings: React.FC = () => {
                               marginBottom: '4px',
                             }}
                           >
-                            {t('settings.recovery_question_label') || '密保恢复问题'}
+                            {t('settings.recovery_question_label')}
                           </label>
                           <select
                             className="form-field"
@@ -698,7 +698,7 @@ export const Settings: React.FC = () => {
                               marginBottom: '4px',
                             }}
                           >
-                            {t('settings.recovery_answer_label') || '密保问题答案'}
+                            {t('settings.recovery_answer_label')}
                           </label>
                           <input
                             className="form-field"
@@ -735,8 +735,7 @@ export const Settings: React.FC = () => {
                   {t('settings.account_switch_title')}
                 </h3>
                 <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  {t('settings.account_switch_desc_secure') ||
-                    '您将安全登出当前的工作空间会话，所有本地数据库将完全切断连接，回到系统锁定屏。'}
+                  {t('settings.account_switch_desc_secure')}
                 </p>
                 <button
                   className="btn sm"
@@ -750,7 +749,7 @@ export const Settings: React.FC = () => {
                     height: '32px',
                   }}
                 >
-                  {t('settings.btn_sign_out') || '安全退出当前账户'}
+                  {t('settings.btn_sign_out')}
                 </button>
               </div>
             </div>

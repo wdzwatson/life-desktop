@@ -547,6 +547,7 @@
     "err_username_format": "用户名只允许英文字母、数字和下划线",
     "err_pass_mismatch": "两次输入的密码不一致",
     "err_security_needed": "设置密码时必须填写密保问题以防遗忘",
-    "err_answer_empty": "请填写密保问题的答案"
+    "err_answer_empty": "请填写密保问题的答案",
+    "err_api_missing": "API 连接缺失，请在 Electron 客户端中运行。"
   }
 }

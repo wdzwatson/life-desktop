@@ -57,9 +57,7 @@ export const AuthScreen: React.FC = () => {
         setPassword('')
       }
     } catch (err: any) {
-      setLoginError(
-        t('auth.err_api_missing') || 'API Connection missing. Please run in Electron client.',
-      )
+      setLoginError(t('auth.err_api_missing'))
     }
   }
 
@@ -70,19 +68,19 @@ export const AuthScreen: React.FC = () => {
 
     // Validations
     if (!regUserId.trim() || !regNickname.trim() || !regAvatar.trim()) {
-      setRegError(t('auth.err_fill_all') || '请填齐基本信息')
+      setRegError(t('auth.err_fill_all'))
       return
     }
     if (!/^[a-zA-Z0-9_-]+$/.test(regUserId)) {
-      setRegError(t('auth.err_username_format') || '用户名只允许英文字母、数字和下划线')
+      setRegError(t('auth.err_username_format'))
       return
     }
     if (regPassword !== regConfirmPassword) {
-      setRegError(t('auth.err_pass_mismatch') || '两次输入的密码不一致')
+      setRegError(t('auth.err_pass_mismatch'))
       return
     }
     if (regPassword && (!regQuestion || !regAnswer.trim())) {
-      setRegError(t('auth.err_security_needed') || '设置密码时必须填写密保问题以防遗忘')
+      setRegError(t('auth.err_security_needed'))
       return
     }
 
@@ -111,9 +109,7 @@ export const AuthScreen: React.FC = () => {
         setView('login')
       }
     } catch (err: any) {
-      setRegError(
-        t('auth.err_api_missing') || 'API Connection missing. Please run in Electron client.',
-      )
+      setRegError(t('auth.err_api_missing'))
     }
   }
 
@@ -123,11 +119,11 @@ export const AuthScreen: React.FC = () => {
     setRecError(null)
 
     if (!recAnswer.trim()) {
-      setRecError(t('auth.err_answer_empty') || '请填写密保问题的答案')
+      setRecError(t('auth.err_answer_empty'))
       return
     }
     if (recNewPassword !== recConfirmPassword) {
-      setRecError(t('auth.err_pass_mismatch') || '两次输入的密码不一致')
+      setRecError(t('auth.err_pass_mismatch'))
       return
     }
 
@@ -149,9 +145,7 @@ export const AuthScreen: React.FC = () => {
         setView('login')
       }
     } catch (err: any) {
-      setRecError(
-        t('auth.err_api_missing') || 'API Connection missing. Please run in Electron client.',
-      )
+      setRecError(t('auth.err_api_missing'))
     }
   }
 
@@ -247,10 +241,10 @@ export const AuthScreen: React.FC = () => {
                 />
               </div>
               <h2 style={{ fontSize: '18px', fontWeight: 800 }}>
-                {t('auth.title_welcome') || '欢迎使用 LifeOS'}
+                {t('auth.title_welcome')}
               </h2>
               <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                {t('auth.subtitle_select') || '请选择账号并输入密码解锁'}
+                {t('auth.subtitle_select')}
               </p>
             </div>
 
@@ -337,7 +331,7 @@ export const AuthScreen: React.FC = () => {
                       marginBottom: '6px',
                     }}
                   >
-                    {t('auth.label_password') || '输入密码'}
+                    {t('auth.label_password')}
                   </label>
                   <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                     <input
@@ -379,7 +373,7 @@ export const AuthScreen: React.FC = () => {
                     border: '1px dashed var(--color-border)',
                   }}
                 >
-                  {t('auth.guest_no_password') || '当前选择的账户未设置密码，可直接解锁。'}
+                  {t('auth.guest_no_password')}
                 </div>
               )}
 
@@ -404,8 +398,8 @@ export const AuthScreen: React.FC = () => {
                 style={{ height: '36px', fontSize: '13px', fontWeight: 600 }}
               >
                 {activeUser?.hasPassword
-                  ? t('auth.btn_unlock') || '解锁空间'
-                  : t('auth.btn_enter') || '进入空间'}
+                  ? t('auth.btn_unlock')
+                  : t('auth.btn_enter')}
               </button>
             </form>
 
@@ -433,7 +427,7 @@ export const AuthScreen: React.FC = () => {
                     padding: 0,
                   }}
                 >
-                  {t('auth.link_forgot') || '忘记密码？'}
+                  {t('auth.link_forgot')}
                 </button>
               ) : (
                 <div />
@@ -456,7 +450,7 @@ export const AuthScreen: React.FC = () => {
                   gap: '4px',
                 }}
               >
-                <UserPlus size={13} /> {t('auth.btn_create_account') || '创建新账户'}
+                <UserPlus size={13} /> {t('auth.btn_create_account')}
               </button>
             </div>
           </>
@@ -486,7 +480,7 @@ export const AuthScreen: React.FC = () => {
                 <ArrowLeft size={14} />
               </button>
               <h2 style={{ fontSize: '15px', fontWeight: 800 }}>
-                {t('auth.title_register') || '创建本地新账户'}
+                {t('auth.title_register')}
               </h2>
             </div>
 
@@ -499,11 +493,11 @@ export const AuthScreen: React.FC = () => {
                   marginBottom: '4px',
                 }}
               >
-                {t('auth.label_username') || '本地账户 ID (限英文数字)'}
+                {t('auth.label_username')}
               </label>
               <input
                 className="form-field"
-                placeholder={t('auth.placeholder_username') || '如 user_admin'}
+                placeholder={t('auth.placeholder_username')}
                 value={regUserId}
                 onChange={(e) => setRegUserId(e.target.value)}
               />
@@ -519,7 +513,7 @@ export const AuthScreen: React.FC = () => {
                     marginBottom: '4px',
                   }}
                 >
-                  {t('auth.label_nickname') || '账户昵称'}
+                  {t('auth.label_nickname')}
                 </label>
                 <input
                   className="form-field"
@@ -537,7 +531,7 @@ export const AuthScreen: React.FC = () => {
                     marginBottom: '4px',
                   }}
                 >
-                  {t('auth.label_avatar') || '头像首字母'}
+                  {t('auth.label_avatar')}
                 </label>
                 <input
                   className="form-field"
@@ -559,7 +553,7 @@ export const AuthScreen: React.FC = () => {
                   marginBottom: '4px',
                 }}
               >
-                {t('auth.label_new_password') || '密码 (留空则不设密码)'}
+                {t('auth.label_new_password')}
               </label>
               <input
                 className="form-field"
@@ -581,7 +575,7 @@ export const AuthScreen: React.FC = () => {
                       marginBottom: '4px',
                     }}
                   >
-                    {t('auth.label_confirm_password') || '确认密码'}
+                    {t('auth.label_confirm_password')}
                   </label>
                   <input
                     className="form-field"
@@ -600,7 +594,7 @@ export const AuthScreen: React.FC = () => {
                       marginBottom: '4px',
                     }}
                   >
-                    {t('auth.label_hint') || '密码提示语'}
+                    {t('auth.label_hint')}
                   </label>
                   <input
                     className="form-field"
@@ -618,7 +612,7 @@ export const AuthScreen: React.FC = () => {
                       marginBottom: '4px',
                     }}
                   >
-                    {t('auth.label_question') || '密保恢复问题'}
+                    {t('auth.label_question')}
                   </label>
                   <select
                     className="form-field"
@@ -644,7 +638,7 @@ export const AuthScreen: React.FC = () => {
                       marginBottom: '4px',
                     }}
                   >
-                    {t('auth.label_answer') || '密保答案'}
+                    {t('auth.label_answer')}
                   </label>
                   <input
                     className="form-field"
@@ -676,7 +670,7 @@ export const AuthScreen: React.FC = () => {
               className="btn primary"
               style={{ height: '36px', fontSize: '13px', fontWeight: 600, marginTop: '6px' }}
             >
-              {t('auth.btn_register') || '创建并登入账户'}
+              {t('auth.btn_register')}
             </button>
           </form>
         )}
@@ -705,7 +699,7 @@ export const AuthScreen: React.FC = () => {
                 <ArrowLeft size={14} />
               </button>
               <h2 style={{ fontSize: '15px', fontWeight: 800 }}>
-                {t('auth.title_recovery') || '密保验证与重置密码'}
+                {t('auth.title_recovery')}
               </h2>
             </div>
 
@@ -727,7 +721,7 @@ export const AuthScreen: React.FC = () => {
                     marginBottom: '2px',
                   }}
                 >
-                  {t('auth.label_password_hint') || '密码提示'}:
+                  {t('auth.label_password_hint')}:
                 </strong>
                 {activeUser.passwordHint}
               </div>
@@ -742,7 +736,7 @@ export const AuthScreen: React.FC = () => {
                   marginBottom: '4px',
                 }}
               >
-                {t('auth.label_question') || '安全密保问题'}
+                {t('auth.label_question')}
               </label>
               <div style={{ fontSize: '13px', fontWeight: 'bold', padding: '6px 0' }}>
                 {activeUser?.securityQuestion || 'No question set'}
@@ -758,7 +752,7 @@ export const AuthScreen: React.FC = () => {
                   marginBottom: '4px',
                 }}
               >
-                {t('auth.label_answer') || '密保问题答案'}
+                {t('auth.label_answer')}
               </label>
               <input
                 className="form-field"
@@ -783,7 +777,7 @@ export const AuthScreen: React.FC = () => {
                   marginBottom: '4px',
                 }}
               >
-                {t('auth.label_new_password') || '重置新密码 (留空则清除密码)'}
+                {t('auth.label_new_password')}
               </label>
               <input
                 className="form-field"
@@ -803,7 +797,7 @@ export const AuthScreen: React.FC = () => {
                   marginBottom: '4px',
                 }}
               >
-                {t('auth.label_confirm_password') || '确认新密码'}
+                {t('auth.label_confirm_password')}
               </label>
               <input
                 className="form-field"
@@ -834,7 +828,7 @@ export const AuthScreen: React.FC = () => {
               className="btn primary"
               style={{ height: '36px', fontSize: '13px', fontWeight: 600 }}
             >
-              {t('auth.btn_verify_reset') || '校验并登入空间'}
+              {t('auth.btn_verify_reset')}
             </button>
           </form>
         )}

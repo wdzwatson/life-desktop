@@ -224,7 +224,7 @@ export const Sidebar: React.FC = () => {
           <span className="nav-icon">
             <LogOut size={18} />
           </span>
-          <span className="nav-label">{t('sidebar.sign_out') || '退出登录'}</span>
+          <span className="nav-label">{t('sidebar.sign_out')}</span>
         </button>
       </div>
     </aside>

@@ -547,6 +547,7 @@
     "err_username_format": "Username only allows alphanumeric characters, underscores, and hyphens",
     "err_pass_mismatch": "Passwords do not match",
     "err_security_needed": "A security question is required when setting a password",
-    "err_answer_empty": "Please provide an answer to your security question"
+    "err_answer_empty": "Please provide an answer to your security question",
+    "err_api_missing": "API Connection missing. Please run in Electron client."
   }
 }
