@@ -16,6 +16,11 @@ import {
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
+const SUPPORTED_LOCALES = [
+  { code: 'zh-CN', label: '简体中文' },
+  { code: 'en-US', label: 'English' },
+]
+
 interface Notebook {
   id: number
   name: string
@@ -54,7 +59,7 @@ interface ElectronAPI {
 }
 
 export const Notes: React.FC = () => {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const showToast = useAppStore((state) => state.showToast)
   const userId = useAppStore((state) => state.userId)
   const setActiveScreen = useAppStore((state) => state.setActiveScreen)
@@ -79,6 +84,10 @@ export const Notes: React.FC = () => {
   const [nbModalName, setNbModalName] = useState('')
   const [nbModalCategory, setNbModalCategory] = useState('')
   const [targetNotebook, setTargetNotebook] = useState<Notebook | null>(null)
+  const [translations, setTranslations] = useState<any[]>([])
+  const [nbNameTrans, setNbNameTrans] = useState<{ [key: string]: string }>({})
+  const [nbCatTrans, setNbCatTrans] = useState<{ [key: string]: string }>({})
+  const [isNbTransOpen, setIsNbTransOpen] = useState(false)
 
   // Deletion Modal States
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
@@ -100,6 +109,30 @@ export const Notes: React.FC = () => {
       [note.notebook]: true,
     }))
   }, [])
+
+  const getNotebookDisplayName = (name: string, id: number) => {
+    const currentLocale = i18n.language
+    const trans = translations.find(
+      (t) =>
+        t.entity_type === 'notebook' && t.entity_id === String(id) && t.locale === currentLocale,
+    )
+    return trans ? trans.translation : name
+  }
+
+  const getNotebookCategoryDisplayName = (categoryName: string) => {
+    const currentLocale = i18n.language
+    const trans = translations.find(
+      (t) =>
+        t.entity_type === 'notebook_category' &&
+        t.entity_id === categoryName &&
+        t.locale === currentLocale,
+    )
+    return trans
+      ? trans.translation
+      : categoryName === '默认'
+        ? t('common.default_category')
+        : categoryName
+  }
 
   const formatTime = (timeStr: string) => {
     if (!timeStr) return ''
@@ -131,6 +164,12 @@ export const Notes: React.FC = () => {
       list = nbRes.data as Notebook[]
     }
     setNotebooks(list)
+
+    // Load translations
+    const transRes = await api.dbQuery('notes', 'SELECT * FROM translations')
+    if (transRes?.success) {
+      setTranslations(transRes.data as any[])
+    }
 
     // Select active notebook or fallback
     let currentActive = activeNotebook
@@ -175,15 +214,12 @@ export const Notes: React.FC = () => {
   }, [api, activeNotebook, activeNoteId, selectNote])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadNotes()
   }, [loadNotes, userId])
 
   const handleSaveNote = async () => {
     if (!api) {
-      showToast(
-        `⚠️ ${t('notes.error_save_failed')}: ${t('common.error_electron_required')}`,
-      )
+      showToast(`⚠️ ${t('notes.error_save_failed')}: ${t('common.error_electron_required')}`)
       return
     }
     if (!activeNoteId) return
@@ -198,9 +234,7 @@ export const Notes: React.FC = () => {
 
   const handleCreateNote = async () => {
     if (!api) {
-      showToast(
-        `⚠️ ${t('notes.error_create_failed')}: ${t('common.error_electron_required')}`,
-      )
+      showToast(`⚠️ ${t('notes.error_create_failed')}: ${t('common.error_electron_required')}`)
       return
     }
     const query = 'INSERT INTO notes (title, content, note_type, notebook) VALUES (?, ?, ?, ?)'
@@ -262,6 +296,13 @@ export const Notes: React.FC = () => {
     if (!api) return
     const res = await api.dbQuery('notes', 'DELETE FROM notebooks WHERE id = ?', [nb.id])
     if (res?.success) {
+      // Clear translations for this notebook
+      await api.dbQuery(
+        'notes',
+        "DELETE FROM translations WHERE entity_type = 'notebook' AND entity_id = ?",
+        [String(nb.id)],
+      )
+
       await api.dbQuery('notes', 'UPDATE notes SET notebook = ? WHERE notebook = ?', [
         '未分类',
         nb.name,
@@ -291,9 +332,7 @@ export const Notes: React.FC = () => {
         loadNotes()
       }
     } else {
-      showToast(
-        res?.error || t('notes.error_delete_notebook_failed'),
-      )
+      showToast(res?.error || t('notes.error_delete_notebook_failed'))
     }
     setDeleteConfirmTarget(null)
   }
@@ -331,16 +370,67 @@ export const Notes: React.FC = () => {
     setNbModalAction('create')
     setNbModalName('')
     setNbModalCategory(t('common.default_category'))
+    setNbNameTrans({})
+    setNbCatTrans({})
+    setIsNbTransOpen(false)
     setTargetNotebook(null)
     setIsNbModalOpen(true)
   }
 
   const handleRenameNotebook = (nb: Notebook) => {
     setNbModalAction('rename')
-    setNbModalName(nb.name)
-    setNbModalCategory(
-      nb.category === '默认' ? t('common.default_category') : nb.category,
+    const currentLocale = i18n.language
+
+    // Load name
+    const mainNameTrans = translations.find(
+      (t) =>
+        t.entity_type === 'notebook' && t.entity_id === String(nb.id) && t.locale === currentLocale,
     )
+    setNbModalName(mainNameTrans ? mainNameTrans.translation : nb.name)
+
+    // Load category
+    const mainCatTrans = translations.find(
+      (t) =>
+        t.entity_type === 'notebook_category' &&
+        t.entity_id === nb.category &&
+        t.locale === currentLocale,
+    )
+    setNbModalCategory(
+      mainCatTrans
+        ? mainCatTrans.translation
+        : nb.category === '默认'
+          ? t('common.default_category')
+          : nb.category,
+    )
+
+    // Load other translations
+    const nameTransObj: { [key: string]: string } = {}
+    const catTransObj: { [key: string]: string } = {}
+    SUPPORTED_LOCALES.forEach((locale) => {
+      if (locale.code !== currentLocale) {
+        // Name
+        const nt = translations.find(
+          (t) =>
+            t.entity_type === 'notebook' &&
+            t.entity_id === String(nb.id) &&
+            t.locale === locale.code,
+        )
+        nameTransObj[locale.code] = nt ? nt.translation : ''
+
+        // Category
+        const ct = translations.find(
+          (t) =>
+            t.entity_type === 'notebook_category' &&
+            t.entity_id === nb.category &&
+            t.locale === locale.code,
+        )
+        catTransObj[locale.code] = ct ? ct.translation : ''
+      }
+    })
+
+    setNbNameTrans(nameTransObj)
+    setNbCatTrans(catTransObj)
+    setIsNbTransOpen(false)
     setTargetNotebook(nb)
     setIsNbModalOpen(true)
   }
@@ -353,6 +443,7 @@ export const Notes: React.FC = () => {
     }
     if (!nbModalName.trim()) return
 
+    const mainName = nbModalName.trim()
     let categoryToSave = nbModalCategory.trim()
     if (
       categoryToSave === t('common.default_category') ||
@@ -366,16 +457,65 @@ export const Notes: React.FC = () => {
       const res = await api.dbQuery(
         'notes',
         'INSERT INTO notebooks (name, category) VALUES (?, ?)',
-        [nbModalName.trim(), categoryToSave],
+        [mainName, categoryToSave],
       )
       if (res?.success) {
+        let nbId = (res.data as any)?.lastInsertRowid
+        if (!nbId) {
+          const findNb = await api.dbQuery('notes', 'SELECT id FROM notebooks WHERE name = ?', [
+            mainName,
+          ])
+          if (findNb?.success && Array.isArray(findNb.data) && findNb.data.length > 0) {
+            nbId = (findNb.data as any)[0].id
+          }
+        }
+
+        if (nbId) {
+          const nbIdStr = String(nbId)
+          // Insert active language translation for notebook name
+          await api.dbQuery(
+            'notes',
+            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook", ?, ?, ?)',
+            [nbIdStr, i18n.language, mainName],
+          )
+          // Insert other language translations for notebook name
+          for (const locale of SUPPORTED_LOCALES) {
+            if (locale.code === i18n.language) continue
+            const val = (nbNameTrans[locale.code] || '').trim() || mainName
+            await api.dbQuery(
+              'notes',
+              'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook", ?, ?, ?)',
+              [nbIdStr, locale.code, val],
+            )
+          }
+
+          // Insert translations for category (if custom)
+          if (categoryToSave !== '默认') {
+            await api.dbQuery(
+              'notes',
+              'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook_category", ?, ?, ?)',
+              [categoryToSave, i18n.language, nbModalCategory.trim()],
+            )
+            for (const locale of SUPPORTED_LOCALES) {
+              if (locale.code === i18n.language) continue
+              const val = (nbCatTrans[locale.code] || '').trim() || nbModalCategory.trim()
+              await api.dbQuery(
+                'notes',
+                'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook_category", ?, ?, ?)',
+                [categoryToSave, locale.code, val],
+              )
+            }
+          }
+        }
+
         showToast(t('notes.toast_notebook_created'))
-        setActiveNotebook(nbModalName.trim())
+        setActiveNotebook(mainName)
         setExpandedNotebooks((prev) => ({
           ...prev,
-          [nbModalName.trim()]: true,
+          [mainName]: true,
         }))
         setIsNbModalOpen(false)
+        loadNotes()
       } else {
         const errMsg = `${t('common.db_error')}: ${res?.error || t('common.db_error_hint')}`
         alert(errMsg)
@@ -385,17 +525,53 @@ export const Notes: React.FC = () => {
       const res = await api.dbQuery(
         'notes',
         'UPDATE notebooks SET name = ?, category = ? WHERE id = ?',
-        [nbModalName.trim(), categoryToSave, targetNotebook.id],
+        [mainName, categoryToSave, targetNotebook.id],
       )
       if (res?.success) {
         await api.dbQuery('notes', 'UPDATE notes SET notebook = ? WHERE notebook = ?', [
-          nbModalName.trim(),
+          mainName,
           targetNotebook.name,
         ])
+
+        const nbIdStr = String(targetNotebook.id)
+        // Save notebook name translations
+        await api.dbQuery(
+          'notes',
+          'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook", ?, ?, ?)',
+          [nbIdStr, i18n.language, mainName],
+        )
+        for (const locale of SUPPORTED_LOCALES) {
+          if (locale.code === i18n.language) continue
+          const val = (nbNameTrans[locale.code] || '').trim() || mainName
+          await api.dbQuery(
+            'notes',
+            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook", ?, ?, ?)',
+            [nbIdStr, locale.code, val],
+          )
+        }
+
+        // Save notebook category translations
+        if (categoryToSave !== '默认') {
+          await api.dbQuery(
+            'notes',
+            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook_category", ?, ?, ?)',
+            [categoryToSave, i18n.language, nbModalCategory.trim()],
+          )
+          for (const locale of SUPPORTED_LOCALES) {
+            if (locale.code === i18n.language) continue
+            const val = (nbCatTrans[locale.code] || '').trim() || nbModalCategory.trim()
+            await api.dbQuery(
+              'notes',
+              'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook_category", ?, ?, ?)',
+              [categoryToSave, locale.code, val],
+            )
+          }
+        }
+
         showToast(t('notes.toast_notebook_renamed'))
         setIsNbModalOpen(false)
         if (activeNotebook === targetNotebook.name) {
-          setActiveNotebook(nbModalName.trim())
+          setActiveNotebook(mainName)
         } else {
           loadNotes()
         }
@@ -409,9 +585,7 @@ export const Notes: React.FC = () => {
 
   const handleDeleteNotebook = (nb: Notebook) => {
     if (!api) {
-      showToast(
-        `⚠️ ${t('common.error_electron_required')}`,
-      )
+      showToast(`⚠️ ${t('common.error_electron_required')}`)
       return
     }
     setDeleteConfirmTarget({ type: 'notebook', id: nb.id, name: nb.name, nb })
@@ -617,7 +791,7 @@ export const Notes: React.FC = () => {
                     letterSpacing: '0.05em',
                   }}
                 >
-                  {category === '默认' ? t('common.default_category') : category}
+                  {getNotebookCategoryDisplayName(category)}
                 </div>
                 {items.map((nb) => {
                   const isExpanded = !!expandedNotebooks[nb.name]
@@ -664,7 +838,9 @@ export const Notes: React.FC = () => {
                               whiteSpace: 'nowrap',
                             }}
                           >
-                            {nb.name === '未分类' ? t('notes.default_title') : nb.name}
+                            {nb.name === '未分类'
+                              ? t('notes.default_title')
+                              : getNotebookDisplayName(nb.name, nb.id)}
                             {` (${nb.notes.length})`}
                           </span>
                         </button>
@@ -1198,7 +1374,7 @@ export const Notes: React.FC = () => {
             zIndex: 1000,
           }}
           onClick={() => {
-            // Do nothing on backdrop click per user request
+            // Do nothing on backdrop click
           }}
         >
           <div
@@ -1224,7 +1400,7 @@ export const Notes: React.FC = () => {
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {t('notes.notebook_name')}
+                  {t('notes.notebook_name')} ({t('common.main_name_label')})
                 </label>
                 <input
                   className="form-field"
@@ -1238,7 +1414,7 @@ export const Notes: React.FC = () => {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {t('notes.notebook_category')}
+                  {t('notes.notebook_category')} ({t('common.main_category_label')})
                 </label>
                 <input
                   className="form-field"
@@ -1249,6 +1425,96 @@ export const Notes: React.FC = () => {
                   required
                 />
               </div>
+
+              {/* Collapsible panel for other translations */}
+              <div style={{ marginTop: '4px', marginBottom: '8px' }}>
+                <button
+                  type="button"
+                  className="btn sm"
+                  style={{
+                    border: 'none',
+                    background: 'none',
+                    color: 'var(--text-muted)',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: 0,
+                  }}
+                  onClick={() => setIsNbTransOpen(!isNbTransOpen)}
+                >
+                  {t('common.more_translations')} {isNbTransOpen ? '▲' : '▼'}
+                </button>
+              </div>
+
+              {isNbTransOpen && (
+                <div
+                  style={{
+                    padding: '10px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                    maxHeight: '180px',
+                    overflowY: 'auto',
+                    marginBottom: '10px',
+                  }}
+                >
+                  {SUPPORTED_LOCALES.filter((l) => l.code !== i18n.language).map((locale) => (
+                    <div
+                      key={locale.code}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                        paddingBottom: '8px',
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontWeight: 'bold',
+                          fontSize: '11px',
+                          color: 'var(--color-accent)',
+                        }}
+                      >
+                        {locale.label}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                          {t('notes.notebook_name')}
+                        </label>
+                        <input
+                          className="form-field"
+                          style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }}
+                          value={nbNameTrans[locale.code] || ''}
+                          onChange={(e) =>
+                            setNbNameTrans({ ...nbNameTrans, [locale.code]: e.target.value })
+                          }
+                          placeholder={`e.g. name in ${locale.label}`}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                          {t('notes.notebook_category')}
+                        </label>
+                        <input
+                          className="form-field"
+                          style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }}
+                          value={nbCatTrans[locale.code] || ''}
+                          onChange={(e) =>
+                            setNbCatTrans({ ...nbCatTrans, [locale.code]: e.target.value })
+                          }
+                          placeholder={`e.g. category in ${locale.label}`}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div
                 style={{
                   display: 'flex',

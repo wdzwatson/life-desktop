@@ -2,15 +2,9 @@ import React, { useEffect, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
-  Plus,
-  Search,
   Play,
-  Download,
   Settings,
   Trash2,
-  ArrowUpDown,
-  Layers,
-  CheckSquare,
 } from 'lucide-react'
 
 export const Videos: React.FC = () => {
@@ -54,7 +48,7 @@ export const Videos: React.FC = () => {
     // Load local videos
     const res = await api.dbQuery(
       'videos',
-      'SELECT * FROM videos ORDER BY priority = "high" DESC, priority = "mid" DESC, favorite_time DESC',
+      "SELECT * FROM videos ORDER BY priority = 'high' DESC, priority = 'mid' DESC, favorite_time DESC",
     )
     if (res?.success) setLocalVideos(res.data)
 

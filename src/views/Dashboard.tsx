@@ -4,12 +4,10 @@ import { useTranslation } from 'react-i18next'
 import {
   CheckCircle,
   Circle,
-  BookOpen,
   Play,
   Clock,
   FileText,
   TrendingUp,
-  AlertTriangle,
 } from 'lucide-react'
 
 export const Dashboard: React.FC = () => {
@@ -43,7 +41,7 @@ export const Dashboard: React.FC = () => {
 
       // 1. Fetch Today Tasks
       api
-        .dbQuery('tasks', 'SELECT * FROM tasks WHERE due_date = ? OR status = "已逾期" LIMIT 3', [
+        .dbQuery('tasks', "SELECT * FROM tasks WHERE due_date = ? OR status = '已逾期' LIMIT 3", [
           todayYMD,
         ])
         .then((res: any) => {
@@ -52,7 +50,7 @@ export const Dashboard: React.FC = () => {
 
       // 2. Fetch Reading Book
       api
-        .dbQuery('books', 'SELECT * FROM books WHERE status = "reading" LIMIT 1')
+        .dbQuery('books', "SELECT * FROM books WHERE status = 'reading' LIMIT 1")
         .then((res: any) => {
           if (res?.success && res.data.length > 0) {
             setCurrentBook(res.data[0])
@@ -77,7 +75,7 @@ export const Dashboard: React.FC = () => {
       api
         .dbQuery(
           'videos',
-          'SELECT * FROM videos WHERE status = "Downloaded" ORDER BY id DESC LIMIT 1',
+          "SELECT * FROM videos WHERE status = 'Downloaded' ORDER BY id DESC LIMIT 1",
         )
         .then((res: any) => {
           if (res?.success && res.data.length > 0) setRecentVideo(res.data[0])

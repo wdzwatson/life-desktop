@@ -56,7 +56,7 @@ export const AuthScreen: React.FC = () => {
       } else {
         setPassword('')
       }
-    } catch (err: any) {
+    } catch {
       setLoginError(t('auth.err_api_missing'))
     }
   }
@@ -108,7 +108,7 @@ export const AuthScreen: React.FC = () => {
         setRegAnswer('')
         setView('login')
       }
-    } catch (err: any) {
+    } catch {
       setRegError(t('auth.err_api_missing'))
     }
   }
@@ -144,7 +144,7 @@ export const AuthScreen: React.FC = () => {
         setRecConfirmPassword('')
         setView('login')
       }
-    } catch (err: any) {
+    } catch {
       setRecError(t('auth.err_api_missing'))
     }
   }
@@ -240,9 +240,7 @@ export const AuthScreen: React.FC = () => {
                   }}
                 />
               </div>
-              <h2 style={{ fontSize: '18px', fontWeight: 800 }}>
-                {t('auth.title_welcome')}
-              </h2>
+              <h2 style={{ fontSize: '18px', fontWeight: 800 }}>{t('auth.title_welcome')}</h2>
               <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                 {t('auth.subtitle_select')}
               </p>
@@ -397,9 +395,7 @@ export const AuthScreen: React.FC = () => {
                 className="btn primary"
                 style={{ height: '36px', fontSize: '13px', fontWeight: 600 }}
               >
-                {activeUser?.hasPassword
-                  ? t('auth.btn_unlock')
-                  : t('auth.btn_enter')}
+                {activeUser?.hasPassword ? t('auth.btn_unlock') : t('auth.btn_enter')}
               </button>
             </form>
 
@@ -479,9 +475,7 @@ export const AuthScreen: React.FC = () => {
               >
                 <ArrowLeft size={14} />
               </button>
-              <h2 style={{ fontSize: '15px', fontWeight: 800 }}>
-                {t('auth.title_register')}
-              </h2>
+              <h2 style={{ fontSize: '15px', fontWeight: 800 }}>{t('auth.title_register')}</h2>
             </div>
 
             <div>
@@ -698,9 +692,7 @@ export const AuthScreen: React.FC = () => {
               >
                 <ArrowLeft size={14} />
               </button>
-              <h2 style={{ fontSize: '15px', fontWeight: 800 }}>
-                {t('auth.title_recovery')}
-              </h2>
+              <h2 style={{ fontSize: '15px', fontWeight: 800 }}>{t('auth.title_recovery')}</h2>
             </div>
 
             {activeUser?.passwordHint && (

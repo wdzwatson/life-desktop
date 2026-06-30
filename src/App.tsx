@@ -56,13 +56,6 @@ function App() {
       api.onDownloadFinished?.((data: any) => {
         showToast(t('app.download_finished', { title: data.title }))
       })
-      // Listen to task generation and overdue events
-      const handleSchedulerNotif = (_event: any, data: any) => {
-        showToast(t('app.recurring_triggered', { body: data.body }))
-      }
-      const handleOverdueNotif = (_event: any, data: any) => {
-        showToast(t('app.task_overdue_warning', { title: data.title }))
-      }
 
       // Auto check updates if enabled
       api.getSettings().then((settings: unknown) => {

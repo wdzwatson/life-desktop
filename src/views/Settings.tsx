@@ -3,12 +3,9 @@ import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
   Palette,
-  Globe,
   User,
   BookOpen,
   Shield,
-  Database,
-  Plus,
   Trash2,
   RefreshCw,
 } from 'lucide-react'
@@ -28,7 +25,6 @@ export const Settings: React.FC = () => {
   const userId = useAppStore((state) => state.userId)
   const userNickname = useAppStore((state) => state.userNickname)
   const userAvatar = useAppStore((state) => state.userAvatar)
-  const switchUser = useAppStore((state) => state.switchUser)
   const showToast = useAppStore((state) => state.showToast)
   const loadInitialConfig = useAppStore((state) => state.loadInitialConfig)
   const signOut = useAppStore((state) => state.signOut)
@@ -55,8 +51,6 @@ export const Settings: React.FC = () => {
   const [editNickname, setEditNickname] = useState(userNickname)
   const [editAvatar, setEditAvatar] = useState(userAvatar)
   const [mockBackupKey, setMockBackupKey] = useState('lifeos_backup_private_secret_key_2026')
-  const [newUserToCreate, setNewUserToCreate] = useState('')
-
   // Password management states
   const [hasPassword, setHasPassword] = useState(false)
   const [editPassword, setEditPassword] = useState('')
@@ -244,9 +238,7 @@ export const Settings: React.FC = () => {
       payload.securityQuestion = editQuestion
       payload.securityAnswer = editAnswer.trim()
     } else if (hasPassword && editPassword === '' && editConfirmPassword === '') {
-      const confirmClear = window.confirm(
-        t('settings.confirm_clear_password'),
-      )
+      const confirmClear = window.confirm(t('settings.confirm_clear_password'))
       if (confirmClear) {
         payload.password = '' // empty password string tells main process to clear credentials
       } else {

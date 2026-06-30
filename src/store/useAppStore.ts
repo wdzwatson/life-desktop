@@ -1,12 +1,6 @@
 import { create } from 'zustand'
 import i18n from '../i18n'
 
-// Centralized type definitions
-interface UserProfile {
-  nickname: string
-  avatar: string
-}
-
 interface AppState {
   activeScreen: string
   taskTab: string
@@ -52,7 +46,7 @@ const getMockProfiles = () => {
   }
   try {
     return JSON.parse(data)
-  } catch (e) {
+  } catch {
     return {}
   }
 }
@@ -74,7 +68,7 @@ const getMockSettings = () => {
   }
   try {
     return JSON.parse(data)
-  } catch (e) {
+  } catch {
     return {}
   }
 }
@@ -500,7 +494,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         const FIFTEEN_DAYS = 15 * 24 * 60 * 60 * 1000
         const now = Date.now()
         const lastActive = profile.lastActiveTime || 0
-        if (profile.sessionValid && (now - lastActive < FIFTEEN_DAYS)) {
+        if (profile.sessionValid && now - lastActive < FIFTEEN_DAYS) {
           isAuthenticated = true
           profile.lastActiveTime = now
           profiles[currentUserId] = profile

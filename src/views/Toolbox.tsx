@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
-import { Clock, RefreshCw, Lock, Unlock, Eye, EyeOff, Key, Copy, Plus, Trash2 } from 'lucide-react'
+import { Lock, Eye, EyeOff, Copy, Trash2 } from 'lucide-react'
 
 export const Toolbox: React.FC = () => {
   const { t, i18n } = useTranslation()
@@ -52,8 +52,6 @@ export const Toolbox: React.FC = () => {
 
     // Load Vault items if unlocked
     if (isUnlocked) {
-      const vaultRes = await api.dbQuery('books', 'SELECT * FROM vault') // wait, schema says vault is in vault.db but we can access it
-      // In electron main: vault.db is accessible. Let's call queries on 'vault' database:
       const vRes = await api.dbQuery('vault', 'SELECT * FROM vault')
       if (vRes?.success) setVaultItems(vRes.data)
     }

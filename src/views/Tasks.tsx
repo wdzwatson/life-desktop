@@ -4,17 +4,8 @@ import { useTranslation } from 'react-i18next'
 import {
   Check,
   Circle,
-  ChevronRight,
-  ChevronDown,
-  Calendar as CalendarIcon,
-  Clock,
-  Repeat,
-  FileText,
   Trash2,
   Plus,
-  Sparkles,
-  AlertCircle,
-  Play,
 } from 'lucide-react'
 
 export const Tasks: React.FC = () => {
@@ -34,6 +25,13 @@ export const Tasks: React.FC = () => {
   }
 
   const getStatusLabel = (status: string) => {
+    const currentLocale = i18n.language
+    const match = translations.find(
+      (t) =>
+        t.entity_type === 'task_status' && t.entity_id === status && t.locale === currentLocale,
+    )
+    if (match) return match.translation
+
     switch (status) {
       case '待收集':
         return t('tasks.lane_inbox')
@@ -58,13 +56,13 @@ export const Tasks: React.FC = () => {
 
   // DB States
   const [tasks, setTasks] = useState<any[]>([])
+  const [translations, setTranslations] = useState<any[]>([])
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
 
   // Quick Add State
   const [quickTitle, setQuickTitle] = useState('')
   const [quickPriority, setQuickPriority] = useState('mid')
-  const [quickDueDate, setQuickDueDate] = useState('')
-  const [quickRecur, setQuickRecur] = useState('')
+  const [quickDueDate] = useState('')
 
   // Detail Panel Edit State
   const [editDesc, setEditDesc] = useState('')
@@ -81,7 +79,6 @@ export const Tasks: React.FC = () => {
   const [ruleWeekDays, setRuleWeekDays] = useState<number[]>([]) // 1=Mon...7=Sun
   const [ruleMonthDays, setRuleMonthDays] = useState<number[]>([])
   const [ruleCron, setRuleCron] = useState('')
-  const [ruleEndCond, setRuleEndCond] = useState('never')
   const [ruleHolidayPolicy, setRuleHolidayPolicy] = useState('skip')
 
   // Calendar Mode State ('day' | 'week' | 'month')
@@ -174,6 +171,15 @@ export const Tasks: React.FC = () => {
         }
       }
 
+      // Load translations
+      const transRes = await api.dbQuery(
+        'tasks',
+        "SELECT * FROM translations WHERE entity_type = 'task_status'",
+      )
+      if (transRes?.success) {
+        setTranslations(transRes.data)
+      }
+
       // Load Recurring Rules
       const rulesRes = await api.dbQuery('tasks', 'SELECT * FROM recurring_rules')
       if (rulesRes?.success) {
@@ -209,7 +215,6 @@ export const Tasks: React.FC = () => {
         .map((x: string) => parseInt(x)),
     )
     setRuleCron(rule.cron || '')
-    setRuleEndCond(rule.end_condition || 'never')
     setRuleHolidayPolicy(rule.missed_policy || 'skip')
   }
 
@@ -555,7 +560,7 @@ export const Tasks: React.FC = () => {
                       color: 'var(--text-muted)',
                     }}
                   >
-                    <span>{t(`tasks.${lane.key}`)}</span>
+                    <span>{getStatusLabel(lane.dbVal)}</span>
                     <span className="pill">{laneTasks.length}</span>
                   </div>
                   <div
