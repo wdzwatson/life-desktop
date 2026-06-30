@@ -1,5 +1,4 @@
-import type { IpcRenderer } from 'electron'
-const { contextBridge, ipcRenderer } = require('electron')
+import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Window controls
@@ -30,6 +29,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Note Export IPC Bridge
   exportNote: (data: { title: string; content: string; htmlContent: string; format: string }) =>
     ipcRenderer.invoke('note:export', data),
+
+  selectBookFile: () => ipcRenderer.invoke('book:select-file'),
+  deleteBookFile: (relativePath: string) => ipcRenderer.invoke('fs:delete-file', relativePath),
+  openExternalFile: (relativePath: string) => ipcRenderer.invoke('fs:open-external', relativePath),
+  getBookChapters: (relativePath: string) => ipcRenderer.invoke('book:get-chapters', relativePath),
+  getBookBuffer: (relativePath: string) => ipcRenderer.invoke('book:get-buffer', relativePath),
 
   // Video parsing & downloading
   parseVideoUrl: (url: string) => ipcRenderer.invoke('video:parseUrl', url),

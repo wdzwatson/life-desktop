@@ -1,9 +1,14 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
+import { Document, Page, pdfjs } from 'react-pdf'
+import 'react-pdf/dist/Page/TextLayer.css'
+import 'react-pdf/dist/Page/AnnotationLayer.css'
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url'
+
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker
+
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
-  FolderPlus,
-  BookOpen,
   Plus,
   Tag,
   ExternalLink,
@@ -11,7 +16,24 @@ import {
   Edit3,
   Save,
   Copy,
+  Trash2,
 } from 'lucide-react'
+import {
+  getActiveTocIndex,
+  getPageOfParagraph,
+  getPagesForReadingBlocks,
+  getParagraphOffsetOfPage,
+  getReadingBlockText,
+  isReadingBlockHeading,
+  resolveReaderTocEntry,
+  type ReadingBlock,
+  type TocEntry,
+} from './bookReaderUtils'
+
+export const SUPPORTED_LOCALES = [
+  { code: 'zh-CN', label: '简体中文' },
+  { code: 'en-US', label: 'English' },
+]
 
 export const Books: React.FC = () => {
   const { t, i18n } = useTranslation()
@@ -25,6 +47,120 @@ export const Books: React.FC = () => {
 
   // Reader Overlay State
   const [readingBook, setReadingBook] = useState<any | null>(null)
+  const [readingProgress, setReadingProgress] = useState<number>(0)
+
+  // Modals state
+  const [isAddCatOpen, setIsAddCatOpen] = useState(false)
+  const [newCatName, setNewCatName] = useState('')
+  const [newCatTrans, setNewCatTrans] = useState<{ [key: string]: string }>({})
+  const [isAddCatTransOpen, setIsAddCatTransOpen] = useState(false)
+
+  const [isImportOpen, setIsImportOpen] = useState(false)
+  const [importTitle, setImportTitle] = useState('')
+  const [importAuthor, setImportAuthor] = useState('')
+  const [importCategory, setImportCategory] = useState('')
+  const [importCustomCategory, setImportCustomCategory] = useState('')
+  const [isCustomCategory, setIsCustomCategory] = useState(false)
+  const [importFilePath, setImportFilePath] = useState('')
+  const [selectedFileName, setSelectedFileName] = useState('')
+  const [importFormat, setImportFormat] = useState('EPUB')
+
+  // eBook edit and delete states
+  const [editingBookInfo, setEditingBookInfo] = useState<any | null>(null)
+  const [editBookTitle, setEditBookTitle] = useState('')
+  const [editBookAuthor, setEditBookAuthor] = useState('')
+  const [editBookCategory, setEditBookCategory] = useState('')
+  const [editBookCustomCategory, setEditBookCustomCategory] = useState('')
+  const [isEditBookCustomCategory, setIsEditBookCustomCategory] = useState(false)
+  const [deletingBookInfo, setDeletingBookInfo] = useState<any | null>(null)
+
+  // eBook reader content states
+  const [bookChapters, setBookChapters] = useState<any[] | null>(null)
+  // Hierarchical table of contents for EPUB: [{ title, level, chapterIndex, paragraphOffset }].
+  const [bookToc, setBookToc] = useState<
+    { title: string; level: number; chapterIndex: number; paragraphOffset?: number }[] | null
+  >(null)
+  const [currentPageIndex, setCurrentPageIndex] = useState(0)
+  const [currentParagraphOffset, setCurrentParagraphOffset] = useState(0)
+  const [pdfData, setPdfData] = useState<number[] | null>(null)
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null)
+  const [pdfNumPages, setPdfNumPages] = useState<number>(0)
+  const [isLoadingReader, setIsLoadingReader] = useState(false)
+  const [pdfLayoutMode, setPdfLayoutMode] = useState<'single' | 'dual' | 'scroll' | 'simulation'>(
+    'single',
+  )
+  // EPUB reflow view mode: paged single-page, dual-column, or continuous scroll.
+  const [epubLayoutMode, setEpubLayoutMode] = useState<'single' | 'dual' | 'scroll'>('single')
+  const [isAutoPlaying, setIsAutoPlaying] = useState(false)
+  const [autoPlaySpeed, setAutoPlaySpeed] = useState(10) // seconds per page
+  const pdfInitializedRef = useRef(false)
+  const readerMainRef = useRef<HTMLElement | null>(null)
+  const pdfScrollRef = useRef<HTMLDivElement | null>(null)
+  // Guards the scroll handler from fighting a programmatic scroll (button / progress jump).
+  const isProgrammaticScrollRef = useRef(false)
+  // Horizontal offsets (px from viewport edge) for the floating prev/next buttons,
+  // measured from the actual reading column so they stay adaptive across layouts.
+  const [navBtnOffsets, setNavBtnOffsets] = useState<{ left: number; right: number }>({
+    left: 16,
+    right: 336,
+  })
+
+  // Category editing and deleting states
+  const [editingCategory, setEditingCategory] = useState<any | null>(null)
+  const [editCatName, setEditCatName] = useState('')
+  const [editCatTrans, setEditCatTrans] = useState<{ [key: string]: string }>({})
+  const [isEditCatTransOpen, setIsEditCatTransOpen] = useState(false)
+  const [deletingCategory, setDeletingCategory] = useState<any | null>(null)
+
+  // Category translations state
+  const [translations, setTranslations] = useState<any[]>([])
+
+  // Get translation matching current locale from database or default back to name
+  const getCategoryDisplayName = (catName: string, catId?: any) => {
+    const currentLocale = i18n.language
+
+    if (catName === '未分类' || !catName) {
+      const trans = translations.find(
+        (t) =>
+          t.entity_type === 'category' &&
+          t.entity_id === 'uncategorized' &&
+          t.locale === currentLocale,
+      )
+      return trans ? trans.translation : t('books.uncategorized')
+    }
+
+    if (catId) {
+      const trans = translations.find(
+        (t) =>
+          t.entity_type === 'category' &&
+          t.entity_id === String(catId) &&
+          t.locale === currentLocale,
+      )
+      if (trans) return trans.translation
+    } else {
+      const cat = categories.find((c) => c.name === catName)
+      if (cat) {
+        const trans = translations.find(
+          (t) =>
+            t.entity_type === 'category' &&
+            t.entity_id === String(cat.id) &&
+            t.locale === currentLocale,
+        )
+        if (trans) return trans.translation
+      }
+    }
+
+    return catName
+  }
+
+  const isBookInCategory = (book: any, cat: any) => {
+    if (!book.category) return false
+    if (book.category === cat.name) return true
+    const catTrans = translations.filter(
+      (t) => t.entity_type === 'category' && String(t.entity_id) === String(cat.id),
+    )
+    return catTrans.some((t) => t.translation === book.category)
+  }
 
   const chapters = [
     t('books.chapter_1'),
@@ -34,6 +170,9 @@ export const Books: React.FC = () => {
   ]
 
   const [currentChapter, setCurrentChapter] = useState(chapters[0])
+  // Index-based chapter identity for real (EPUB/TXT) books. Titles are NOT unique
+  // across spine files, so navigation must key off the index, not the title string.
+  const [currentChapterIndex, setCurrentChapterIndex] = useState(0)
 
   useEffect(() => {
     // Sync current chapter selection on language toggling
@@ -59,7 +198,18 @@ export const Books: React.FC = () => {
 
     // Load categories
     const catRes = await api.dbQuery('books', 'SELECT * FROM categories ORDER BY sort_order ASC')
-    if (catRes?.success) setCategories(catRes.data)
+    if (catRes?.success) {
+      setCategories(catRes.data)
+
+      // Load translations
+      const transRes = await api.dbQuery(
+        'books',
+        "SELECT * FROM translations WHERE entity_type = 'category'",
+      )
+      if (transRes?.success) {
+        setTranslations(transRes.data)
+      }
+    }
 
     // Load books
     const bookRes = await api.dbQuery('books', 'SELECT * FROM books')
@@ -76,7 +226,9 @@ export const Books: React.FC = () => {
 
       const res = await api.dbQuery('books', 'SELECT * FROM books WHERE id = ?', [bookId])
       if (res?.success && res.data.length > 0) {
-        setReadingBook(res.data[0])
+        const book = res.data[0]
+        setReadingBook(book)
+        setReadingProgress(Math.round(book.progress || 0))
         if (chapter) setCurrentChapter(decodeURIComponent(chapter))
 
         // Load highlights for this book
@@ -93,44 +245,298 @@ export const Books: React.FC = () => {
     }
   }, [userId])
 
-  // Category addition
-  const handleAddCategory = async () => {
-    if (!api) return
-    const name = window.prompt(t('books.prompt_add_category'))
-    if (!name?.trim()) return
+  // Confirm Category addition
+  const confirmAddCategory = async () => {
+    if (!api || !newCatName.trim()) return
+
+    const mainName = newCatName.trim()
+
+    // Check duplicate category name
+    if (categories.some((c) => c.name === mainName)) {
+      showToast(t('books.prompt_add_category') + ' (Category already exists)')
+      return
+    }
 
     const res = await api.dbQuery(
       'books',
       'INSERT INTO categories (name, sort_order) VALUES (?, ?)',
-      [name.trim(), categories.length + 1],
+      [mainName, categories.length + 1],
     )
     if (res?.success) {
-      showToast(t('books.toast_category_added', { name }))
+      let catId = res.data?.lastInsertRowid
+      if (!catId) {
+        const findRes = await api.dbQuery('books', 'SELECT id FROM categories WHERE name = ?', [
+          mainName,
+        ])
+        if (findRes?.success && findRes.data.length > 0) {
+          catId = findRes.data[0].id
+        }
+      }
+
+      if (catId) {
+        // Insert translation for the active locale
+        await api.dbQuery(
+          'books',
+          'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("category", ?, ?, ?)',
+          [String(catId), i18n.language, mainName],
+        )
+
+        // Insert translations for other locales
+        for (const locale of SUPPORTED_LOCALES) {
+          if (locale.code === i18n.language) continue
+          const transValue = (newCatTrans[locale.code] || '').trim() || mainName
+          await api.dbQuery(
+            'books',
+            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("category", ?, ?, ?)',
+            [String(catId), locale.code, transValue],
+          )
+        }
+      }
+
+      // Safe fallback name resolve for toast
+      const displayName = mainName
+      showToast(t('books.toast_category_added', { name: displayName }))
+      setIsAddCatOpen(false)
+      setNewCatName('')
+      setNewCatTrans({})
+      setIsAddCatTransOpen(false)
       loadData()
     }
   }
 
-  // Import E-book Mock
-  const handleImportBook = async () => {
+  const handleSelectBookFile = async () => {
     if (!api) return
-    const title = window.prompt(t('books.prompt_import_title'))
-    if (!title?.trim()) return
-    const author = window.prompt(t('books.prompt_import_author')) || t('books.unknown_author')
-    const category = window.prompt(t('books.prompt_import_category')) || t('books.uncategorized')
+    const res = await api.selectBookFile()
+    if (res?.success) {
+      setImportFilePath(res.relativePath)
+      setSelectedFileName(res.fileName)
+      const ext = res.fileName.split('.').pop()?.toUpperCase() || 'EPUB'
+      setImportFormat(ext)
+      // Auto-populate Title if it was empty
+      if (!importTitle.trim()) {
+        setImportTitle(res.title)
+      }
+    } else if (res?.error && res.error !== 'Canceled') {
+      showToast(res.error)
+    }
+  }
 
+  // Confirm E-book Import
+  const confirmImportBook = async () => {
+    if (!api || !importTitle.trim()) return
+
+    const title = importTitle.trim()
+    const author = importAuthor.trim() || t('books.unknown_author')
+
+    let finalCategory = ''
+    if (isCustomCategory) {
+      finalCategory = importCustomCategory.trim()
+    } else {
+      finalCategory = importCategory.trim()
+    }
+
+    if (!finalCategory) {
+      finalCategory = '未分类'
+    }
+
+    // Insert category automatically if not existing and not "未分类"
+    const isUncat = ['未分类', 'Uncategorized', 'Category', '分类', ''].includes(finalCategory)
+    if (!isUncat && !categories.some((c) => c.name === finalCategory)) {
+      await api.dbQuery(
+        'books',
+        'INSERT OR IGNORE INTO categories (name, sort_order) VALUES (?, ?)',
+        [finalCategory, categories.length + 1],
+      )
+    }
+
+    const finalPath = importFilePath || `/books/${title}.epub`
     const query = `
       INSERT INTO books (title, author, path, cover, category, progress, status)
-      VALUES (?, ?, ?, 'EPUB', ?, 0.0, 'want')
+      VALUES (?, ?, ?, ?, ?, 0.0, 'want')
     `
     const res = await api.dbQuery('books', query, [
-      title.trim(),
-      author.trim(),
-      `/books/${title.trim()}.epub`,
-      category.trim(),
+      title,
+      author,
+      finalPath,
+      importFormat,
+      finalCategory,
     ])
 
     if (res?.success) {
       showToast(t('books.toast_book_imported', { title }))
+      setIsImportOpen(false)
+      setImportTitle('')
+      setImportAuthor('')
+      setImportCategory('')
+      setImportCustomCategory('')
+      setIsCustomCategory(false)
+      setImportFilePath('')
+      setSelectedFileName('')
+      setImportFormat('EPUB')
+      loadData()
+    }
+  }
+
+  // Confirm Category edit (with cascading updates to books and translations)
+  const confirmEditCategory = async () => {
+    if (!api || !editingCategory || !editCatName.trim()) return
+
+    const newName = editCatName.trim()
+    const oldName = editingCategory.name
+
+    // Check duplicate category name
+    if (categories.some((c) => c.name === newName && c.id !== editingCategory.id)) {
+      showToast(t('books.prompt_add_category') + ' (Category already exists)')
+      return
+    }
+
+    // Update categories table and cascade update matching books
+    await api.dbQuery('books', 'UPDATE books SET category = ? WHERE category = ?', [
+      newName,
+      oldName,
+    ])
+    const updateCatRes = await api.dbQuery('books', 'UPDATE categories SET name = ? WHERE id = ?', [
+      newName,
+      editingCategory.id,
+    ])
+
+    if (updateCatRes?.success) {
+      // Update translations
+      const catIdStr = String(editingCategory.id)
+
+      // Save translation for active locale
+      await api.dbQuery(
+        'books',
+        'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("category", ?, ?, ?)',
+        [catIdStr, i18n.language, newName],
+      )
+
+      // Save translations for other locales
+      for (const locale of SUPPORTED_LOCALES) {
+        if (locale.code === i18n.language) continue
+        const transValue = (editCatTrans[locale.code] || '').trim() || newName
+        await api.dbQuery(
+          'books',
+          'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("category", ?, ?, ?)',
+          [catIdStr, locale.code, transValue],
+        )
+      }
+
+      showToast(t('books.toast_category_updated'))
+      setEditingCategory(null)
+      setEditCatName('')
+      setEditCatTrans({})
+      setIsEditCatTransOpen(false)
+      loadData()
+
+      // Keep active state consistent if the current selected category name was updated
+      if (activeCategory === oldName) {
+        setActiveCategory(newName)
+      }
+    }
+  }
+
+  // Confirm Category deletion (cascade move books to Uncategorized and clear translations)
+  const confirmDeleteCategory = async () => {
+    if (!api || !deletingCategory) return
+
+    const catName = deletingCategory.name
+    const catIdStr = String(deletingCategory.id)
+
+    // Cascade move books under this category to "未分类"
+    await api.dbQuery('books', "UPDATE books SET category = '未分类' WHERE category = ?", [catName])
+    // Delete target category row
+    const deleteCatRes = await api.dbQuery('books', 'DELETE FROM categories WHERE id = ?', [
+      deletingCategory.id,
+    ])
+
+    if (deleteCatRes?.success) {
+      // Clean up translations
+      await api.dbQuery(
+        'books',
+        "DELETE FROM translations WHERE entity_type = 'category' AND entity_id = ?",
+        [catIdStr],
+      )
+
+      showToast(t('books.toast_category_deleted'))
+      setDeletingCategory(null)
+      loadData()
+
+      // Fall back to 'all' if the active category was deleted
+      if (activeCategory === catName) {
+        setActiveCategory('all')
+      }
+    }
+  }
+
+  // Edit book handlers
+  const handleStartEditBook = (book: any) => {
+    setEditingBookInfo(book)
+    setEditBookTitle(book.title)
+    setEditBookAuthor(book.author || '')
+    setEditBookCategory(book.category || '')
+    setEditBookCustomCategory('')
+    setIsEditBookCustomCategory(false)
+  }
+
+  const confirmEditBook = async () => {
+    if (!api || !editingBookInfo || !editBookTitle.trim()) return
+
+    const title = editBookTitle.trim()
+    const author = editBookAuthor.trim() || t('books.unknown_author')
+
+    let finalCategory = ''
+    if (isEditBookCustomCategory) {
+      finalCategory = editBookCustomCategory.trim()
+    } else {
+      finalCategory = editBookCategory.trim()
+    }
+
+    if (!finalCategory) {
+      finalCategory = '未分类'
+    }
+
+    // Insert category automatically if not existing and not "未分类"
+    const isUncat = ['未分类', 'Uncategorized', 'Category', '分类', ''].includes(finalCategory)
+    if (!isUncat && !categories.some((c) => c.name === finalCategory)) {
+      await api.dbQuery(
+        'books',
+        'INSERT OR IGNORE INTO categories (name, sort_order) VALUES (?, ?)',
+        [finalCategory, categories.length + 1],
+      )
+    }
+
+    const res = await api.dbQuery(
+      'books',
+      'UPDATE books SET title = ?, author = ?, category = ? WHERE id = ?',
+      [title, author, finalCategory, editingBookInfo.id],
+    )
+
+    if (res?.success) {
+      showToast(t('books.toast_book_updated') || '书籍信息修改成功！')
+      setEditingBookInfo(null)
+      loadData()
+    }
+  }
+
+  // Delete book handlers
+  const handleStartDeleteBook = (book: any) => {
+    setDeletingBookInfo(book)
+  }
+
+  const confirmDeleteBook = async () => {
+    if (!api || !deletingBookInfo) return
+
+    // 1. Delete file physically
+    if (deletingBookInfo.path && !deletingBookInfo.path.startsWith('http')) {
+      await api.deleteBookFile(deletingBookInfo.path)
+    }
+
+    // 2. Delete database record
+    const res = await api.dbQuery('books', 'DELETE FROM books WHERE id = ?', [deletingBookInfo.id])
+    if (res?.success) {
+      showToast(t('books.toast_book_deleted') || '书籍已成功删除')
+      setDeletingBookInfo(null)
       loadData()
     }
   }
@@ -138,9 +544,16 @@ export const Books: React.FC = () => {
   // Open book in custom reader overlay
   const handleOpenReader = async (book: any) => {
     setReadingBook(book)
+    setReadingProgress(Math.round(book.progress || 0))
+    setCurrentPageIndex(0)
+    setCurrentParagraphOffset(0)
+    setPdfData(null)
+    setPdfNumPages(0)
+    pdfInitializedRef.current = false
+
     // Mark reading status
     if (api && book.status === 'want') {
-      await api.dbQuery('books', 'UPDATE books SET status = "reading" WHERE id = ?', [book.id])
+      await api.dbQuery('books', "UPDATE books SET status = 'reading' WHERE id = ?", [book.id])
       loadData()
     }
 
@@ -151,27 +564,491 @@ export const Books: React.FC = () => {
       ])
       if (hlRes?.success) setHighlights(hlRes.data)
     }
+
+    setIsLoadingReader(true)
+    const isPdf = book.cover === 'PDF' || book.path.toLowerCase().endsWith('.pdf')
+
+    if (isPdf) {
+      if (api) {
+        const bufferRes = await api.getBookBuffer(book.path)
+        if (bufferRes?.success && bufferRes.data) {
+          // bufferRes.data is a Uint8Array
+          setPdfData(Array.from(bufferRes.data))
+        } else {
+          showToast(bufferRes?.error || t('books.toast_pdf_read_error'))
+        }
+      }
+    } else {
+      // Load real book chapters
+      if (api) {
+        const chaptersRes = await api.getBookChapters(book.path)
+        if (chaptersRes?.success && chaptersRes.chapters?.length > 0) {
+          setBookChapters(chaptersRes.chapters)
+          setBookToc(
+            Array.isArray(chaptersRes.toc) && chaptersRes.toc.length > 0 ? chaptersRes.toc : null,
+          )
+
+          // Calculate initial page based on progress
+          const initialProgress = book.progress || 0
+          const chapterPageCounts = chaptersRes.chapters.map(
+            (c: any) => getPagesForReadingBlocks(c.paragraphs || []).length,
+          )
+          const totalBookPages = chapterPageCounts.reduce((a: number, b: number) => a + b, 0)
+
+          const targetPageGlobal = Math.min(
+            totalBookPages - 1,
+            Math.max(0, Math.round((initialProgress / 100) * (totalBookPages - 1))),
+          )
+
+          let accumulatedPages = 0
+          let targetChapterIdx = 0
+          let targetLocalPageIdx = 0
+
+          for (let i = 0; i < chaptersRes.chapters.length; i++) {
+            const chPages = chapterPageCounts[i]
+            if (targetPageGlobal < accumulatedPages + chPages) {
+              targetChapterIdx = i
+              targetLocalPageIdx = targetPageGlobal - accumulatedPages
+              break
+            }
+            accumulatedPages += chPages
+          }
+
+          setCurrentChapter(chaptersRes.chapters[targetChapterIdx].title)
+          setCurrentChapterIndex(targetChapterIdx)
+          setCurrentPageIndex(targetLocalPageIdx)
+          setCurrentParagraphOffset(
+            getParagraphOffsetOfPage(
+              chaptersRes.chapters[targetChapterIdx].paragraphs || [],
+              targetLocalPageIdx,
+            ),
+          )
+        } else {
+          setBookChapters(null)
+          setBookToc(null)
+          setCurrentChapter('')
+          setCurrentChapterIndex(0)
+          setCurrentParagraphOffset(0)
+          if (chaptersRes && !chaptersRes.success && chaptersRes.error) {
+            if (chaptersRes.error !== 'Unsupported format for in-app reading') {
+              showToast(t('books.toast_parse_failed', { error: chaptersRes.error }))
+            }
+          }
+        }
+      }
+    }
+    setIsLoadingReader(false)
   }
 
-  // Close reader and save final progress percentage
+  // Close reader and save final progress percentage if changed
   const handleCloseReader = async () => {
     if (readingBook && api) {
-      // update mock progress
-      const newProgress = Math.min(100, Math.round(readingBook.progress + 5))
-      await api.dbQuery('books', 'UPDATE books SET progress = ? WHERE id = ?', [
-        newProgress,
-        readingBook.id,
-      ])
-      showToast(t('books.toast_progress_saved', { progress: newProgress }))
-      loadData()
+      if (Math.round(readingBook.progress) !== readingProgress) {
+        await api.dbQuery('books', 'UPDATE books SET progress = ? WHERE id = ?', [
+          readingProgress,
+          readingBook.id,
+        ])
+        showToast(t('books.toast_progress_saved', { progress: readingProgress }))
+        loadData()
+      }
     }
     setReadingBook(null)
+    setBookChapters(null)
+    setBookToc(null)
+    setCurrentChapterIndex(0)
+    setCurrentParagraphOffset(0)
+    setPdfData(null)
+    setPdfNumPages(0)
+    setCurrentPageIndex(0)
+    setSelectedHighlightText('')
+    setNewAnnotation('')
   }
 
   // Simulated highlight click selection
   const simulateSelection = (text: string) => {
     setSelectedHighlightText(text)
   }
+
+  // Get active paragraphs of current chapter
+  const getActiveParagraphs = () => {
+    if (bookChapters) {
+      const chData = bookChapters[currentChapterIndex] || bookChapters[0]
+      return chData ? (chData.paragraphs as ReadingBlock[]) : []
+    }
+    // Fallback to mock paragraphs
+    return [t('books.mock_p1'), t('books.mock_p2'), t('books.mock_p3')]
+  }
+
+  // In scroll mode the scroll position is the source of truth, so jumping pages via
+  // buttons / progress / mode-entry must physically scroll the container to the page.
+  const scrollPdfToPage = (pageIdx: number, behavior: ScrollBehavior = 'smooth') => {
+    const container = pdfScrollRef.current
+    if (!container) return
+    const target = container.querySelector(`[data-page-number="${pageIdx + 1}"]`)
+    if (!target) return
+    isProgrammaticScrollRef.current = true
+    ;(target as HTMLElement).scrollIntoView({ behavior, block: 'start' })
+    // Release the guard after the scroll settles so user scrolls resume syncing.
+    window.setTimeout(() => {
+      isProgrammaticScrollRef.current = false
+    }, 400)
+  }
+
+  const handleNextPage = () => {
+    const isPdf =
+      readingBook &&
+      (readingBook.cover === 'PDF' || readingBook.path.toLowerCase().endsWith('.pdf'))
+    if (isPdf) {
+      const step = pdfLayoutMode === 'dual' ? 2 : 1
+      if (currentPageIndex < pdfNumPages - step) {
+        const newPage = currentPageIndex + step
+        setCurrentPageIndex(newPage)
+        setReadingProgress(Math.round((newPage / (pdfNumPages - 1 || 1)) * 100))
+        if (pdfLayoutMode === 'scroll') scrollPdfToPage(newPage)
+      } else {
+        showToast(t('books.toast_last_page') || '已是本书最后一页')
+      }
+      return
+    }
+
+    const goNextChapter = () => {
+      if (bookChapters && currentChapterIndex < bookChapters.length - 1) {
+        const nextIdx = currentChapterIndex + 1
+        setCurrentChapterIndex(nextIdx)
+        setCurrentChapter(bookChapters[nextIdx].title)
+        setCurrentPageIndex(0)
+        setCurrentParagraphOffset(0)
+        showToast(
+          t('books.toast_next_chapter', { name: bookChapters[nextIdx].title }) ||
+            `进入下一章: ${bookChapters[nextIdx].title}`,
+        )
+      } else {
+        showToast(t('books.toast_last_page') || '已是本书最后一页')
+      }
+    }
+
+    // Scroll mode renders the whole chapter continuously, so paging jumps chapters.
+    if (epubLayoutMode === 'scroll') {
+      goNextChapter()
+      return
+    }
+
+    const activeParas = getActiveParagraphs()
+    const pgList = getPagesForReadingBlocks(activeParas)
+    const step = epubLayoutMode === 'dual' ? 2 : 1
+    if (currentPageIndex < pgList.length - step) {
+      const newPage = currentPageIndex + step
+      setCurrentPageIndex(newPage)
+      setCurrentParagraphOffset(getParagraphOffsetOfPage(activeParas, newPage))
+    } else {
+      goNextChapter()
+    }
+  }
+
+  const handlePrevPage = () => {
+    const isPdf =
+      readingBook &&
+      (readingBook.cover === 'PDF' || readingBook.path.toLowerCase().endsWith('.pdf'))
+    if (isPdf) {
+      const step = pdfLayoutMode === 'dual' ? 2 : 1
+      if (currentPageIndex >= step) {
+        const newPage = currentPageIndex - step
+        setCurrentPageIndex(newPage)
+        setReadingProgress(Math.round((newPage / (pdfNumPages - 1 || 1)) * 100))
+        if (pdfLayoutMode === 'scroll') scrollPdfToPage(newPage)
+      } else {
+        showToast(t('books.toast_first_page') || '已是本书第一页')
+      }
+      return
+    }
+
+    const goPrevChapter = (landOnLastPage: boolean) => {
+      if (bookChapters && currentChapterIndex > 0) {
+        const prevIdx = currentChapterIndex - 1
+        const prevCh = bookChapters[prevIdx]
+        setCurrentChapterIndex(prevIdx)
+        setCurrentChapter(prevCh.title)
+
+        if (landOnLastPage) {
+          const prevParas = (prevCh.paragraphs || []) as ReadingBlock[]
+          const prevPages = getPagesForReadingBlocks(prevParas)
+          const step = epubLayoutMode === 'dual' ? 2 : 1
+          // Align the last spread to an even page index in dual mode.
+          const lastIdx = prevPages.length - 1
+          const targetPage = step === 2 ? lastIdx - (lastIdx % 2) : lastIdx
+          setCurrentPageIndex(targetPage)
+          setCurrentParagraphOffset(getParagraphOffsetOfPage(prevParas, targetPage))
+        } else {
+          setCurrentPageIndex(0)
+          setCurrentParagraphOffset(0)
+        }
+        showToast(
+          t('books.toast_prev_chapter', { name: prevCh.title }) || `回到上一章: ${prevCh.title}`,
+        )
+      } else {
+        showToast(t('books.toast_first_page') || '已是本书第一页')
+      }
+    }
+
+    if (epubLayoutMode === 'scroll') {
+      goPrevChapter(false)
+      return
+    }
+
+    const step = epubLayoutMode === 'dual' ? 2 : 1
+    if (currentPageIndex > 0) {
+      const newPage = Math.max(0, currentPageIndex - step)
+      setCurrentPageIndex(newPage)
+      setCurrentParagraphOffset(getParagraphOffsetOfPage(getActiveParagraphs(), newPage))
+    } else {
+      goPrevChapter(true)
+    }
+  }
+
+  const handleProgressChange = (newVal: number) => {
+    setReadingProgress(newVal)
+    const isPdf =
+      readingBook &&
+      (readingBook.cover === 'PDF' || readingBook.path.toLowerCase().endsWith('.pdf'))
+    if (isPdf && pdfNumPages > 0) {
+      const newPageIdx = Math.min(
+        pdfNumPages - 1,
+        Math.max(0, Math.round((newVal / 100) * (pdfNumPages - 1))),
+      )
+      setCurrentPageIndex(newPageIdx)
+      if (pdfLayoutMode === 'scroll') {
+        // Defer one frame so the render window can mount the target page first.
+        requestAnimationFrame(() => scrollPdfToPage(newPageIdx, 'auto'))
+      }
+    } else if (!isPdf && bookChapters) {
+      const chapterPageCounts = bookChapters.map((c: any) =>
+        getPagesForReadingBlocks(c.paragraphs || []).length,
+      )
+      const totalBookPages = chapterPageCounts.reduce((a: number, b: number) => a + b, 0)
+      const targetPageGlobal = Math.min(
+        totalBookPages - 1,
+        Math.max(0, Math.round((newVal / 100) * (totalBookPages - 1))),
+      )
+      let accumulatedPages = 0
+      let targetChapterIdx = 0
+      let targetLocalPageIdx = 0
+      for (let i = 0; i < bookChapters.length; i++) {
+        const chPages = chapterPageCounts[i]
+        if (targetPageGlobal < accumulatedPages + chPages) {
+          targetChapterIdx = i
+          targetLocalPageIdx = targetPageGlobal - accumulatedPages
+          break
+        }
+        accumulatedPages += chPages
+      }
+      const targetParas = bookChapters[targetChapterIdx]?.paragraphs || []
+      setCurrentChapterIndex(targetChapterIdx)
+      setCurrentChapter(bookChapters[targetChapterIdx]?.title || '')
+      setCurrentPageIndex(targetLocalPageIdx)
+      setCurrentParagraphOffset(getParagraphOffsetOfPage(targetParas, targetLocalPageIdx))
+    }
+  }
+
+  const handleTextSelection = () => {
+    const selection = window.getSelection()
+    if (selection) {
+      const selectedText = selection.toString().trim()
+      if (selectedText) {
+        setSelectedHighlightText(selectedText)
+      }
+    }
+  }
+
+  const handlePdfLoadSuccess = ({ numPages }: { numPages: number }) => {
+    setPdfNumPages(numPages)
+    if (!pdfInitializedRef.current && readingBook) {
+      pdfInitializedRef.current = true
+      const initialProgress = readingBook.progress || 0
+      const initialPage = Math.min(
+        numPages - 1,
+        Math.max(0, Math.round((initialProgress / 100) * (numPages - 1))),
+      )
+      setCurrentPageIndex(initialPage)
+    }
+  }
+
+  const handlePdfWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (pdfLayoutMode === 'scroll') return
+
+    if (Math.abs(e.deltaY) < 60) return
+
+    const container = e.currentTarget
+    const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 8
+    const isAtTop = container.scrollTop <= 8
+
+    if (e.deltaY > 0 && isAtBottom) {
+      handleNextPage()
+    } else if (e.deltaY < 0 && isAtTop) {
+      handlePrevPage()
+    }
+  }
+
+  const handlePdfScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (pdfLayoutMode !== 'scroll' || pdfNumPages <= 0) return
+    if (isProgrammaticScrollRef.current) return
+
+    const container = e.currentTarget
+    // Query every page slot (rendered pages AND windowing placeholders) so a fast
+    // scroll can jump currentPageIndex straight to the page now under the viewport,
+    // instead of crawling one window-edge at a time and stalling on placeholders.
+    const children = container.querySelectorAll('[data-page-number]')
+    if (children.length === 0) return
+
+    const containerRect = container.getBoundingClientRect()
+    const viewportCenter = containerRect.top + containerRect.height / 2
+
+    let closestPageIdx = currentPageIndex
+    let minDistance = Infinity
+
+    children.forEach((child) => {
+      const pageNumAttr = child.getAttribute('data-page-number')
+      if (!pageNumAttr) return
+
+      const pageNum = parseInt(pageNumAttr, 10)
+      const childRect = child.getBoundingClientRect()
+      const childCenter = childRect.top + childRect.height / 2
+      const distance = Math.abs(childCenter - viewportCenter)
+
+      if (distance < minDistance) {
+        minDistance = distance
+        closestPageIdx = pageNum - 1
+      }
+    })
+
+    if (closestPageIdx !== currentPageIndex) {
+      setCurrentPageIndex(closestPageIdx)
+      setReadingProgress(Math.round((closestPageIdx / (pdfNumPages - 1 || 1)) * 100))
+    }
+  }
+
+  useEffect(() => {
+    if (!readingBook) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA'
+      ) {
+        return
+      }
+
+      if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+        e.preventDefault()
+        handleNextPage()
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault()
+        handlePrevPage()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [
+    readingBook,
+    currentPageIndex,
+    currentChapterIndex,
+    bookChapters,
+    pdfNumPages,
+    epubLayoutMode,
+    pdfLayoutMode,
+  ])
+
+  // Keep the latest handleNextPage in a ref so the auto-play interval doesn't get
+  // torn down / reset on every page change (which previously stopped it from firing).
+  const handleNextPageRef = useRef(handleNextPage)
+  handleNextPageRef.current = handleNextPage
+
+  useEffect(() => {
+    if (!isAutoPlaying || !readingBook) return
+
+    const interval = setInterval(() => {
+      handleNextPageRef.current()
+    }, autoPlaySpeed * 1000)
+
+    return () => clearInterval(interval)
+  }, [isAutoPlaying, autoPlaySpeed, readingBook])
+
+  // When the chapter/page changes in an EPUB, align to the exact TOC target block
+  // when possible. This matters for sub-chapters that share a rendered page.
+  useEffect(() => {
+    if (isPdf) return
+    const raf = requestAnimationFrame(() => {
+      const target = readerMainRef.current?.querySelector(
+        `[data-epub-block-offset="${currentParagraphOffset}"]`,
+      )
+      if (target) {
+        ;(target as HTMLElement).scrollIntoView({ block: 'start', behavior: 'auto' })
+      } else {
+        readerMainRef.current?.scrollTo({ top: 0, behavior: 'auto' })
+      }
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [currentChapterIndex, currentPageIndex, currentParagraphOffset, epubLayoutMode])
+
+  // On entering scroll mode (or once pages are known), align the scroll position to
+  // the current page so content shows immediately instead of requiring a manual scroll.
+  useEffect(() => {
+    if (pdfLayoutMode !== 'scroll' || pdfNumPages <= 0) return
+    // Two frames: let the render window mount the target page, then scroll to it.
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(() => scrollPdfToPage(currentPageIndex, 'auto'))
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [pdfLayoutMode, pdfNumPages])
+
+  // Build a stable Blob URL from the loaded PDF bytes. Passing a URL string (instead
+  // of an ArrayBuffer) avoids pdf.js transferring/detaching the buffer to its worker,
+  // which previously crashed react-pdf's dequal compare on layout-mode switches.
+  useEffect(() => {
+    if (!pdfData) {
+      setPdfBlobUrl(null)
+      return
+    }
+    const blob = new Blob([new Uint8Array(pdfData)], { type: 'application/pdf' })
+    const url = URL.createObjectURL(blob)
+    setPdfBlobUrl(url)
+    return () => {
+      URL.revokeObjectURL(url)
+    }
+  }, [pdfData])
+
+  // Keep the floating prev/next buttons hugging the actual reading column so they
+  // adapt to window size, the optional TOC sidebar, and the fixed annotations panel.
+  useEffect(() => {
+    if (!readingBook) return
+
+    const measure = () => {
+      const el = readerMainRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const vw = window.innerWidth
+      // Content is centered inside the column with a max-width of 800px.
+      const contentWidth = Math.min(rect.width, 800)
+      const contentLeft = rect.left + (rect.width - contentWidth) / 2
+      const contentRight = contentLeft + contentWidth
+      const BTN = 36
+      const GAP = 8
+      const left = Math.max(rect.left + GAP, contentLeft - BTN - GAP)
+      const right = Math.max(vw - rect.right + GAP, vw - contentRight - BTN - GAP)
+      setNavBtnOffsets({ left: Math.round(left), right: Math.round(right) })
+    }
+
+    measure()
+    const ro = new ResizeObserver(measure)
+    if (readerMainRef.current) ro.observe(readerMainRef.current)
+    window.addEventListener('resize', measure)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [readingBook, isLoadingReader, bookChapters, pdfLayoutMode, pdfNumPages])
 
   // Save new highlight / annotation
   const handleAddHighlight = async () => {
@@ -218,8 +1095,6 @@ export const Books: React.FC = () => {
 
     // Check if the Note already exists
     const checkNote = await api.dbQuery('notes', 'SELECT * FROM notes WHERE title = ?', [noteTitle])
-    let noteId: number | null = null
-
     // Format highlights to Markdown
     let mdContent = t('books.note_md_title', { title: readingBook.title })
     mdContent += t('books.note_md_author', {
@@ -230,7 +1105,7 @@ export const Books: React.FC = () => {
     mdContent += t('books.note_md_highlights_header')
 
     highlights.forEach((hl, idx) => {
-      mdContent += t('books.note_md_highlight_item_title', { index: idx + 1 })
+      mdContent += t('books.note_md_highlight_item_title', { idx: idx + 1 })
       mdContent += `> ${hl.text}\n\n`
       mdContent += t('books.note_md_highlight_annotation', {
         annotation: hl.annotation || t('books.no_annotation'),
@@ -242,7 +1117,7 @@ export const Books: React.FC = () => {
     })
 
     if (checkNote?.success && checkNote.data.length > 0) {
-      noteId = checkNote.data[0].id
+      const noteId = checkNote.data[0].id
       // Update
       await api.dbQuery(
         'notes',
@@ -254,7 +1129,7 @@ export const Books: React.FC = () => {
       // Create new
       const createRes = await api.dbQuery(
         'notes',
-        'INSERT INTO notes (title, content, note_type) VALUES (?, ?, "markdown")',
+        "INSERT INTO notes (title, content, note_type) VALUES (?, ?, 'markdown')",
         [noteTitle, mdContent],
       )
       if (createRes?.success) {
@@ -263,9 +1138,156 @@ export const Books: React.FC = () => {
     }
   }
 
-  const filteredBooks = books.filter(
-    (b) => activeCategory === 'all' || b.category === activeCategory,
-  )
+  // Check if a book's category qualifies it as Uncategorized
+  const isUncategorized = (book: any) => {
+    if (!book.category) return true
+    if (['未分类', 'Uncategorized', 'Category', '分类'].includes(book.category)) return true
+    return !categories.some((cat) => isBookInCategory(book, cat))
+  }
+
+  const uncategorizedBooksCount = books.filter(isUncategorized).length
+
+  const filteredBooks = books.filter((b) => {
+    if (activeCategory === 'all') return true
+    if (activeCategory === 'uncategorized') {
+      return isUncategorized(b)
+    }
+    const cat = categories.find((c) => c.name === activeCategory)
+    return cat ? isBookInCategory(b, cat) : b.category === activeCategory
+  })
+
+  // Styling variables for Modals
+  const modalOverlayStyle: React.CSSProperties = {
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backdropFilter: 'blur(8px)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2000,
+    animation: 'enter 0.15s ease both',
+  }
+
+  const modalContentStyle: React.CSSProperties = {
+    backgroundColor: 'var(--bg-surface)',
+    border: '1px solid var(--color-border)',
+    borderRadius: '12px',
+    padding: '24px',
+    width: '420px',
+    boxShadow: 'var(--shadow-app)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  }
+
+  const modalTitleStyle: React.CSSProperties = {
+    fontSize: '16px',
+    fontWeight: 700,
+    margin: 0,
+    color: 'var(--text-main)',
+  }
+
+  const labelStyle: React.CSSProperties = {
+    display: 'block',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: 'var(--text-muted)',
+    marginBottom: '6px',
+  }
+
+  const activeParagraphs = getActiveParagraphs()
+  const pages = getPagesForReadingBlocks(activeParagraphs)
+  const clampedPageIndex = Math.max(0, Math.min(currentPageIndex, pages.length - 1))
+  const currentPageParagraphs = pages[clampedPageIndex] || []
+
+  // Renders a single EPUB paragraph with highlight styling + click-to-select.
+  const renderEpubParagraph = (
+    block: ReadingBlock,
+    key: React.Key,
+    blockOffset?: number,
+  ) => {
+    const text = getReadingBlockText(block)
+    const isHeading = isReadingBlockHeading(block)
+    const headingLevel = typeof block === 'object' ? block.level || 2 : 0
+    const hasHighlight = !isHeading && highlights.some((hl) => hl.text === text)
+
+    if (isHeading) {
+      const fontScale = Math.max(1, 1.55 - (headingLevel - 1) * 0.14)
+      return (
+        <h3
+          key={key}
+          data-epub-block-offset={blockOffset}
+          style={{
+            margin: headingLevel <= 2 ? '28px 0 14px' : '22px 0 10px',
+            fontSize: `${fontScale}em`,
+            lineHeight: 1.35,
+            fontWeight: headingLevel <= 2 ? 800 : 700,
+            color: readerTextColor,
+          }}
+        >
+          {text}
+        </h3>
+      )
+    }
+
+    return (
+      <p
+        key={key}
+        data-epub-block-offset={blockOffset}
+        style={{
+          marginBottom: '16px',
+          padding: '8px 12px',
+          borderRadius: '6px',
+          backgroundColor: hasHighlight ? 'rgba(245, 158, 11, 0.15)' : 'transparent',
+          borderLeft: hasHighlight ? '3px solid var(--color-accent)' : 'none',
+          cursor: 'pointer',
+          transition: 'all 0.15s ease',
+        }}
+        onClick={() => simulateSelection(text)}
+      >
+        {text}
+        {hasHighlight && (
+          <span
+            style={{
+              fontSize: '11px',
+              color: 'var(--color-accent)',
+              marginLeft: '6px',
+              fontWeight: 'bold',
+            }}
+          >
+            ✓ {t('books.annotation_label')}
+          </span>
+        )}
+      </p>
+    )
+  }
+
+  const chList = bookChapters ? bookChapters.map((c) => c.title) : chapters
+  const currentChIndex = bookChapters ? currentChapterIndex : chList.indexOf(currentChapter)
+  const isPdf =
+    readingBook && (readingBook.cover === 'PDF' || readingBook.path.toLowerCase().endsWith('.pdf'))
+  // In EPUB scroll mode the whole chapter is shown, so paging is chapter-bound.
+  const isEpubScroll = !isPdf && bookChapters && epubLayoutMode === 'scroll'
+  const hasPrev = isPdf
+    ? currentPageIndex > 0
+    : isEpubScroll
+      ? currentChIndex > 0
+      : currentPageIndex > 0 || currentChIndex > 0
+  const hasNext = isPdf
+    ? currentPageIndex < pdfNumPages - 1
+    : isEpubScroll
+      ? currentChIndex >= 0 && currentChIndex < chList.length - 1
+      : clampedPageIndex < pages.length - 1 ||
+        (currentChIndex >= 0 && currentChIndex < chList.length - 1)
+
+  const pdfFile = pdfBlobUrl
+  const isDarkReader = readerBg === '#0F0F0F'
+  const readerTextColor = isDarkReader ? '#D4D4D4' : '#2F2E2C'
+  const readerSidebarBg = isDarkReader ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)'
+  const readerBorderColor = isDarkReader ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'
+  const readerCardBg = isDarkReader ? '#1F1F1F' : 'var(--bg-surface)'
+  const readerCardBorder = isDarkReader ? 'rgba(255, 255, 255, 0.08)' : 'var(--color-border)'
 
   return (
     <div
@@ -276,6 +1298,14 @@ export const Books: React.FC = () => {
         flexDirection: 'column',
       }}
     >
+      <style>{`
+        .nav-item:hover .cat-actions {
+          opacity: 1 !important;
+        }
+        .card:hover .book-actions {
+          opacity: 1 !important;
+        }
+      `}</style>
       <div
         style={{
           display: 'flex',
@@ -288,7 +1318,7 @@ export const Books: React.FC = () => {
           <h1 style={{ fontSize: '22px', fontWeight: 800 }}>{t('books.title')}</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{t('books.subtitle')}</p>
         </div>
-        <button className="btn primary" onClick={handleImportBook}>
+        <button className="btn primary" onClick={() => setIsImportOpen(true)}>
           <Plus size={16} />
           {t('books.import_book')}
         </button>
@@ -300,7 +1330,7 @@ export const Books: React.FC = () => {
           flexGrow: 1,
           minHeight: 0,
           display: 'grid',
-          gridTemplateColumns: '200px 1fr',
+          gridTemplateColumns: '240px 1fr',
           gap: '16px',
         }}
       >
@@ -317,7 +1347,11 @@ export const Books: React.FC = () => {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <strong style={{ fontSize: '13px' }}>{t('books.categories')}</strong>
-            <button className="btn sm" style={{ padding: '0 6px' }} onClick={handleAddCategory}>
+            <button
+              className="btn sm"
+              style={{ padding: '0 6px' }}
+              onClick={() => setIsAddCatOpen(true)}
+            >
               ＋
             </button>
           </div>
@@ -325,34 +1359,216 @@ export const Books: React.FC = () => {
             <button
               className={`nav-item ${activeCategory === 'all' ? 'active' : ''}`}
               onClick={() => setActiveCategory('all')}
-              style={{ width: '100%', border: 'none', background: 'none' }}
+              style={{ width: '100%', border: 'none', background: 'none', paddingRight: '8px' }}
             >
-              <span className="nav-icon">
-                <Bookmark size={15} />
-              </span>
-              <span className="nav-label">
-                {t('books.all_books')} ({books.length})
-              </span>
-            </button>
-            {categories.map((cat) => {
-              const catBooks = books.filter((b) => b.category === cat.name)
-              return (
-                <button
-                  key={cat.id}
-                  className={`nav-item ${activeCategory === cat.name ? 'active' : ''}`}
-                  onClick={() => setActiveCategory(cat.name)}
-                  style={{ width: '100%', border: 'none', background: 'none' }}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  minWidth: 0,
+                  flexGrow: 1,
+                  width: '100%',
+                }}
+              >
+                <span className="nav-icon" style={{ flexShrink: 0 }}>
+                  <Bookmark size={15} />
+                </span>
+                <span
+                  className="nav-label"
+                  style={{
+                    opacity: 1,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flexGrow: 1,
+                    minWidth: 0,
+                  }}
+                  title={t('books.all_books')}
                 >
-                  <span className="nav-icon">
-                    <Tag size={14} />
-                  </span>
-                  <span className="nav-label">
-                    {cat.name === '未分类' ? t('books.uncategorized') : cat.name} ({catBooks.length}
-                    )
-                  </span>
-                </button>
-              )
-            })}
+                  {t('books.all_books')}
+                </span>
+                <span
+                  style={{
+                    flexShrink: 0,
+                    color: 'var(--text-muted)',
+                    fontSize: '12px',
+                    marginRight: '8px',
+                  }}
+                >
+                  ({books.length})
+                </span>
+              </div>
+            </button>
+
+            {/* Built-in Uncategorized item */}
+            <button
+              className={`nav-item ${activeCategory === 'uncategorized' ? 'active' : ''}`}
+              onClick={() => setActiveCategory('uncategorized')}
+              style={{ width: '100%', border: 'none', background: 'none', paddingRight: '8px' }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  minWidth: 0,
+                  flexGrow: 1,
+                  width: '100%',
+                }}
+              >
+                <span className="nav-icon" style={{ flexShrink: 0 }}>
+                  <Tag size={14} />
+                </span>
+                <span
+                  className="nav-label"
+                  style={{
+                    opacity: 1,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flexGrow: 1,
+                    minWidth: 0,
+                  }}
+                  title={t('books.uncategorized')}
+                >
+                  {t('books.uncategorized')}
+                </span>
+                <span
+                  style={{
+                    flexShrink: 0,
+                    color: 'var(--text-muted)',
+                    fontSize: '12px',
+                    marginRight: '8px',
+                  }}
+                >
+                  ({uncategorizedBooksCount})
+                </span>
+              </div>
+            </button>
+
+            {categories
+              .filter((cat) => !['未分类', 'Uncategorized', 'Category', '分类'].includes(cat.name))
+              .map((cat) => {
+                const catBooks = books.filter((b) => isBookInCategory(b, cat))
+                const displayName = getCategoryDisplayName(cat.name, cat.id)
+                return (
+                  <div
+                    key={cat.id}
+                    className={`nav-item ${activeCategory === cat.name ? 'active' : ''}`}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      paddingRight: '8px',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => setActiveCategory(cat.name)}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        minWidth: 0,
+                        flexGrow: 1,
+                      }}
+                    >
+                      <span className="nav-icon" style={{ flexShrink: 0 }}>
+                        <Tag size={14} />
+                      </span>
+                      <span
+                        className="nav-label"
+                        style={{
+                          opacity: 1,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          flexGrow: 1,
+                          minWidth: 0,
+                        }}
+                        title={displayName}
+                      >
+                        {displayName}
+                      </span>
+                      <span
+                        style={{
+                          flexShrink: 0,
+                          color: 'var(--text-muted)',
+                          fontSize: '12px',
+                          marginRight: '8px',
+                        }}
+                      >
+                        ({catBooks.length})
+                      </span>
+                    </div>
+
+                    {/* Hover Action Buttons */}
+                    <div
+                      className="cat-actions"
+                      style={{
+                        display: 'flex',
+                        gap: '6px',
+                        opacity: 0,
+                        transition: 'opacity 0.15s ease',
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        style={{
+                          border: 'none',
+                          background: 'none',
+                          padding: '2px',
+                          cursor: 'pointer',
+                          color: 'var(--text-muted)',
+                        }}
+                        onClick={() => {
+                          setEditingCategory(cat)
+                          const currentLocale = i18n.language
+                          const mainTrans = translations.find(
+                            (t) =>
+                              t.entity_type === 'category' &&
+                              t.entity_id === String(cat.id) &&
+                              t.locale === currentLocale,
+                          )
+                          setEditCatName(mainTrans ? mainTrans.translation : cat.name)
+
+                          // Initialize other translations
+                          const transObj: { [key: string]: string } = {}
+                          SUPPORTED_LOCALES.forEach((locale) => {
+                            if (locale.code !== currentLocale) {
+                              const match = translations.find(
+                                (t) =>
+                                  t.entity_type === 'category' &&
+                                  t.entity_id === String(cat.id) &&
+                                  t.locale === locale.code,
+                              )
+                              transObj[locale.code] = match ? match.translation : ''
+                            }
+                          })
+                          setEditCatTrans(transObj)
+                          setIsEditCatTransOpen(false)
+                        }}
+                      >
+                        <Edit3 size={12} />
+                      </button>
+                      <button
+                        style={{
+                          border: 'none',
+                          background: 'none',
+                          padding: '2px',
+                          cursor: 'pointer',
+                          color: '#EF4444',
+                        }}
+                        onClick={() => setDeletingCategory(cat)}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
           </div>
         </aside>
 
@@ -390,9 +1606,54 @@ export const Books: React.FC = () => {
                   gap: '12px',
                   cursor: 'pointer',
                   transition: 'transform 0.15s ease',
+                  position: 'relative',
                 }}
                 onClick={() => handleOpenReader(book)}
               >
+                <div
+                  className="book-actions"
+                  style={{
+                    position: 'absolute',
+                    top: '8px',
+                    right: '8px',
+                    display: 'flex',
+                    gap: '4px',
+                    opacity: 0,
+                    transition: 'opacity 0.15s ease',
+                    zIndex: 10,
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    className="btn sm"
+                    style={{
+                      padding: '4px 6px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      background: 'var(--bg-surface)',
+                      border: '1px solid var(--color-border)',
+                    }}
+                    onClick={() => handleStartEditBook(book)}
+                    title={t('books.edit_book') || '编辑'}
+                  >
+                    <Edit3 size={12} />
+                  </button>
+                  <button
+                    className="btn sm danger"
+                    style={{
+                      padding: '4px 6px',
+                      backgroundColor: 'var(--color-danger)',
+                      color: '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      border: 'none',
+                    }}
+                    onClick={() => handleStartDeleteBook(book)}
+                    title={t('books.delete_book') || '删除'}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
                 <div
                   style={{
                     width: '64px',
@@ -456,8 +1717,7 @@ export const Books: React.FC = () => {
                       }}
                     >
                       <span>
-                        {t('books.category_label')}:{' '}
-                        {book.category === '未分类' ? t('books.uncategorized') : book.category}
+                        {t('books.category_label')}: {getCategoryDisplayName(book.category)}
                       </span>
                       <span>{Math.round(book.progress)}%</span>
                     </div>
@@ -490,9 +1750,12 @@ export const Books: React.FC = () => {
         <div
           style={{
             position: 'fixed',
-            inset: 0,
+            top: '38px',
+            bottom: 0,
+            left: 0,
+            right: 0,
             backgroundColor: readerBg,
-            color: readerBg === '#0F0F0F' ? '#D4D4D4' : '#2F2E2C',
+            color: readerTextColor,
             zIndex: 1000,
             display: 'grid',
             gridTemplateRows: '50px 1fr',
@@ -506,8 +1769,8 @@ export const Books: React.FC = () => {
               justifyContent: 'space-between',
               alignItems: 'center',
               padding: '0 24px',
-              borderBottom: '1px solid rgba(0,0,0,0.06)',
-              backgroundColor: 'rgba(0,0,0,0.02)',
+              borderBottom: `1px solid ${readerBorderColor}`,
+              backgroundColor: isDarkReader ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -517,6 +1780,56 @@ export const Books: React.FC = () => {
               <strong style={{ fontSize: '13.5px' }}>
                 {t('books.reading_label')}:《{readingBook.title}》
               </strong>
+
+              {readingBook.path && !readingBook.path.startsWith('http') && (
+                <button
+                  className="btn sm"
+                  style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                  onClick={async () => {
+                    const res = await api.openExternalFile(readingBook.path)
+                    if (res && !res.success) {
+                      showToast(res.error)
+                    }
+                  }}
+                  title={t('books.open_externally') || '用外部程序打开'}
+                >
+                  <ExternalLink size={12} /> {t('books.open_externally') || '外部打开'}
+                </button>
+              )}
+
+              {/* Progress Slider */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginLeft: '12px',
+                  borderLeft: `1px solid ${readerBorderColor}`,
+                  paddingLeft: '16px',
+                }}
+              >
+                <span style={{ fontSize: '11px', color: isDarkReader ? '#888' : '#666' }}>
+                  {t('books.progress_label') || '进度'}:
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={readingProgress}
+                  onChange={(e) => handleProgressChange(parseInt(e.target.value, 10))}
+                  style={{
+                    width: '90px',
+                    accentColor: 'var(--color-accent)',
+                    cursor: 'pointer',
+                    height: '4px',
+                  }}
+                />
+                <span
+                  style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', minWidth: '32px' }}
+                >
+                  {readingProgress}%
+                </span>
+              </div>
             </div>
 
             {/* Custom font and bg adjustments */}
@@ -526,21 +1839,132 @@ export const Books: React.FC = () => {
               </button>
               <div
                 style={{
-                  borderRight: '1px solid rgba(0,0,0,0.1)',
+                  borderRight: `1px solid ${readerBorderColor}`,
                   height: '20px',
                   margin: '0 4px',
                 }}
               />
-              <button className="btn sm" onClick={() => setFontSize(Math.max(12, fontSize - 1))}>
-                A-
-              </button>
-              <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)' }}>{fontSize}px</span>
-              <button className="btn sm" onClick={() => setFontSize(Math.min(22, fontSize + 1))}>
-                A+
-              </button>
+              {isPdf ? (
+                <>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    {t('books.view_label')}:
+                  </span>
+                  <select
+                    value={pdfLayoutMode}
+                    onChange={(e) => setPdfLayoutMode(e.target.value as any)}
+                    style={{
+                      fontSize: '12px',
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      backgroundColor: isDarkReader ? '#222' : '#fff',
+                      border: '1px solid var(--color-border)',
+                      color: 'inherit',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="single">{t('books.view_single')}</option>
+                    <option value="dual">{t('books.view_dual')}</option>
+                    <option value="scroll">{t('books.view_scroll')}</option>
+                    <option value="simulation">{t('books.view_simulation')}</option>
+                  </select>
+
+                  <div
+                    style={{
+                      borderRight: `1px solid ${readerBorderColor}`,
+                      height: '20px',
+                      margin: '0 4px',
+                    }}
+                  />
+
+                  <button
+                    className={`btn sm ${isAutoPlaying ? 'primary' : ''}`}
+                    onClick={() => setIsAutoPlaying(!isAutoPlaying)}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '12px',
+                    }}
+                  >
+                    {isAutoPlaying ? t('books.auto_play_stop') : t('books.auto_play')}
+                  </button>
+
+                  {isAutoPlaying && (
+                    <select
+                      value={autoPlaySpeed}
+                      onChange={(e) => setAutoPlaySpeed(parseInt(e.target.value, 10))}
+                      style={{
+                        fontSize: '12px',
+                        padding: '4px 4px',
+                        borderRadius: '4px',
+                        backgroundColor: isDarkReader ? '#222' : '#fff',
+                        border: '1px solid var(--color-border)',
+                        color: 'inherit',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="5">{t('books.auto_play_speed', { sec: 5 })}</option>
+                      <option value="10">{t('books.auto_play_speed', { sec: 10 })}</option>
+                      <option value="15">{t('books.auto_play_speed', { sec: 15 })}</option>
+                      <option value="20">{t('books.auto_play_speed', { sec: 20 })}</option>
+                    </select>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button
+                    className="btn sm"
+                    onClick={() => setFontSize(Math.max(12, fontSize - 1))}
+                  >
+                    A-
+                  </button>
+                  <span style={{ fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
+                    {fontSize}px
+                  </span>
+                  <button
+                    className="btn sm"
+                    onClick={() => setFontSize(Math.min(22, fontSize + 1))}
+                  >
+                    A+
+                  </button>
+                  {bookChapters && (
+                    <>
+                      <div
+                        style={{
+                          borderRight: `1px solid ${readerBorderColor}`,
+                          height: '20px',
+                          margin: '0 4px',
+                        }}
+                      />
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        {t('books.view_label')}:
+                      </span>
+                      <select
+                        value={epubLayoutMode}
+                        onChange={(e) => {
+                          setEpubLayoutMode(e.target.value as any)
+                          setCurrentPageIndex(0)
+                          setCurrentParagraphOffset(0)
+                        }}
+                        style={{
+                          fontSize: '12px',
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          backgroundColor: isDarkReader ? '#222' : '#fff',
+                          border: '1px solid var(--color-border)',
+                          color: 'inherit',
+                          outline: 'none',
+                        }}
+                      >
+                        <option value="single">{t('books.view_single')}</option>
+                        <option value="dual">{t('books.view_dual')}</option>
+                        <option value="scroll">{t('books.view_scroll')}</option>
+                      </select>
+                    </>
+                  )}
+                </>
+              )}
               <div
                 style={{
-                  borderRight: '1px solid rgba(0,0,0,0.1)',
+                  borderRight: `1px solid ${readerBorderColor}`,
                   height: '20px',
                   margin: '0 4px',
                 }}
@@ -582,208 +2006,1225 @@ export const Books: React.FC = () => {
             </div>
           </header>
 
-          {/* Reader Body Grid */}
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '220px 1fr 300px',
+              gridTemplateColumns:
+                !isPdf && bookChapters && bookChapters.length > 0 ? '220px 1fr 320px' : '1fr 320px',
               height: '100%',
               minHeight: 0,
             }}
           >
-            {/* Left Column: Chapters / TOC */}
-            <aside
-              style={{
-                borderRight: '1px solid rgba(0,0,0,0.06)',
-                padding: '16px',
-                overflowY: 'auto',
-                backgroundColor: 'rgba(0,0,0,0.01)',
-              }}
-            >
-              <h4
+            {isLoadingReader ? (
+              <div
                 style={{
-                  fontSize: '11px',
-                  color: 'var(--text-muted)',
-                  textTransform: 'uppercase',
-                  marginBottom: '10px',
+                  gridColumn: 'span 3',
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: readerBg,
+                  color: readerTextColor,
+                  gap: '16px',
                 }}
               >
-                {t('books.toc_title')}
-              </h4>
-              <div
-                style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px' }}
-              >
-                {chapters.map((ch) => (
-                  <button
-                    key={ch}
-                    onClick={() => setCurrentChapter(ch)}
-                    style={{
-                      border: 'none',
-                      background: 'none',
-                      textAlign: 'left',
-                      padding: '6px 8px',
-                      borderRadius: '4px',
-                      color: currentChapter === ch ? 'var(--color-accent)' : 'inherit',
-                      fontWeight: currentChapter === ch ? 'bold' : 'normal',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {ch}
-                  </button>
-                ))}
-              </div>
-            </aside>
-
-            {/* Middle Column: Text content */}
-            <main
-              style={{
-                padding: '32px 48px',
-                overflowY: 'auto',
-                fontSize: `${fontSize}px`,
-                lineHeight: '1.8',
-                maxWidth: '800px',
-                margin: '0 auto',
-              }}
-            >
-              <h2 style={{ fontSize: '20px', marginBottom: '24px', fontWeight: 800 }}>
-                {currentChapter}
-              </h2>
-
-              <p
-                style={{ marginBottom: '16px' }}
-                onClick={() => simulateSelection(t('books.mock_p1'))}
-              >
-                {t('books.mock_p1')}
-                <span
-                  style={{
-                    fontSize: '11px',
-                    color: 'var(--color-accent)',
-                    cursor: 'pointer',
-                    marginLeft: '6px',
-                  }}
-                >
-                  ({t('books.click_to_select')})
-                </span>
-              </p>
-
-              <p
-                style={{ marginBottom: '16px' }}
-                onClick={() => simulateSelection(t('books.mock_p2'))}
-              >
-                {t('books.mock_p2')}
-                <span
-                  style={{
-                    fontSize: '11px',
-                    color: 'var(--color-accent)',
-                    cursor: 'pointer',
-                    marginLeft: '6px',
-                  }}
-                >
-                  ({t('books.click_to_select')})
-                </span>
-              </p>
-
-              {/* Selection menu popup mockup */}
-              {selectedHighlightText && (
                 <div
                   style={{
-                    padding: '12px',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: '8px',
-                    backgroundColor: 'var(--bg-surface)',
-                    boxShadow: 'var(--shadow-app)',
-                    marginTop: '24px',
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '50%',
+                    border: '3px solid var(--color-border)',
+                    borderTopColor: 'var(--color-accent)',
+                    animation: 'spin 0.8s linear infinite',
+                  }}
+                />
+                <span style={{ fontSize: '13.5px', color: 'var(--text-muted)' }}>
+                  {t('books.loading_book')}
+                </span>
+                <style>{`
+                  @keyframes spin {
+                    to { transform: rotate(360deg); }
+                  }
+                `}</style>
+              </div>
+            ) : (
+              <>
+                {/* Left Column: Chapters / TOC */}
+                {!isPdf && bookChapters && bookChapters.length > 0 && (
+                  <aside
+                    style={{
+                      borderRight: `1px solid ${readerBorderColor}`,
+                      padding: '16px',
+                      overflowY: 'auto',
+                      backgroundColor: readerSidebarBg,
+                    }}
+                  >
+                    <h4
+                      style={{
+                        fontSize: '11px',
+                        color: isDarkReader ? '#888' : 'var(--text-muted)',
+                        textTransform: 'uppercase',
+                        marginBottom: '10px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {t('books.toc_title')}
+                    </h4>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                        fontSize: '12px',
+                      }}
+                    >
+                      {(() => {
+                        const tocList =
+                          bookToc && bookToc.length > 0
+                            ? bookToc
+                            : bookChapters.map((c, idx) => ({
+                                title: c.title,
+                                level: 0,
+                                chapterIndex: idx,
+                                paragraphOffset: 0,
+                              }))
+                        const resolvedTocList = (tocList as TocEntry[]).map((entry) =>
+                          resolveReaderTocEntry(entry, bookChapters),
+                        )
+                        const activeIdx = getActiveTocIndex(
+                          resolvedTocList,
+                          currentChapterIndex,
+                          currentParagraphOffset,
+                        )
+
+                        return tocList.map((entry, idx) => {
+                          const targetEntry = resolvedTocList[idx]
+                          const isActive = idx === activeIdx
+                          return (
+                            <button
+                              key={idx}
+                              onClick={() => {
+                                setCurrentChapterIndex(targetEntry.chapterIndex)
+                                setCurrentChapter(
+                                  bookChapters[targetEntry.chapterIndex]?.title || entry.title,
+                                )
+                                const paras = bookChapters[targetEntry.chapterIndex]?.paragraphs || []
+                                const targetPage = getPageOfParagraph(
+                                  paras,
+                                  targetEntry.paragraphOffset || 0,
+                                )
+                                // In dual mode, snap to the left page of the spread.
+                                const targetSpreadPage =
+                                  epubLayoutMode === 'dual'
+                                    ? targetPage - (targetPage % 2)
+                                    : targetPage
+                                setCurrentPageIndex(targetSpreadPage)
+                                setCurrentParagraphOffset(targetEntry.paragraphOffset || 0)
+                              }}
+                              title={entry.title}
+                              style={{
+                                border: 'none',
+                                background: 'none',
+                                textAlign: 'left',
+                                padding: '6px 8px',
+                                paddingLeft: `${8 + entry.level * 14}px`,
+                                borderRadius: '4px',
+                                color: isActive ? 'var(--color-accent)' : 'inherit',
+                                fontWeight: isActive
+                                  ? 'bold'
+                                  : entry.level === 0
+                                    ? 600
+                                    : 'normal',
+                                fontSize: entry.level === 0 ? '12px' : '11.5px',
+                                opacity: entry.level > 0 ? 0.85 : 1,
+                                cursor: 'pointer',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {entry.title}
+                            </button>
+                          )
+                        })
+                      })()}
+                    </div>
+                  </aside>
+                )}
+
+                {/* Middle Column: Text content */}
+                <main
+                  ref={readerMainRef}
+                  style={{
+                    padding: '32px 48px',
+                    overflowY: 'auto',
+                    fontSize: `${fontSize}px`,
+                    lineHeight: '1.8',
+                    maxWidth: '800px',
+                    margin: '0 auto',
+                    width: '100%',
+                    position: 'relative',
+                    display: !bookChapters && !pdfData ? 'flex' : 'block',
+                    flexDirection: 'column',
+                    justifyContent: !bookChapters && !pdfData ? 'center' : 'initial',
+                    alignItems: !bookChapters && !pdfData ? 'center' : 'initial',
+                    textAlign: !bookChapters && !pdfData ? 'center' : 'initial',
+                  }}
+                >
+                  <style>{`
+                    @keyframes flipPage {
+                      0% {
+                        transform: rotateY(15deg);
+                        opacity: 0.8;
+                      }
+                      100% {
+                        transform: rotateY(0deg);
+                        opacity: 1;
+                      }
+                    }
+                    .pdf-flip-page {
+                      animation: flipPage 0.25s ease-out both;
+                      transform-origin: left center;
+                    }
+                  `}</style>
+                  {pdfData ? (
+                    <div
+                      ref={pdfScrollRef}
+                      onScroll={pdfLayoutMode === 'scroll' ? handlePdfScroll : undefined}
+                      onMouseUp={pdfLayoutMode !== 'scroll' ? handleTextSelection : undefined}
+                      onWheel={pdfLayoutMode !== 'scroll' ? handlePdfWheel : undefined}
+                      style={
+                        pdfLayoutMode === 'scroll'
+                          ? {
+                              width: '100%',
+                              height: '100%',
+                              overflowY: 'auto',
+                            }
+                          : {
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              minHeight: '100%',
+                              userSelect: 'text',
+                              perspective: pdfLayoutMode === 'simulation' ? '1200px' : 'none',
+                            }
+                      }
+                    >
+                      {/* Single persistent Document: never remounts on layout change,
+                          so switching view modes no longer re-parses the whole PDF. */}
+                      <Document
+                        file={pdfFile}
+                        onLoadSuccess={handlePdfLoadSuccess}
+                        loading={
+                          <div style={{ color: 'var(--text-muted)' }}>{t('books.pdf_loading')}</div>
+                        }
+                        error={
+                          <div style={{ color: 'var(--color-danger)' }}>
+                            {t('books.pdf_load_error')}
+                          </div>
+                        }
+                      >
+                        {pdfLayoutMode === 'scroll' ? (
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              gap: '24px',
+                              padding: '16px 0',
+                            }}
+                          >
+                            {Array.from({ length: pdfNumPages }).map((_, idx) => {
+                              const isNearViewport = Math.abs(idx - currentPageIndex) <= 2
+                              if (!isNearViewport) {
+                                return (
+                                  <div
+                                    key={idx}
+                                    data-page-number={idx + 1}
+                                    style={{
+                                      height: '800px',
+                                      width: '600px',
+                                      backgroundColor: 'rgba(0,0,0,0.02)',
+                                      border: '1px dashed var(--color-border)',
+                                      borderRadius: '6px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      color: 'var(--text-muted)',
+                                      fontSize: '13px',
+                                    }}
+                                  >
+                                    {t('books.page_label', { num: idx + 1 })}
+                                  </div>
+                                )
+                              }
+                              return (
+                                <div
+                                  key={idx}
+                                  className="react-pdf__Page"
+                                  data-page-number={idx + 1}
+                                >
+                                  <Page
+                                    pageNumber={idx + 1}
+                                    renderTextLayer={true}
+                                    renderAnnotationLayer={false}
+                                    scale={1.2}
+                                    loading={
+                                      <div style={{ color: 'var(--text-muted)' }}>
+                                        {t('books.pdf_rendering_page', { num: idx + 1 })}
+                                      </div>
+                                    }
+                                  />
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <>
+                            <div
+                              key={currentPageIndex}
+                              className={pdfLayoutMode === 'simulation' ? 'pdf-flip-page' : ''}
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              {pdfLayoutMode === 'dual' ? (
+                                <div
+                                  style={{ display: 'flex', gap: '20px', justifyContent: 'center' }}
+                                >
+                                  <div
+                                    className="react-pdf__Page"
+                                    data-page-number={currentPageIndex + 1}
+                                  >
+                                    <Page
+                                      pageNumber={currentPageIndex + 1}
+                                      renderTextLayer={true}
+                                      renderAnnotationLayer={false}
+                                      scale={1.0}
+                                      loading={
+                                        <div style={{ color: 'var(--text-muted)' }}>
+                                          {t('books.pdf_rendering_page', {
+                                            num: currentPageIndex + 1,
+                                          })}
+                                        </div>
+                                      }
+                                    />
+                                  </div>
+                                  {currentPageIndex + 1 < pdfNumPages && (
+                                    <div
+                                      className="react-pdf__Page"
+                                      data-page-number={currentPageIndex + 2}
+                                    >
+                                      <Page
+                                        pageNumber={currentPageIndex + 2}
+                                        renderTextLayer={true}
+                                        renderAnnotationLayer={false}
+                                        scale={1.0}
+                                        loading={
+                                          <div style={{ color: 'var(--text-muted)' }}>
+                                            {t('books.pdf_rendering_page', {
+                                              num: currentPageIndex + 2,
+                                            })}
+                                          </div>
+                                        }
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <Page
+                                  pageNumber={currentPageIndex + 1}
+                                  renderTextLayer={true}
+                                  renderAnnotationLayer={false}
+                                  scale={1.2}
+                                  loading={
+                                    <div style={{ color: 'var(--text-muted)' }}>
+                                      {t('books.pdf_rendering_page', {
+                                        num: currentPageIndex + 1,
+                                      })}
+                                    </div>
+                                  }
+                                />
+                              )}
+                            </div>
+
+                            <div
+                              style={{
+                                textAlign: 'center',
+                                fontSize: '12px',
+                                color: 'var(--text-muted)',
+                                marginTop: '24px',
+                              }}
+                            >
+                              {pdfLayoutMode === 'dual' ? (
+                                <>
+                                  {currentPageIndex + 1}
+                                  {currentPageIndex + 2 <= pdfNumPages
+                                    ? ` - ${currentPageIndex + 2}`
+                                    : ''}{' '}
+                                  / {pdfNumPages}
+                                </>
+                              ) : (
+                                `${currentPageIndex + 1} / ${pdfNumPages}`
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </Document>
+                    </div>
+                  ) : bookChapters ? (
+                    <>
+                      {currentPageIndex === 0 && !isReadingBlockHeading(activeParagraphs[0]) && (
+                        <h2 style={{ fontSize: '20px', marginBottom: '24px', fontWeight: 800 }}>
+                          {currentChapter}
+                        </h2>
+                      )}
+
+                      {epubLayoutMode === 'scroll' ? (
+                        // Continuous: render the whole chapter, scroll freely.
+                        <div>
+                          {activeParagraphs.map((block: ReadingBlock, idx: number) =>
+                            renderEpubParagraph(block, idx, idx),
+                          )}
+                        </div>
+                      ) : epubLayoutMode === 'dual' ? (
+                        // Two page-chunks side by side, like an open book.
+                        <div style={{ display: 'flex', gap: '40px', alignItems: 'flex-start' }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            {(pages[clampedPageIndex] || []).map((block, idx) => {
+                              const pageStart = getParagraphOffsetOfPage(
+                                activeParagraphs,
+                                clampedPageIndex,
+                              )
+                              return renderEpubParagraph(block, `l-${idx}`, pageStart + idx)
+                            })}
+                          </div>
+                          {clampedPageIndex + 1 < pages.length && (
+                            <div
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                borderLeft: `1px solid ${readerBorderColor}`,
+                                paddingLeft: '40px',
+                              }}
+                            >
+                              {(pages[clampedPageIndex + 1] || []).map((block, idx) => {
+                                const pageStart = getParagraphOffsetOfPage(
+                                  activeParagraphs,
+                                  clampedPageIndex + 1,
+                                )
+                                return renderEpubParagraph(block, `r-${idx}`, pageStart + idx)
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        // Single page.
+                        currentPageParagraphs.map((block, idx) => {
+                          const pageStart = getParagraphOffsetOfPage(
+                            activeParagraphs,
+                            clampedPageIndex,
+                          )
+                          return renderEpubParagraph(block, idx, pageStart + idx)
+                        })
+                      )}
+
+                      <div
+                        style={{
+                          textAlign: 'center',
+                          fontSize: '12px',
+                          color: 'var(--text-muted)',
+                          marginTop: '32px',
+                          paddingTop: '16px',
+                          borderTop: `1px solid ${readerBorderColor}`,
+                        }}
+                      >
+                        {epubLayoutMode === 'scroll'
+                          ? `${currentChIndex + 1} / ${chList.length}`
+                          : epubLayoutMode === 'dual'
+                            ? `${clampedPageIndex + 1}${
+                                clampedPageIndex + 2 <= pages.length
+                                  ? ` - ${clampedPageIndex + 2}`
+                                  : ''
+                              } / ${pages.length}`
+                            : `${clampedPageIndex + 1} / ${pages.length}`}
+                      </div>
+                    </>
+                  ) : (
+                    <div
+                      style={{
+                        maxWidth: '480px',
+                        padding: '32px',
+                        backgroundColor: readerCardBg,
+                        border: `1px solid ${readerCardBorder}`,
+                        borderRadius: '12px',
+                        boxShadow: 'var(--shadow-app)',
+                        animation: 'enter 0.15s ease both',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '56px',
+                          height: '56px',
+                          borderRadius: '50%',
+                          backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                          color: 'var(--color-accent)',
+                          display: 'grid',
+                          placeItems: 'center',
+                          margin: '0 auto 16px auto',
+                        }}
+                      >
+                        <ExternalLink size={24} />
+                      </div>
+                      <h3
+                        style={{
+                          fontSize: '16px',
+                          fontWeight: 700,
+                          marginBottom: '8px',
+                          color: 'var(--text-main)',
+                          marginTop: 0,
+                        }}
+                      >
+                        {t('books.unsupported_reader_title') || '无法在应用内阅读'}
+                      </h3>
+                      <p
+                        style={{
+                          fontSize: '13px',
+                          color: 'var(--text-muted)',
+                          lineHeight: '1.6',
+                          marginBottom: '20px',
+                          marginTop: 0,
+                        }}
+                      >
+                        {t('books.unsupported_reader_desc', { format: readingBook.cover }) ||
+                          `${readingBook.cover || 'PDF'} 格式不支持在应用内进行文本排版阅读。您可以使用系统默认应用程序直接打开它。`}
+                      </p>
+                      <button
+                        className="btn primary"
+                        style={{
+                          padding: '8px 16px',
+                          fontSize: '13px',
+                          margin: '0 auto',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                        onClick={async () => {
+                          const res = await api.openExternalFile(readingBook.path)
+                          if (res && !res.success) {
+                            showToast(res.error)
+                          }
+                        }}
+                      >
+                        <ExternalLink size={14} />{' '}
+                        {t('books.open_externally_btn') || '用系统默认程序打开'}
+                      </button>
+                    </div>
+                  )}
+
+                  {(bookChapters || pdfData) && hasPrev && (
+                    <button
+                      onClick={handlePrevPage}
+                      style={{
+                        position: 'fixed',
+                        left: `${navBtnOffsets.left}px`,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '50%',
+                        backgroundColor: isDarkReader
+                          ? 'rgba(255,255,255,0.06)'
+                          : 'rgba(0,0,0,0.04)',
+                        border: '1px solid var(--color-border)',
+                        cursor: 'pointer',
+                        color: 'inherit',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: 'var(--shadow-app)',
+                        zIndex: 20,
+                      }}
+                      title={t('books.prev_page') || '上一页'}
+                    >
+                      ←
+                    </button>
+                  )}
+                  {(bookChapters || pdfData) && hasNext && (
+                    <button
+                      onClick={handleNextPage}
+                      style={{
+                        position: 'fixed',
+                        right: `${navBtnOffsets.right}px`,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '50%',
+                        backgroundColor: isDarkReader
+                          ? 'rgba(255,255,255,0.06)'
+                          : 'rgba(0,0,0,0.04)',
+                        border: '1px solid var(--color-border)',
+                        cursor: 'pointer',
+                        color: 'inherit',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: 'var(--shadow-app)',
+                        zIndex: 20,
+                      }}
+                      title={t('books.next_page') || '下一页'}
+                    >
+                      →
+                    </button>
+                  )}
+                </main>
+
+                {/* Right Column: Highlights & Annotations Panel */}
+                <aside
+                  style={{
+                    borderLeft: `1px solid ${readerBorderColor}`,
+                    padding: '16px',
+                    overflowY: 'auto',
+                    backgroundColor: readerSidebarBg,
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }}
+                >
+                  {/* Inline editor inside right sidebar instead of overlay popover to prevent shifting */}
+                  {selectedHighlightText && (
+                    <div
+                      style={{
+                        padding: '12px',
+                        border: `1px solid ${readerBorderColor}`,
+                        borderRadius: '8px',
+                        backgroundColor: readerCardBg,
+                        boxShadow: 'var(--shadow-app)',
+                        marginBottom: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: '11px',
+                          color: isDarkReader ? '#888' : 'var(--text-muted)',
+                        }}
+                      >
+                        <strong>{t('books.selected_text_label')}：</strong>
+                        <span style={{ fontStyle: 'italic' }}>"{selectedHighlightText}"</span>
+                      </div>
+                      <input
+                        className="form-field"
+                        style={{
+                          fontSize: '12px',
+                          padding: '6px 8px',
+                          backgroundColor: isDarkReader ? '#121212' : '#fff',
+                          color: readerTextColor,
+                          border: `1px solid ${readerBorderColor}`,
+                        }}
+                        placeholder={t('books.annotation_placeholder')}
+                        value={newAnnotation}
+                        onChange={(e) => setNewAnnotation(e.target.value)}
+                        autoFocus
+                      />
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <button
+                          className="btn sm"
+                          onClick={() => {
+                            setSelectedHighlightText('')
+                            setNewAnnotation('')
+                          }}
+                          style={{ padding: '4px 8px', fontSize: '11px' }}
+                        >
+                          {t('common.cancel')}
+                        </button>
+                        <button
+                          className="btn sm primary"
+                          onClick={handleAddHighlight}
+                          style={{ padding: '4px 8px', fontSize: '11px' }}
+                        >
+                          <Save size={10} /> {t('books.save_annotation_btn')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <h4
+                    style={{
+                      fontSize: '11px',
+                      color: isDarkReader ? '#888' : 'var(--text-muted)',
+                      textTransform: 'uppercase',
+                      marginBottom: '10px',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {t('books.highlights_annotations_title')} ({highlights.length})
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {highlights.map((hl) => (
+                      <div
+                        key={hl.id}
+                        style={{
+                          padding: '10px',
+                          backgroundColor: readerCardBg,
+                          border: `1px solid ${readerCardBorder}`,
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        <p
+                          style={{
+                            fontStyle: 'italic',
+                            color: isDarkReader ? '#aaa' : 'var(--text-muted)',
+                            borderLeft: '2px solid var(--color-accent)',
+                            paddingLeft: '6px',
+                            marginBottom: '6px',
+                          }}
+                        >
+                          "{hl.text}"
+                        </p>
+                        <p
+                          style={{
+                            fontWeight: 600,
+                            color: isDarkReader ? '#fff' : 'var(--text-main)',
+                          }}
+                        >
+                          {t('books.annotation_label')}: {hl.annotation}
+                        </p>
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'flex-end',
+                            gap: '6px',
+                            marginTop: '8px',
+                          }}
+                        >
+                          <button
+                            className="btn sm"
+                            onClick={() => handleCopyLink(hl)}
+                            title={t('books.copy_link_tooltip')}
+                            style={{
+                              fontSize: '11px',
+                              padding: '3px 6px',
+                              backgroundColor: isDarkReader ? '#2A2A2A' : '#f0f0f0',
+                              border: 'none',
+                              color: readerTextColor,
+                            }}
+                          >
+                            <Copy size={11} /> {t('books.copy_link_btn')}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </aside>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Premium Add Category Modal */}
+      {isAddCatOpen && (
+        <div style={modalOverlayStyle}>
+          <div style={modalContentStyle}>
+            <h3 style={modalTitleStyle}>{t('books.prompt_add_category')}</h3>
+
+            {/* Primary input */}
+            <div>
+              <label style={labelStyle}>{t('common.main_name_label')}</label>
+              <input
+                className="form-field"
+                style={{ width: '100%' }}
+                value={newCatName}
+                onChange={(e) => setNewCatName(e.target.value)}
+                placeholder={t('books.prompt_add_category')}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') confirmAddCategory()
+                }}
+              />
+            </div>
+
+            {/* Collapsible panel for other translations */}
+            <div style={{ marginTop: '8px', marginBottom: '12px' }}>
+              <button
+                type="button"
+                className="btn sm"
+                style={{
+                  border: 'none',
+                  background: 'none',
+                  color: 'var(--text-muted)',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: 0,
+                }}
+                onClick={() => setIsAddCatTransOpen(!isAddCatTransOpen)}
+              >
+                {t('common.more_translations')} {isAddCatTransOpen ? '▲' : '▼'}
+              </button>
+
+              {isAddCatTransOpen && (
+                <div
+                  style={{
+                    marginTop: '10px',
+                    padding: '10px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '6px',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '8px',
                   }}
                 >
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                    <strong>{t('books.selected_text_label')}：</strong>"{selectedHighlightText}"
-                  </div>
-                  <input
-                    className="form-field"
-                    placeholder={t('books.annotation_placeholder')}
-                    value={newAnnotation}
-                    onChange={(e) => setNewAnnotation(e.target.value)}
-                  />
-                  <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end' }}>
-                    <button className="btn sm" onClick={() => setSelectedHighlightText('')}>
-                      {t('common.cancel')}
-                    </button>
-                    <button className="btn sm primary" onClick={handleAddHighlight}>
-                      <Save size={12} /> {t('books.save_annotation_btn')}
-                    </button>
-                  </div>
+                  {SUPPORTED_LOCALES.filter((l) => l.code !== i18n.language).map((locale) => (
+                    <div
+                      key={locale.code}
+                      style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}
+                    >
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        {locale.label}
+                      </label>
+                      <input
+                        className="form-field"
+                        style={{ width: '100%', fontSize: '12px', padding: '6px 8px' }}
+                        value={newCatTrans[locale.code] || ''}
+                        onChange={(e) =>
+                          setNewCatTrans({ ...newCatTrans, [locale.code]: e.target.value })
+                        }
+                        placeholder={`e.g. translation for ${locale.label}`}
+                      />
+                    </div>
+                  ))}
                 </div>
               )}
-            </main>
+            </div>
 
-            {/* Right Column: Highlights & Annotations Panel */}
-            <aside
-              style={{
-                borderLeft: '1px solid rgba(0,0,0,0.06)',
-                padding: '16px',
-                overflowY: 'auto',
-                backgroundColor: 'rgba(0,0,0,0.01)',
-              }}
-            >
-              <h4
-                style={{
-                  fontSize: '11px',
-                  color: 'var(--text-muted)',
-                  textTransform: 'uppercase',
-                  marginBottom: '10px',
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                className="btn"
+                onClick={() => {
+                  setIsAddCatOpen(false)
+                  setNewCatName('')
+                  setNewCatTrans({})
+                  setIsAddCatTransOpen(false)
                 }}
               >
-                {t('books.highlights_annotations_title')} ({highlights.length})
-              </h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {highlights.map((hl) => (
-                  <div
-                    key={hl.id}
-                    style={{
-                      padding: '10px',
-                      backgroundColor: 'var(--bg-surface)',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                    }}
-                  >
-                    <p
-                      style={{
-                        fontStyle: 'italic',
-                        color: 'var(--text-muted)',
-                        borderLeft: '2px solid var(--color-accent)',
-                        paddingLeft: '6px',
-                        marginBottom: '6px',
-                      }}
-                    >
-                      "{hl.text}"
-                    </p>
-                    <p style={{ fontWeight: 600, color: 'var(--text-main)' }}>
-                      {t('books.annotation_label')}: {hl.annotation}
-                    </p>
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'flex-end',
-                        gap: '6px',
-                        marginTop: '8px',
-                      }}
-                    >
-                      <button
-                        className="btn sm"
-                        onClick={() => handleCopyLink(hl)}
-                        title={t('books.copy_link_tooltip')}
-                      >
-                        <Copy size={11} /> {t('books.copy_link_btn')}
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                {t('common.cancel')}
+              </button>
+              <button
+                className="btn primary"
+                onClick={confirmAddCategory}
+                disabled={!newCatName.trim()}
+              >
+                {t('common.confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Premium Import Book Modal */}
+      {isImportOpen && (
+        <div style={modalOverlayStyle}>
+          <div style={modalContentStyle}>
+            <h3 style={modalTitleStyle}>{t('books.import_book')}</h3>
+
+            {/* File Selection */}
+            <div>
+              <label style={labelStyle}>{t('books.select_file_label') || '选择电子书文件:'}</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  className="form-field"
+                  style={{ width: '100%', cursor: 'pointer' }}
+                  readOnly
+                  placeholder={
+                    t('books.select_file_placeholder') || '请选择 .epub, .pdf, .txt, .mobi 文件...'
+                  }
+                  value={selectedFileName}
+                  onClick={handleSelectBookFile}
+                />
+                <button
+                  className="btn"
+                  type="button"
+                  style={{ whiteSpace: 'nowrap' }}
+                  onClick={handleSelectBookFile}
+                >
+                  {t('books.browse_btn') || '浏览...'}
+                </button>
               </div>
-            </aside>
+            </div>
+
+            {/* Title */}
+            <div>
+              <label style={labelStyle}>{t('books.prompt_import_title')}</label>
+              <input
+                className="form-field"
+                style={{ width: '100%' }}
+                value={importTitle}
+                onChange={(e) => setImportTitle(e.target.value)}
+                placeholder={t('books.prompt_import_title')}
+              />
+            </div>
+
+            {/* Author */}
+            <div>
+              <label style={labelStyle}>{t('books.prompt_import_author')}</label>
+              <input
+                className="form-field"
+                style={{ width: '100%' }}
+                value={importAuthor}
+                onChange={(e) => setImportAuthor(e.target.value)}
+                placeholder={t('books.prompt_import_author')}
+              />
+            </div>
+
+            {/* Category selection */}
+            <div>
+              <label style={labelStyle}>{t('books.prompt_import_category')}</label>
+              <select
+                className="form-field"
+                style={{ width: '100%', marginBottom: isCustomCategory ? '10px' : '0' }}
+                value={isCustomCategory ? 'custom' : importCategory}
+                onChange={(e) => {
+                  if (e.target.value === 'custom') {
+                    setIsCustomCategory(true)
+                  } else {
+                    setIsCustomCategory(false)
+                    setImportCategory(e.target.value)
+                  }
+                }}
+              >
+                <option value="">{t('books.uncategorized')}</option>
+                {categories
+                  .filter(
+                    (cat) => !['未分类', 'Uncategorized', 'Category', '分类'].includes(cat.name),
+                  )
+                  .map((cat) => (
+                    <option key={cat.id} value={cat.name}>
+                      {getCategoryDisplayName(cat.name, cat.id)}
+                    </option>
+                  ))}
+                <option value="custom">＋ {t('books.prompt_add_category')}</option>
+              </select>
+
+              {isCustomCategory && (
+                <input
+                  className="form-field"
+                  style={{ width: '100%' }}
+                  value={importCustomCategory}
+                  onChange={(e) => setImportCustomCategory(e.target.value)}
+                  placeholder={t('books.prompt_add_category')}
+                  autoFocus
+                />
+              )}
+            </div>
+
+            <div
+              style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}
+            >
+              <button
+                className="btn"
+                onClick={() => {
+                  setIsImportOpen(false)
+                  setImportTitle('')
+                  setImportAuthor('')
+                  setImportCategory('')
+                  setImportCustomCategory('')
+                  setIsCustomCategory(false)
+                  setImportFilePath('')
+                  setSelectedFileName('')
+                }}
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                className="btn primary"
+                onClick={confirmImportBook}
+                disabled={!importTitle.trim() || !importFilePath}
+              >
+                {t('common.confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Premium Edit Category Modal */}
+      {editingCategory && (
+        <div style={modalOverlayStyle}>
+          <div style={modalContentStyle}>
+            <h3 style={modalTitleStyle}>{t('books.prompt_edit_category')}</h3>
+
+            {/* Primary input */}
+            <div>
+              <label style={labelStyle}>{t('common.main_name_label')}</label>
+              <input
+                className="form-field"
+                style={{ width: '100%' }}
+                value={editCatName}
+                onChange={(e) => setEditCatName(e.target.value)}
+                placeholder={t('books.prompt_edit_category')}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') confirmEditCategory()
+                }}
+              />
+            </div>
+
+            {/* Collapsible panel for other translations */}
+            <div style={{ marginTop: '8px', marginBottom: '12px' }}>
+              <button
+                type="button"
+                className="btn sm"
+                style={{
+                  border: 'none',
+                  background: 'none',
+                  color: 'var(--text-muted)',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: 0,
+                }}
+                onClick={() => setIsEditCatTransOpen(!isEditCatTransOpen)}
+              >
+                {t('common.more_translations')} {isEditCatTransOpen ? '▲' : '▼'}
+              </button>
+
+              {isEditCatTransOpen && (
+                <div
+                  style={{
+                    marginTop: '10px',
+                    padding: '10px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
+                  {SUPPORTED_LOCALES.filter((l) => l.code !== i18n.language).map((locale) => (
+                    <div
+                      key={locale.code}
+                      style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}
+                    >
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        {locale.label}
+                      </label>
+                      <input
+                        className="form-field"
+                        style={{ width: '100%', fontSize: '12px', padding: '6px 8px' }}
+                        value={editCatTrans[locale.code] || ''}
+                        onChange={(e) =>
+                          setEditCatTrans({ ...editCatTrans, [locale.code]: e.target.value })
+                        }
+                        placeholder={`e.g. translation for ${locale.label}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                className="btn"
+                onClick={() => {
+                  setEditingCategory(null)
+                  setEditCatName('')
+                  setEditCatTrans({})
+                  setIsEditCatTransOpen(false)
+                }}
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                className="btn primary"
+                onClick={confirmEditCategory}
+                disabled={!editCatName.trim()}
+              >
+                {t('common.confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Premium Delete Category Confirm Modal */}
+      {deletingCategory && (
+        <div style={modalOverlayStyle}>
+          <div style={modalContentStyle}>
+            <h3 style={{ ...modalTitleStyle, color: '#EF4444' }}>
+              {t('books.confirm_delete_category_title')}
+            </h3>
+            <p
+              style={{
+                fontSize: '13px',
+                color: 'var(--text-main)',
+                margin: '0 0 12px 0',
+                lineHeight: 1.5,
+              }}
+            >
+              {t('books.confirm_delete_category_desc', {
+                name: getCategoryDisplayName(deletingCategory.name, deletingCategory.id),
+              })}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button className="btn" onClick={() => setDeletingCategory(null)}>
+                {t('common.cancel')}
+              </button>
+              <button
+                className="btn primary"
+                style={{ backgroundColor: '#EF4444', borderColor: '#EF4444' }}
+                onClick={confirmDeleteCategory}
+              >
+                {t('common.confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Premium Edit Book Modal */}
+      {editingBookInfo && (
+        <div style={modalOverlayStyle}>
+          <div style={modalContentStyle}>
+            <h3 style={modalTitleStyle}>{t('books.edit_book') || '编辑书籍信息'}</h3>
+
+            {/* Title */}
+            <div>
+              <label style={labelStyle}>{t('books.prompt_import_title')}</label>
+              <input
+                className="form-field"
+                style={{ width: '100%' }}
+                value={editBookTitle}
+                onChange={(e) => setEditBookTitle(e.target.value)}
+                placeholder={t('books.prompt_import_title')}
+              />
+            </div>
+
+            {/* Author */}
+            <div>
+              <label style={labelStyle}>{t('books.prompt_import_author')}</label>
+              <input
+                className="form-field"
+                style={{ width: '100%' }}
+                value={editBookAuthor}
+                onChange={(e) => setEditBookAuthor(e.target.value)}
+                placeholder={t('books.prompt_import_author')}
+              />
+            </div>
+
+            {/* Category selection */}
+            <div>
+              <label style={labelStyle}>{t('books.prompt_import_category')}</label>
+              <select
+                className="form-field"
+                style={{ width: '100%', marginBottom: isEditBookCustomCategory ? '10px' : '0' }}
+                value={isEditBookCustomCategory ? 'custom' : editBookCategory}
+                onChange={(e) => {
+                  if (e.target.value === 'custom') {
+                    setIsEditBookCustomCategory(true)
+                  } else {
+                    setIsEditBookCustomCategory(false)
+                    setEditBookCategory(e.target.value)
+                  }
+                }}
+              >
+                <option value="">{t('books.uncategorized')}</option>
+                {categories
+                  .filter(
+                    (cat) => !['未分类', 'Uncategorized', 'Category', '分类'].includes(cat.name),
+                  )
+                  .map((cat) => (
+                    <option key={cat.id} value={cat.name}>
+                      {getCategoryDisplayName(cat.name, cat.id)}
+                    </option>
+                  ))}
+                <option value="custom">＋ {t('books.prompt_add_category')}</option>
+              </select>
+
+              {isEditBookCustomCategory && (
+                <input
+                  className="form-field"
+                  style={{ width: '100%' }}
+                  value={editBookCustomCategory}
+                  onChange={(e) => setEditBookCustomCategory(e.target.value)}
+                  placeholder={t('books.prompt_add_category')}
+                  autoFocus
+                />
+              )}
+            </div>
+
+            <div
+              style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}
+            >
+              <button
+                className="btn"
+                onClick={() => {
+                  setEditingBookInfo(null)
+                  setEditBookTitle('')
+                  setEditBookAuthor('')
+                  setEditBookCategory('')
+                  setEditBookCustomCategory('')
+                  setIsEditBookCustomCategory(false)
+                }}
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                className="btn primary"
+                onClick={confirmEditBook}
+                disabled={!editBookTitle.trim()}
+              >
+                {t('common.confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Premium Delete Book Confirm Modal */}
+      {deletingBookInfo && (
+        <div style={modalOverlayStyle}>
+          <div style={modalContentStyle}>
+            <h3 style={{ ...modalTitleStyle, color: '#EF4444' }}>
+              {t('books.delete_book') || '删除书籍确认'}
+            </h3>
+            <p
+              style={{
+                fontSize: '13px',
+                color: 'var(--text-main)',
+                margin: '0 0 12px 0',
+                lineHeight: 1.5,
+              }}
+            >
+              {t('books.delete_book_confirm', { name: deletingBookInfo.title }) ||
+                `确定要删除书籍《${deletingBookInfo.title}》吗？该操作不可逆，将同时删除该书的所有高亮划线与批注。`}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button className="btn" onClick={() => setDeletingBookInfo(null)}>
+                {t('common.cancel')}
+              </button>
+              <button
+                className="btn primary"
+                style={{ backgroundColor: '#EF4444', borderColor: '#EF4444' }}
+                onClick={confirmDeleteBook}
+              >
+                {t('common.confirm')}
+              </button>
+            </div>
           </div>
         </div>
       )}

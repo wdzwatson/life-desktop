@@ -44,7 +44,36 @@ export function initializeUserDatabase(userDbDir: string) {
       last_trigger_time TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS translations (
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      locale TEXT NOT NULL,
+      translation TEXT NOT NULL,
+      PRIMARY KEY (entity_type, entity_id, locale)
+    );
   `)
+
+  const tasksTransCount = tasksDb
+    .prepare("SELECT count(*) as count FROM translations WHERE entity_type = 'task_status'")
+    .get() as { count: number }
+  if (tasksTransCount.count === 0) {
+    const insertTrans = tasksDb.prepare(
+      'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+    )
+    const statusMappings = [
+      { id: '待收集', zh: '待收集', en: 'Inbox' },
+      { id: '待处理', zh: '待处理', en: 'To Do' },
+      { id: '进行中', zh: '进行中', en: 'In Progress' },
+      { id: '待验收', zh: '待验收', en: 'Review' },
+      { id: '已关闭', zh: '已关闭', en: 'Closed' },
+      { id: '已逾期', zh: '已逾期', en: 'Overdue' },
+    ]
+    for (const mapping of statusMappings) {
+      insertTrans.run('task_status', mapping.id, 'zh-CN', mapping.zh)
+      insertTrans.run('task_status', mapping.id, 'en-US', mapping.en)
+    }
+  }
   tasksDb.close()
 
   // 2. Initialize Notes Database (notes.db)
@@ -77,6 +106,14 @@ export function initializeUserDatabase(userDbDir: string) {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (source_id) REFERENCES notes(id) ON DELETE CASCADE,
       FOREIGN KEY (target_id) REFERENCES notes(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS translations (
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      locale TEXT NOT NULL,
+      translation TEXT NOT NULL,
+      PRIMARY KEY (entity_type, entity_id, locale)
     );
 
     -- Full Text Search FTS5 Table
@@ -124,6 +161,22 @@ export function initializeUserDatabase(userDbDir: string) {
     console.error('Failed to migrate notebooks table (category column):', err)
   }
 
+  // Seed default translations in notesDb if empty
+  try {
+    const notesTransCount = notesDb
+      .prepare("SELECT count(*) as count FROM translations WHERE entity_type = 'notebook_category'")
+      .get() as { count: number }
+    if (notesTransCount.count === 0) {
+      const insertTrans = notesDb.prepare(
+        'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+      )
+      insertTrans.run('notebook_category', '默认', 'zh-CN', '默认')
+      insertTrans.run('notebook_category', '默认', 'en-US', 'Default')
+    }
+  } catch (err) {
+    console.error('Failed to seed notebook translations:', err)
+  }
+
   // Seed default notebooks if empty (None seeded per user request)
 
   notesDb.close()
@@ -161,6 +214,14 @@ export function initializeUserDatabase(userDbDir: string) {
       name TEXT UNIQUE NOT NULL,
       sort_order INTEGER DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS translations (
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      locale TEXT NOT NULL,
+      translation TEXT NOT NULL,
+      PRIMARY KEY (entity_type, entity_id, locale)
+    );
   `)
 
   // Seed default book categories if empty
@@ -172,6 +233,41 @@ export function initializeUserDatabase(userDbDir: string) {
     insertCat.run('设计', 2)
     insertCat.run('商业', 3)
     insertCat.run('待读', 4)
+  }
+
+  // Seed default category translations if empty
+  try {
+    const transCountStmt = booksDb.prepare(
+      "SELECT count(*) as count FROM translations WHERE entity_type = 'category'",
+    )
+    const transResult = transCountStmt.get() as { count: number }
+    if (transResult.count === 0) {
+      const allCats = booksDb.prepare('SELECT * FROM categories').all() as {
+        id: number
+        name: string
+      }[]
+      const defaultMappings = [
+        { name: '技术', en: 'Technology', zh: '技术' },
+        { name: '设计', en: 'Design', zh: '设计' },
+        { name: '商业', en: 'Business', zh: '商业' },
+        { name: '待读', en: 'To Read', zh: '待读' },
+      ]
+      const insertTrans = booksDb.prepare(
+        "INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ('category', ?, ?, ?)",
+      )
+      for (const mapping of defaultMappings) {
+        const cat = allCats.find((c) => c.name === mapping.name)
+        if (cat) {
+          insertTrans.run(String(cat.id), 'zh-CN', mapping.zh)
+          insertTrans.run(String(cat.id), 'en-US', mapping.en)
+        }
+      }
+      // Also seed Uncategorized
+      insertTrans.run('uncategorized', 'zh-CN', '未分类')
+      insertTrans.run('uncategorized', 'en-US', 'Uncategorized')
+    }
+  } catch (err) {
+    console.error('Failed to seed category translations:', err)
   }
   booksDb.close()
 
