@@ -47,11 +47,42 @@ function firstThumbnail(raw: any): string | undefined {
   return undefined
 }
 
+function isWebUrl(value: unknown): value is string {
+  return typeof value === 'string' && /^https?:\/\//i.test(value)
+}
+
+function extractBilibiliId(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const match = value.match(/\b(BV[a-zA-Z0-9]+)\b/i)
+  return match?.[1]
+}
+
+function resolveSourceUrl(raw: any, parent: any, ctx: NormalizeContext) {
+  if (isWebUrl(raw.webpage_url)) return raw.webpage_url
+  if (isWebUrl(raw.original_url)) return raw.original_url
+  if (isWebUrl(raw.url)) return raw.url
+  if (isWebUrl(parent.webpage_url)) return parent.webpage_url
+  if (isWebUrl(parent.original_url)) return parent.original_url
+  return ctx.fallbackUrl
+}
+
+function resolveSourceId(raw: any, parent: any, source: VideoSource, sourceUrl: string) {
+  if (source === 'bilibili') {
+    return (
+      extractBilibiliId(sourceUrl) ||
+      extractBilibiliId(parent.webpage_url) ||
+      extractBilibiliId(parent.id) ||
+      String(raw.id || parent.id || sourceUrl)
+    )
+  }
+  return String(raw.id || raw.display_id || parent.id || sourceUrl)
+}
+
 function normalizeItem(raw: any, parent: any, ctx: NormalizeContext): NormalizedVideoItem {
   const extractor = raw.extractor_key || parent.extractor_key || raw.extractor || parent.extractor
   const source = sourceFromExtractor(extractor)
-  const sourceUrl = raw.webpage_url || raw.url || ctx.fallbackUrl
-  const sourceId = String(raw.id || raw.display_id || sourceUrl)
+  const sourceUrl = resolveSourceUrl(raw, parent, ctx)
+  const sourceId = resolveSourceId(raw, parent, source, sourceUrl)
   return {
     id: `${source}:${parent.id || parent.playlist_id || sourceId}:${raw.playlist_index || sourceId}`,
     title: raw.title || parent.title || sourceUrl,
@@ -71,9 +102,16 @@ function normalizeItem(raw: any, parent: any, ctx: NormalizeContext): Normalized
 export function normalizeYtDlpMetadata(raw: any, ctx: NormalizeContext): NormalizedParseResult {
   const entries = Array.isArray(raw.entries) ? raw.entries.filter(Boolean) : []
   const source = sourceFromExtractor(raw.extractor_key || raw.extractor)
-  const diagnostics: VideoDiagnostic[] = [
-    { code: 'ok', severity: 'info', message: 'Parsed video metadata successfully.' },
-  ]
+  const diagnostics: VideoDiagnostic[] =
+    raw._type === 'playlist' && entries.length === 0
+      ? [
+          {
+            code: 'unknown_error',
+            severity: 'warning',
+            message: 'Parsed playlist metadata, but no importable videos were returned.',
+          },
+        ]
+      : [{ code: 'ok', severity: 'info', message: 'Parsed video metadata successfully.' }]
 
   if (entries.length > 0 || raw._type === 'playlist') {
     return {
@@ -111,6 +149,14 @@ export function normalizeYtDlpError(rawMessage: string): VideoDiagnostic {
       severity: 'warning',
       message:
         'Bilibili blocked anonymous metadata access. Configure browser cookies or a cookies.txt file, then retry.',
+      rawMessage,
+    }
+  }
+  if (lower.includes('cookie') && (lower.includes('expired') || lower.includes('invalid'))) {
+    return {
+      code: 'cookies_expired',
+      severity: 'warning',
+      message: 'The configured cookies appear to be expired. Re-login in the browser or refresh cookies.txt.',
       rawMessage,
     }
   }
