@@ -84,6 +84,43 @@ test('does not use direct media urls as canonical source urls', () => {
   assert.equal(result.items[0].sourceUrl, 'https://www.youtube.com/watch?v=hLQl3WQQoQ0')
 })
 
+test('does not use generic cdn media file urls as canonical source urls', () => {
+  const result = normalizeYtDlpMetadata(
+    {
+      extractor_key: 'Generic',
+      id: 'clip',
+      title: 'Clip',
+      url: 'https://cdn.example.com/assets/clip.mp4?signature=abc',
+    },
+    {
+      fallbackUrl: 'https://example.com/watch/clip',
+      wasFlatPlaylist: false,
+    },
+  )
+
+  assert.equal(result.sourceUrl, 'https://example.com/watch/clip')
+  assert.equal(result.items[0].sourceUrl, 'https://example.com/watch/clip')
+})
+
+test('keeps explicit webpage urls with video path segments', () => {
+  const result = normalizeYtDlpMetadata(
+    {
+      extractor_key: 'Generic',
+      id: 'page-video',
+      title: 'Page Video',
+      webpage_url: 'https://example.com/video/page-video',
+      url: 'https://cdn.example.com/assets/page-video.m3u8',
+    },
+    {
+      fallbackUrl: 'https://example.com/collection',
+      wasFlatPlaylist: false,
+    },
+  )
+
+  assert.equal(result.sourceUrl, 'https://example.com/video/page-video')
+  assert.equal(result.items[0].sourceUrl, 'https://example.com/video/page-video')
+})
+
 test('empty playlists return a warning diagnostic', () => {
   const result = normalizeYtDlpMetadata(
     {

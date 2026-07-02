@@ -51,16 +51,14 @@ function isWebUrl(value: unknown): value is string {
   return typeof value === 'string' && /^https?:\/\//i.test(value)
 }
 
-function isLikelyWebpageUrl(value: unknown): value is string {
+function isKnownSiteWebpageUrl(value: unknown): value is string {
   if (!isWebUrl(value)) return false
   try {
     const parsed = new URL(value)
     const host = parsed.hostname.toLowerCase()
-    if (host.includes('googlevideo.com')) return false
-    if (host.includes('bilivideo.com')) return false
     if (host.includes('youtube.com') || host.includes('youtu.be')) return true
     if (host.includes('bilibili.com')) return true
-    return !/\/(videoplayback|audio|video|stream)(\/|$)/i.test(parsed.pathname)
+    return false
   } catch {
     return false
   }
@@ -73,11 +71,11 @@ function extractBilibiliId(value: unknown): string | undefined {
 }
 
 function resolveSourceUrl(raw: any, parent: any, ctx: NormalizeContext) {
-  if (isLikelyWebpageUrl(raw.webpage_url)) return raw.webpage_url
-  if (isLikelyWebpageUrl(raw.original_url)) return raw.original_url
-  if (isLikelyWebpageUrl(raw.url)) return raw.url
-  if (isLikelyWebpageUrl(parent.webpage_url)) return parent.webpage_url
-  if (isLikelyWebpageUrl(parent.original_url)) return parent.original_url
+  if (isWebUrl(raw.webpage_url)) return raw.webpage_url
+  if (isWebUrl(raw.original_url)) return raw.original_url
+  if (isKnownSiteWebpageUrl(raw.url)) return raw.url
+  if (isWebUrl(parent.webpage_url)) return parent.webpage_url
+  if (isWebUrl(parent.original_url)) return parent.original_url
   return ctx.fallbackUrl
 }
 
