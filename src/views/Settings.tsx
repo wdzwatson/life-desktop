@@ -8,6 +8,7 @@ import {
   Shield,
   Trash2,
   RefreshCw,
+  Download,
 } from 'lucide-react'
 
 interface UpdateInfo {
@@ -31,7 +32,7 @@ export const Settings: React.FC = () => {
 
   // Settings tab switching
   const [activeMenu, setActiveMenu] = useState<
-    'appearance' | 'categories' | 'profile' | 'security' | 'updates'
+    'appearance' | 'categories' | 'profile' | 'security' | 'updates' | 'video'
   >('appearance')
 
   // Update states
@@ -43,6 +44,15 @@ export const Settings: React.FC = () => {
   const [downloadPercent, setDownloadPercent] = useState(0)
   const [updateErrorMsg, setUpdateErrorMsg] = useState('')
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(true)
+  const [videoSettings, setVideoSettings] = useState({
+    ytDlpPath: '',
+    ffmpegPath: '',
+    cookieMode: 'none',
+    cookieBrowser: 'chrome',
+    cookiesPath: '',
+    qualityPreference: 'best',
+  })
+  const [videoToolStatus, setVideoToolStatus] = useState<any>(null)
 
   // Categories list state
   const [categories, setCategories] = useState<any[]>([])
@@ -95,9 +105,17 @@ export const Settings: React.FC = () => {
     })
 
     api.getSettings().then((s: unknown) => {
-      const settings = s as { autoCheckUpdates?: boolean }
+      const settings = s as Record<string, any>
       if (settings) {
         setAutoCheckUpdates(settings.autoCheckUpdates !== false)
+        setVideoSettings({
+          ytDlpPath: settings.ytDlpPath || '',
+          ffmpegPath: settings.ffmpegPath || '',
+          cookieMode: settings.cookieMode || 'none',
+          cookieBrowser: settings.cookieBrowser || 'chrome',
+          cookiesPath: settings.cookiesPath || '',
+          qualityPreference: settings.qualityPreference || 'best',
+        })
       }
     })
 
@@ -179,6 +197,19 @@ export const Settings: React.FC = () => {
         autoCheckUpdates: checked,
       })
     }
+  }
+
+  const handleSaveVideoSettings = async () => {
+    if (!api) return
+    const current = await api.getSettings()
+    await api.saveSettings({ ...(current as Record<string, any>), ...videoSettings })
+    showToast(t('settings.toast_video_settings_saved'))
+  }
+
+  const handleCheckVideoTools = async () => {
+    if (!api) return
+    const status = await api.checkVideoTools()
+    setVideoToolStatus(status)
   }
 
   // Category management
@@ -367,6 +398,16 @@ export const Settings: React.FC = () => {
                 <RefreshCw size={15} />
               </span>
               <span className="nav-label">{t('settings.menu_updates')}</span>
+            </button>
+            <button
+              className={`nav-item ${activeMenu === 'video' ? 'active' : ''}`}
+              onClick={() => setActiveMenu('video')}
+              style={{ width: '100%', border: 'none', background: 'none' }}
+            >
+              <span className="nav-icon">
+                <Download size={15} />
+              </span>
+              <span className="nav-label">{t('settings.video_downloader_title')}</span>
             </button>
           </div>
         </aside>
@@ -827,6 +868,135 @@ export const Settings: React.FC = () => {
                 </button>
               </div>
             </div>
+          )}
+
+          {/* TAB: VIDEO DOWNLOADER */}
+          {activeMenu === 'video' && (
+            <section style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxWidth: '680px' }}>
+              <div>
+                <h3 style={{ fontSize: '15px', fontWeight: 800, marginBottom: '4px' }}>
+                  {t('settings.video_downloader_title')}
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '12.5px' }}>
+                  {t('settings.video_downloader_desc')}
+                </p>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                  {t('settings.video_ytdlp_path')}
+                  <input
+                    className="form-field"
+                    value={videoSettings.ytDlpPath}
+                    onChange={(e) =>
+                      setVideoSettings({ ...videoSettings, ytDlpPath: e.target.value })
+                    }
+                    placeholder="yt-dlp"
+                  />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                  {t('settings.video_ffmpeg_path')}
+                  <input
+                    className="form-field"
+                    value={videoSettings.ffmpegPath}
+                    onChange={(e) =>
+                      setVideoSettings({ ...videoSettings, ffmpegPath: e.target.value })
+                    }
+                    placeholder="ffmpeg"
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                  {t('settings.video_cookie_mode')}
+                  <select
+                    className="form-field"
+                    value={videoSettings.cookieMode}
+                    onChange={(e) =>
+                      setVideoSettings({ ...videoSettings, cookieMode: e.target.value })
+                    }
+                  >
+                    <option value="none">{t('settings.video_cookie_none')}</option>
+                    <option value="browser">{t('settings.video_cookie_browser')}</option>
+                    <option value="file">{t('settings.video_cookie_file')}</option>
+                  </select>
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                  {t('settings.video_quality_preference')}
+                  <select
+                    className="form-field"
+                    value={videoSettings.qualityPreference}
+                    onChange={(e) =>
+                      setVideoSettings({ ...videoSettings, qualityPreference: e.target.value })
+                    }
+                  >
+                    <option value="best">{t('settings.video_quality_best')}</option>
+                    <option value="1080p">1080P</option>
+                    <option value="720p">720P</option>
+                    <option value="audio">{t('settings.video_quality_audio')}</option>
+                  </select>
+                </label>
+              </div>
+
+              {videoSettings.cookieMode === 'browser' && (
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                  {t('settings.video_cookie_browser_label')}
+                  <select
+                    className="form-field"
+                    value={videoSettings.cookieBrowser}
+                    onChange={(e) =>
+                      setVideoSettings({ ...videoSettings, cookieBrowser: e.target.value })
+                    }
+                  >
+                    <option value="chrome">Chrome</option>
+                    <option value="safari">Safari</option>
+                    <option value="firefox">Firefox</option>
+                    <option value="edge">Edge</option>
+                    <option value="brave">Brave</option>
+                    <option value="chromium">Chromium</option>
+                  </select>
+                </label>
+              )}
+
+              {videoSettings.cookieMode === 'file' && (
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                  {t('settings.video_cookies_path')}
+                  <input
+                    className="form-field"
+                    value={videoSettings.cookiesPath}
+                    onChange={(e) =>
+                      setVideoSettings({ ...videoSettings, cookiesPath: e.target.value })
+                    }
+                    placeholder="/path/to/cookies.txt"
+                  />
+                </label>
+              )}
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className="btn primary" onClick={handleSaveVideoSettings}>
+                  {t('common.save')}
+                </button>
+                <button className="btn" onClick={handleCheckVideoTools}>
+                  {t('settings.video_check_tools')}
+                </button>
+              </div>
+
+              {videoToolStatus && (
+                <pre
+                  style={{
+                    whiteSpace: 'pre-wrap',
+                    fontSize: '11px',
+                    padding: '12px',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--bg-app)',
+                  }}
+                >
+                  {JSON.stringify(videoToolStatus, null, 2)}
+                </pre>
+              )}
+            </section>
           )}
 
           {/* TAB: SYSTEM UPDATES */}

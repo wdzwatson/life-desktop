@@ -559,7 +559,22 @@
     "updates_install_btn": "重启并安装更新",
     "updates_error": "检查更新失败: {{error}}",
     "updates_download_failed": "下载更新失败，您可以前往 GitHub Releases 页面手动下载最新安装包。",
-    "updates_auto_check": "自动检查更新"
+    "updates_auto_check": "自动检查更新",
+    "video_downloader_title": "视频下载器",
+    "video_downloader_desc": "配置 yt-dlp、ffmpeg、Bilibili 登录 cookies 与下载画质。",
+    "video_ytdlp_path": "yt-dlp 路径",
+    "video_ffmpeg_path": "ffmpeg 路径",
+    "video_cookie_mode": "Cookie 来源",
+    "video_cookie_none": "不使用 cookies",
+    "video_cookie_browser": "使用浏览器登录 cookies",
+    "video_cookie_file": "使用 cookies.txt",
+    "video_cookie_browser_label": "浏览器",
+    "video_cookies_path": "cookies.txt 路径",
+    "video_quality_preference": "画质",
+    "video_quality_best": "最佳可用",
+    "video_quality_audio": "仅音频",
+    "video_check_tools": "检测工具",
+    "toast_video_settings_saved": "视频下载器设置已保存"
   },
   "topbar": {
     "manage_dir_hint": "请在设置中管理本地书籍/视频目录",
