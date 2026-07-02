@@ -66,6 +66,24 @@ test('does not use non-webpage flat entry urls as source urls', () => {
   assert.equal(result.items[0].sourceId, 'BV15j2LBDEyv')
 })
 
+test('does not use direct media urls as canonical source urls', () => {
+  const result = normalizeYtDlpMetadata(
+    {
+      extractor_key: 'Youtube',
+      id: 'hLQl3WQQoQ0',
+      title: 'Adele - Someone Like You',
+      url: 'https://rr2---sn.example.googlevideo.com/videoplayback?id=media',
+    },
+    {
+      fallbackUrl: 'https://www.youtube.com/watch?v=hLQl3WQQoQ0',
+      wasFlatPlaylist: false,
+    },
+  )
+
+  assert.equal(result.sourceUrl, 'https://www.youtube.com/watch?v=hLQl3WQQoQ0')
+  assert.equal(result.items[0].sourceUrl, 'https://www.youtube.com/watch?v=hLQl3WQQoQ0')
+})
+
 test('empty playlists return a warning diagnostic', () => {
   const result = normalizeYtDlpMetadata(
     {
