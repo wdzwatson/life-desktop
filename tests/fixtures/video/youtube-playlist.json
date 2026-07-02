@@ -1,0 +1,18 @@
+{
+  "_type": "playlist",
+  "extractor_key": "Youtube",
+  "id": "RDhLQl3WQQoQ0",
+  "title": "Mix - Adele - Someone Like You (Official Music Video)",
+  "webpage_url": "https://www.youtube.com/watch?v=hLQl3WQQoQ0&list=RDhLQl3WQQoQ0",
+  "entries": [
+    {
+      "id": "hLQl3WQQoQ0",
+      "title": "Adele - Someone Like You (Official Music Video)",
+      "url": "https://www.youtube.com/watch?v=hLQl3WQQoQ0",
+      "duration": 285,
+      "duration_string": "4:45",
+      "thumbnail": "https://i.ytimg.com/vi/hLQl3WQQoQ0/hqdefault.jpg",
+      "extractor_key": "Youtube"
+    }
+  ]
+}

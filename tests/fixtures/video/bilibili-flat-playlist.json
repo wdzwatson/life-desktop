@@ -1,0 +1,27 @@
+{
+  "_type": "playlist",
+  "extractor_key": "BiliBili",
+  "id": "BV15j2LBDEyv",
+  "title": "LangChain1.0+LangGraph1.0快速落地",
+  "webpage_url": "https://www.bilibili.com/video/BV15j2LBDEyv/",
+  "entries": [
+    {
+      "_type": "url",
+      "id": "15j2LBDEyv",
+      "title": "P1 课程介绍",
+      "url": "https://www.bilibili.com/video/BV15j2LBDEyv?p=1",
+      "webpage_url": "https://www.bilibili.com/video/BV15j2LBDEyv?p=1",
+      "playlist_index": 1,
+      "extractor_key": "BiliBili"
+    },
+    {
+      "_type": "url",
+      "id": "15j2LBDEyv",
+      "title": "P2 环境准备",
+      "url": "https://www.bilibili.com/video/BV15j2LBDEyv?p=2",
+      "webpage_url": "https://www.bilibili.com/video/BV15j2LBDEyv?p=2",
+      "playlist_index": 2,
+      "extractor_key": "BiliBili"
+    }
+  ]
+}
