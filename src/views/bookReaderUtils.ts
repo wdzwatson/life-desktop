@@ -13,15 +13,27 @@ export type TocEntry = {
   paragraphOffset?: number
 }
 
+export type EpubLayoutMode = 'single' | 'dual' | 'scroll'
+
+export const shouldShowEpubToc = (
+  isPdf: boolean,
+  hasChapters: boolean,
+  epubLayoutMode: EpubLayoutMode,
+) => {
+  return !isPdf && hasChapters && epubLayoutMode !== 'dual'
+}
+
 export type TocSourceEntry = {
   title: string
   hrefKey: string
   frag?: string
+  level?: number
 }
 
 export type TocResolutionChapter = {
   title: string
   href: string
+  paragraphs?: ReadingBlock[]
 }
 
 export type ReaderTocChapter = {
@@ -92,6 +104,33 @@ export const getParagraphOffsetOfPage = (blocks: ReadingBlock[], pageIdx: number
   }
 
   return Math.max(0, blocks.length - 1)
+}
+
+export const getReadingProgressForLocation = (
+  chapters: ReaderTocChapter[],
+  chapterIndex: number,
+  paragraphOffset: number,
+) => {
+  if (chapters.length === 0) return 0
+
+  const pageCounts = chapters.map((chapter) =>
+    getPagesForReadingBlocks(chapter.paragraphs || []).length,
+  )
+  const totalPages = pageCounts.reduce((sum, count) => sum + count, 0)
+  if (totalPages <= 1) return 100
+
+  const safeChapterIndex = Math.max(0, Math.min(chapterIndex, chapters.length - 1))
+  const previousPages = pageCounts
+    .slice(0, safeChapterIndex)
+    .reduce((sum, count) => sum + count, 0)
+  const chapterBlocks = chapters[safeChapterIndex].paragraphs || []
+  const localPageIndex = getPageOfParagraph(chapterBlocks, paragraphOffset)
+  const safeLocalPageIndex = Math.max(
+    0,
+    Math.min(localPageIndex, Math.max(0, pageCounts[safeChapterIndex] - 1)),
+  )
+
+  return Math.round(((previousPages + safeLocalPageIndex) / (totalPages - 1)) * 100)
 }
 
 export const getActiveTocIndex = (
@@ -204,6 +243,29 @@ export const resolveChapterTitleFromHtml = (
   return fallbackTitle
 }
 
+const findHeadingTarget = (
+  chapters: TocResolutionChapter[],
+  title: string,
+  startIndex: number,
+) => {
+  const normTitle = normalizeTocTitle(title)
+
+  for (let chapterIndex = Math.max(0, startIndex); chapterIndex < chapters.length; chapterIndex++) {
+    const headingIndex = chapters[chapterIndex].paragraphs?.findIndex(
+      (block) => isReadingBlockHeading(block) && normalizeTocTitle(getReadingBlockText(block)) === normTitle,
+    )
+    if (headingIndex !== undefined && headingIndex >= 0) {
+      return {
+        chapterIndex,
+        paragraphOffset: headingIndex,
+        hrefKey: chapters[chapterIndex].href,
+      }
+    }
+  }
+
+  return null
+}
+
 export const resolveTocTarget = (
   entry: TocSourceEntry,
   chapters: TocResolutionChapter[],
@@ -218,6 +280,14 @@ export const resolveTocTarget = (
   if (typeof hrefIndex === 'number' && !entry.frag) {
     const hrefTitle = normalizeTocTitle(chapters[hrefIndex]?.title || '')
     if (hrefTitle !== normTocTitle) {
+      const headingTarget = findHeadingTarget(chapters, entry.title, hrefIndex)
+      if (headingTarget) {
+        return {
+          chapterIndex: headingTarget.chapterIndex,
+          paragraphOffset: headingTarget.paragraphOffset,
+        }
+      }
+
       const laterMatchIndex = chapters.findIndex(
         (chapter, index) => index >= hrefIndex && normalizeTocTitle(chapter.title) === normTocTitle,
       )
@@ -241,7 +311,14 @@ export const resolveTocTarget = (
   }
 
   const anchors = anchorParaByHref[resolvedHrefKey] || {}
-  const paragraphOffset = entry.frag && anchors[entry.frag] !== undefined ? anchors[entry.frag] : 0
+  let paragraphOffset = entry.frag && anchors[entry.frag] !== undefined ? anchors[entry.frag] : 0
+
+  if (!entry.frag && typeof chapterIndex === 'number' && paragraphOffset === 0) {
+    const headingTarget = findHeadingTarget(chapters, entry.title, chapterIndex)
+    if (headingTarget && headingTarget.chapterIndex === chapterIndex && headingTarget.paragraphOffset > 0) {
+      paragraphOffset = headingTarget.paragraphOffset
+    }
+  }
 
   return {
     chapterIndex,

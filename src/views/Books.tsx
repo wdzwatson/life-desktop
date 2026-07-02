@@ -24,8 +24,10 @@ import {
   getPagesForReadingBlocks,
   getParagraphOffsetOfPage,
   getReadingBlockText,
+  getReadingProgressForLocation,
   isReadingBlockHeading,
   resolveReaderTocEntry,
+  shouldShowEpubToc,
   type ReadingBlock,
   type TocEntry,
 } from './bookReaderUtils'
@@ -98,6 +100,7 @@ export const Books: React.FC = () => {
   const pdfScrollRef = useRef<HTMLDivElement | null>(null)
   // Guards the scroll handler from fighting a programmatic scroll (button / progress jump).
   const isProgrammaticScrollRef = useRef(false)
+  const skipNextEpubAlignRef = useRef(false)
   // Horizontal offsets (px from viewport edge) for the floating prev/next buttons,
   // measured from the actual reading column so they stay adaptive across layouts.
   const [navBtnOffsets, setNavBtnOffsets] = useState<{ left: number; right: number }>({
@@ -664,11 +667,6 @@ export const Books: React.FC = () => {
     setNewAnnotation('')
   }
 
-  // Simulated highlight click selection
-  const simulateSelection = (text: string) => {
-    setSelectedHighlightText(text)
-  }
-
   // Get active paragraphs of current chapter
   const getActiveParagraphs = () => {
     if (bookChapters) {
@@ -926,6 +924,47 @@ export const Books: React.FC = () => {
     }
   }
 
+  const handleEpubContinuousScroll = (e: React.UIEvent<HTMLElement>) => {
+    if (epubLayoutMode !== 'scroll' || isPdf || !bookChapters) return
+    if (isProgrammaticScrollRef.current) return
+
+    const container = e.currentTarget
+    const blocks = Array.from(
+      container.querySelectorAll<HTMLElement>(
+        '[data-epub-chapter-index][data-epub-block-offset]',
+      ),
+    )
+    if (blocks.length === 0) return
+
+    const anchorY = container.getBoundingClientRect().top + 48
+    let activeBlock = blocks[0]
+
+    for (const block of blocks) {
+      if (block.getBoundingClientRect().top <= anchorY) {
+        activeBlock = block
+      } else {
+        break
+      }
+    }
+
+    const nextChapterIndex = Number(activeBlock.dataset.epubChapterIndex)
+    const nextParagraphOffset = Number(activeBlock.dataset.epubBlockOffset)
+    if (!Number.isFinite(nextChapterIndex) || !Number.isFinite(nextParagraphOffset)) return
+
+    if (
+      nextChapterIndex !== currentChapterIndex ||
+      nextParagraphOffset !== currentParagraphOffset
+    ) {
+      skipNextEpubAlignRef.current = true
+      const chapter = bookChapters[nextChapterIndex]
+      const paragraphs = (chapter?.paragraphs || []) as ReadingBlock[]
+      setCurrentChapterIndex(nextChapterIndex)
+      setCurrentChapter(chapter?.title || '')
+      setCurrentParagraphOffset(nextParagraphOffset)
+      setCurrentPageIndex(getPageOfParagraph(paragraphs, nextParagraphOffset))
+    }
+  }
+
   useEffect(() => {
     if (!readingBook) return
 
@@ -979,15 +1018,23 @@ export const Books: React.FC = () => {
   // when possible. This matters for sub-chapters that share a rendered page.
   useEffect(() => {
     if (isPdf) return
+    if (skipNextEpubAlignRef.current) {
+      skipNextEpubAlignRef.current = false
+      return
+    }
     const raf = requestAnimationFrame(() => {
+      isProgrammaticScrollRef.current = true
       const target = readerMainRef.current?.querySelector(
-        `[data-epub-block-offset="${currentParagraphOffset}"]`,
+        `[data-epub-chapter-index="${currentChapterIndex}"][data-epub-block-offset="${currentParagraphOffset}"]`,
       )
       if (target) {
         ;(target as HTMLElement).scrollIntoView({ block: 'start', behavior: 'auto' })
       } else {
         readerMainRef.current?.scrollTo({ top: 0, behavior: 'auto' })
       }
+      window.setTimeout(() => {
+        isProgrammaticScrollRef.current = false
+      }, 120)
     })
     return () => cancelAnimationFrame(raf)
   }, [currentChapterIndex, currentPageIndex, currentParagraphOffset, epubLayoutMode])
@@ -1048,7 +1095,7 @@ export const Books: React.FC = () => {
       ro.disconnect()
       window.removeEventListener('resize', measure)
     }
-  }, [readingBook, isLoadingReader, bookChapters, pdfLayoutMode, pdfNumPages])
+  }, [readingBook, isLoadingReader, bookChapters, epubLayoutMode, pdfLayoutMode, pdfNumPages])
 
   // Save new highlight / annotation
   const handleAddHighlight = async () => {
@@ -1206,6 +1253,7 @@ export const Books: React.FC = () => {
     block: ReadingBlock,
     key: React.Key,
     blockOffset?: number,
+    chapterIndex = currentChapterIndex,
   ) => {
     const text = getReadingBlockText(block)
     const isHeading = isReadingBlockHeading(block)
@@ -1217,6 +1265,7 @@ export const Books: React.FC = () => {
       return (
         <h3
           key={key}
+          data-epub-chapter-index={chapterIndex}
           data-epub-block-offset={blockOffset}
           style={{
             margin: headingLevel <= 2 ? '28px 0 14px' : '22px 0 10px',
@@ -1234,6 +1283,7 @@ export const Books: React.FC = () => {
     return (
       <p
         key={key}
+        data-epub-chapter-index={chapterIndex}
         data-epub-block-offset={blockOffset}
         style={{
           marginBottom: '16px',
@@ -1241,10 +1291,10 @@ export const Books: React.FC = () => {
           borderRadius: '6px',
           backgroundColor: hasHighlight ? 'rgba(245, 158, 11, 0.15)' : 'transparent',
           borderLeft: hasHighlight ? '3px solid var(--color-accent)' : 'none',
-          cursor: 'pointer',
+          cursor: 'text',
           transition: 'all 0.15s ease',
+          userSelect: 'text',
         }}
-        onClick={() => simulateSelection(text)}
       >
         {text}
         {hasHighlight && (
@@ -1267,6 +1317,16 @@ export const Books: React.FC = () => {
   const currentChIndex = bookChapters ? currentChapterIndex : chList.indexOf(currentChapter)
   const isPdf =
     readingBook && (readingBook.cover === 'PDF' || readingBook.path.toLowerCase().endsWith('.pdf'))
+  const hasBookChapters = Boolean(bookChapters && bookChapters.length > 0)
+  const showEpubToc = shouldShowEpubToc(Boolean(isPdf), hasBookChapters, epubLayoutMode)
+
+  useEffect(() => {
+    if (isPdf || !bookChapters || isLoadingReader) return
+    setReadingProgress(
+      getReadingProgressForLocation(bookChapters, currentChapterIndex, currentParagraphOffset),
+    )
+  }, [isPdf, bookChapters, currentChapterIndex, currentParagraphOffset, isLoadingReader])
+
   // In EPUB scroll mode the whole chapter is shown, so paging is chapter-bound.
   const isEpubScroll = !isPdf && bookChapters && epubLayoutMode === 'scroll'
   const hasPrev = isPdf
@@ -1773,29 +1833,32 @@ export const Books: React.FC = () => {
               backgroundColor: isDarkReader ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                minWidth: 0,
+                flex: '1 1 auto',
+                overflow: 'hidden',
+              }}
+            >
               <button className="btn sm" onClick={handleCloseReader}>
                 ✕ {t('books.exit_reader')}
               </button>
-              <strong style={{ fontSize: '13.5px' }}>
+              <strong
+                style={{
+                  fontSize: '13.5px',
+                  flex: '1 1 auto',
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                title={`${t('books.reading_label')}:《${readingBook.title}》`}
+              >
                 {t('books.reading_label')}:《{readingBook.title}》
               </strong>
-
-              {readingBook.path && !readingBook.path.startsWith('http') && (
-                <button
-                  className="btn sm"
-                  style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-                  onClick={async () => {
-                    const res = await api.openExternalFile(readingBook.path)
-                    if (res && !res.success) {
-                      showToast(res.error)
-                    }
-                  }}
-                  title={t('books.open_externally') || '用外部程序打开'}
-                >
-                  <ExternalLink size={12} /> {t('books.open_externally') || '外部打开'}
-                </button>
-              )}
 
               {/* Progress Slider */}
               <div
@@ -1833,7 +1896,7 @@ export const Books: React.FC = () => {
             </div>
 
             {/* Custom font and bg adjustments */}
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: '0 0 auto' }}>
               <button className="btn sm" onClick={() => handleExportHighlights()}>
                 <ExternalLink size={12} /> {t('books.export_notes_btn')}
               </button>
@@ -2009,8 +2072,7 @@ export const Books: React.FC = () => {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns:
-                !isPdf && bookChapters && bookChapters.length > 0 ? '220px 1fr 320px' : '1fr 320px',
+              gridTemplateColumns: showEpubToc ? '220px 1fr 320px' : '1fr 320px',
               height: '100%',
               minHeight: 0,
             }}
@@ -2051,7 +2113,7 @@ export const Books: React.FC = () => {
             ) : (
               <>
                 {/* Left Column: Chapters / TOC */}
-                {!isPdf && bookChapters && bookChapters.length > 0 && (
+                {showEpubToc && bookChapters && (
                   <aside
                     style={{
                       borderRight: `1px solid ${readerBorderColor}`,
@@ -2114,12 +2176,7 @@ export const Books: React.FC = () => {
                                   paras,
                                   targetEntry.paragraphOffset || 0,
                                 )
-                                // In dual mode, snap to the left page of the spread.
-                                const targetSpreadPage =
-                                  epubLayoutMode === 'dual'
-                                    ? targetPage - (targetPage % 2)
-                                    : targetPage
-                                setCurrentPageIndex(targetSpreadPage)
+                                setCurrentPageIndex(targetPage)
                                 setCurrentParagraphOffset(targetEntry.paragraphOffset || 0)
                               }}
                               title={entry.title}
@@ -2156,9 +2213,14 @@ export const Books: React.FC = () => {
                 {/* Middle Column: Text content */}
                 <main
                   ref={readerMainRef}
+                  onScroll={
+                    epubLayoutMode === 'scroll' && !isPdf ? handleEpubContinuousScroll : undefined
+                  }
+                  onMouseUp={!isPdf ? handleTextSelection : undefined}
                   style={{
                     padding: '32px 48px',
                     overflowY: 'auto',
+                    userSelect: 'text',
                     fontSize: `${fontSize}px`,
                     lineHeight: '1.8',
                     maxWidth: '800px',
@@ -2379,18 +2441,34 @@ export const Books: React.FC = () => {
                     </div>
                   ) : bookChapters ? (
                     <>
-                      {currentPageIndex === 0 && !isReadingBlockHeading(activeParagraphs[0]) && (
-                        <h2 style={{ fontSize: '20px', marginBottom: '24px', fontWeight: 800 }}>
-                          {currentChapter}
-                        </h2>
-                      )}
+                      {epubLayoutMode !== 'scroll' &&
+                        currentPageIndex === 0 &&
+                        !isReadingBlockHeading(activeParagraphs[0]) && (
+                          <h2 style={{ fontSize: '20px', marginBottom: '24px', fontWeight: 800 }}>
+                            {currentChapter}
+                          </h2>
+                        )}
 
                       {epubLayoutMode === 'scroll' ? (
-                        // Continuous: render the whole chapter, scroll freely.
+                        // Continuous: render the whole EPUB so native scrolling crosses chapters.
                         <div>
-                          {activeParagraphs.map((block: ReadingBlock, idx: number) =>
-                            renderEpubParagraph(block, idx, idx),
-                          )}
+                          {bookChapters.map((chapter, chapterIdx) => (
+                            <section
+                              key={chapterIdx}
+                              data-epub-chapter-section={chapterIdx}
+                              style={{
+                                paddingTop: chapterIdx === 0 ? 0 : '36px',
+                                marginTop: chapterIdx === 0 ? 0 : '28px',
+                                borderTop:
+                                  chapterIdx === 0 ? 'none' : `1px solid ${readerBorderColor}`,
+                              }}
+                            >
+                              {(chapter.paragraphs || []).map(
+                                (block: ReadingBlock, idx: number) =>
+                                  renderEpubParagraph(block, `${chapterIdx}-${idx}`, idx, chapterIdx),
+                              )}
+                            </section>
+                          ))}
                         </div>
                       ) : epubLayoutMode === 'dual' ? (
                         // Two page-chunks side by side, like an open book.

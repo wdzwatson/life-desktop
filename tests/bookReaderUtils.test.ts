@@ -6,13 +6,23 @@ import {
   getPageOfParagraph,
   getParagraphOffsetOfPage,
   getPagesForReadingBlocks,
+  getReadingProgressForLocation,
   isReadingBlockHeading,
   resolveChapterTitleFromHtml,
   resolveReaderTocEntry,
   resolveTocTarget,
+  shouldShowEpubToc,
   type ReadingBlock,
   type TocEntry,
 } from '../src/views/bookReaderUtils.ts'
+
+test('EPUB TOC visibility hides only in dual page mode', () => {
+  assert.equal(shouldShowEpubToc(false, true, 'single'), true)
+  assert.equal(shouldShowEpubToc(false, true, 'scroll'), true)
+  assert.equal(shouldShowEpubToc(false, true, 'dual'), false)
+  assert.equal(shouldShowEpubToc(true, true, 'single'), false)
+  assert.equal(shouldShowEpubToc(false, false, 'single'), false)
+})
 
 test('active TOC can distinguish secondary headings on the same rendered page', () => {
   const toc: TocEntry[] = [
@@ -37,6 +47,18 @@ test('pagination helpers use heading blocks as addressable reading positions', (
   assert.equal(getPagesForReadingBlocks(blocks).length, 1)
   assert.equal(getPageOfParagraph(blocks, 2), 0)
   assert.equal(getParagraphOffsetOfPage(blocks, 0), 0)
+})
+
+test('reading progress is derived from EPUB chapter and paragraph position', () => {
+  const longChapter = Array.from({ length: 7 }, (_, idx) => `paragraph ${idx + 1}`)
+  const chapters = [
+    { title: 'Chapter 1', paragraphs: longChapter },
+    { title: 'Chapter 2', paragraphs: longChapter },
+  ]
+
+  assert.equal(getReadingProgressForLocation(chapters, 0, 0), 0)
+  assert.equal(getReadingProgressForLocation(chapters, 1, 0), 67)
+  assert.equal(getReadingProgressForLocation(chapters, 1, 6), 100)
 })
 
 test('anchor positions on a heading opening tag resolve to that heading block', () => {
@@ -75,6 +97,68 @@ test('TOC target resolution can repair split-file child entries with missing fra
   )
 
   assert.deepEqual(target, { chapterIndex: 2, paragraphOffset: 0 })
+})
+
+test('TOC target resolution can locate deeper same-file headings without fragments', () => {
+  const target = resolveTocTarget(
+    { title: 'Deep Section', hrefKey: 'chapter.xhtml', frag: '', level: 3 },
+    [
+      {
+        title: 'Chapter',
+        href: 'chapter.xhtml',
+        paragraphs: [
+          { type: 'heading', level: 1, text: 'Chapter' },
+          'Intro',
+          { type: 'heading', level: 2, text: 'Section' },
+          'Section body',
+          { type: 'heading', level: 3, text: 'Deep Section' },
+          'Deep body',
+        ],
+      },
+    ],
+    { 'chapter.xhtml': 0 },
+    {},
+  )
+
+  assert.deepEqual(target, { chapterIndex: 0, paragraphOffset: 4 })
+})
+
+test('TOC target resolution can repair stale hrefs to deeper headings in later split files', () => {
+  const target = resolveTocTarget(
+    { title: '2.3.2. 指针', hrefKey: 'part0006_split_000.html', frag: '', level: 2 },
+    [
+      {
+        title: '第二章 程序结构',
+        href: 'part0006_split_000.html',
+        paragraphs: [{ type: 'heading', level: 1, text: '第二章 程序结构' }, 'Intro'],
+      },
+      {
+        title: '2.1. 命名',
+        href: 'part0006_split_001.html',
+        paragraphs: [{ type: 'heading', level: 2, text: '2.1. 命名' }, 'Naming body'],
+      },
+      {
+        title: '2.3. 变量',
+        href: 'part0006_split_003.html',
+        paragraphs: [
+          { type: 'heading', level: 2, text: '2.3. 变量' },
+          'Variable body',
+          { type: 'heading', level: 3, text: '2.3.1. 简短变量声明' },
+          'Short declarations',
+          { type: 'heading', level: 3, text: '2.3.2. 指针' },
+          'Pointer body',
+        ],
+      },
+    ],
+    {
+      'part0006_split_000.html': 0,
+      'part0006_split_001.html': 1,
+      'part0006_split_003.html': 2,
+    },
+    {},
+  )
+
+  assert.deepEqual(target, { chapterIndex: 2, paragraphOffset: 4 })
 })
 
 test('reader TOC click repairs stale backend entries that still point at parent chapter', () => {
