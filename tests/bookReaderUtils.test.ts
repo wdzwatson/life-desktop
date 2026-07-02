@@ -5,23 +5,50 @@ import {
   getActiveTocIndex,
   getPageOfParagraph,
   getParagraphOffsetOfPage,
+  getAnnotationEditorFocusOptions,
   getPagesForReadingBlocks,
+  getPdfPageRenderWidth,
   getReadingProgressForLocation,
+  getReaderContentGridColumns,
   isReadingBlockHeading,
   resolveChapterTitleFromHtml,
   resolveReaderTocEntry,
   resolveTocTarget,
+  shouldCloseReaderDrawersOnContentClick,
   shouldShowEpubToc,
   type ReadingBlock,
   type TocEntry,
 } from '../src/views/bookReaderUtils.ts'
 
-test('EPUB TOC visibility hides only in dual page mode', () => {
+test('EPUB TOC drawer is available for EPUB chapters', () => {
   assert.equal(shouldShowEpubToc(false, true, 'single'), true)
   assert.equal(shouldShowEpubToc(false, true, 'scroll'), true)
-  assert.equal(shouldShowEpubToc(false, true, 'dual'), false)
+  assert.equal(shouldShowEpubToc(false, true, 'dual'), true)
   assert.equal(shouldShowEpubToc(true, true, 'single'), false)
   assert.equal(shouldShowEpubToc(false, false, 'single'), false)
+})
+
+test('reader content grid does not reserve drawer widths', () => {
+  assert.equal(getReaderContentGridColumns(true), 'minmax(0, 1fr)')
+  assert.equal(getReaderContentGridColumns(false), 'minmax(0, 1fr)')
+})
+
+test('PDF page render width uses more of the reader column', () => {
+  assert.equal(getPdfPageRenderWidth(1200, 'single'), 1040)
+  assert.equal(getPdfPageRenderWidth(1200, 'scroll'), 1040)
+  assert.equal(getPdfPageRenderWidth(1200, 'simulation'), 1040)
+  assert.equal(getPdfPageRenderWidth(1200, 'dual'), 552)
+  assert.equal(getPdfPageRenderWidth(640, 'single'), 560)
+})
+
+test('annotation editor focus does not scroll the reader', () => {
+  assert.deepEqual(getAnnotationEditorFocusOptions(), { preventScroll: true })
+})
+
+test('content clicks close drawers only when no text is selected', () => {
+  assert.equal(shouldCloseReaderDrawersOnContentClick(''), true)
+  assert.equal(shouldCloseReaderDrawersOnContentClick('   '), true)
+  assert.equal(shouldCloseReaderDrawersOnContentClick('selected text'), false)
 })
 
 test('active TOC can distinguish secondary headings on the same rendered page', () => {

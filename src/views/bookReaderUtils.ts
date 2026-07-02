@@ -14,13 +14,36 @@ export type TocEntry = {
 }
 
 export type EpubLayoutMode = 'single' | 'dual' | 'scroll'
+export type PdfLayoutMode = 'single' | 'dual' | 'scroll' | 'simulation'
 
 export const shouldShowEpubToc = (
   isPdf: boolean,
   hasChapters: boolean,
   epubLayoutMode: EpubLayoutMode,
 ) => {
-  return !isPdf && hasChapters && epubLayoutMode !== 'dual'
+  void epubLayoutMode
+  return !isPdf && hasChapters
+}
+
+export const getReaderContentGridColumns = (showEpubToc: boolean) => {
+  void showEpubToc
+  return 'minmax(0, 1fr)'
+}
+
+export const getPdfPageRenderWidth = (readerWidth: number, pdfLayoutMode: PdfLayoutMode) => {
+  if (readerWidth <= 0) return 0
+
+  if (pdfLayoutMode === 'dual') {
+    return Math.round(Math.max(280, Math.min(560, (readerWidth - 96) / 2)))
+  }
+
+  return Math.round(Math.max(420, Math.min(1040, readerWidth - 80)))
+}
+
+export const getAnnotationEditorFocusOptions = () => ({ preventScroll: true })
+
+export const shouldCloseReaderDrawersOnContentClick = (selectedText: string) => {
+  return selectedText.trim().length === 0
 }
 
 export type TocSourceEntry = {
