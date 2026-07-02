@@ -13,6 +13,7 @@ dist-electron
 dist_electron
 dist-ssr
 *.local
+.superpowers/
 
 # Editor directories and files
 .vscode/*
