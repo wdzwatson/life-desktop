@@ -290,6 +290,53 @@ export function initializeUserDatabase(userDbDir: string) {
       favorite_time TEXT DEFAULT CURRENT_TIMESTAMP
     );
   `)
+
+  const videoColumns = videosDb.prepare('PRAGMA table_info(videos)').all() as Array<{ name: string }>
+  const videoColumnNames = new Set(videoColumns.map((column) => column.name))
+  const addVideoColumn = (name: string, definition: string) => {
+    if (!videoColumnNames.has(name)) {
+      videosDb.prepare(`ALTER TABLE videos ADD COLUMN ${name} ${definition}`).run()
+      videoColumnNames.add(name)
+    }
+  }
+
+  addVideoColumn('group_id', 'INTEGER')
+  addVideoColumn('source_id', 'TEXT')
+  addVideoColumn('source_url', 'TEXT')
+  addVideoColumn('playlist_id', 'TEXT')
+  addVideoColumn('playlist_title', 'TEXT')
+  addVideoColumn('part_index', 'INTEGER')
+  addVideoColumn('thumbnail_url', 'TEXT')
+  addVideoColumn('local_path', 'TEXT')
+  addVideoColumn('selected_quality', "TEXT DEFAULT 'best'")
+  addVideoColumn('parse_status', "TEXT DEFAULT 'ok'")
+  addVideoColumn('diagnostic_message', 'TEXT')
+
+  videosDb.exec(`
+    CREATE TABLE IF NOT EXISTS video_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS video_tags (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      color TEXT DEFAULT '#64748b',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS video_tag_links (
+      video_id INTEGER NOT NULL,
+      tag_id INTEGER NOT NULL,
+      PRIMARY KEY (video_id, tag_id),
+      FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE,
+      FOREIGN KEY (tag_id) REFERENCES video_tags(id) ON DELETE CASCADE
+    );
+  `)
   videosDb.close()
 
   // 5. Initialize Vault Database (vault.db)
