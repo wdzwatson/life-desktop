@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import {
+  parsePrintedFilePath,
   resolveCookieConfigFromSettings,
   resolvePlaybackPath,
   resolveVideoToolPath,
@@ -58,4 +59,9 @@ test('resolvePlaybackPath rejects sibling directories with the same prefix', () 
   const result = resolvePlaybackPath(videoDir, filePath)
 
   assert.equal(result.success, false)
+})
+
+test('parsePrintedFilePath reads yt-dlp json filepath lines', () => {
+  assert.equal(parsePrintedFilePath('filepath:"/tmp/video file.mp4"'), '/tmp/video file.mp4')
+  assert.equal(parsePrintedFilePath('not a filepath'), undefined)
 })

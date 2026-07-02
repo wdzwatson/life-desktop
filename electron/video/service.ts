@@ -42,6 +42,16 @@ function runProcess(command: string, args: string[]) {
   })
 }
 
+export function parsePrintedFilePath(line: string) {
+  if (!line.startsWith('filepath:')) return undefined
+  const payload = line.slice('filepath:'.length).trim()
+  try {
+    return JSON.parse(payload)
+  } catch {
+    return payload || undefined
+  }
+}
+
 export async function checkVideoTools(settings: Record<string, any>) {
   const ytDlpPath = resolveVideoToolPath(settings, 'yt-dlp')
   const ffmpegPath = resolveVideoToolPath(settings, 'ffmpeg')
@@ -106,6 +116,8 @@ export async function startVideoDownload(input: {
   url: string
   title: string
   outputDir: string
+  onFinished?: (filePath?: string) => void
+  onFailed?: (message: string) => void
 }) {
   fs.mkdirSync(input.outputDir, { recursive: true })
   const ytDlpPath = resolveVideoToolPath(input.settings, 'yt-dlp')
@@ -117,10 +129,16 @@ export async function startVideoDownload(input: {
     ffmpegPath: input.settings.ffmpegPath,
   })
   const child = spawn(ytDlpPath, args, { windowsHide: true })
+  let downloadedFilePath: string | undefined
   child.stdout.on('data', (chunk) => {
+    const message = chunk.toString()
+    for (const line of message.split(/\r?\n/)) {
+      const filePath = parsePrintedFilePath(line)
+      if (filePath) downloadedFilePath = filePath
+    }
     input.mainWindow?.webContents.send('video:download-progress', {
       title: input.title,
-      message: chunk.toString(),
+      message,
     })
   })
   child.stderr.on('data', (chunk) => {
@@ -131,7 +149,13 @@ export async function startVideoDownload(input: {
   })
   child.on('close', (code) => {
     if (code === 0) {
-      input.mainWindow?.webContents.send('video:download-finished', { title: input.title })
+      input.onFinished?.(downloadedFilePath)
+      input.mainWindow?.webContents.send('video:download-finished', {
+        title: input.title,
+        filePath: downloadedFilePath,
+      })
+    } else {
+      input.onFailed?.(`yt-dlp exited with code ${code}`)
     }
   })
   return { success: true }

@@ -1313,6 +1313,28 @@ ipcMain.handle('video:download', async (_, videoData: any) => {
     url: videoData.sourceUrl || videoData.url,
     title: videoData.title,
     outputDir: getActiveUserVideoDir(),
+    onFinished: (filePath) => {
+      if (!videoData.id || !filePath) return
+      const db = getUserDb('videos')
+      db.prepare(
+        `
+        UPDATE videos
+        SET status = 'downloaded', local_path = ?, path = ?, diagnostic_message = NULL
+        WHERE id = ?
+        `,
+      ).run(filePath, filePath, videoData.id)
+    },
+    onFailed: (message) => {
+      if (!videoData.id) return
+      const db = getUserDb('videos')
+      db.prepare(
+        `
+        UPDATE videos
+        SET status = 'unclassified', diagnostic_message = ?
+        WHERE id = ?
+        `,
+      ).run(message, videoData.id)
+    },
   })
 })
 
