@@ -56,8 +56,9 @@ function isKnownSiteWebpageUrl(value: unknown): value is string {
   try {
     const parsed = new URL(value)
     const host = parsed.hostname.toLowerCase()
-    if (host.includes('youtube.com') || host.includes('youtu.be')) return true
-    if (host.includes('bilibili.com')) return true
+    if (host === 'youtube.com' || host.endsWith('.youtube.com')) return true
+    if (host === 'youtu.be') return true
+    if (host === 'bilibili.com' || host.endsWith('.bilibili.com')) return true
     return false
   } catch {
     return false

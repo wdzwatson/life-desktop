@@ -102,6 +102,40 @@ test('does not use generic cdn media file urls as canonical source urls', () => 
   assert.equal(result.items[0].sourceUrl, 'https://example.com/watch/clip')
 })
 
+test('does not trust spoofed youtube or bilibili hostnames as source urls', () => {
+  const result = normalizeYtDlpMetadata(
+    {
+      extractor_key: 'Generic',
+      id: 'clip',
+      title: 'Clip',
+      url: 'https://notyoutube.com/assets/clip.mp4',
+    },
+    {
+      fallbackUrl: 'https://example.com/watch/clip',
+      wasFlatPlaylist: false,
+    },
+  )
+
+  assert.equal(result.sourceUrl, 'https://example.com/watch/clip')
+  assert.equal(result.items[0].sourceUrl, 'https://example.com/watch/clip')
+
+  const biliResult = normalizeYtDlpMetadata(
+    {
+      extractor_key: 'Generic',
+      id: 'clip',
+      title: 'Clip',
+      url: 'https://fakebilibili.com/assets/clip.mp4',
+    },
+    {
+      fallbackUrl: 'https://example.com/watch/bili-clip',
+      wasFlatPlaylist: false,
+    },
+  )
+
+  assert.equal(biliResult.sourceUrl, 'https://example.com/watch/bili-clip')
+  assert.equal(biliResult.items[0].sourceUrl, 'https://example.com/watch/bili-clip')
+})
+
 test('keeps explicit webpage urls with video path segments', () => {
   const result = normalizeYtDlpMetadata(
     {
