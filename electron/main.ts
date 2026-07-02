@@ -14,6 +14,12 @@ import {
   resolveChapterTitleFromHtml,
   resolveTocTarget,
 } from '../src/views/bookReaderUtils'
+import {
+  checkVideoTools,
+  parseVideoUrl,
+  resolvePlaybackPath,
+  startVideoDownload,
+} from './video/service'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -100,6 +106,10 @@ function getUserDb(dbName: string): any {
   db.pragma('journal_mode = WAL')
   openDbs.set(dbName, db)
   return db
+}
+
+function getActiveUserVideoDir() {
+  return path.join(BASE_DIR, 'users', activeUserId, 'files', 'videos')
 }
 
 // Switch user and initialize
@@ -1287,61 +1297,27 @@ ipcMain.handle('db:query', async (_, { dbName, sql, params = [] }) => {
   }
 })
 
-// IPC Handlers: Video downloader (Mock/Yt-Dlp interface)
-ipcMain.handle('video:parseUrl', async (_, url: string) => {
-  // In a real application, we would call: yt-dlp -J <url>
-  // Here we mock the playlist resolution forBilbili/Youtube lists to show the多选popup
-  if (url.includes('list') || url.includes('series') || url.includes('p=')) {
-    return {
-      isPlaylist: true,
-      title: '合集: Electron 进阶系列教程',
-      videos: [
-        { id: '1', title: '1. Electron 无边框窗口与自定义标题栏', duration: '12:40' },
-        { id: '2', title: '2. SQLite WAL模式配置与数据结构', duration: '18:15' },
-        { id: '3', title: '3. Preload 桥接安全最佳实践', duration: '14:22' },
-        { id: '4', title: '4. electron-builder 跨平台打包优化', duration: '22:10' },
-      ],
-    }
-  }
-  return {
-    isPlaylist: false,
-    title: '单个视频: SQLite FTS 全文检索实战',
-    duration: '15:30',
-  }
+// IPC Handlers: Video downloader
+ipcMain.handle('video:checkTools', async () => {
+  return checkVideoTools(getSettings())
 })
 
-// Concurrent download queue runner (Simulating yt-dlp triggers and progress bars)
+ipcMain.handle('video:parseUrl', async (_, url: string) => {
+  return parseVideoUrl(getSettings(), url)
+})
+
 ipcMain.handle('video:download', async (_, videoData: any) => {
-  const { title } = videoData
+  return startVideoDownload({
+    settings: getSettings(),
+    mainWindow,
+    url: videoData.sourceUrl || videoData.url,
+    title: videoData.title,
+    outputDir: getActiveUserVideoDir(),
+  })
+})
 
-  // Simulate download chunks progress
-  let progress = 0
-  const interval = setInterval(() => {
-    progress += Math.floor(Math.random() * 15) + 5
-    if (progress >= 100) {
-      progress = 100
-      clearInterval(interval)
-
-      // Update SQLite videos.db status
-      try {
-        const db = getUserDb('videos')
-        db.prepare(
-          `
-          INSERT INTO videos (title, url, status, priority)
-          VALUES (?, ?, 'downloaded', 'low')
-        `,
-        ).run(title, 'http://mock-url')
-      } catch {
-        // Best effort: the mock download notification can still be delivered.
-      }
-
-      mainWindow?.webContents.send('video:download-finished', { title })
-    } else {
-      mainWindow?.webContents.send('video:download-progress', { title, progress })
-    }
-  }, 800)
-
-  return { success: true, message: '下载已加入后台队列' }
+ipcMain.handle('video:getPlaybackUrl', async (_, localPath: string) => {
+  return resolvePlaybackPath(getActiveUserVideoDir(), localPath)
 })
 
 // Auto-Updater Config & IPC Bindings

@@ -37,8 +37,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getBookBuffer: (relativePath: string) => ipcRenderer.invoke('book:get-buffer', relativePath),
 
   // Video parsing & downloading
+  checkVideoTools: () => ipcRenderer.invoke('video:checkTools'),
   parseVideoUrl: (url: string) => ipcRenderer.invoke('video:parseUrl', url),
   startDownload: (videoData: any) => ipcRenderer.invoke('video:download', videoData),
+  getVideoPlaybackUrl: (localPath: string) => ipcRenderer.invoke('video:getPlaybackUrl', localPath),
   onDownloadProgress: (callback: (data: any) => void) => {
     const subscription = (_event: any, data: any) => callback(data)
     ipcRenderer.on('video:download-progress', subscription)
