@@ -774,7 +774,7 @@ git commit -m "feat: persist video download state"
 - Modify: `src/locales/en-US.json`
 - Create or modify: `tests/videoStateUtils.test.ts`
 
-- [ ] **Step 1: Add pure tests for parse action labels, batch keys, and import defaults**
+- [x] **Step 1: Add pure tests for parse action labels, batch keys, and import defaults**
 
 Add to `tests/videoStateUtils.test.ts`:
 
@@ -817,7 +817,7 @@ test('applyParsedVideoMetadataDefaults attaches optional import group and tags',
 })
 ```
 
-- [ ] **Step 2: Run test and verify failure**
+- [x] **Step 2: Run test and verify failure**
 
 ```bash
 node --import tsx tests/videoStateUtils.test.ts
@@ -825,7 +825,7 @@ node --import tsx tests/videoStateUtils.test.ts
 
 Expected: FAIL because the helpers do not exist.
 
-- [ ] **Step 3: Implement helpers**
+- [x] **Step 3: Implement helpers**
 
 Add to `src/views/videoStateUtils.ts`:
 
@@ -865,7 +865,7 @@ export function applyParsedVideoMetadataDefaults<T extends { group_id?: number |
 }
 ```
 
-- [ ] **Step 4: Add locale strings**
+- [x] **Step 4: Add locale strings**
 
 In `src/locales/zh-CN.json` under `videos`:
 
@@ -891,7 +891,7 @@ In `src/locales/en-US.json` under `videos`:
 "toast_videos_download_started": "Started downloading {{count}} videos"
 ```
 
-- [ ] **Step 5: Add lightweight import default state to `Videos.tsx`**
+- [x] **Step 5: Add lightweight import default state to `Videos.tsx`**
 
 Near the parse result selection state, add:
 
@@ -944,7 +944,7 @@ setParseImportGroupId(null)
 setParseImportTagNames([])
 ```
 
-- [ ] **Step 6: Refactor parse actions in `Videos.tsx`**
+- [x] **Step 6: Refactor parse actions in `Videos.tsx`**
 
 Replace the current single `handleDownloadSelected` path with two explicit paths:
 
@@ -1005,7 +1005,7 @@ const insertParsedVideo = async (
 
 For download action, create one batch, apply `applyParsedVideoMetadataDefaults` to each selected parsed item, insert every selected video with `status = 'downloading'`, then start downloads with the inserted ids.
 
-- [ ] **Step 7: Run tests and typecheck**
+- [x] **Step 7: Run tests and typecheck**
 
 ```bash
 node --import tsx tests/videoStateUtils.test.ts
@@ -1014,7 +1014,7 @@ npm exec tsc -- --noEmit
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit task**
+- [x] **Step 8: Commit task**
 
 ```bash
 git add src/views/Videos.tsx src/views/videoStateUtils.ts src/locales/zh-CN.json src/locales/en-US.json tests/videoStateUtils.test.ts
@@ -1443,7 +1443,7 @@ git commit -m "feat: add video list sorting"
 - Modify: `src/locales/zh-CN.json`
 - Modify: `src/locales/en-US.json`
 
-- [ ] **Step 1: Add failing bulk metadata helper tests**
+- [x] **Step 1: Add failing bulk metadata helper tests**
 
 Add to `tests/videoStateUtils.test.ts`:
 
@@ -1481,7 +1481,7 @@ test('getBulkMetadataActionLabels keeps the contextual bar sparse', () => {
 })
 ```
 
-- [ ] **Step 2: Run test and verify failure**
+- [x] **Step 2: Run test and verify failure**
 
 ```bash
 node --import tsx tests/videoStateUtils.test.ts
@@ -1489,7 +1489,7 @@ node --import tsx tests/videoStateUtils.test.ts
 
 Expected: FAIL because the bulk metadata helpers do not exist.
 
-- [ ] **Step 3: Implement pure bulk metadata helpers**
+- [x] **Step 3: Implement pure bulk metadata helpers**
 
 Add to `src/views/videoStateUtils.ts`:
 
@@ -1522,7 +1522,7 @@ export function getBulkMetadataActionLabels() {
 }
 ```
 
-- [ ] **Step 4: Add locale strings**
+- [x] **Step 4: Add locale strings**
 
 Chinese:
 
@@ -1554,7 +1554,7 @@ English:
 "bulk_skipped_readonly": "Skipped {{count}} read-only videos"
 ```
 
-- [ ] **Step 5: Add selection state to `Videos.tsx`**
+- [x] **Step 5: Add selection state to `Videos.tsx`**
 
 Near other list state:
 
@@ -1588,7 +1588,7 @@ useEffect(() => {
 }, [localVideos])
 ```
 
-- [ ] **Step 6: Render quiet row checkboxes and contextual bar**
+- [x] **Step 6: Render quiet row checkboxes and contextual bar**
 
 Inside each video row, before the play affordance:
 
@@ -1633,7 +1633,7 @@ Above the list, render only while selection is active:
 )}
 ```
 
-- [ ] **Step 7: Implement bulk group update**
+- [x] **Step 7: Implement bulk group update**
 
 Add handler:
 
@@ -1677,7 +1677,7 @@ Render a compact group picker when `bulkMetadataMode === 'group'`:
 )}
 ```
 
-- [ ] **Step 8: Implement additive and removable bulk tag editing**
+- [x] **Step 8: Implement additive and removable bulk tag editing**
 
 Add handler:
 
@@ -1727,7 +1727,7 @@ Render a compact tag editor when `bulkMetadataMode === 'tags'`:
 )}
 ```
 
-- [ ] **Step 9: Put low-frequency bulk operations behind More**
+- [x] **Step 9: Put low-frequency bulk operations behind More**
 
 When `bulkMetadataMode === 'more'`, show only a compact menu:
 
@@ -1764,7 +1764,7 @@ const handleBulkDeleteSelected = async () => {
 }
 ```
 
-- [ ] **Step 10: Run tests and typecheck**
+- [x] **Step 10: Run tests and typecheck**
 
 ```bash
 node --import tsx tests/videoStateUtils.test.ts
@@ -1773,7 +1773,7 @@ npm exec tsc -- --noEmit
 
 Expected: PASS.
 
-- [ ] **Step 11: Commit task**
+- [x] **Step 11: Commit task**
 
 ```bash
 git add src/views/Videos.tsx src/views/videoStateUtils.ts tests/videoStateUtils.test.ts src/locales/zh-CN.json src/locales/en-US.json
