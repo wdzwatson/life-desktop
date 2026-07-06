@@ -28,6 +28,7 @@ import {
   getDownloadFailureToastData,
   getFloatingDropdownFrame,
   getPlaybackOverlayChrome,
+  getPendingDownloadRecordStatus,
   getProgressPercentLabel,
   getSelectedGroupPathLabel,
   getVideoDrawerTitleKey,
@@ -58,6 +59,7 @@ import {
   getVideoRowDownloadAction,
   getVideoRowStyle,
   normalizeVideoStatus,
+  parseParsedVideoImportTagDraft,
   sortVideoRecords,
   toggleSortDirection,
 } from './videoStateUtils'
@@ -95,7 +97,7 @@ export const Videos: React.FC = () => {
   const [editablePlaylistTitle, setEditablePlaylistTitle] = useState('')
   const [selectedVideoIds, setSelectedVideoIds] = useState<string[]>([])
   const [parseImportGroupId, setParseImportGroupId] = useState<number | null>(null)
-  const [parseImportTagNames, setParseImportTagNames] = useState<string[]>([])
+  const [parseImportTagDraft, setParseImportTagDraft] = useState('')
   const [downloadQueue, setDownloadQueue] = useState<any[]>([])
   const [maxConcurrentDownloads, setMaxConcurrentDownloads] = useState(3)
   const [groups, setGroups] = useState<VideoGroupRecord[]>([])
@@ -399,7 +401,7 @@ export const Videos: React.FC = () => {
     setParsedData(null)
     setEditablePlaylistTitle('')
     setParseImportGroupId(null)
-    setParseImportTagNames([])
+    setParseImportTagDraft('')
   }
 
   const getParsedPlaylistTitleForSave = () =>
@@ -415,6 +417,7 @@ export const Videos: React.FC = () => {
 
   const createDownloadBatch = async (items: any[]) => {
     const batchKey = createVideoBatchKey(new Date(), Date.now() % 1000 || 1)
+    const playlistTitle = getParsedPlaylistTitleForSave()
     const result = await api.dbQuery(
       'videos',
       `
@@ -425,7 +428,7 @@ export const Videos: React.FC = () => {
         batchKey,
         videoUrl.trim() || parsedData?.sourceUrl || null,
         parsedData?.source || 'other',
-        parsedData?.title || parsedData?.playlistTitle || batchKey,
+        playlistTitle || parsedData?.title || parsedData?.playlistTitle || batchKey,
         items.length,
       ],
     )
@@ -558,7 +561,7 @@ export const Videos: React.FC = () => {
         await insertParsedVideo(
           applyParsedVideoMetadataDefaults(prepareParsedItemForSave(item), {
             groupId: parseImportGroupId,
-            tagNames: parseImportTagNames,
+            tagNames: parseParsedVideoImportTagDraft(parseImportTagDraft),
           }),
           'not_downloaded',
         )
@@ -597,9 +600,9 @@ export const Videos: React.FC = () => {
       for (const [index, item] of selected.entries()) {
         const preparedItem = applyParsedVideoMetadataDefaults(prepareParsedItemForSave(item), {
           groupId: parseImportGroupId,
-          tagNames: parseImportTagNames,
+          tagNames: parseParsedVideoImportTagDraft(parseImportTagDraft),
         })
-        const videoId = await insertParsedVideo(preparedItem, 'downloading', {
+        const videoId = await insertParsedVideo(preparedItem, getPendingDownloadRecordStatus(), {
           id: batch.id,
           order: item.partIndex || index + 1,
         })
@@ -1782,15 +1785,8 @@ export const Videos: React.FC = () => {
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{t('videos.parse_import_tags_label')}</span>
                 <input
                   className="form-field"
-                  value={parseImportTagNames.join(', ')}
-                  onChange={(event) =>
-                    setParseImportTagNames(
-                      event.target.value
-                        .split(',')
-                        .map((tag) => tag.trim())
-                        .filter(Boolean),
-                    )
-                  }
+                  value={parseImportTagDraft}
+                  onChange={(event) => setParseImportTagDraft(event.target.value)}
                 />
               </label>
             </div>

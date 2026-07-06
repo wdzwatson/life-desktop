@@ -156,6 +156,17 @@ export interface ParsedVideoMetadataDefaults {
   tagNames?: string[]
 }
 
+export function parseParsedVideoImportTagDraft(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    ),
+  )
+}
+
 export function applyParsedVideoMetadataDefaults<T extends { group_id?: number | null; tags?: string[] }>(
   item: T,
   defaults: ParsedVideoMetadataDefaults,

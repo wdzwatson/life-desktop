@@ -8,6 +8,7 @@ import {
   createVideoBatchKey,
   getDefaultVideoSortRank,
   getParseResultActionLabels,
+  parseParsedVideoImportTagDraft,
   getStatusBadgeTone,
   getSortDirectionIconName,
   getVideoRowDownloadAction,
@@ -170,6 +171,11 @@ test('applyParsedVideoMetadataDefaults attaches optional import group and tags',
     ),
     { title: 'Part 2', group_id: 7, tags: ['Existing'] },
   )
+})
+
+test('parseParsedVideoImportTagDraft derives tags from a preserved comma draft', () => {
+  assert.deepEqual(parseParsedVideoImportTagDraft('AI, Course,'), ['AI', 'Course'])
+  assert.deepEqual(parseParsedVideoImportTagDraft('AI,, Course, AI'), ['AI', 'Course'])
 })
 
 test('buildParsedVideoTitle prefixes multipart Bilibili parts with editable playlist title', () => {
