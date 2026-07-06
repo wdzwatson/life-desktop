@@ -1787,7 +1787,7 @@ git commit -m "feat: add contextual video bulk metadata bar"
 **Files:**
 - Modify only files needed to fix issues found in verification.
 
-- [ ] **Step 1: Run focused unit tests**
+- [x] **Step 1: Run focused unit tests**
 
 ```bash
 node --import tsx tests/videoStateUtils.test.ts
@@ -1798,7 +1798,7 @@ node --import tsx tests/videoServiceSmoke.test.ts
 
 Expected: all pass.
 
-- [ ] **Step 2: Run schema test**
+- [x] **Step 2: Run schema test**
 
 ```bash
 node --import tsx tests/videoSchema.test.mjs
@@ -1806,7 +1806,7 @@ node --import tsx tests/videoSchema.test.mjs
 
 Expected: pass. If `better-sqlite3` native ABI mismatch occurs, run the repository's dependency rebuild command or document the exact ABI error in the final report.
 
-- [ ] **Step 3: Run typecheck and build**
+- [x] **Step 3: Run typecheck and build**
 
 ```bash
 npm exec tsc -- --noEmit
@@ -1826,6 +1826,8 @@ Expected: Vite reports a local URL and Electron launches without main-process er
 
 - [ ] **Step 5: Manual QA checklist**
 
+Manual QA note: automated tests and production build passed, but hands-on video-source verification was not run in this session because it requires live Bilibili/YouTube URLs, local video tool credentials/settings, and interactive Electron validation.
+
 - [ ] Parse a single Bilibili URL and click `加入视频列表`; verify rows appear as `未下载` and show enabled download icons.
 - [ ] Parse a multipart Bilibili URL and click `下载视频`; verify selected rows share one batch, enter `下载中`, and show row progress.
 - [ ] Parse a multipart Bilibili URL, choose an import group/tags, click `加入视频列表`, and verify selected videos inherit the group/tags.
@@ -1839,7 +1841,7 @@ Expected: Vite reports a local URL and Electron launches without main-process er
 - [ ] Bulk move editable selected videos to a group; verify downloading/invalid videos are skipped and a skip toast appears.
 - [ ] Bulk add and remove tags for selected videos; verify it is additive/removable and does not replace the full tag set.
 
-- [ ] **Step 6: Update implementation plan checkboxes or final notes**
+- [x] **Step 6: Update implementation plan checkboxes or final notes**
 
 If any item cannot be verified, add a short note under this task explaining the blocker and exact command/output.
 
