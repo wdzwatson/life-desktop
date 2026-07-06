@@ -172,7 +172,11 @@ export function applyParsedVideoMetadataDefaults<T extends { group_id?: number |
   defaults: ParsedVideoMetadataDefaults,
 ) {
   const tagNames = Array.from(
-    new Set((defaults.tagNames || []).map((tag) => tag.trim()).filter(Boolean)),
+    new Set(
+      [...(item.tags || []), ...(defaults.tagNames || [])]
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    ),
   )
   return {
     ...item,

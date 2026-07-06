@@ -171,6 +171,14 @@ test('applyParsedVideoMetadataDefaults attaches optional import group and tags',
     ),
     { title: 'Part 2', group_id: 7, tags: ['Existing'] },
   )
+
+  assert.deepEqual(
+    applyParsedVideoMetadataDefaults(
+      { title: 'Part 3', tags: ['Existing'] },
+      { tagNames: ['AI', 'Existing'] },
+    ),
+    { title: 'Part 3', group_id: undefined, tags: ['Existing', 'AI'] },
+  )
 })
 
 test('parseParsedVideoImportTagDraft derives tags from a preserved comma draft', () => {
