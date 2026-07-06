@@ -101,6 +101,17 @@ export function shouldCreateBulkTagRecord(mode: 'add' | 'remove') {
   return mode === 'add'
 }
 
+export function isBulkMetadataWriteResultSuccess(result: { success?: boolean } | null | undefined) {
+  return result?.success === true
+}
+
+export function getBulkTagEditButtonLabels() {
+  return {
+    add: 'videos.bulk_add_tags',
+    remove: 'videos.bulk_remove_tags',
+  }
+}
+
 export function getStatusBadgeTone(status: string | undefined) {
   const normalized = normalizeVideoStatus(status)
   if (normalized === 'download_failed') return 'danger' as const

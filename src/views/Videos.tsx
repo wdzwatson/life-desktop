@@ -55,11 +55,13 @@ import {
   createBulkMetadataEditPlan,
   createVideoBatchKey,
   getBulkMetadataActionLabels,
+  getBulkTagEditButtonLabels,
   getParseResultActionLabels,
   getSortDirectionIconName,
   getStatusBadgeTone,
   getVideoRowDownloadAction,
   getVideoRowStyle,
+  isBulkMetadataWriteResultSuccess,
   normalizeVideoStatus,
   parseBulkGroupPickerValue,
   parseParsedVideoImportTagDraft,
@@ -343,6 +345,7 @@ export const Videos: React.FC = () => {
   const bulkSelection = getBulkSelectionState(parsedItemIds, selectedVideoIds)
   const parseActionLabels = getParseResultActionLabels()
   const bulkActionLabels = getBulkMetadataActionLabels()
+  const bulkTagButtonLabels = getBulkTagEditButtonLabels()
   const getQueueItemForVideo = (video: VideoRecord) =>
     downloadQueue.find((item) => item.id === video.id || item.title === video.title)
   const updateDrawer = (action: VideoDrawerAction) => {
@@ -855,13 +858,17 @@ export const Videos: React.FC = () => {
     return true
   }
 
+  const showBulkMetadataWriteFailure = (message?: string) => {
+    showToast(t('videos.bulk_update_failed', { error: message || t('videos.toast_video_details_save_failed') }))
+  }
+
   const handleBulkMoveToGroup = async (groupId: number | null) => {
     if (!api) return
     if (bulkEditPlan.editableIds.length === 0) {
       await handleReadonlyOnlyBulkMetadataSelection()
       return
     }
-    await api.dbQuery(
+    const result = await api.dbQuery(
       'videos',
       `
       UPDATE videos
@@ -870,6 +877,10 @@ export const Videos: React.FC = () => {
       `,
       [groupId, ...bulkEditPlan.editableIds],
     )
+    if (!isBulkMetadataWriteResultSuccess(result)) {
+      showBulkMetadataWriteFailure(result?.error)
+      return
+    }
     showToast(t('videos.bulk_group_updated', { count: bulkEditPlan.editableCount }))
     if (bulkEditPlan.skippedCount > 0) {
       showToast(t('videos.bulk_skipped_readonly', { count: bulkEditPlan.skippedCount }))
@@ -888,22 +899,42 @@ export const Videos: React.FC = () => {
 
     for (const name of names) {
       if (shouldCreateBulkTagRecord(mode)) {
-        await api.dbQuery('videos', 'INSERT OR IGNORE INTO video_tags (name) VALUES (?)', [name])
+        const insertTagResult = await api.dbQuery('videos', 'INSERT OR IGNORE INTO video_tags (name) VALUES (?)', [name])
+        if (!isBulkMetadataWriteResultSuccess(insertTagResult)) {
+          showBulkMetadataWriteFailure(insertTagResult?.error)
+          return
+        }
       }
       const tagResult = await api.dbQuery('videos', 'SELECT id FROM video_tags WHERE name = ?', [name])
+      if (!isBulkMetadataWriteResultSuccess(tagResult)) {
+        showBulkMetadataWriteFailure(tagResult?.error)
+        return
+      }
       const tagId = Number(tagResult?.data?.[0]?.id)
-      if (!tagId) continue
+      if (!tagId) {
+        if (mode === 'remove') continue
+        showBulkMetadataWriteFailure()
+        return
+      }
       for (const videoId of bulkEditPlan.editableIds) {
         if (mode === 'add') {
-          await api.dbQuery('videos', 'INSERT OR IGNORE INTO video_tag_links (video_id, tag_id) VALUES (?, ?)', [
+          const linkTagResult = await api.dbQuery('videos', 'INSERT OR IGNORE INTO video_tag_links (video_id, tag_id) VALUES (?, ?)', [
             videoId,
             tagId,
           ])
+          if (!isBulkMetadataWriteResultSuccess(linkTagResult)) {
+            showBulkMetadataWriteFailure(linkTagResult?.error)
+            return
+          }
         } else {
-          await api.dbQuery('videos', 'DELETE FROM video_tag_links WHERE video_id = ? AND tag_id = ?', [
+          const unlinkTagResult = await api.dbQuery('videos', 'DELETE FROM video_tag_links WHERE video_id = ? AND tag_id = ?', [
             videoId,
             tagId,
           ])
+          if (!isBulkMetadataWriteResultSuccess(unlinkTagResult)) {
+            showBulkMetadataWriteFailure(unlinkTagResult?.error)
+            return
+          }
         }
       }
     }
@@ -928,6 +959,7 @@ export const Videos: React.FC = () => {
 
   const handleBulkDeleteSelected = async () => {
     if (!api) return
+    if (!window.confirm(t('videos.confirm_bulk_delete', { count: bulkSelectedVideoIds.length }))) return
     for (const videoId of bulkSelectedVideoIds) {
       await api.dbQuery('videos', 'DELETE FROM videos WHERE id = ?', [videoId])
     }
@@ -1372,10 +1404,20 @@ export const Videos: React.FC = () => {
                       autoFocus
                       style={{ width: '180px', height: '30px' }}
                     />
-                    <button className="btn sm" onClick={() => handleBulkUpdateTags('add')}>
+                    <button
+                      className="btn sm"
+                      title={t(bulkTagButtonLabels.add)}
+                      aria-label={t(bulkTagButtonLabels.add)}
+                      onClick={() => handleBulkUpdateTags('add')}
+                    >
                       +
                     </button>
-                    <button className="btn sm" onClick={() => handleBulkUpdateTags('remove')}>
+                    <button
+                      className="btn sm"
+                      title={t(bulkTagButtonLabels.remove)}
+                      aria-label={t(bulkTagButtonLabels.remove)}
+                      onClick={() => handleBulkUpdateTags('remove')}
+                    >
                       -
                     </button>
                   </div>

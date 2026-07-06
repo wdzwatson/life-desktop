@@ -8,8 +8,10 @@ import {
   createBulkMetadataEditPlan,
   createVideoBatchKey,
   getBulkMetadataActionLabels,
+  getBulkTagEditButtonLabels,
   getDefaultVideoSortRank,
   getParseResultActionLabels,
+  isBulkMetadataWriteResultSuccess,
   parseBulkGroupPickerValue,
   parseParsedVideoImportTagDraft,
   getStatusBadgeTone,
@@ -232,4 +234,17 @@ test('parseBulkGroupPickerValue keeps choosing and clearing group distinct', () 
 test('shouldCreateBulkTagRecord only creates missing tags while adding', () => {
   assert.equal(shouldCreateBulkTagRecord('add'), true)
   assert.equal(shouldCreateBulkTagRecord('remove'), false)
+})
+
+test('isBulkMetadataWriteResultSuccess treats missing or failed db results as failures', () => {
+  assert.equal(isBulkMetadataWriteResultSuccess({ success: true }), true)
+  assert.equal(isBulkMetadataWriteResultSuccess({ success: false }), false)
+  assert.equal(isBulkMetadataWriteResultSuccess(undefined), false)
+})
+
+test('getBulkTagEditButtonLabels exposes accessible add and remove labels', () => {
+  assert.deepEqual(getBulkTagEditButtonLabels(), {
+    add: 'videos.bulk_add_tags',
+    remove: 'videos.bulk_remove_tags',
+  })
 })
