@@ -61,7 +61,9 @@ import {
   getVideoRowDownloadAction,
   getVideoRowStyle,
   normalizeVideoStatus,
+  parseBulkGroupPickerValue,
   parseParsedVideoImportTagDraft,
+  shouldCreateBulkTagRecord,
   sortVideoRecords,
   toggleSortDirection,
 } from './videoStateUtils'
@@ -839,8 +841,26 @@ export const Videos: React.FC = () => {
     loadData()
   }
 
+  const closeBulkMetadataOperation = async () => {
+    setBulkTagDraft('')
+    setBulkMetadataMode(null)
+    setBulkSelectedVideoIds([])
+    await loadData()
+  }
+
+  const handleReadonlyOnlyBulkMetadataSelection = async () => {
+    if (bulkEditPlan.skippedCount === 0) return false
+    showToast(t('videos.bulk_skipped_readonly', { count: bulkEditPlan.skippedCount }))
+    await closeBulkMetadataOperation()
+    return true
+  }
+
   const handleBulkMoveToGroup = async (groupId: number | null) => {
-    if (!api || bulkEditPlan.editableIds.length === 0) return
+    if (!api) return
+    if (bulkEditPlan.editableIds.length === 0) {
+      await handleReadonlyOnlyBulkMetadataSelection()
+      return
+    }
     await api.dbQuery(
       'videos',
       `
@@ -854,18 +874,22 @@ export const Videos: React.FC = () => {
     if (bulkEditPlan.skippedCount > 0) {
       showToast(t('videos.bulk_skipped_readonly', { count: bulkEditPlan.skippedCount }))
     }
-    setBulkMetadataMode(null)
-    setBulkSelectedVideoIds([])
-    await loadData()
+    await closeBulkMetadataOperation()
   }
 
   const handleBulkUpdateTags = async (mode: 'add' | 'remove') => {
-    if (!api || bulkEditPlan.editableIds.length === 0) return
+    if (!api) return
     const names = Array.from(new Set(bulkTagDraft.split(',').map((tag) => tag.trim()).filter(Boolean)))
     if (names.length === 0) return
+    if (bulkEditPlan.editableIds.length === 0) {
+      await handleReadonlyOnlyBulkMetadataSelection()
+      return
+    }
 
     for (const name of names) {
-      await api.dbQuery('videos', 'INSERT OR IGNORE INTO video_tags (name) VALUES (?)', [name])
+      if (shouldCreateBulkTagRecord(mode)) {
+        await api.dbQuery('videos', 'INSERT OR IGNORE INTO video_tags (name) VALUES (?)', [name])
+      }
       const tagResult = await api.dbQuery('videos', 'SELECT id FROM video_tags WHERE name = ?', [name])
       const tagId = Number(tagResult?.data?.[0]?.id)
       if (!tagId) continue
@@ -888,10 +912,7 @@ export const Videos: React.FC = () => {
     if (bulkEditPlan.skippedCount > 0) {
       showToast(t('videos.bulk_skipped_readonly', { count: bulkEditPlan.skippedCount }))
     }
-    setBulkTagDraft('')
-    setBulkMetadataMode(null)
-    setBulkSelectedVideoIds([])
-    await loadData()
+    await closeBulkMetadataOperation()
   }
 
   const handleBulkDownloadSelected = async () => {
@@ -1324,11 +1345,17 @@ export const Videos: React.FC = () => {
                   <select
                     className="form-field"
                     autoFocus
-                    onChange={(event) => handleBulkMoveToGroup(event.target.value ? Number(event.target.value) : null)}
-                    defaultValue=""
+                    onChange={(event) => {
+                      const groupId = parseBulkGroupPickerValue(event.target.value)
+                      if (groupId !== undefined) handleBulkMoveToGroup(groupId)
+                    }}
+                    defaultValue="__choose__"
                     style={{ width: '180px', height: '30px' }}
                   >
-                    <option value="">{t('videos.group_none')}</option>
+                    <option value="__choose__" disabled>
+                      {t('videos.bulk_choose_group')}
+                    </option>
+                    <option value="__none__">{t('videos.group_none')}</option>
                     {groupOptions.map((group) => (
                       <option key={group.id} value={group.id}>
                         {group.path}

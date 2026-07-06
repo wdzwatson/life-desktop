@@ -396,6 +396,7 @@
     "sort_group": "分组",
     "bulk_selected_count": "已选择 {{count}} 项",
     "bulk_group": "分组",
+    "bulk_choose_group": "选择分组",
     "bulk_tags": "标签",
     "bulk_more": "更多",
     "bulk_cancel": "取消",

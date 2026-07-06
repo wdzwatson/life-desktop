@@ -396,6 +396,7 @@
     "sort_group": "Group",
     "bulk_selected_count": "{{count}} selected",
     "bulk_group": "Group",
+    "bulk_choose_group": "Choose group",
     "bulk_tags": "Tags",
     "bulk_more": "More",
     "bulk_cancel": "Cancel",

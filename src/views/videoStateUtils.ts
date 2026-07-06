@@ -90,6 +90,17 @@ export function getBulkMetadataActionLabels() {
   }
 }
 
+export function parseBulkGroupPickerValue(value: string) {
+  if (value === '__choose__') return undefined
+  if (value === '__none__') return null
+  const groupId = Number(value)
+  return Number.isFinite(groupId) ? groupId : undefined
+}
+
+export function shouldCreateBulkTagRecord(mode: 'add' | 'remove') {
+  return mode === 'add'
+}
+
 export function getStatusBadgeTone(status: string | undefined) {
   const normalized = normalizeVideoStatus(status)
   if (normalized === 'download_failed') return 'danger' as const

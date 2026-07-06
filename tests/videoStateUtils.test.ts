@@ -10,11 +10,13 @@ import {
   getBulkMetadataActionLabels,
   getDefaultVideoSortRank,
   getParseResultActionLabels,
+  parseBulkGroupPickerValue,
   parseParsedVideoImportTagDraft,
   getStatusBadgeTone,
   getSortDirectionIconName,
   getVideoRowDownloadAction,
   getVideoRowStyle,
+  shouldCreateBulkTagRecord,
   sortVideoRecords,
   toggleSortDirection,
 } from '../src/views/videoStateUtils.ts'
@@ -219,4 +221,15 @@ test('getBulkMetadataActionLabels keeps the contextual bar sparse', () => {
     more: 'videos.bulk_more',
     cancel: 'videos.bulk_cancel',
   })
+})
+
+test('parseBulkGroupPickerValue keeps choosing and clearing group distinct', () => {
+  assert.equal(parseBulkGroupPickerValue('__choose__'), undefined)
+  assert.equal(parseBulkGroupPickerValue('__none__'), null)
+  assert.equal(parseBulkGroupPickerValue('12'), 12)
+})
+
+test('shouldCreateBulkTagRecord only creates missing tags while adding', () => {
+  assert.equal(shouldCreateBulkTagRecord('add'), true)
+  assert.equal(shouldCreateBulkTagRecord('remove'), false)
 })
