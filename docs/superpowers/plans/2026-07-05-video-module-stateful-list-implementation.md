@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the separate download queue model with one persistent, stateful video list that supports video statuses, row-level progress, retry, invalid videos, download batches, editable details, and multi-dimensional sorting.
+**Goal:** Replace the separate download queue model with one persistent, stateful video list that supports video statuses, row-level progress, retry, invalid videos, download batches, editable details, multi-dimensional sorting, lightweight import metadata defaults, and sparse bulk group/tag editing.
 
 **Architecture:** The database video record becomes the source of truth for list state. Download events from the Electron main process update persistent video rows and the renderer reloads or patches rows from those persisted values. Pure status/sort/action helpers are extracted out of `Videos.tsx` so the large UI change can be tested without mounting React.
 
@@ -21,10 +21,10 @@ Implement the approved design in `docs/superpowers/specs/2026-07-05-video-module
 - Modify `electron/main.ts`: update download IPC to persist progress/success/failure/invalid state and expose external URL opening if not already available.
 - Modify `electron/preload.ts`: expose any new video IPC helpers needed by the renderer.
 - Modify `src/views/videoTypes.ts`: add typed video statuses, batch fields, progress/error fields, sort option types, and stricter record shape.
-- Create `src/views/videoStateUtils.ts`: pure renderer helpers for row actions, row styling, editability, sorting, parse actions, and status labels.
+- Create `src/views/videoStateUtils.ts`: pure renderer helpers for row actions, row styling, editability, sorting, parse actions, status labels, import metadata defaults, and bulk metadata editability.
 - Modify `src/views/videoLibraryUtils.ts`: remove or delegate obsolete download queue/list helpers after `videoStateUtils.ts` exists.
-- Modify `src/views/Videos.tsx`: remove queue drawer tab, render one stateful video list, implement parse actions, row-level progress, retry, details permissions, and sorting controls.
-- Modify `src/locales/zh-CN.json` and `src/locales/en-US.json`: add labels for statuses, sorting, parse actions, details read-only states, and notifications.
+- Modify `src/views/Videos.tsx`: remove queue drawer tab, render one stateful video list, implement parse actions, row-level progress, retry, details permissions, sorting controls, parse-result group/tag defaults, and the contextual bulk metadata bar.
+- Modify `src/locales/zh-CN.json` and `src/locales/en-US.json`: add labels for statuses, sorting, parse actions, details read-only states, bulk editing, import defaults, and notifications.
 - Modify `tests/videoSchema.test.mjs`: assert new schema and fix the existing `videoDb` variable typo while touching the file.
 - Create `tests/videoDownloadState.test.ts`: main-process state/failure classification tests.
 - Create `tests/videoStateUtils.test.ts`: renderer pure helper tests.
@@ -765,7 +765,7 @@ git commit -m "feat: persist video download state"
 
 ---
 
-## Task 4: Batch Creation And Parse Result Actions
+## Task 4: Batch Creation, Parse Result Actions, And Import Defaults
 
 **Files:**
 - Modify: `src/views/Videos.tsx`
@@ -774,12 +774,16 @@ git commit -m "feat: persist video download state"
 - Modify: `src/locales/en-US.json`
 - Create or modify: `tests/videoStateUtils.test.ts`
 
-- [ ] **Step 1: Add pure tests for parse action labels and batch keys**
+- [ ] **Step 1: Add pure tests for parse action labels, batch keys, and import defaults**
 
 Add to `tests/videoStateUtils.test.ts`:
 
 ```ts
-import { createVideoBatchKey, getParseResultActionLabels } from '../src/views/videoStateUtils.ts'
+import {
+  applyParsedVideoMetadataDefaults,
+  createVideoBatchKey,
+  getParseResultActionLabels,
+} from '../src/views/videoStateUtils.ts'
 
 test('createVideoBatchKey uses date and sequence for readable batches', () => {
   assert.equal(createVideoBatchKey(new Date('2026-07-05T01:02:03Z'), 1), '20260705-001')
@@ -792,6 +796,24 @@ test('getParseResultActionLabels exposes cancel, add, and download actions', () 
     addToList: 'videos.btn_add_to_video_list',
     download: 'videos.btn_download_video',
   })
+})
+
+test('applyParsedVideoMetadataDefaults attaches optional import group and tags', () => {
+  assert.deepEqual(
+    applyParsedVideoMetadataDefaults(
+      { title: 'Part 1', source: 'bilibili' },
+      { groupId: 12, tagNames: ['AI', 'Course', 'AI', ''] },
+    ),
+    { title: 'Part 1', source: 'bilibili', group_id: 12, tags: ['AI', 'Course'] },
+  )
+
+  assert.deepEqual(
+    applyParsedVideoMetadataDefaults(
+      { title: 'Part 2', group_id: 7, tags: ['Existing'] },
+      { groupId: null, tagNames: [] },
+    ),
+    { title: 'Part 2', group_id: 7, tags: ['Existing'] },
+  )
 })
 ```
 
@@ -808,6 +830,11 @@ Expected: FAIL because the helpers do not exist.
 Add to `src/views/videoStateUtils.ts`:
 
 ```ts
+export interface ParsedVideoMetadataDefaults {
+  groupId?: number | null
+  tagNames?: string[]
+}
+
 export function createVideoBatchKey(date = new Date(), sequence = 1) {
   const year = date.getUTCFullYear()
   const month = String(date.getUTCMonth() + 1).padStart(2, '0')
@@ -822,6 +849,20 @@ export function getParseResultActionLabels() {
     download: 'videos.btn_download_video',
   }
 }
+
+export function applyParsedVideoMetadataDefaults<T extends { group_id?: number | null; tags?: string[] }>(
+  item: T,
+  defaults: ParsedVideoMetadataDefaults,
+) {
+  const tagNames = Array.from(
+    new Set((defaults.tagNames || []).map((tag) => tag.trim()).filter(Boolean)),
+  )
+  return {
+    ...item,
+    group_id: typeof defaults.groupId === 'number' ? defaults.groupId : item.group_id,
+    tags: tagNames.length > 0 ? tagNames : item.tags || [],
+  }
+}
 ```
 
 - [ ] **Step 4: Add locale strings**
@@ -832,6 +873,8 @@ In `src/locales/zh-CN.json` under `videos`:
 "btn_cancel_parse": "取消",
 "btn_add_to_video_list": "加入视频列表",
 "btn_download_video": "下载视频",
+"parse_import_group_label": "保存到分组",
+"parse_import_tags_label": "添加标签",
 "toast_videos_added_to_list": "已加入视频列表：{{count}} 个视频",
 "toast_videos_download_started": "已开始下载：{{count}} 个视频"
 ```
@@ -842,11 +885,66 @@ In `src/locales/en-US.json` under `videos`:
 "btn_cancel_parse": "Cancel",
 "btn_add_to_video_list": "Add to video list",
 "btn_download_video": "Download video",
+"parse_import_group_label": "Save to group",
+"parse_import_tags_label": "Add tags",
 "toast_videos_added_to_list": "Added {{count}} videos to the video list",
 "toast_videos_download_started": "Started downloading {{count}} videos"
 ```
 
-- [ ] **Step 5: Refactor parse actions in `Videos.tsx`**
+- [ ] **Step 5: Add lightweight import default state to `Videos.tsx`**
+
+Near the parse result selection state, add:
+
+```ts
+const [parseImportGroupId, setParseImportGroupId] = useState<number | null>(null)
+const [parseImportTagNames, setParseImportTagNames] = useState<string[]>([])
+```
+
+Render the controls inside the parse result dialog, near the existing parsed item selection controls:
+
+```tsx
+<div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px' }}>
+  <label style={{ display: 'grid', gap: '4px' }}>
+    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{t('videos.parse_import_group_label')}</span>
+    <select
+      className="form-field"
+      value={parseImportGroupId ?? ''}
+      onChange={(event) => setParseImportGroupId(event.target.value ? Number(event.target.value) : null)}
+    >
+      <option value="">{t('videos.group_none')}</option>
+      {groupOptions.map((group) => (
+        <option key={group.id} value={group.id}>
+          {group.path}
+        </option>
+      ))}
+    </select>
+  </label>
+  <label style={{ display: 'grid', gap: '4px' }}>
+    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{t('videos.parse_import_tags_label')}</span>
+    <input
+      className="form-field"
+      value={parseImportTagNames.join(', ')}
+      onChange={(event) =>
+        setParseImportTagNames(
+          event.target.value
+            .split(',')
+            .map((tag) => tag.trim())
+            .filter(Boolean),
+        )
+      }
+    />
+  </label>
+</div>
+```
+
+When parse results are cleared after cancel, add, or download, reset both import default states:
+
+```ts
+setParseImportGroupId(null)
+setParseImportTagNames([])
+```
+
+- [ ] **Step 6: Refactor parse actions in `Videos.tsx`**
 
 Replace the current single `handleDownloadSelected` path with two explicit paths:
 
@@ -876,10 +974,18 @@ const handleAddSelectedToVideoList = async () => {
     return
   }
   for (const item of selected) {
-    await insertParsedVideo(item, 'not_downloaded')
+    await insertParsedVideo(
+      applyParsedVideoMetadataDefaults(item, {
+        groupId: parseImportGroupId,
+        tagNames: parseImportTagNames,
+      }),
+      'not_downloaded',
+    )
   }
   setParsedData(null)
   setVideoUrl('')
+  setParseImportGroupId(null)
+  setParseImportTagNames([])
   showToast(t('videos.toast_videos_added_to_list', { count: selected.length }))
   loadData()
 }
@@ -897,9 +1003,9 @@ const insertParsedVideo = async (
 }
 ```
 
-For download action, create one batch, insert every selected video with `status = 'downloading'`, then start downloads with the inserted ids.
+For download action, create one batch, apply `applyParsedVideoMetadataDefaults` to each selected parsed item, insert every selected video with `status = 'downloading'`, then start downloads with the inserted ids.
 
-- [ ] **Step 6: Run tests and typecheck**
+- [ ] **Step 7: Run tests and typecheck**
 
 ```bash
 node --import tsx tests/videoStateUtils.test.ts
@@ -908,7 +1014,7 @@ npm exec tsc -- --noEmit
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit task**
+- [ ] **Step 8: Commit task**
 
 ```bash
 git add src/views/Videos.tsx src/views/videoStateUtils.ts src/locales/zh-CN.json src/locales/en-US.json tests/videoStateUtils.test.ts
@@ -1328,7 +1434,355 @@ git commit -m "feat: add video list sorting"
 
 ---
 
-## Task 8: Final Verification And Manual QA
+## Task 8: Contextual Bulk Metadata Bar
+
+**Files:**
+- Modify: `src/views/Videos.tsx`
+- Modify: `src/views/videoStateUtils.ts`
+- Modify: `tests/videoStateUtils.test.ts`
+- Modify: `src/locales/zh-CN.json`
+- Modify: `src/locales/en-US.json`
+
+- [ ] **Step 1: Add failing bulk metadata helper tests**
+
+Add to `tests/videoStateUtils.test.ts`:
+
+```ts
+import {
+  createBulkMetadataEditPlan,
+  getBulkMetadataActionLabels,
+} from '../src/views/videoStateUtils.ts'
+
+test('createBulkMetadataEditPlan separates editable and skipped bulk metadata records', () => {
+  const selected = [
+    base({ id: 1, status: 'not_downloaded' }),
+    base({ id: 2, status: 'downloaded' }),
+    base({ id: 3, status: 'download_failed' }),
+    base({ id: 4, status: 'downloading' }),
+    base({ id: 5, status: 'invalid' }),
+  ]
+
+  assert.deepEqual(createBulkMetadataEditPlan(selected), {
+    editableIds: [1, 2, 3],
+    skippedIds: [4, 5],
+    editableCount: 3,
+    skippedCount: 2,
+  })
+})
+
+test('getBulkMetadataActionLabels keeps the contextual bar sparse', () => {
+  assert.deepEqual(getBulkMetadataActionLabels(), {
+    selectedCount: 'videos.bulk_selected_count',
+    group: 'videos.bulk_group',
+    tags: 'videos.bulk_tags',
+    more: 'videos.bulk_more',
+    cancel: 'videos.bulk_cancel',
+  })
+})
+```
+
+- [ ] **Step 2: Run test and verify failure**
+
+```bash
+node --import tsx tests/videoStateUtils.test.ts
+```
+
+Expected: FAIL because the bulk metadata helpers do not exist.
+
+- [ ] **Step 3: Implement pure bulk metadata helpers**
+
+Add to `src/views/videoStateUtils.ts`:
+
+```ts
+export function createBulkMetadataEditPlan(videos: VideoRecord[]) {
+  const editableIds: number[] = []
+  const skippedIds: number[] = []
+
+  for (const video of videos) {
+    if (canEditVideoDetails(video)) editableIds.push(video.id)
+    else skippedIds.push(video.id)
+  }
+
+  return {
+    editableIds,
+    skippedIds,
+    editableCount: editableIds.length,
+    skippedCount: skippedIds.length,
+  }
+}
+
+export function getBulkMetadataActionLabels() {
+  return {
+    selectedCount: 'videos.bulk_selected_count',
+    group: 'videos.bulk_group',
+    tags: 'videos.bulk_tags',
+    more: 'videos.bulk_more',
+    cancel: 'videos.bulk_cancel',
+  }
+}
+```
+
+- [ ] **Step 4: Add locale strings**
+
+Chinese:
+
+```json
+"bulk_selected_count": "已选择 {{count}} 项",
+"bulk_group": "分组",
+"bulk_tags": "标签",
+"bulk_more": "更多",
+"bulk_cancel": "取消",
+"bulk_download_selected": "下载选中",
+"bulk_delete_selected": "删除选中",
+"bulk_group_updated": "已更新分组：{{count}} 个视频",
+"bulk_tags_updated": "已更新标签：{{count}} 个视频",
+"bulk_skipped_readonly": "已跳过 {{count}} 个不可编辑视频"
+```
+
+English:
+
+```json
+"bulk_selected_count": "{{count}} selected",
+"bulk_group": "Group",
+"bulk_tags": "Tags",
+"bulk_more": "More",
+"bulk_cancel": "Cancel",
+"bulk_download_selected": "Download selected",
+"bulk_delete_selected": "Delete selected",
+"bulk_group_updated": "Updated group for {{count}} videos",
+"bulk_tags_updated": "Updated tags for {{count}} videos",
+"bulk_skipped_readonly": "Skipped {{count}} read-only videos"
+```
+
+- [ ] **Step 5: Add selection state to `Videos.tsx`**
+
+Near other list state:
+
+```ts
+const [bulkSelectedVideoIds, setBulkSelectedVideoIds] = useState<number[]>([])
+const [bulkTagDraft, setBulkTagDraft] = useState('')
+const [bulkMetadataMode, setBulkMetadataMode] = useState<'group' | 'tags' | 'more' | null>(null)
+```
+
+Add derived selected records:
+
+```ts
+const bulkSelectedVideos = useMemo(
+  () => localVideos.filter((video) => bulkSelectedVideoIds.includes(video.id)),
+  [localVideos, bulkSelectedVideoIds],
+)
+
+const bulkEditPlan = useMemo(
+  () => createBulkMetadataEditPlan(bulkSelectedVideos),
+  [bulkSelectedVideos],
+)
+```
+
+Clear missing selected ids after reload:
+
+```ts
+useEffect(() => {
+  setBulkSelectedVideoIds((current) =>
+    current.filter((id) => localVideos.some((video) => video.id === id)),
+  )
+}, [localVideos])
+```
+
+- [ ] **Step 6: Render quiet row checkboxes and contextual bar**
+
+Inside each video row, before the play affordance:
+
+```tsx
+<input
+  type="checkbox"
+  checked={bulkSelectedVideoIds.includes(video.id)}
+  aria-label={t('videos.bulk_selected_count', { count: 1 })}
+  onClick={(event) => event.stopPropagation()}
+  onChange={(event) => {
+    const checked = event.target.checked
+    setBulkSelectedVideoIds((current) =>
+      checked ? Array.from(new Set([...current, video.id])) : current.filter((id) => id !== video.id),
+    )
+  }}
+  style={{ opacity: bulkSelectedVideoIds.length > 0 ? 1 : undefined }}
+/>
+```
+
+Above the list, render only while selection is active:
+
+```tsx
+{bulkSelectedVideoIds.length > 0 && (
+  <div
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      padding: '8px 10px',
+      borderBottom: '1px solid var(--color-border)',
+      backgroundColor: 'var(--bg-surface)',
+    }}
+  >
+    <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginRight: 'auto' }}>
+      {t('videos.bulk_selected_count', { count: bulkSelectedVideoIds.length })}
+    </span>
+    <button className="btn sm" onClick={() => setBulkMetadataMode('group')}>{t('videos.bulk_group')}</button>
+    <button className="btn sm" onClick={() => setBulkMetadataMode('tags')}>{t('videos.bulk_tags')}</button>
+    <button className="btn sm" onClick={() => setBulkMetadataMode('more')}>{t('videos.bulk_more')}</button>
+    <button className="btn sm ghost" onClick={() => setBulkSelectedVideoIds([])}>{t('videos.bulk_cancel')}</button>
+  </div>
+)}
+```
+
+- [ ] **Step 7: Implement bulk group update**
+
+Add handler:
+
+```ts
+const handleBulkMoveToGroup = async (groupId: number | null) => {
+  if (!api || bulkEditPlan.editableIds.length === 0) return
+  await api.dbQuery(
+    'videos',
+    `
+    UPDATE videos
+    SET group_id = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id IN (${bulkEditPlan.editableIds.map(() => '?').join(',')})
+    `,
+    [groupId, ...bulkEditPlan.editableIds],
+  )
+  showToast(t('videos.bulk_group_updated', { count: bulkEditPlan.editableCount }))
+  if (bulkEditPlan.skippedCount > 0) showToast(t('videos.bulk_skipped_readonly', { count: bulkEditPlan.skippedCount }))
+  setBulkMetadataMode(null)
+  setBulkSelectedVideoIds([])
+  await loadData()
+}
+```
+
+Render a compact group picker when `bulkMetadataMode === 'group'`:
+
+```tsx
+{bulkMetadataMode === 'group' && (
+  <select
+    className="form-field"
+    autoFocus
+    onChange={(event) => handleBulkMoveToGroup(event.target.value ? Number(event.target.value) : null)}
+    defaultValue=""
+  >
+    <option value="">{t('videos.group_none')}</option>
+    {groupOptions.map((group) => (
+      <option key={group.id} value={group.id}>
+        {group.path}
+      </option>
+    ))}
+  </select>
+)}
+```
+
+- [ ] **Step 8: Implement additive and removable bulk tag editing**
+
+Add handler:
+
+```ts
+const handleBulkUpdateTags = async (mode: 'add' | 'remove') => {
+  if (!api || bulkEditPlan.editableIds.length === 0) return
+  const names = Array.from(new Set(bulkTagDraft.split(',').map((tag) => tag.trim()).filter(Boolean)))
+  if (names.length === 0) return
+
+  for (const name of names) {
+    await api.dbQuery('videos', 'INSERT OR IGNORE INTO video_tags (name) VALUES (?)', [name])
+    const tagResult = await api.dbQuery('videos', 'SELECT id FROM video_tags WHERE name = ?', [name])
+    const tagId = Number(tagResult?.data?.[0]?.id)
+    if (!tagId) continue
+    for (const videoId of bulkEditPlan.editableIds) {
+      if (mode === 'add') {
+        await api.dbQuery('videos', 'INSERT OR IGNORE INTO video_tag_links (video_id, tag_id) VALUES (?, ?)', [videoId, tagId])
+      } else {
+        await api.dbQuery('videos', 'DELETE FROM video_tag_links WHERE video_id = ? AND tag_id = ?', [videoId, tagId])
+      }
+    }
+  }
+
+  showToast(t('videos.bulk_tags_updated', { count: bulkEditPlan.editableCount }))
+  if (bulkEditPlan.skippedCount > 0) showToast(t('videos.bulk_skipped_readonly', { count: bulkEditPlan.skippedCount }))
+  setBulkTagDraft('')
+  setBulkMetadataMode(null)
+  setBulkSelectedVideoIds([])
+  await loadData()
+}
+```
+
+Render a compact tag editor when `bulkMetadataMode === 'tags'`:
+
+```tsx
+{bulkMetadataMode === 'tags' && (
+  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+    <input
+      className="form-field"
+      value={bulkTagDraft}
+      onChange={(event) => setBulkTagDraft(event.target.value)}
+      autoFocus
+    />
+    <button className="btn sm" onClick={() => handleBulkUpdateTags('add')}>+</button>
+    <button className="btn sm" onClick={() => handleBulkUpdateTags('remove')}>-</button>
+  </div>
+)}
+```
+
+- [ ] **Step 9: Put low-frequency bulk operations behind More**
+
+When `bulkMetadataMode === 'more'`, show only a compact menu:
+
+```tsx
+{bulkMetadataMode === 'more' && (
+  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+    <button className="btn sm" onClick={handleBulkDownloadSelected}>{t('videos.bulk_download_selected')}</button>
+    <button className="btn sm danger" onClick={handleBulkDeleteSelected}>{t('videos.bulk_delete_selected')}</button>
+  </div>
+)}
+```
+
+Use existing single-row download/delete behavior where possible:
+
+```ts
+const handleBulkDownloadSelected = async () => {
+  for (const video of bulkSelectedVideos) {
+    if (getVideoRowDownloadAction(video).visible && !getVideoRowDownloadAction(video).disabled) {
+      await handleStartVideoDownload(video)
+    }
+  }
+  setBulkMetadataMode(null)
+  setBulkSelectedVideoIds([])
+}
+
+const handleBulkDeleteSelected = async () => {
+  if (!api) return
+  for (const videoId of bulkSelectedVideoIds) {
+    await api.dbQuery('videos', 'DELETE FROM videos WHERE id = ?', [videoId])
+  }
+  setBulkMetadataMode(null)
+  setBulkSelectedVideoIds([])
+  await loadData()
+}
+```
+
+- [ ] **Step 10: Run tests and typecheck**
+
+```bash
+node --import tsx tests/videoStateUtils.test.ts
+npm exec tsc -- --noEmit
+```
+
+Expected: PASS.
+
+- [ ] **Step 11: Commit task**
+
+```bash
+git add src/views/Videos.tsx src/views/videoStateUtils.ts tests/videoStateUtils.test.ts src/locales/zh-CN.json src/locales/en-US.json
+git commit -m "feat: add contextual video bulk metadata bar"
+```
+
+---
+
+## Task 9: Final Verification And Manual QA
 
 **Files:**
 - Modify only files needed to fix issues found in verification.
@@ -1374,12 +1828,16 @@ Expected: Vite reports a local URL and Electron launches without main-process er
 
 - [ ] Parse a single Bilibili URL and click `加入视频列表`; verify rows appear as `未下载` and show enabled download icons.
 - [ ] Parse a multipart Bilibili URL and click `下载视频`; verify selected rows share one batch, enter `下载中`, and show row progress.
+- [ ] Parse a multipart Bilibili URL, choose an import group/tags, click `加入视频列表`, and verify selected videos inherit the group/tags.
 - [ ] Parse a YouTube URL and download; verify row progress reaches `100%`, status becomes `已下载`, and playback works in app.
 - [ ] Force a download failure by temporarily using an invalid `yt-dlp` path; verify status becomes `下载失败`, toast includes reason, and row retry icon is enabled.
 - [ ] Retry a failed row; verify a new batch is created and row returns to `下载中`.
 - [ ] Mark or simulate an invalid-source failure; verify row is gray, shows `已失效`, and play/download/edit are disabled while details and delete remain available.
 - [ ] Open details for each status and verify editability rules.
 - [ ] Use sort menu for default, recently added, recently downloaded, download batch, title, duration, status, and group.
+- [ ] Select multiple saved videos and verify the compact bulk bar appears only while selection is active.
+- [ ] Bulk move editable selected videos to a group; verify downloading/invalid videos are skipped and a skip toast appears.
+- [ ] Bulk add and remove tags for selected videos; verify it is additive/removable and does not replace the full tag set.
 
 - [ ] **Step 6: Update implementation plan checkboxes or final notes**
 
@@ -1402,11 +1860,12 @@ Spec coverage:
 - Removal of queue drawer: Task 5.
 - Five statuses: Tasks 1, 2, 5, 6.
 - Row download/retry/progress behavior: Tasks 2, 3, 5.
-- Download notifications: Task 3 and Task 8 manual QA.
+- Download notifications: Task 3 and Task 9 manual QA.
 - Details fields, read-only source URL, editability rules: Task 6.
-- Parse result actions: Task 4.
+- Parse result actions and import metadata defaults: Task 4.
 - Download batches: Tasks 1 and 4.
 - Multi-dimensional sorting: Task 7.
+- Contextual bulk metadata toolbar: Task 8.
 - Startup stale downloading recovery: Task 1.
 - Failure versus invalid classification: Tasks 1 and 3.
 
