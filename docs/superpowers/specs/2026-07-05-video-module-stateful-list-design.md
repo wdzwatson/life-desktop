@@ -86,6 +86,7 @@ The center panel title becomes `Video List` / `视频列表`.
 
 Each row shows:
 
+- Selection checkbox, visible on row hover and always visible while bulk selection mode is active.
 - Play button or disabled play affordance, depending on status.
 - Title.
 - Source, duration, group path, and status badge.
@@ -99,6 +100,34 @@ Each row shows:
 Row click always opens the details drawer. Row actions must stop propagation so play, download, external-open, and delete do not also open details unless intended.
 
 Downloaded rows use a translucent light green background. Invalid rows use a darker gray disabled treatment. Failed rows use a restrained red marker rather than making the whole row aggressively red.
+
+## Batch Selection And Metadata Editing
+
+Bulk editing belongs primarily in the video list, because group and tag cleanup is a long-lived library management task rather than a parse-only task.
+
+The default list view stays clean:
+
+- No always-visible bulk action button row.
+- Row checkboxes are visually quiet and appear on hover.
+- Once any video is selected, checkbox controls remain visible until the selection is cleared.
+
+When one or more videos are selected, show a compact contextual bulk bar above the list:
+
+- Selected count, for example `已选择 8 项`.
+- `Group` / `分组`: opens the group selector and moves all selected editable videos into the chosen group.
+- `Tags` / `标签`: opens a compact tag editor for adding tags to, or removing tags from, selected editable videos.
+- `More` / `更多`: contains lower-frequency or higher-risk actions such as download selected and delete selected.
+- `Cancel` / `取消`: clears selection and exits bulk selection mode.
+
+Only group and tag actions are top-level bulk actions. Download, delete, status, and other operational actions stay inside `More` so the list does not become a dense administration toolbar.
+
+Bulk metadata rules:
+
+- `not_downloaded`, `downloaded`, and `download_failed` videos may receive bulk group and tag changes.
+- `downloading` and `invalid` videos are skipped for bulk metadata edits, matching details drawer editability.
+- If a mixed selection contains read-only videos, the bulk editor applies changes to editable videos and shows a toast naming how many videos were skipped.
+- Bulk tag editing supports additive tags and explicit tag removal. It should not replace the full tag set unless the user chooses a future dedicated replace action.
+- Bulk group editing moves videos to one selected group. Clearing a group may be supported if the existing group selector already has a no-group option.
 
 ## Download Progress And Notifications
 
@@ -170,6 +199,13 @@ After URL parsing, selected parsed items support three actions:
 
 Multipart and playlist parse results keep bulk selection controls. Batch order is derived from the parsed item order or explicit part index.
 
+The parse result dialog may also offer lightweight import defaults:
+
+- Save to group: optional group selector applied to selected parsed items when they are added or downloaded.
+- Add tags: optional tag picker applied to selected parsed items when they are added or downloaded.
+
+The parse result dialog must not become the full bulk management surface. It should not support tag removal, deletion, status changes, or other library maintenance actions. Those remain in the video list after videos are saved.
+
 ## Sorting
 
 The video list supports a sorting menu with these options:
@@ -228,8 +264,10 @@ Unit tests:
 
 - Status-to-row-action mapping.
 - Status-to-details-editability mapping.
+- Bulk editability mapping for selected videos.
 - Default sort status ordering and batch ordering.
 - Parse result actions: cancel, add to video list, download video.
+- Parse result import defaults: selected group and tags persist on added/downloaded videos.
 - Download progress state updates.
 - Failure classification into `download_failed` versus `invalid`.
 - Startup conversion from stale `downloading` to `download_failed`.
@@ -240,13 +278,17 @@ Integration or smoke tests:
 - Download failure updates video status, error message, and toast event.
 - Retry failed video creates a new batch and re-enters `downloading`.
 - Details save closes the drawer only after successful persistence.
+- Bulk group/tag edit updates editable selected videos and skips read-only selected videos.
 
 Manual verification:
 
 - Parse a Bilibili single video and add it to the video list without downloading.
 - Parse a Bilibili multipart video and download selected parts as one batch.
+- Parse a multipart video with import group/tags and verify selected videos inherit those metadata values.
 - Parse a YouTube video and verify download progress appears inside the row.
 - Force a download failure and confirm retry works from the row.
+- Select multiple saved videos and verify the compact bulk bar appears only while selection is active.
+- Bulk edit group/tags for a mixed-status selection and confirm read-only videos are skipped with a toast.
 - Confirm invalid videos cannot play, download, or edit details, but can be opened for details and deleted.
 
 ## Implementation Notes
@@ -256,5 +298,6 @@ Manual verification:
 - Use renderer memory state only as a temporary display accelerator while events are arriving.
 - Avoid duplicate state sources between a queue drawer and list rows.
 - Keep details drawer focused on details only.
+- Keep the bulk toolbar contextual and sparse: selected count, group, tags, more, cancel.
+- Keep parse-result metadata controls limited to import defaults for selected parsed items.
 - Keep URL opening in a safe main-process or preload-mediated API; do not navigate the Electron app frame directly to external video sites.
-
