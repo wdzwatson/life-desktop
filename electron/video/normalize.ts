@@ -11,6 +11,7 @@ export interface NormalizedVideoItem {
   source: VideoSource
   sourceUrl: string
   sourceId: string
+  sourceCid?: string
   durationSeconds?: number
   durationLabel?: string
   thumbnailUrl?: string
@@ -157,12 +158,24 @@ export function normalizeYtDlpMetadata(raw: any, ctx: NormalizeContext): Normali
 
 export function normalizeYtDlpError(rawMessage: string): VideoDiagnostic {
   const lower = rawMessage.toLowerCase()
+  if (
+    lower.includes('enoent') ||
+    lower.includes('not found') ||
+    lower.includes('no such file or directory')
+  ) {
+    return {
+      code: 'tool_missing',
+      severity: 'error',
+      message: 'yt-dlp is not installed or the configured yt-dlp path is invalid.',
+      rawMessage,
+    }
+  }
   if (lower.includes('http error 412') && lower.includes('bili')) {
     return {
       code: 'bilibili_412',
       severity: 'warning',
       message:
-        'Bilibili blocked anonymous metadata access. Configure browser cookies or a cookies.txt file, then retry.',
+        'Bilibili blocked anonymous access. Configure browser cookies or a cookies.txt file, then retry.',
       rawMessage,
     }
   }

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
+import { clampVideoConcurrentDownloads } from './videoLibraryUtils'
 import {
   Palette,
   User,
@@ -9,6 +10,7 @@ import {
   Trash2,
   RefreshCw,
   Download,
+  FolderOpen,
 } from 'lucide-react'
 
 interface UpdateInfo {
@@ -51,8 +53,12 @@ export const Settings: React.FC = () => {
     cookieBrowser: 'chrome',
     cookiesPath: '',
     qualityPreference: 'best',
+    videoDownloadDir: '',
+    maxDownloads: 3,
   })
   const [videoToolStatus, setVideoToolStatus] = useState<any>(null)
+  const [installingVideoTool, setInstallingVideoTool] = useState<'yt-dlp' | 'ffmpeg' | null>(null)
+  const [verifyingCookieAccess, setVerifyingCookieAccess] = useState(false)
 
   // Categories list state
   const [categories, setCategories] = useState<any[]>([])
@@ -115,6 +121,8 @@ export const Settings: React.FC = () => {
           cookieBrowser: settings.cookieBrowser || 'chrome',
           cookiesPath: settings.cookiesPath || '',
           qualityPreference: settings.qualityPreference || 'best',
+          videoDownloadDir: settings.videoDownloadDir || '',
+          maxDownloads: clampVideoConcurrentDownloads(settings.maxDownloads),
         })
       }
     })
@@ -202,14 +210,61 @@ export const Settings: React.FC = () => {
   const handleSaveVideoSettings = async () => {
     if (!api) return
     const current = await api.getSettings()
-    await api.saveSettings({ ...(current as Record<string, any>), ...videoSettings })
+    const nextSettings = {
+      ...videoSettings,
+      maxDownloads: clampVideoConcurrentDownloads(videoSettings.maxDownloads),
+    }
+    setVideoSettings(nextSettings)
+    await api.saveSettings({ ...(current as Record<string, any>), ...nextSettings })
     showToast(t('settings.toast_video_settings_saved'))
+  }
+
+  const handleSelectVideoDownloadDir = async () => {
+    if (!api) return
+    const result = await api.selectVideoDownloadDir()
+    if (result?.success && result.path) {
+      setVideoSettings({ ...videoSettings, videoDownloadDir: result.path })
+    }
+  }
+
+  const handleVerifyCookieAccess = async () => {
+    if (!api) return
+    setVerifyingCookieAccess(true)
+    try {
+      const current = await api.getSettings()
+      await api.saveSettings({
+        ...(current as Record<string, any>),
+        ...videoSettings,
+        maxDownloads: clampVideoConcurrentDownloads(videoSettings.maxDownloads),
+      })
+      const result = await api.verifyVideoCookieAccess()
+      if (result?.success) {
+        showToast(t('settings.video_cookie_verify_success'))
+      } else {
+        showToast(t('settings.video_cookie_verify_failed', { error: result?.error || '' }))
+      }
+    } finally {
+      setVerifyingCookieAccess(false)
+    }
   }
 
   const handleCheckVideoTools = async () => {
     if (!api) return
     const status = await api.checkVideoTools()
     setVideoToolStatus(status)
+  }
+
+  const handleInstallVideoTool = async (tool: 'yt-dlp' | 'ffmpeg') => {
+    if (!api) return
+    setInstallingVideoTool(tool)
+    const result = await api.installVideoTool(tool)
+    setInstallingVideoTool(null)
+    if (result?.success) {
+      setVideoToolStatus(result.tools)
+      showToast(t('settings.video_tool_install_success', { tool }))
+    } else {
+      showToast(t('settings.video_tool_install_failed', { tool, error: result?.error || '' }))
+    }
   }
 
   // Category management
@@ -907,6 +962,43 @@ export const Settings: React.FC = () => {
                 </label>
               </div>
 
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                {t('settings.video_download_dir')}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    className="form-field"
+                    value={videoSettings.videoDownloadDir}
+                    onChange={(e) =>
+                      setVideoSettings({ ...videoSettings, videoDownloadDir: e.target.value })
+                    }
+                    placeholder={t('settings.video_download_dir_placeholder')}
+                    style={{ flexGrow: 1 }}
+                  />
+                  <button className="btn" onClick={handleSelectVideoDownloadDir} type="button">
+                    <FolderOpen size={14} />
+                    {t('settings.video_select_download_dir')}
+                  </button>
+                </div>
+              </label>
+
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                {t('settings.video_max_downloads')}
+                <input
+                  className="form-field"
+                  type="number"
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={videoSettings.maxDownloads}
+                  onChange={(e) =>
+                    setVideoSettings({
+                      ...videoSettings,
+                      maxDownloads: clampVideoConcurrentDownloads(e.target.value),
+                    })
+                  }
+                />
+              </label>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
                   {t('settings.video_cookie_mode')}
@@ -980,6 +1072,59 @@ export const Settings: React.FC = () => {
                 <button className="btn" onClick={handleCheckVideoTools}>
                   {t('settings.video_check_tools')}
                 </button>
+                <button
+                  className="btn"
+                  onClick={handleVerifyCookieAccess}
+                  disabled={verifyingCookieAccess || videoSettings.cookieMode === 'none'}
+                >
+                  <Shield size={14} />
+                  {verifyingCookieAccess
+                    ? t('settings.video_cookie_verifying')
+                    : t('settings.video_cookie_verify')}
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => handleInstallVideoTool('yt-dlp')}
+                  disabled={installingVideoTool !== null}
+                >
+                  <Download size={14} />
+                  {installingVideoTool === 'yt-dlp'
+                    ? t('settings.video_tool_installing')
+                    : t('settings.video_install_ytdlp')}
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => handleInstallVideoTool('ffmpeg')}
+                  disabled={installingVideoTool !== null}
+                >
+                  <Download size={14} />
+                  {installingVideoTool === 'ffmpeg'
+                    ? t('settings.video_tool_installing')
+                    : t('settings.video_install_ffmpeg')}
+                </button>
+              </div>
+
+              <div
+                style={{
+                  padding: '12px',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--bg-muted)',
+                  display: 'grid',
+                  gap: '6px',
+                }}
+              >
+                <strong style={{ fontSize: '12px' }}>{t('settings.video_bilibili_notes_title')}</strong>
+                {[
+                  'settings.video_bilibili_note_login',
+                  'settings.video_bilibili_note_verify',
+                  'settings.video_bilibili_note_412',
+                  'settings.video_bilibili_note_rights',
+                ].map((key) => (
+                  <p key={key} style={{ color: 'var(--text-muted)', fontSize: '11px', margin: 0 }}>
+                    {t(key)}
+                  </p>
+                ))}
               </div>
 
               {videoToolStatus && (

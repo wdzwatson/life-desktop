@@ -50,6 +50,8 @@ function resolveFormat(quality: VideoQualityPreference): string {
 export function buildDownloadArgs(input: BuildDownloadArgsInput): string[] {
   const args = [
     '--newline',
+    '--progress',
+    '--no-playlist',
     '--print',
     'after_move:filepath:%(filepath)j',
     '-f',

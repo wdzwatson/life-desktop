@@ -12,3 +12,12 @@ test('renderer entry declares a Content Security Policy without unsafe eval', ()
   assert.ok(cspMatch, 'index.html should declare a Content-Security-Policy meta tag')
   assert.doesNotMatch(cspMatch[1], /'unsafe-eval'/)
 })
+
+test('renderer CSP allows the app video protocol for local playback', () => {
+  const cspMatch = indexHtml.match(
+    /<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"/,
+  )
+
+  assert.ok(cspMatch, 'index.html should declare a Content-Security-Policy meta tag')
+  assert.match(cspMatch[1], /media-src[^;]*life-video:/)
+})

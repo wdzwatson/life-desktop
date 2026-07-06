@@ -194,3 +194,11 @@ test('maps expired cookies to refresh-cookie diagnostic', () => {
   assert.equal(diagnostic.severity, 'warning')
   assert.match(diagnostic.message, /refresh cookies|re-login/i)
 })
+
+test('maps missing yt-dlp executable to tool diagnostic', () => {
+  const diagnostic = normalizeYtDlpError('spawn yt-dlp ENOENT')
+
+  assert.equal(diagnostic.code, 'tool_missing')
+  assert.equal(diagnostic.severity, 'error')
+  assert.match(diagnostic.message, /yt-dlp/)
+})

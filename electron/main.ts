@@ -1,10 +1,10 @@
-import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, dialog, protocol, net } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import Database from 'better-sqlite3'
 import { initializeUserDatabase } from './db/schema'
 import AdmZip from 'adm-zip'
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 import { autoUpdater } from 'electron-updater'
 import crypto from 'crypto'
 import { PDFParse } from 'pdf-parse'
@@ -16,10 +16,21 @@ import {
 } from '../src/views/bookReaderUtils'
 import {
   checkVideoTools,
+  createInitialVideoEngineStatus,
+  deriveVideoEngineStatus,
+  formatDurationSeconds,
+  installManagedVideoTool,
+  isVideoEngineReady,
   parseVideoUrl,
+  probeVideoDurationSeconds,
   resolvePlaybackPath,
+  resolveVideoDownloadDir,
+  resolveVideoProtocolPath,
   startVideoDownload,
+  verifyVideoCookieAccess,
+  type VideoEngineStatus,
 } from './video/service'
+import { classifyVideoDownloadFailure } from './video/downloadState'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -35,11 +46,25 @@ let mainWindow: BrowserWindow | null = null
 let activeUserId = 'guest'
 const openDbs: Map<string, any> = new Map() // dbName -> Database instance
 let schedulerInterval: NodeJS.Timeout | null = null
+let videoEngineStatus: VideoEngineStatus = createInitialVideoEngineStatus()
+let videoEngineLoadPromise: Promise<VideoEngineStatus> | null = null
 
 // Default Paths
 const BASE_DIR = path.join(app.getPath('home'), 'LifeOS')
 const CONFIG_DIR = path.join(BASE_DIR, 'config')
 const SETTINGS_FILE = path.join(CONFIG_DIR, 'settings.json')
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'life-video',
+    privileges: {
+      standard: true,
+      secure: true,
+      stream: true,
+      supportFetchAPI: true,
+    },
+  },
+])
 
 // Ensure configuration files exist
 function initConfig() {
@@ -69,6 +94,52 @@ function getSettings() {
   } catch {
     return {}
   }
+}
+
+function getVideoToolSettings() {
+  return {
+    ...getSettings(),
+    videoToolsDir: path.join(BASE_DIR, 'tools', 'video'),
+  }
+}
+
+function emitVideoEngineStatus() {
+  mainWindow?.webContents.send('video:engine-status', videoEngineStatus)
+}
+
+async function loadVideoEngine(options: { force?: boolean } = {}) {
+  if (videoEngineLoadPromise && !options.force) return videoEngineLoadPromise
+  if (isVideoEngineReady(videoEngineStatus) && !options.force) return videoEngineStatus
+
+  videoEngineStatus = {
+    status: 'loading',
+    message: 'Loading video download plugin...',
+    tools: videoEngineStatus.tools,
+    updatedAt: new Date().toISOString(),
+  }
+  emitVideoEngineStatus()
+
+  videoEngineLoadPromise = checkVideoTools(getVideoToolSettings())
+    .then((tools) => {
+      videoEngineStatus = deriveVideoEngineStatus(tools)
+      emitVideoEngineStatus()
+      return videoEngineStatus
+    })
+    .catch((error: any) => {
+      videoEngineStatus = {
+        status: 'error',
+        message: error?.message || String(error),
+        tools: videoEngineStatus.tools,
+        updatedAt: new Date().toISOString(),
+      }
+      emitVideoEngineStatus()
+      return videoEngineStatus
+    })
+    .finally(() => {
+      videoEngineLoadPromise = null
+    })
+
+  return videoEngineLoadPromise
 }
 
 function saveSettings(settings: any) {
@@ -109,7 +180,20 @@ function getUserDb(dbName: string): any {
 }
 
 function getActiveUserVideoDir() {
-  return path.join(BASE_DIR, 'users', activeUserId, 'files', 'videos')
+  return resolveVideoDownloadDir(
+    getSettings(),
+    path.join(BASE_DIR, 'users', activeUserId, 'files', 'videos'),
+  )
+}
+
+function setupVideoProtocol() {
+  protocol.handle('life-video', (request) => {
+    const resolved = resolveVideoProtocolPath(getActiveUserVideoDir(), request.url)
+    if (!resolved.success || !resolved.path) {
+      return new Response(resolved.error || 'Unable to load video.', { status: 403 })
+    }
+    return net.fetch(pathToFileURL(resolved.path).toString())
+  })
 }
 
 // Switch user and initialize
@@ -270,15 +354,23 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 
+  mainWindow.webContents.once('did-finish-load', () => {
+    emitVideoEngineStatus()
+  })
+
   mainWindow.on('closed', () => {
     mainWindow = null
   })
 
   setupAutoUpdater()
   startScheduler()
+  void loadVideoEngine()
 }
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  setupVideoProtocol()
+  createWindow()
+})
 
 app.on('window-all-closed', () => {
   closeUserDbs()
@@ -538,7 +630,21 @@ ipcMain.handle('settings:get', async () => {
 })
 
 ipcMain.handle('settings:save', async (_, newSettings: any) => {
-  return saveSettings(newSettings)
+  const previousSettings = getSettings()
+  const savedSettings = saveSettings(newSettings)
+  const videoSettingKeys = [
+    'ytDlpPath',
+    'ffmpegPath',
+    'videoDownloadDir',
+    'qualityPreference',
+    'cookieMode',
+    'cookieBrowser',
+    'cookiesPath',
+  ]
+  if (videoSettingKeys.some((key) => previousSettings[key] !== newSettings[key])) {
+    void loadVideoEngine({ force: true })
+  }
+  return savedSettings
 })
 
 ipcMain.handle('settings:clearAppData', async () => {
@@ -645,6 +751,19 @@ ipcMain.handle('fs:open-external', async (_, relativePath: string) => {
     return { success: false, error: 'File does not exist' }
   } catch (error: any) {
     console.error('Failed to open external file:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('shell:openExternal', async (_, url: string) => {
+  try {
+    if (!/^https?:\/\//i.test(url)) {
+      return { success: false, error: 'Only HTTP(S) URLs can be opened externally.' }
+    }
+    await shell.openExternal(url)
+    return { success: true }
+  } catch (error: any) {
+    console.error('Failed to open external URL:', error)
     return { success: false, error: error.message }
   }
 })
@@ -1299,43 +1418,115 @@ ipcMain.handle('db:query', async (_, { dbName, sql, params = [] }) => {
 
 // IPC Handlers: Video downloader
 ipcMain.handle('video:checkTools', async () => {
-  return checkVideoTools(getSettings())
+  return checkVideoTools(getVideoToolSettings())
+})
+
+ipcMain.handle('video:getEngineStatus', async () => {
+  return videoEngineStatus
+})
+
+ipcMain.handle('video:loadEngine', async () => {
+  return loadVideoEngine({ force: true })
 })
 
 ipcMain.handle('video:parseUrl', async (_, url: string) => {
-  return parseVideoUrl(getSettings(), url)
+  return parseVideoUrl(getVideoToolSettings(), url)
 })
 
 ipcMain.handle('video:download', async (_, videoData: any) => {
+  if (!isVideoEngineReady(videoEngineStatus)) {
+    if (videoEngineStatus.status === 'idle') void loadVideoEngine()
+    throw new Error(videoEngineStatus.message || 'Video download plugin is loading.')
+  }
   return startVideoDownload({
-    settings: getSettings(),
+    settings: getVideoToolSettings(),
     mainWindow,
     url: videoData.sourceUrl || videoData.url,
     title: videoData.title,
+    videoId: videoData.id,
+    source: videoData.source,
+    sourceCid: videoData.sourceCid || videoData.source_cid,
+    durationSeconds: videoData.durationSeconds || videoData.duration_seconds,
     outputDir: getActiveUserVideoDir(),
-    onFinished: (filePath) => {
-      if (!videoData.id || !filePath) return
+    onProgress: async (progress) => {
+      if (!videoData.id || typeof progress !== 'number') return
       const db = getUserDb('videos')
       db.prepare(
         `
         UPDATE videos
-        SET status = 'downloaded', local_path = ?, path = ?, diagnostic_message = NULL
+        SET status = 'downloading',
+            download_progress = ?,
+            download_error = NULL,
+            updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         `,
-      ).run(filePath, filePath, videoData.id)
+      ).run(progress, videoData.id)
+    },
+    onFinished: async (filePath) => {
+      if (!videoData.id || !filePath) return
+      const durationSeconds = await probeVideoDurationSeconds(getVideoToolSettings(), filePath)
+      const durationLabel = durationSeconds ? formatDurationSeconds(durationSeconds) : null
+      const db = getUserDb('videos')
+      db.prepare(
+        `
+        UPDATE videos
+        SET status = 'downloaded',
+            local_path = ?,
+            path = ?,
+            duration = COALESCE(duration, ?),
+            duration_seconds = COALESCE(duration_seconds, ?),
+            download_progress = 100,
+            downloaded_at = CURRENT_TIMESTAMP,
+            download_error = NULL,
+            invalid_reason = NULL,
+            diagnostic_message = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        `,
+      ).run(filePath, filePath, durationLabel, durationSeconds || null, videoData.id)
     },
     onFailed: (message) => {
       if (!videoData.id) return
+      const failure = classifyVideoDownloadFailure(message)
       const db = getUserDb('videos')
       db.prepare(
         `
         UPDATE videos
-        SET status = 'unclassified', diagnostic_message = ?
+        SET status = ?,
+            download_error = ?,
+            invalid_reason = ?,
+            diagnostic_message = ?,
+            updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         `,
-      ).run(message, videoData.id)
+      ).run(failure.status, failure.downloadError, failure.invalidReason, failure.downloadError, videoData.id)
     },
   })
+})
+
+ipcMain.handle('video:installTool', async (_, tool: 'yt-dlp' | 'ffmpeg') => {
+  try {
+    const result = await installManagedVideoTool(getVideoToolSettings(), tool)
+    const tools = await checkVideoTools(getVideoToolSettings())
+    videoEngineStatus = deriveVideoEngineStatus(tools)
+    emitVideoEngineStatus()
+    return { success: true, data: result, tools }
+  } catch (err: any) {
+    return { success: false, error: err.message || String(err) }
+  }
+})
+
+ipcMain.handle('video:verifyCookieAccess', async () => {
+  return verifyVideoCookieAccess(getVideoToolSettings())
+})
+
+ipcMain.handle('video:selectDownloadDir', async () => {
+  const { filePaths, canceled } = await dialog.showOpenDialog(mainWindow!, {
+    properties: ['openDirectory', 'createDirectory'],
+    defaultPath: getActiveUserVideoDir(),
+  })
+  if (canceled || !filePaths[0]) return { success: false }
+  return { success: true, path: filePaths[0] }
 })
 
 ipcMain.handle('video:getPlaybackUrl', async (_, localPath: string) => {

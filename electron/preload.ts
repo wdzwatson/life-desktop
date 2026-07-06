@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveSettings: (settings: any) => ipcRenderer.invoke('settings:save', settings),
   clearAppData: () => ipcRenderer.invoke('settings:clearAppData'),
   revealInFinder: (filePath: string) => ipcRenderer.send('fs:reveal', filePath),
+  openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
 
   // Database IPC Bridge
   dbQuery: (dbName: string, sql: string, params?: any[]) =>
@@ -38,9 +39,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Video parsing & downloading
   checkVideoTools: () => ipcRenderer.invoke('video:checkTools'),
+  getVideoEngineStatus: () => ipcRenderer.invoke('video:getEngineStatus'),
+  loadVideoEngine: () => ipcRenderer.invoke('video:loadEngine'),
+  installVideoTool: (tool: 'yt-dlp' | 'ffmpeg') => ipcRenderer.invoke('video:installTool', tool),
+  verifyVideoCookieAccess: () => ipcRenderer.invoke('video:verifyCookieAccess'),
+  selectVideoDownloadDir: () => ipcRenderer.invoke('video:selectDownloadDir'),
   parseVideoUrl: (url: string) => ipcRenderer.invoke('video:parseUrl', url),
   startDownload: (videoData: any) => ipcRenderer.invoke('video:download', videoData),
   getVideoPlaybackUrl: (localPath: string) => ipcRenderer.invoke('video:getPlaybackUrl', localPath),
+  onVideoEngineStatus: (callback: (data: any) => void) => {
+    const subscription = (_event: any, data: any) => callback(data)
+    ipcRenderer.on('video:engine-status', subscription)
+    return () => {
+      ipcRenderer.removeListener('video:engine-status', subscription)
+    }
+  },
   onDownloadProgress: (callback: (data: any) => void) => {
     const subscription = (_event: any, data: any) => callback(data)
     ipcRenderer.on('video:download-progress', subscription)
@@ -53,6 +66,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('video:download-finished', subscription)
     return () => {
       ipcRenderer.removeListener('video:download-finished', subscription)
+    }
+  },
+  onDownloadFailed: (callback: (data: any) => void) => {
+    const subscription = (_event: any, data: any) => callback(data)
+    ipcRenderer.on('video:download-failed', subscription)
+    return () => {
+      ipcRenderer.removeListener('video:download-failed', subscription)
     }
   },
 

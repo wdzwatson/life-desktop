@@ -89,6 +89,8 @@ test('download args select playable best quality with ffmpeg available', () => {
 
   assert.deepEqual(args, [
     '--newline',
+    '--progress',
+    '--no-playlist',
     '--print',
     'after_move:filepath:%(filepath)j',
     '-f',
@@ -101,4 +103,29 @@ test('download args select playable best quality with ffmpeg available', () => {
     '/Users/me/LifeOS/users/guest/files/videos/%(title)s.%(ext)s',
     'https://www.youtube.com/watch?v=hLQl3WQQoQ0',
   ])
+})
+
+test('download args keep progress visible when printing final filepath', () => {
+  const args = buildDownloadArgs({
+    url: 'https://www.youtube.com/watch?v=hLQl3WQQoQ0',
+    outputTemplate: '/tmp/%(title)s.%(ext)s',
+    cookieConfig: { mode: 'none' },
+    quality: 'best',
+  })
+
+  assert.equal(args.includes('--print'), true)
+  assert.equal(args.includes('--progress'), true)
+  assert.equal(args.indexOf('--progress') < args.indexOf('--print'), true)
+})
+
+test('download args prevent playlist downloads for a single video item', () => {
+  const args = buildDownloadArgs({
+    url: 'https://www.bilibili.com/video/BV1QFTb6nE4L/?p=1',
+    outputTemplate: '/tmp/%(title)s.%(ext)s',
+    cookieConfig: { mode: 'none' },
+    quality: 'best',
+  })
+
+  assert.equal(args.includes('--no-playlist'), true)
+  assert.equal(args.indexOf('--no-playlist') < args.indexOf('-o'), true)
 })
