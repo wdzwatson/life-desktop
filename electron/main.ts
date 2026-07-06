@@ -31,6 +31,7 @@ import {
   type VideoEngineStatus,
 } from './video/service'
 import { classifyVideoDownloadFailure } from './video/downloadState'
+import { normalizeBulkVideoTagPayload } from '../src/views/videoStateUtils'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -1431,6 +1432,41 @@ ipcMain.handle('video:loadEngine', async () => {
 
 ipcMain.handle('video:parseUrl', async (_, url: string) => {
   return parseVideoUrl(getVideoToolSettings(), url)
+})
+
+ipcMain.handle('video:bulkUpdateTags', async (_, payload: any) => {
+  const normalized = normalizeBulkVideoTagPayload(payload || {})
+  if (!normalized.success) return { success: false, error: normalized.error }
+
+  try {
+    const db = getUserDb('videos')
+    const insertTag = db.prepare('INSERT OR IGNORE INTO video_tags (name) VALUES (?)')
+    const selectTag = db.prepare('SELECT id FROM video_tags WHERE name = ?')
+    const linkTag = db.prepare('INSERT OR IGNORE INTO video_tag_links (video_id, tag_id) VALUES (?, ?)')
+    const unlinkTag = db.prepare('DELETE FROM video_tag_links WHERE video_id = ? AND tag_id = ?')
+
+    const updateTags = db.transaction((videoIds: number[], tagNames: string[], mode: 'add' | 'remove') => {
+      for (const tagName of tagNames) {
+        if (mode === 'add') insertTag.run(tagName)
+        const tag = selectTag.get(tagName) as { id?: number } | undefined
+        const tagId = Number(tag?.id)
+        if (!tagId) {
+          if (mode === 'remove') continue
+          throw new Error(`Unable to resolve tag: ${tagName}`)
+        }
+        for (const videoId of videoIds) {
+          if (mode === 'add') linkTag.run(videoId, tagId)
+          else unlinkTag.run(videoId, tagId)
+        }
+      }
+    })
+
+    updateTags(normalized.videoIds, normalized.tagNames, normalized.mode)
+    return { success: true }
+  } catch (err: any) {
+    console.error('Video bulk tag update error:', err)
+    return { success: false, error: err?.message || String(err) }
+  }
 })
 
 ipcMain.handle('video:download', async (_, videoData: any) => {

@@ -405,6 +405,8 @@
     "bulk_delete_selected": "Delete selected",
     "bulk_add_tags": "Add tags",
     "bulk_remove_tags": "Remove tags",
+    "bulk_select_video": "Select {{title}}",
+    "bulk_deselect_video": "Deselect {{title}}",
     "bulk_group_updated": "Updated group for {{count}} videos",
     "bulk_tags_updated": "Updated tags for {{count}} videos",
     "bulk_skipped_readonly": "Skipped {{count}} read-only videos",

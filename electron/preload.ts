@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   verifyVideoCookieAccess: () => ipcRenderer.invoke('video:verifyCookieAccess'),
   selectVideoDownloadDir: () => ipcRenderer.invoke('video:selectDownloadDir'),
   parseVideoUrl: (url: string) => ipcRenderer.invoke('video:parseUrl', url),
+  bulkUpdateVideoTags: (payload: { videoIds: number[]; tagNames: string[]; mode: 'add' | 'remove' }) =>
+    ipcRenderer.invoke('video:bulkUpdateTags', payload),
   startDownload: (videoData: any) => ipcRenderer.invoke('video:download', videoData),
   getVideoPlaybackUrl: (localPath: string) => ipcRenderer.invoke('video:getPlaybackUrl', localPath),
   onVideoEngineStatus: (callback: (data: any) => void) => {

@@ -12,6 +12,7 @@ import {
   getDefaultVideoSortRank,
   getParseResultActionLabels,
   isBulkMetadataWriteResultSuccess,
+  normalizeBulkVideoTagPayload,
   parseBulkGroupPickerValue,
   parseParsedVideoImportTagDraft,
   getStatusBadgeTone,
@@ -247,4 +248,27 @@ test('getBulkTagEditButtonLabels exposes accessible add and remove labels', () =
     add: 'videos.bulk_add_tags',
     remove: 'videos.bulk_remove_tags',
   })
+})
+
+test('normalizeBulkVideoTagPayload trims and deduplicates valid bulk tag input', () => {
+  assert.deepEqual(
+    normalizeBulkVideoTagPayload({
+      videoIds: [1, 2, 2],
+      tagNames: [' AI ', 'Course', 'AI', ''],
+      mode: 'add',
+    }),
+    {
+      success: true,
+      videoIds: [1, 2],
+      tagNames: ['AI', 'Course'],
+      mode: 'add',
+    },
+  )
+})
+
+test('normalizeBulkVideoTagPayload rejects empty ids, empty tags, and invalid mode', () => {
+  assert.equal(normalizeBulkVideoTagPayload({ videoIds: [], tagNames: ['AI'], mode: 'add' }).success, false)
+  assert.equal(normalizeBulkVideoTagPayload({ videoIds: [0, -1, 'x'], tagNames: ['AI'], mode: 'add' }).success, false)
+  assert.equal(normalizeBulkVideoTagPayload({ videoIds: [1], tagNames: [' '], mode: 'add' }).success, false)
+  assert.equal(normalizeBulkVideoTagPayload({ videoIds: [1], tagNames: ['AI'], mode: 'replace' }).success, false)
 })

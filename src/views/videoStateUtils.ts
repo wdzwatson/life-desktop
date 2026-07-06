@@ -112,6 +112,40 @@ export function getBulkTagEditButtonLabels() {
   }
 }
 
+export type BulkVideoTagMode = 'add' | 'remove'
+
+export function normalizeBulkVideoTagPayload(payload: {
+  videoIds?: unknown
+  tagNames?: unknown
+  mode?: unknown
+}) {
+  const videoIds = Array.isArray(payload.videoIds)
+    ? Array.from(
+        new Set(
+          payload.videoIds
+            .map((id) => Number(id))
+            .filter((id) => Number.isInteger(id) && id > 0),
+        ),
+      )
+    : []
+  const tagNames = Array.isArray(payload.tagNames)
+    ? Array.from(
+        new Set(
+          payload.tagNames
+            .map((tag) => String(tag).trim())
+            .filter(Boolean),
+        ),
+      )
+    : []
+  const mode = payload.mode === 'add' || payload.mode === 'remove' ? payload.mode : null
+
+  if (videoIds.length === 0) return { success: false as const, error: 'No videos selected' }
+  if (tagNames.length === 0) return { success: false as const, error: 'No tags provided' }
+  if (!mode) return { success: false as const, error: 'Invalid tag update mode' }
+
+  return { success: true as const, videoIds, tagNames, mode }
+}
+
 export function getStatusBadgeTone(status: string | undefined) {
   const normalized = normalizeVideoStatus(status)
   if (normalized === 'download_failed') return 'danger' as const

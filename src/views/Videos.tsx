@@ -65,7 +65,6 @@ import {
   normalizeVideoStatus,
   parseBulkGroupPickerValue,
   parseParsedVideoImportTagDraft,
-  shouldCreateBulkTagRecord,
   sortVideoRecords,
   toggleSortDirection,
 } from './videoStateUtils'
@@ -897,46 +896,14 @@ export const Videos: React.FC = () => {
       return
     }
 
-    for (const name of names) {
-      if (shouldCreateBulkTagRecord(mode)) {
-        const insertTagResult = await api.dbQuery('videos', 'INSERT OR IGNORE INTO video_tags (name) VALUES (?)', [name])
-        if (!isBulkMetadataWriteResultSuccess(insertTagResult)) {
-          showBulkMetadataWriteFailure(insertTagResult?.error)
-          return
-        }
-      }
-      const tagResult = await api.dbQuery('videos', 'SELECT id FROM video_tags WHERE name = ?', [name])
-      if (!isBulkMetadataWriteResultSuccess(tagResult)) {
-        showBulkMetadataWriteFailure(tagResult?.error)
-        return
-      }
-      const tagId = Number(tagResult?.data?.[0]?.id)
-      if (!tagId) {
-        if (mode === 'remove') continue
-        showBulkMetadataWriteFailure()
-        return
-      }
-      for (const videoId of bulkEditPlan.editableIds) {
-        if (mode === 'add') {
-          const linkTagResult = await api.dbQuery('videos', 'INSERT OR IGNORE INTO video_tag_links (video_id, tag_id) VALUES (?, ?)', [
-            videoId,
-            tagId,
-          ])
-          if (!isBulkMetadataWriteResultSuccess(linkTagResult)) {
-            showBulkMetadataWriteFailure(linkTagResult?.error)
-            return
-          }
-        } else {
-          const unlinkTagResult = await api.dbQuery('videos', 'DELETE FROM video_tag_links WHERE video_id = ? AND tag_id = ?', [
-            videoId,
-            tagId,
-          ])
-          if (!isBulkMetadataWriteResultSuccess(unlinkTagResult)) {
-            showBulkMetadataWriteFailure(unlinkTagResult?.error)
-            return
-          }
-        }
-      }
+    const result = await api.bulkUpdateVideoTags?.({
+      videoIds: bulkEditPlan.editableIds,
+      tagNames: names,
+      mode,
+    })
+    if (!isBulkMetadataWriteResultSuccess(result)) {
+      showBulkMetadataWriteFailure(result?.error)
+      return
     }
 
     showToast(t('videos.bulk_tags_updated', { count: bulkEditPlan.editableCount }))
@@ -961,7 +928,12 @@ export const Videos: React.FC = () => {
     if (!api) return
     if (!window.confirm(t('videos.confirm_bulk_delete', { count: bulkSelectedVideoIds.length }))) return
     for (const videoId of bulkSelectedVideoIds) {
-      await api.dbQuery('videos', 'DELETE FROM videos WHERE id = ?', [videoId])
+      const deleteResult = await api.dbQuery('videos', 'DELETE FROM videos WHERE id = ?', [videoId])
+      if (!isBulkMetadataWriteResultSuccess(deleteResult)) {
+        showBulkMetadataWriteFailure(deleteResult?.error)
+        await loadData()
+        return
+      }
     }
     if (selectedVideo && bulkSelectedVideoIds.includes(selectedVideo.id)) setSelectedVideo(null)
     setBulkMetadataMode(null)
@@ -1447,6 +1419,7 @@ export const Videos: React.FC = () => {
                   const badgeTone = getStatusBadgeTone(video.status)
                   const canPlay = canPlayVideoRecord(video)
                   const downloadAction = getVideoRowDownloadAction(video)
+                  const isBulkSelected = bulkSelectedVideoIds.includes(video.id)
                   const downloadTitle =
                     downloadAction.reason === 'retry'
                       ? t('videos.btn_retry_download')
@@ -1487,8 +1460,10 @@ export const Videos: React.FC = () => {
                     >
                       <input
                         type="checkbox"
-                        checked={bulkSelectedVideoIds.includes(video.id)}
-                        aria-label={t(bulkActionLabels.selectedCount, { count: 1 })}
+                        checked={isBulkSelected}
+                        aria-label={t(isBulkSelected ? 'videos.bulk_deselect_video' : 'videos.bulk_select_video', {
+                          title: video.title,
+                        })}
                         onClick={(event) => event.stopPropagation()}
                         onChange={(event) => {
                           const checked = event.target.checked

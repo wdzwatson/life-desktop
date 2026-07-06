@@ -405,6 +405,8 @@
     "bulk_delete_selected": "删除选中",
     "bulk_add_tags": "添加标签",
     "bulk_remove_tags": "移除标签",
+    "bulk_select_video": "选择 {{title}}",
+    "bulk_deselect_video": "取消选择 {{title}}",
     "bulk_group_updated": "已更新分组：{{count}} 个视频",
     "bulk_tags_updated": "已更新标签：{{count}} 个视频",
     "bulk_skipped_readonly": "已跳过 {{count}} 个不可编辑视频",
