@@ -5,7 +5,9 @@ import {
   canEditVideoDetails,
   canPlayVideoRecord,
   buildParsedVideoTitle,
+  createBulkMetadataEditPlan,
   createVideoBatchKey,
+  getBulkMetadataActionLabels,
   getDefaultVideoSortRank,
   getParseResultActionLabels,
   parseParsedVideoImportTagDraft,
@@ -190,4 +192,31 @@ test('buildParsedVideoTitle prefixes multipart Bilibili parts with editable play
   assert.equal(buildParsedVideoTitle('LangChain Course', { title: 'P1 Introduction' }), 'LangChain Course - P1 Introduction')
   assert.equal(buildParsedVideoTitle('  LangChain Course  ', { title: '  P2 Setup  ' }), 'LangChain Course - P2 Setup')
   assert.equal(buildParsedVideoTitle('', { title: 'P3 Download' }), 'P3 Download')
+})
+
+test('createBulkMetadataEditPlan separates editable and skipped bulk metadata records', () => {
+  const selected = [
+    base({ id: 1, status: 'not_downloaded' }),
+    base({ id: 2, status: 'downloaded' }),
+    base({ id: 3, status: 'download_failed' }),
+    base({ id: 4, status: 'downloading' }),
+    base({ id: 5, status: 'invalid' }),
+  ]
+
+  assert.deepEqual(createBulkMetadataEditPlan(selected), {
+    editableIds: [1, 2, 3],
+    skippedIds: [4, 5],
+    editableCount: 3,
+    skippedCount: 2,
+  })
+})
+
+test('getBulkMetadataActionLabels keeps the contextual bar sparse', () => {
+  assert.deepEqual(getBulkMetadataActionLabels(), {
+    selectedCount: 'videos.bulk_selected_count',
+    group: 'videos.bulk_group',
+    tags: 'videos.bulk_tags',
+    more: 'videos.bulk_more',
+    cancel: 'videos.bulk_cancel',
+  })
 })

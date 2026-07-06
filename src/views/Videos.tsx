@@ -52,7 +52,9 @@ import {
   canEditVideoDetails,
   canPlayVideoRecord,
   buildParsedVideoTitle,
+  createBulkMetadataEditPlan,
   createVideoBatchKey,
+  getBulkMetadataActionLabels,
   getParseResultActionLabels,
   getSortDirectionIconName,
   getStatusBadgeTone,
@@ -103,6 +105,9 @@ export const Videos: React.FC = () => {
   const [groups, setGroups] = useState<VideoGroupRecord[]>([])
   const [tags, setTags] = useState<VideoTag[]>([])
   const [localVideos, setLocalVideos] = useState<VideoRecord[]>([])
+  const [bulkSelectedVideoIds, setBulkSelectedVideoIds] = useState<number[]>([])
+  const [bulkTagDraft, setBulkTagDraft] = useState('')
+  const [bulkMetadataMode, setBulkMetadataMode] = useState<'group' | 'tags' | 'more' | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [videoSort, setVideoSort] = useState<VideoSortState>({ key: 'default', direction: 'desc' })
   const [activeGroupId, setActiveGroupId] = useState<FilterId>('all')
@@ -267,6 +272,12 @@ export const Videos: React.FC = () => {
   }, [playbackSpeed, playbackUrl])
 
   useEffect(() => {
+    setBulkSelectedVideoIds((current) =>
+      current.filter((id) => localVideos.some((video) => video.id === id)),
+    )
+  }, [localVideos])
+
+  useEffect(() => {
     if (!isGroupDropdownOpen) return
     const closeOnOutsideClick = (event: MouseEvent) => {
       const target = event.target as Node
@@ -315,12 +326,21 @@ export const Videos: React.FC = () => {
       ),
     [localVideos, searchQuery, activeGroupId, selectedGroupIds, activeTag, videoSort],
   )
+  const bulkSelectedVideos = useMemo(
+    () => localVideos.filter((video) => bulkSelectedVideoIds.includes(video.id)),
+    [localVideos, bulkSelectedVideoIds],
+  )
+  const bulkEditPlan = useMemo(
+    () => createBulkMetadataEditPlan(bulkSelectedVideos),
+    [bulkSelectedVideos],
+  )
 
   const parsedItems = parsedData?.items || []
   const shouldEditParsedPlaylistTitle = parsedData?.source === 'bilibili' && parsedItems.length > 1
   const parsedItemIds = parsedItems.map((item: any) => item.id)
   const bulkSelection = getBulkSelectionState(parsedItemIds, selectedVideoIds)
   const parseActionLabels = getParseResultActionLabels()
+  const bulkActionLabels = getBulkMetadataActionLabels()
   const getQueueItemForVideo = (video: VideoRecord) =>
     downloadQueue.find((item) => item.id === video.id || item.title === video.title)
   const updateDrawer = (action: VideoDrawerAction) => {
@@ -819,6 +839,83 @@ export const Videos: React.FC = () => {
     loadData()
   }
 
+  const handleBulkMoveToGroup = async (groupId: number | null) => {
+    if (!api || bulkEditPlan.editableIds.length === 0) return
+    await api.dbQuery(
+      'videos',
+      `
+      UPDATE videos
+      SET group_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id IN (${bulkEditPlan.editableIds.map(() => '?').join(',')})
+      `,
+      [groupId, ...bulkEditPlan.editableIds],
+    )
+    showToast(t('videos.bulk_group_updated', { count: bulkEditPlan.editableCount }))
+    if (bulkEditPlan.skippedCount > 0) {
+      showToast(t('videos.bulk_skipped_readonly', { count: bulkEditPlan.skippedCount }))
+    }
+    setBulkMetadataMode(null)
+    setBulkSelectedVideoIds([])
+    await loadData()
+  }
+
+  const handleBulkUpdateTags = async (mode: 'add' | 'remove') => {
+    if (!api || bulkEditPlan.editableIds.length === 0) return
+    const names = Array.from(new Set(bulkTagDraft.split(',').map((tag) => tag.trim()).filter(Boolean)))
+    if (names.length === 0) return
+
+    for (const name of names) {
+      await api.dbQuery('videos', 'INSERT OR IGNORE INTO video_tags (name) VALUES (?)', [name])
+      const tagResult = await api.dbQuery('videos', 'SELECT id FROM video_tags WHERE name = ?', [name])
+      const tagId = Number(tagResult?.data?.[0]?.id)
+      if (!tagId) continue
+      for (const videoId of bulkEditPlan.editableIds) {
+        if (mode === 'add') {
+          await api.dbQuery('videos', 'INSERT OR IGNORE INTO video_tag_links (video_id, tag_id) VALUES (?, ?)', [
+            videoId,
+            tagId,
+          ])
+        } else {
+          await api.dbQuery('videos', 'DELETE FROM video_tag_links WHERE video_id = ? AND tag_id = ?', [
+            videoId,
+            tagId,
+          ])
+        }
+      }
+    }
+
+    showToast(t('videos.bulk_tags_updated', { count: bulkEditPlan.editableCount }))
+    if (bulkEditPlan.skippedCount > 0) {
+      showToast(t('videos.bulk_skipped_readonly', { count: bulkEditPlan.skippedCount }))
+    }
+    setBulkTagDraft('')
+    setBulkMetadataMode(null)
+    setBulkSelectedVideoIds([])
+    await loadData()
+  }
+
+  const handleBulkDownloadSelected = async () => {
+    for (const video of bulkSelectedVideos) {
+      const action = getVideoRowDownloadAction(video)
+      if (action.visible && !action.disabled) {
+        await handleDownloadVideoFromList(video)
+      }
+    }
+    setBulkMetadataMode(null)
+    setBulkSelectedVideoIds([])
+  }
+
+  const handleBulkDeleteSelected = async () => {
+    if (!api) return
+    for (const videoId of bulkSelectedVideoIds) {
+      await api.dbQuery('videos', 'DELETE FROM videos WHERE id = ?', [videoId])
+    }
+    if (selectedVideo && bulkSelectedVideoIds.includes(selectedVideo.id)) setSelectedVideo(null)
+    setBulkMetadataMode(null)
+    setBulkSelectedVideoIds([])
+    await loadData()
+  }
+
   const selectedDetailsEditable = selectedVideo ? canEditVideoDetails(selectedVideo) : false
   const videoEngineTone =
     videoEngineStatus.status === 'ready'
@@ -1189,6 +1286,86 @@ export const Videos: React.FC = () => {
               />
             </div>
 
+            {bulkSelectedVideoIds.length > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 10px',
+                  borderBottom: '1px solid var(--color-border)',
+                  backgroundColor: 'var(--bg-surface)',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginRight: 'auto' }}>
+                  {t(bulkActionLabels.selectedCount, { count: bulkSelectedVideoIds.length })}
+                </span>
+                <button className="btn sm" onClick={() => setBulkMetadataMode('group')}>
+                  {t(bulkActionLabels.group)}
+                </button>
+                <button className="btn sm" onClick={() => setBulkMetadataMode('tags')}>
+                  {t(bulkActionLabels.tags)}
+                </button>
+                <button className="btn sm" onClick={() => setBulkMetadataMode('more')}>
+                  {t(bulkActionLabels.more)}
+                </button>
+                <button
+                  className="btn sm ghost"
+                  onClick={() => {
+                    setBulkSelectedVideoIds([])
+                    setBulkMetadataMode(null)
+                    setBulkTagDraft('')
+                  }}
+                >
+                  {t(bulkActionLabels.cancel)}
+                </button>
+                {bulkMetadataMode === 'group' && (
+                  <select
+                    className="form-field"
+                    autoFocus
+                    onChange={(event) => handleBulkMoveToGroup(event.target.value ? Number(event.target.value) : null)}
+                    defaultValue=""
+                    style={{ width: '180px', height: '30px' }}
+                  >
+                    <option value="">{t('videos.group_none')}</option>
+                    {groupOptions.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.path}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {bulkMetadataMode === 'tags' && (
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <input
+                      className="form-field"
+                      value={bulkTagDraft}
+                      onChange={(event) => setBulkTagDraft(event.target.value)}
+                      autoFocus
+                      style={{ width: '180px', height: '30px' }}
+                    />
+                    <button className="btn sm" onClick={() => handleBulkUpdateTags('add')}>
+                      +
+                    </button>
+                    <button className="btn sm" onClick={() => handleBulkUpdateTags('remove')}>
+                      -
+                    </button>
+                  </div>
+                )}
+                {bulkMetadataMode === 'more' && (
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <button className="btn sm" onClick={handleBulkDownloadSelected}>
+                      {t('videos.bulk_download_selected')}
+                    </button>
+                    <button className="btn sm danger" onClick={handleBulkDeleteSelected}>
+                      {t('videos.bulk_delete_selected')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto' }}>
               {filteredLocalVideos.length === 0 ? (
                 <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', padding: '32px', textAlign: 'center' }}>
@@ -1228,7 +1405,7 @@ export const Videos: React.FC = () => {
                       }}
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: '36px minmax(0, 1fr) auto',
+                        gridTemplateColumns: '18px 36px minmax(0, 1fr) auto',
                         alignItems: 'center',
                         gap: '12px',
                         padding: '10px',
@@ -1239,6 +1416,25 @@ export const Videos: React.FC = () => {
                         cursor: 'pointer',
                       }}
                     >
+                      <input
+                        type="checkbox"
+                        checked={bulkSelectedVideoIds.includes(video.id)}
+                        aria-label={t(bulkActionLabels.selectedCount, { count: 1 })}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) => {
+                          const checked = event.target.checked
+                          setBulkSelectedVideoIds((current) =>
+                            checked
+                              ? Array.from(new Set([...current, video.id]))
+                              : current.filter((id) => id !== video.id),
+                          )
+                        }}
+                        style={{
+                          width: '14px',
+                          height: '14px',
+                          opacity: bulkSelectedVideoIds.length > 0 ? 1 : undefined,
+                        }}
+                      />
                       <button
                         className={`btn sm btn-icon ${canPlay ? 'primary' : ''}`}
                         disabled={!canPlay}

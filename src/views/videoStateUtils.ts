@@ -63,6 +63,33 @@ export function getVideoRowStyle(video: VideoRecord) {
   return { backgroundColor: 'var(--bg-app)', borderColor: 'var(--color-border)', opacity: 1 }
 }
 
+export function createBulkMetadataEditPlan(videos: VideoRecord[]) {
+  const editableIds: number[] = []
+  const skippedIds: number[] = []
+
+  for (const video of videos) {
+    if (canEditVideoDetails(video)) editableIds.push(video.id)
+    else skippedIds.push(video.id)
+  }
+
+  return {
+    editableIds,
+    skippedIds,
+    editableCount: editableIds.length,
+    skippedCount: skippedIds.length,
+  }
+}
+
+export function getBulkMetadataActionLabels() {
+  return {
+    selectedCount: 'videos.bulk_selected_count',
+    group: 'videos.bulk_group',
+    tags: 'videos.bulk_tags',
+    more: 'videos.bulk_more',
+    cancel: 'videos.bulk_cancel',
+  }
+}
+
 export function getStatusBadgeTone(status: string | undefined) {
   const normalized = normalizeVideoStatus(status)
   if (normalized === 'download_failed') return 'danger' as const
