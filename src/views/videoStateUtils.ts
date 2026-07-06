@@ -151,6 +151,25 @@ export function createVideoBatchKey(date = new Date(), sequence = 1) {
   return `${year}${month}${day}-${String(sequence).padStart(3, '0')}`
 }
 
+export interface ParsedVideoMetadataDefaults {
+  groupId?: number | null
+  tagNames?: string[]
+}
+
+export function applyParsedVideoMetadataDefaults<T extends { group_id?: number | null; tags?: string[] }>(
+  item: T,
+  defaults: ParsedVideoMetadataDefaults,
+) {
+  const tagNames = Array.from(
+    new Set((defaults.tagNames || []).map((tag) => tag.trim()).filter(Boolean)),
+  )
+  return {
+    ...item,
+    group_id: typeof defaults.groupId === 'number' ? defaults.groupId : item.group_id,
+    tags: tagNames.length > 0 ? tagNames : item.tags || [],
+  }
+}
+
 export function buildParsedVideoTitle(playlistTitle: string | null | undefined, item: { title?: string | null }) {
   const normalizedPlaylistTitle = String(playlistTitle || '').trim()
   const itemTitle = String(item.title || '').trim()

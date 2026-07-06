@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  applyParsedVideoMetadataDefaults,
   canEditVideoDetails,
   canPlayVideoRecord,
   buildParsedVideoTitle,
@@ -151,6 +152,24 @@ test('getParseResultActionLabels exposes cancel, add, and download actions', () 
     addToList: 'videos.btn_add_to_video_list',
     download: 'videos.btn_download_video',
   })
+})
+
+test('applyParsedVideoMetadataDefaults attaches optional import group and tags', () => {
+  assert.deepEqual(
+    applyParsedVideoMetadataDefaults(
+      { title: 'Part 1', source: 'bilibili' },
+      { groupId: 12, tagNames: ['AI', 'Course', 'AI', ''] },
+    ),
+    { title: 'Part 1', source: 'bilibili', group_id: 12, tags: ['AI', 'Course'] },
+  )
+
+  assert.deepEqual(
+    applyParsedVideoMetadataDefaults(
+      { title: 'Part 2', group_id: 7, tags: ['Existing'] },
+      { groupId: null, tagNames: [] },
+    ),
+    { title: 'Part 2', group_id: 7, tags: ['Existing'] },
+  )
 })
 
 test('buildParsedVideoTitle prefixes multipart Bilibili parts with editable playlist title', () => {
