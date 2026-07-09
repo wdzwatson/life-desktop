@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { Topbar } from './components/Topbar'
 import { Statusbar } from './components/Statusbar'
@@ -6,14 +6,15 @@ import { useAppStore } from './store/useAppStore'
 import { useTranslation } from 'react-i18next'
 
 // Screen views
-import { Dashboard } from './views/Dashboard'
-import { Tasks } from './views/Tasks'
-import { Notes } from './views/Notes'
-import { Books } from './views/Books'
-import { Videos } from './views/Videos'
-import { Toolbox } from './views/Toolbox'
-import { Settings } from './views/Settings'
 import { AuthScreen } from './components/AuthScreen'
+
+const Dashboard = lazy(() => import('./views/Dashboard').then(({ Dashboard }) => ({ default: Dashboard })))
+const Tasks = lazy(() => import('./views/Tasks').then(({ Tasks }) => ({ default: Tasks })))
+const Notes = lazy(() => import('./views/Notes').then(({ Notes }) => ({ default: Notes })))
+const Books = lazy(() => import('./views/Books').then(({ Books }) => ({ default: Books })))
+const Videos = lazy(() => import('./views/Videos').then(({ Videos }) => ({ default: Videos })))
+const Toolbox = lazy(() => import('./views/Toolbox').then(({ Toolbox }) => ({ default: Toolbox })))
+const Settings = lazy(() => import('./views/Settings').then(({ Settings }) => ({ default: Settings })))
 
 function App() {
   const { t } = useTranslation()
@@ -278,7 +279,9 @@ function App() {
         <Sidebar />
         <main className="main-workspace">
           <Topbar onOpenSearch={() => setSearchOpen(true)} />
-          <section className="content-pane">{renderScreen()}</section>
+          <section className="content-pane">
+            <Suspense fallback={<div style={{ minHeight: '100%' }} />}>{renderScreen()}</Suspense>
+          </section>
         </main>
       </div>
 
