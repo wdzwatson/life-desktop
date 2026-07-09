@@ -9,7 +9,10 @@ import {
   Edit2,
   ExternalLink,
   FolderPlus,
+  MoreVertical,
+  Minus,
   Play,
+  Plus,
   RefreshCw,
   Search,
   SortAsc,
@@ -54,8 +57,10 @@ import {
   buildParsedVideoTitle,
   createBulkMetadataEditPlan,
   createVideoBatchKey,
+  getBulkDownloadSelectionPlan,
   getBulkMetadataActionLabels,
   getBulkTagEditButtonLabels,
+  getBulkVisibleSelectionAction,
   getParseResultActionLabels,
   getSortDirectionIconName,
   getStatusBadgeTone,
@@ -67,6 +72,7 @@ import {
   parseParsedVideoImportTagDraft,
   sortVideoRecords,
   toggleSortDirection,
+  toggleVisibleBulkSelection,
 } from './videoStateUtils'
 import type { VideoSortState } from './videoStateUtils'
 import type { VideoGroupRecord, VideoRecord } from './videoTypes'
@@ -110,7 +116,8 @@ export const Videos: React.FC = () => {
   const [localVideos, setLocalVideos] = useState<VideoRecord[]>([])
   const [bulkSelectedVideoIds, setBulkSelectedVideoIds] = useState<number[]>([])
   const [bulkTagDraft, setBulkTagDraft] = useState('')
-  const [bulkMetadataMode, setBulkMetadataMode] = useState<'group' | 'tags' | 'more' | null>(null)
+  const [bulkMetadataMode, setBulkMetadataMode] = useState<'group' | 'tags' | null>(null)
+  const [isBulkMoreMenuOpen, setIsBulkMoreMenuOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [videoSort, setVideoSort] = useState<VideoSortState>({ key: 'default', direction: 'desc' })
   const [activeGroupId, setActiveGroupId] = useState<FilterId>('all')
@@ -336,6 +343,11 @@ export const Videos: React.FC = () => {
   const bulkEditPlan = useMemo(
     () => createBulkMetadataEditPlan(bulkSelectedVideos),
     [bulkSelectedVideos],
+  )
+  const visibleVideoIds = useMemo(() => filteredLocalVideos.map((video) => video.id), [filteredLocalVideos])
+  const bulkVisibleSelectionAction = useMemo(
+    () => getBulkVisibleSelectionAction(visibleVideoIds, bulkSelectedVideoIds),
+    [visibleVideoIds, bulkSelectedVideoIds],
   )
 
   const parsedItems = parsedData?.items || []
@@ -914,18 +926,43 @@ export const Videos: React.FC = () => {
   }
 
   const handleBulkDownloadSelected = async () => {
-    for (const video of bulkSelectedVideos) {
+    const selectedVideos = bulkSelectedVideos
+    const downloadPlan = getBulkDownloadSelectionPlan(selectedVideos)
+    setIsBulkMoreMenuOpen(false)
+    setBulkMetadataMode(null)
+
+    if (downloadPlan.downloadableCount === 0) {
+      showToast(
+        t(
+          downloadPlan.allSelectedDownloaded
+            ? 'videos.bulk_no_download_needed'
+            : 'videos.bulk_no_downloadable_selected',
+        ),
+      )
+      setBulkSelectedVideoIds([])
+      return
+    }
+
+    if (!guardVideoDownload()) return
+
+    setBulkSelectedVideoIds([])
+    showToast(t('videos.bulk_download_started', { count: downloadPlan.downloadableCount }))
+    if (downloadPlan.skippedCount > 0) {
+      showToast(t('videos.bulk_download_skipped', { count: downloadPlan.skippedCount }))
+    }
+
+    for (const video of selectedVideos) {
       const action = getVideoRowDownloadAction(video)
       if (action.visible && !action.disabled) {
         await handleDownloadVideoFromList(video)
       }
     }
-    setBulkMetadataMode(null)
-    setBulkSelectedVideoIds([])
   }
 
   const handleBulkDeleteSelected = async () => {
     if (!api) return
+    setIsBulkMoreMenuOpen(false)
+    setBulkMetadataMode(null)
     if (!window.confirm(t('videos.confirm_bulk_delete', { count: bulkSelectedVideoIds.length }))) return
     for (const videoId of bulkSelectedVideoIds) {
       const deleteResult = await api.dbQuery('videos', 'DELETE FROM videos WHERE id = ?', [videoId])
@@ -936,6 +973,7 @@ export const Videos: React.FC = () => {
       }
     }
     if (selectedVideo && bulkSelectedVideoIds.includes(selectedVideo.id)) setSelectedVideo(null)
+    showToast(t('videos.bulk_deleted', { count: bulkSelectedVideoIds.length }))
     setBulkMetadataMode(null)
     setBulkSelectedVideoIds([])
     await loadData()
@@ -1254,13 +1292,28 @@ export const Videos: React.FC = () => {
                   {t('videos.video_list_title')} ({filteredLocalVideos.length})
                 </span>
               </strong>
+              <button
+                type="button"
+                className="btn sm ghost"
+                disabled={visibleVideoIds.length === 0}
+                onClick={() =>
+                  setBulkSelectedVideoIds((current) => toggleVisibleBulkSelection(visibleVideoIds, current))
+                }
+                style={{ height: '30px', flex: '0 0 auto' }}
+              >
+                {t(
+                  bulkVisibleSelectionAction === 'invert'
+                    ? bulkActionLabels.invertVisible
+                    : bulkActionLabels.selectVisible,
+                )}
+              </button>
               <select
                 className="form-field"
                 value={videoSort.key}
                 onChange={(event) =>
                   setVideoSort({ key: event.target.value as VideoSortKey, direction: 'desc' })
                 }
-                style={{ width: '118px', height: '30px', flex: '0 0 118px' }}
+                style={{ width: '104px', height: '30px', flex: '0 0 104px' }}
               >
                 <option value="default">{t('videos.sort_default')}</option>
                 <option value="recently_added">{t('videos.sort_recently_added')}</option>
@@ -1314,96 +1367,198 @@ export const Videos: React.FC = () => {
             {bulkSelectedVideoIds.length > 0 && (
               <div
                 style={{
-                  display: 'flex',
+                  display: 'grid',
+                  gridTemplateColumns: 'auto minmax(0, 1fr) auto',
                   alignItems: 'center',
-                  gap: '8px',
+                  columnGap: '10px',
+                  rowGap: '8px',
                   padding: '8px 10px',
                   borderBottom: '1px solid var(--color-border)',
                   backgroundColor: 'var(--bg-surface)',
-                  flexWrap: 'wrap',
                 }}
               >
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginRight: 'auto' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)', flex: '0 0 auto' }}>
                   {t(bulkActionLabels.selectedCount, { count: bulkSelectedVideoIds.length })}
                 </span>
-                <button className="btn sm" onClick={() => setBulkMetadataMode('group')}>
-                  {t(bulkActionLabels.group)}
-                </button>
-                <button className="btn sm" onClick={() => setBulkMetadataMode('tags')}>
-                  {t(bulkActionLabels.tags)}
-                </button>
-                <button className="btn sm" onClick={() => setBulkMetadataMode('more')}>
-                  {t(bulkActionLabels.more)}
-                </button>
-                <button
-                  className="btn sm ghost"
-                  onClick={() => {
-                    setBulkSelectedVideoIds([])
-                    setBulkMetadataMode(null)
-                    setBulkTagDraft('')
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    minWidth: 0,
+                    flexWrap: 'wrap',
                   }}
                 >
-                  {t(bulkActionLabels.cancel)}
-                </button>
-                {bulkMetadataMode === 'group' && (
-                  <select
-                    className="form-field"
-                    autoFocus
-                    onChange={(event) => {
-                      const groupId = parseBulkGroupPickerValue(event.target.value)
-                      if (groupId !== undefined) handleBulkMoveToGroup(groupId)
-                    }}
-                    defaultValue="__choose__"
-                    style={{ width: '180px', height: '30px' }}
-                  >
-                    <option value="__choose__" disabled>
-                      {t('videos.bulk_choose_group')}
-                    </option>
-                    <option value="__none__">{t('videos.group_none')}</option>
-                    {groupOptions.map((group) => (
-                      <option key={group.id} value={group.id}>
-                        {group.path}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {bulkMetadataMode === 'tags' && (
-                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                    <input
+                  <button className="btn sm" onClick={() => setBulkMetadataMode('group')}>
+                    {t(bulkActionLabels.group)}
+                  </button>
+                  <button className="btn sm" onClick={() => setBulkMetadataMode('tags')}>
+                    {t(bulkActionLabels.tags)}
+                  </button>
+                  {bulkMetadataMode === 'group' && (
+                    <select
                       className="form-field"
-                      value={bulkTagDraft}
-                      onChange={(event) => setBulkTagDraft(event.target.value)}
                       autoFocus
+                      onChange={(event) => {
+                        const groupId = parseBulkGroupPickerValue(event.target.value)
+                        if (groupId !== undefined) handleBulkMoveToGroup(groupId)
+                      }}
+                      defaultValue="__choose__"
                       style={{ width: '180px', height: '30px' }}
-                    />
-                    <button
-                      className="btn sm"
-                      title={t(bulkTagButtonLabels.add)}
-                      aria-label={t(bulkTagButtonLabels.add)}
-                      onClick={() => handleBulkUpdateTags('add')}
                     >
-                      +
-                    </button>
-                    <button
-                      className="btn sm"
-                      title={t(bulkTagButtonLabels.remove)}
-                      aria-label={t(bulkTagButtonLabels.remove)}
-                      onClick={() => handleBulkUpdateTags('remove')}
+                      <option value="__choose__" disabled>
+                        {t('videos.bulk_choose_group')}
+                      </option>
+                      <option value="__none__">{t('videos.group_none')}</option>
+                      {groupOptions.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.path}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {bulkMetadataMode === 'tags' && (
+                    <div
+                      style={{
+                        display: 'inline-grid',
+                        gridTemplateColumns: 'minmax(120px, 180px) 30px 30px',
+                        alignItems: 'center',
+                        gap: '6px',
+                        maxWidth: '100%',
+                      }}
                     >
-                      -
+                      <input
+                        className="form-field"
+                        value={bulkTagDraft}
+                        onChange={(event) => setBulkTagDraft(event.target.value)}
+                        autoFocus
+                        style={{ width: '100%', height: '30px', minWidth: 0 }}
+                      />
+                      <button
+                        type="button"
+                        className="btn sm btn-icon"
+                        title={t(bulkTagButtonLabels.add)}
+                        aria-label={t(bulkTagButtonLabels.add)}
+                        onClick={() => handleBulkUpdateTags('add')}
+                        style={{ width: '30px', height: '30px', minWidth: '30px', padding: 0 }}
+                      >
+                        <Plus size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn sm btn-icon"
+                        title={t(bulkTagButtonLabels.remove)}
+                        aria-label={t(bulkTagButtonLabels.remove)}
+                        onClick={() => handleBulkUpdateTags('remove')}
+                        style={{ width: '30px', height: '30px', minWidth: '30px', padding: 0 }}
+                      >
+                        <Minus size={13} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    marginLeft: 'auto',
+                    flex: '0 0 auto',
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="btn sm btn-icon ghost"
+                    title={t(bulkActionLabels.cancel)}
+                    aria-label={t(bulkActionLabels.cancel)}
+                    onClick={() => {
+                      setBulkSelectedVideoIds([])
+                      setBulkMetadataMode(null)
+                      setBulkTagDraft('')
+                      setIsBulkMoreMenuOpen(false)
+                    }}
+                    style={{
+                      width: '30px',
+                      height: '30px',
+                      minWidth: '30px',
+                      borderColor: 'transparent',
+                      backgroundColor: 'transparent',
+                    }}
+                  >
+                    <X size={14} />
+                  </button>
+                  <div
+                    onMouseEnter={() => setIsBulkMoreMenuOpen(true)}
+                    onMouseLeave={() => setIsBulkMoreMenuOpen(false)}
+                    onBlur={(event) => {
+                      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                        setIsBulkMoreMenuOpen(false)
+                      }
+                    }}
+                    style={{ position: 'relative', flex: '0 0 auto' }}
+                  >
+                    <button
+                      type="button"
+                      className="btn sm btn-icon"
+                      title={t(bulkActionLabels.more)}
+                      aria-label={t(bulkActionLabels.more)}
+                      aria-haspopup="menu"
+                      aria-expanded={isBulkMoreMenuOpen}
+                      onFocus={() => setIsBulkMoreMenuOpen(true)}
+                      onClick={() => setIsBulkMoreMenuOpen((current) => !current)}
+                      style={{
+                        width: '30px',
+                        height: '30px',
+                        minWidth: '30px',
+                        borderColor: 'transparent',
+                        backgroundColor: 'transparent',
+                      }}
+                    >
+                      <MoreVertical size={15} />
                     </button>
+                    {isBulkMoreMenuOpen && (
+                      <div
+                        role="menu"
+                        style={{
+                          position: 'absolute',
+                          top: '34px',
+                          right: 0,
+                          zIndex: 20,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px',
+                          minWidth: '128px',
+                          padding: '6px',
+                          border: '1px solid var(--color-border)',
+                          borderRadius: 'var(--radius-card)',
+                          backgroundColor: 'var(--bg-surface)',
+                          boxShadow: '0 10px 24px rgba(15, 23, 42, 0.16)',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="btn sm"
+                          onClick={handleBulkDownloadSelected}
+                          style={{ justifyContent: 'flex-start', width: '100%' }}
+                        >
+                          <Download size={13} />
+                          {t('videos.bulk_download_selected')}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="btn sm"
+                          onClick={handleBulkDeleteSelected}
+                          style={{ justifyContent: 'flex-start', width: '100%', color: 'var(--color-danger)' }}
+                        >
+                          <Trash2 size={13} />
+                          {t('videos.bulk_delete_selected')}
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
-                {bulkMetadataMode === 'more' && (
-                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                    <button className="btn sm" onClick={handleBulkDownloadSelected}>
-                      {t('videos.bulk_download_selected')}
-                    </button>
-                    <button className="btn sm danger" onClick={handleBulkDeleteSelected}>
-                      {t('videos.bulk_delete_selected')}
-                    </button>
-                  </div>
-                )}
+                </div>
               </div>
             )}
 

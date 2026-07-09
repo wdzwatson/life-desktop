@@ -8,6 +8,8 @@ import {
   createBulkMetadataEditPlan,
   createVideoBatchKey,
   getBulkMetadataActionLabels,
+  getBulkDownloadSelectionPlan,
+  getBulkVisibleSelectionAction,
   getBulkTagEditButtonLabels,
   getDefaultVideoSortRank,
   getParseResultActionLabels,
@@ -22,6 +24,7 @@ import {
   shouldCreateBulkTagRecord,
   sortVideoRecords,
   toggleSortDirection,
+  toggleVisibleBulkSelection,
 } from '../src/views/videoStateUtils.ts'
 import type { VideoRecord } from '../src/views/videoTypes.ts'
 
@@ -219,11 +222,61 @@ test('createBulkMetadataEditPlan separates editable and skipped bulk metadata re
 test('getBulkMetadataActionLabels keeps the contextual bar sparse', () => {
   assert.deepEqual(getBulkMetadataActionLabels(), {
     selectedCount: 'videos.bulk_selected_count',
+    selectVisible: 'videos.bulk_select_visible',
+    invertVisible: 'videos.bulk_invert_visible',
     group: 'videos.bulk_group',
     tags: 'videos.bulk_tags',
     more: 'videos.bulk_more',
     cancel: 'videos.bulk_cancel',
   })
+})
+
+test('getBulkVisibleSelectionAction switches between select all and invert visible', () => {
+  assert.equal(getBulkVisibleSelectionAction([1, 2, 3], []), 'select')
+  assert.equal(getBulkVisibleSelectionAction([1, 2, 3], [1, 2]), 'select')
+  assert.equal(getBulkVisibleSelectionAction([1, 2, 3], [1, 2, 3]), 'invert')
+  assert.equal(getBulkVisibleSelectionAction([], [1]), 'select')
+})
+
+test('getBulkDownloadSelectionPlan separates downloadable and already downloaded videos', () => {
+  assert.deepEqual(
+    getBulkDownloadSelectionPlan([
+      base({ id: 1, status: 'downloaded', local_path: '/a.mp4' }),
+      base({ id: 2, status: 'not_downloaded', source_url: 'https://x.test/2' }),
+      base({ id: 3, status: 'download_failed', source_url: 'https://x.test/3' }),
+    ]),
+    {
+      downloadableIds: [2, 3],
+      downloadableCount: 2,
+      downloadedCount: 1,
+      skippedCount: 1,
+      totalCount: 3,
+      allSelectedDownloaded: false,
+    },
+  )
+})
+
+test('getBulkDownloadSelectionPlan reports downloaded-only selections as no-op downloads', () => {
+  assert.deepEqual(
+    getBulkDownloadSelectionPlan([
+      base({ id: 1, status: 'downloaded', local_path: '/a.mp4' }),
+      base({ id: 2, status: 'downloaded', local_path: '/b.mp4' }),
+    ]),
+    {
+      downloadableIds: [],
+      downloadableCount: 0,
+      downloadedCount: 2,
+      skippedCount: 2,
+      totalCount: 2,
+      allSelectedDownloaded: true,
+    },
+  )
+})
+
+test('toggleVisibleBulkSelection selects or inverts only visible video ids', () => {
+  assert.deepEqual(toggleVisibleBulkSelection([1, 2, 3], [9]), [9, 1, 2, 3])
+  assert.deepEqual(toggleVisibleBulkSelection([1, 2, 3], [1, 2, 3, 9]), [9])
+  assert.deepEqual(toggleVisibleBulkSelection([1, 2, 3], [1, 3, 9]), [1, 3, 9, 2])
 })
 
 test('parseBulkGroupPickerValue keeps choosing and clearing group distinct', () => {

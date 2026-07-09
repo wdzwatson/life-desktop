@@ -83,10 +83,55 @@ export function createBulkMetadataEditPlan(videos: VideoRecord[]) {
 export function getBulkMetadataActionLabels() {
   return {
     selectedCount: 'videos.bulk_selected_count',
+    selectVisible: 'videos.bulk_select_visible',
+    invertVisible: 'videos.bulk_invert_visible',
     group: 'videos.bulk_group',
     tags: 'videos.bulk_tags',
     more: 'videos.bulk_more',
     cancel: 'videos.bulk_cancel',
+  }
+}
+
+export function getBulkVisibleSelectionAction(visibleIds: number[], selectedIds: number[]) {
+  if (visibleIds.length === 0) return 'select' as const
+  const selected = new Set(selectedIds)
+  return visibleIds.every((id) => selected.has(id)) ? ('invert' as const) : ('select' as const)
+}
+
+export function toggleVisibleBulkSelection(visibleIds: number[], selectedIds: number[]) {
+  const visible = new Set(visibleIds)
+  const selected = new Set(selectedIds)
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
+
+  if (allVisibleSelected) {
+    return selectedIds.filter((id) => !visible.has(id))
+  }
+
+  for (const id of visibleIds) selected.add(id)
+  return Array.from(selected)
+}
+
+export function getBulkDownloadSelectionPlan(videos: VideoRecord[]) {
+  const downloadableIds: number[] = []
+  let downloadedCount = 0
+
+  for (const video of videos) {
+    const action = getVideoRowDownloadAction(video)
+    if (action.visible && !action.disabled) {
+      downloadableIds.push(video.id)
+    }
+    if (action.reason === 'downloaded') {
+      downloadedCount += 1
+    }
+  }
+
+  return {
+    downloadableIds,
+    downloadableCount: downloadableIds.length,
+    downloadedCount,
+    skippedCount: videos.length - downloadableIds.length,
+    totalCount: videos.length,
+    allSelectedDownloaded: videos.length > 0 && downloadedCount === videos.length,
   }
 }
 
