@@ -85,8 +85,13 @@ export function parseFfmpegProgressPercent(message: string, durationSeconds?: nu
   return Math.max(1, Math.min(99, (seconds / durationSeconds) * 100))
 }
 
+const invalidFilenameChars = new Set(['<', '>', ':', '"', '/', '\\', '|', '?', '*'])
+
 function sanitizeFilename(value: string) {
-  return value.replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ').replace(/\s+/g, ' ').trim() || 'video'
+  const cleaned = Array.from(value, (char) =>
+    invalidFilenameChars.has(char) || char.charCodeAt(0) < 32 ? ' ' : char,
+  ).join('')
+  return cleaned.replace(/\s+/g, ' ').trim() || 'video'
 }
 
 function resolveOutputPath(outputDir: string, title: string) {

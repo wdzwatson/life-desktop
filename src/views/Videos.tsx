@@ -23,7 +23,6 @@ import {
 } from 'lucide-react'
 import {
   canStartVideoDownloadWithEngine,
-  canPlayVideo,
   createVideoDetailDraft,
   getDescendantGroupIds,
   getBulkSelectionState,
@@ -39,8 +38,6 @@ import {
   getVideoDurationLabel,
   getVideoGroupOptions,
   getVideoLibraryVideos,
-  getVideoListDownloadAction,
-  getVideoListItemBackground,
   getVideoSourceUrl,
   nextVideoDrawerState,
   normalizeVideoGroupName,
@@ -76,7 +73,7 @@ import {
 } from './videoStateUtils'
 import type { VideoSortState } from './videoStateUtils'
 import type { VideoGroupRecord, VideoRecord } from './videoTypes'
-import type { SortDirection, VideoSortKey } from './videoTypes'
+import type { VideoSortKey } from './videoTypes'
 
 interface VideoTag {
   id: number
@@ -109,7 +106,7 @@ export const Videos: React.FC = () => {
   const [selectedVideoIds, setSelectedVideoIds] = useState<string[]>([])
   const [parseImportGroupId, setParseImportGroupId] = useState<number | null>(null)
   const [parseImportTagDraft, setParseImportTagDraft] = useState('')
-  const [downloadQueue, setDownloadQueue] = useState<any[]>([])
+  const [, setDownloadQueue] = useState<any[]>([])
   const [maxConcurrentDownloads, setMaxConcurrentDownloads] = useState(3)
   const [groups, setGroups] = useState<VideoGroupRecord[]>([])
   const [tags, setTags] = useState<VideoTag[]>([])
@@ -357,8 +354,6 @@ export const Videos: React.FC = () => {
   const parseActionLabels = getParseResultActionLabels()
   const bulkActionLabels = getBulkMetadataActionLabels()
   const bulkTagButtonLabels = getBulkTagEditButtonLabels()
-  const getQueueItemForVideo = (video: VideoRecord) =>
-    downloadQueue.find((item) => item.id === video.id || item.title === video.title)
   const updateDrawer = (action: VideoDrawerAction) => {
     setDrawerState((current) => nextVideoDrawerState(current, action))
   }

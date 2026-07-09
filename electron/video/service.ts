@@ -157,7 +157,6 @@ export function resolveCookieConfigForUrl(settings: Record<string, any>, url: st
 function isBilibiliVideoUrl(url: string) {
   try {
     const parsed = new URL(url)
-    const host = parsed.hostname.toLowerCase()
     return isBilibiliUrl(url) && /\/video\/BV/i.test(parsed.pathname)
   } catch {
     return false
