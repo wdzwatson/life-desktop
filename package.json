@@ -8,7 +8,9 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/run-with-electron-env.mjs vite",
+    "rebuild:native": "node scripts/rebuild-native.mjs",
+    "postinstall": "npm run rebuild:native",
     "build": "tsc -b && vite build",
     "build:app": "npm run build && electron-builder",
     "lint": "eslint .",
@@ -31,6 +33,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
     "@eslint/js": "^10.0.1",
     "@types/adm-zip": "^0.5.8",
     "@types/better-sqlite3": "^7.6.13",
@@ -92,5 +95,11 @@
         "repo": "life-desktop"
       }
     ]
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "electron-winstaller@5.4.0": true,
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.3": true
   }
 }
