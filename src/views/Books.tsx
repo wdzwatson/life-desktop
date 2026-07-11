@@ -104,19 +104,20 @@ export const Books: React.FC = () => {
   const [isAutoPlaying, setIsAutoPlaying] = useState(false)
   const [autoPlaySpeed, setAutoPlaySpeed] = useState(10) // seconds per page
   const pdfInitializedRef = useRef(false)
+  const readerContentRef = useRef<HTMLDivElement | null>(null)
   const readerMainRef = useRef<HTMLElement | null>(null)
   const pdfScrollRef = useRef<HTMLDivElement | null>(null)
   const annotationInputRef = useRef<HTMLInputElement | null>(null)
   // Guards the scroll handler from fighting a programmatic scroll (button / progress jump).
   const isProgrammaticScrollRef = useRef(false)
   const skipNextEpubAlignRef = useRef(false)
-  // Horizontal offsets (px from viewport edge) for the floating prev/next buttons,
-  // measured from the actual reading column so they stay adaptive across layouts.
-  const [navBtnOffsets, setNavBtnOffsets] = useState<{ left: number; right: number }>({
-    left: 16,
-    right: 16,
-  })
-
+  const [navBtnPosition, setNavBtnPosition] = useState<{ left: number; right: number; top: number }>(
+    {
+      left: 16,
+      right: 16,
+      top: 0,
+    },
+  )
   // Category editing and deleting states
   const [editingCategory, setEditingCategory] = useState<any | null>(null)
   const [editCatName, setEditCatName] = useState('')
@@ -1089,8 +1090,8 @@ export const Books: React.FC = () => {
     }
   }, [pdfData])
 
-  // Keep the floating prev/next buttons hugging the actual reading column so they
-  // adapt to window size and the optional TOC sidebar.
+  // Keep the measured reader width current so PDF pages adapt to the reading column,
+  // and keep fixed page buttons aligned with horizontally scrolled reader content.
   useEffect(() => {
     if (!readingBook) return
 
@@ -1112,18 +1113,35 @@ export const Books: React.FC = () => {
       const GAP = 8
       const left = Math.max(rect.left + GAP, contentLeft - BTN - GAP)
       const right = Math.max(vw - rect.right + GAP, vw - contentRight - BTN - GAP)
-      setNavBtnOffsets({ left: Math.round(left), right: Math.round(right) })
+      const top = rect.top + rect.height / 2
+      setNavBtnPosition({
+        left: Math.round(left),
+        right: Math.round(right),
+        top: Math.round(top),
+      })
     }
 
     measure()
     const ro = new ResizeObserver(measure)
     if (readerMainRef.current) ro.observe(readerMainRef.current)
+    const readerContent = readerContentRef.current
+    readerContent?.addEventListener('scroll', measure, { passive: true })
     window.addEventListener('resize', measure)
     return () => {
       ro.disconnect()
+      readerContent?.removeEventListener('scroll', measure)
       window.removeEventListener('resize', measure)
     }
-  }, [readingBook, isLoadingReader, bookChapters, epubLayoutMode, pdfLayoutMode, pdfNumPages])
+  }, [
+    readingBook,
+    isLoadingReader,
+    bookChapters,
+    epubLayoutMode,
+    pdfLayoutMode,
+    pdfNumPages,
+    isTocDrawerOpen,
+    isAnnotationsDrawerOpen,
+  ])
 
   // Save new highlight / annotation
   const handleAddHighlight = async () => {
@@ -1347,9 +1365,25 @@ export const Books: React.FC = () => {
     readingBook && (readingBook.cover === 'PDF' || readingBook.path.toLowerCase().endsWith('.pdf'))
   const hasBookChapters = Boolean(bookChapters && bookChapters.length > 0)
   const showEpubToc = shouldShowEpubToc(Boolean(isPdf), hasBookChapters, epubLayoutMode)
+  const showReaderToc = showEpubToc || Boolean(isPdf && pdfNumPages > 0)
   const tocDrawerWidth = 260
   const annotationsDrawerWidth = 320
-  const readerContentGridColumns = getReaderContentGridColumns(showEpubToc)
+  const readerMainMinWidth = isPdf
+    ? pdfLayoutMode === 'dual'
+      ? 700
+      : 640
+    : epubLayoutMode === 'dual'
+      ? 720
+      : 620
+  const readerContentGridColumns = getReaderContentGridColumns(
+    showReaderToc,
+    isTocDrawerOpen,
+    tocDrawerWidth,
+    isAnnotationsDrawerOpen,
+    annotationsDrawerWidth,
+    Boolean(isPdf),
+    readerMainMinWidth,
+  )
   const pdfPageRenderWidth = getPdfPageRenderWidth(readerMainWidth, pdfLayoutMode)
 
   useEffect(() => {
@@ -2126,16 +2160,19 @@ export const Books: React.FC = () => {
           </header>
 
           <div
+            ref={readerContentRef}
             style={{
               display: 'grid',
               gridTemplateColumns: readerContentGridColumns,
               height: '100%',
               minHeight: 0,
               position: 'relative',
-              overflow: 'hidden',
+              overflowX: 'auto',
+              overflowY: 'hidden',
+              transition: 'grid-template-columns 0.2s ease',
             }}
           >
-            {showEpubToc && !isLoadingReader && (
+            {showReaderToc && !isLoadingReader && (
               <button
                 onClick={() => setIsTocDrawerOpen((open) => !open)}
                 title={
@@ -2200,25 +2237,31 @@ export const Books: React.FC = () => {
               </div>
             ) : (
               <>
-                {/* Sliding chapters / TOC drawer */}
-                {showEpubToc && bookChapters && (
+                {/* Docked chapters / TOC drawer */}
+                {showReaderToc && (
                   <aside
                     aria-hidden={!isTocDrawerOpen}
                     style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      bottom: 0,
-                      width: `${tocDrawerWidth}px`,
-                      borderRight: `1px solid ${readerBorderColor}`,
-                      padding: '16px',
+                      gridColumn: 1,
+                      minWidth: 0,
+                      width: '100%',
+                      height: '100%',
+                      boxSizing: 'border-box',
+                      borderRight: isTocDrawerOpen
+                        ? `1px solid ${readerBorderColor}`
+                        : '0 solid transparent',
+                      padding: isTocDrawerOpen ? '16px' : '0',
                       overflowY: 'auto',
+                      overflowX: 'hidden',
                       backgroundColor: isDarkReader ? '#151515' : '#FBFAF7',
-                      boxShadow: isTocDrawerOpen ? '18px 0 32px rgba(0, 0, 0, 0.14)' : 'none',
-                      transform: isTocDrawerOpen ? 'translateX(0)' : `translateX(-${tocDrawerWidth}px)`,
-                      transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                      boxShadow: 'none',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      opacity: isTocDrawerOpen ? 1 : 0,
+                      transition:
+                        'opacity 0.15s ease, padding 0.2s ease, border-right-width 0.2s ease',
                       pointerEvents: isTocDrawerOpen ? 'auto' : 'none',
-                      zIndex: 30,
+                      zIndex: 10,
                     }}
                   >
                     <div
@@ -2251,6 +2294,55 @@ export const Books: React.FC = () => {
                       }}
                     >
                       {(() => {
+                        if (isPdf) {
+                          return Array.from({ length: pdfNumPages }).map((_, idx) => {
+                            const pageIndex = idx
+                            const isActive =
+                              pdfLayoutMode === 'dual'
+                                ? pageIndex >= currentPageIndex && pageIndex <= currentPageIndex + 1
+                                : pageIndex === currentPageIndex
+                            return (
+                              <button
+                                key={pageIndex}
+                                onClick={() => {
+                                  setCurrentPageIndex(pageIndex)
+                                  setReadingProgress(
+                                    Math.round((pageIndex / (pdfNumPages - 1 || 1)) * 100),
+                                  )
+                                  if (pdfLayoutMode === 'scroll') {
+                                    requestAnimationFrame(() => {
+                                      requestAnimationFrame(() => scrollPdfToPage(pageIndex, 'auto'))
+                                    })
+                                  }
+                                }}
+                                title={t('books.page_label', { num: pageIndex + 1 })}
+                                style={{
+                                  border: 'none',
+                                  background: isActive
+                                    ? isDarkReader
+                                      ? 'rgba(245, 158, 11, 0.14)'
+                                      : 'rgba(245, 158, 11, 0.12)'
+                                    : 'none',
+                                  textAlign: 'left',
+                                  padding: '6px 8px',
+                                  borderRadius: '4px',
+                                  color: isActive ? 'var(--color-accent)' : 'inherit',
+                                  fontWeight: isActive ? 700 : 500,
+                                  fontSize: '12px',
+                                  cursor: 'pointer',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {t('books.page_label', { num: pageIndex + 1 })}
+                              </button>
+                            )
+                          })
+                        }
+
+                        if (!bookChapters) return null
+
                         const tocList =
                           bookToc && bookToc.length > 0
                             ? bookToc
@@ -2328,8 +2420,10 @@ export const Books: React.FC = () => {
                   onMouseUp={!isPdf ? handleTextSelection : undefined}
                   onClick={handleReaderContentClick}
                   style={{
+                    gridColumn: 2,
                     padding: '32px 48px',
                     overflowY: 'auto',
+                    minWidth: 0,
                     userSelect: 'text',
                     fontSize: `${fontSize}px`,
                     lineHeight: '1.8',
@@ -2720,8 +2814,8 @@ export const Books: React.FC = () => {
                       onClick={handlePrevPage}
                       style={{
                         position: 'fixed',
-                        left: `${navBtnOffsets.left}px`,
-                        top: '50%',
+                        left: `${navBtnPosition.left}px`,
+                        top: `${navBtnPosition.top}px`,
                         transform: 'translateY(-50%)',
                         width: '36px',
                         height: '36px',
@@ -2748,8 +2842,8 @@ export const Books: React.FC = () => {
                       onClick={handleNextPage}
                       style={{
                         position: 'fixed',
-                        right: `${navBtnOffsets.right}px`,
-                        top: '50%',
+                        right: `${navBtnPosition.right}px`,
+                        top: `${navBtnPosition.top}px`,
                         transform: 'translateY(-50%)',
                         width: '36px',
                         height: '36px',
@@ -2773,30 +2867,30 @@ export const Books: React.FC = () => {
                   )}
                 </main>
 
-                {/* Sliding annotations drawer */}
+                {/* Docked annotations drawer */}
                 <aside
                   aria-hidden={!isAnnotationsDrawerOpen}
                   style={{
-                    position: 'absolute',
-                    top: 0,
-                    right: 0,
-                    bottom: 0,
-                    width: `${annotationsDrawerWidth}px`,
-                    borderLeft: `1px solid ${readerBorderColor}`,
-                    padding: '16px',
+                    gridColumn: 3,
+                    minWidth: 0,
+                    width: '100%',
+                    height: '100%',
+                    boxSizing: 'border-box',
+                    borderLeft: isAnnotationsDrawerOpen
+                      ? `1px solid ${readerBorderColor}`
+                      : '0 solid transparent',
+                    padding: isAnnotationsDrawerOpen ? '16px' : '0',
                     overflowY: 'auto',
+                    overflowX: 'hidden',
                     backgroundColor: isDarkReader ? '#151515' : '#FBFAF7',
-                    boxShadow: isAnnotationsDrawerOpen
-                      ? '-18px 0 32px rgba(0, 0, 0, 0.16)'
-                      : 'none',
+                    boxShadow: 'none',
                     display: 'flex',
                     flexDirection: 'column',
-                    transform: isAnnotationsDrawerOpen
-                      ? 'translateX(0)'
-                      : `translateX(${annotationsDrawerWidth}px)`,
-                    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                    opacity: isAnnotationsDrawerOpen ? 1 : 0,
+                    transition:
+                      'opacity 0.15s ease, padding 0.2s ease, border-left-width 0.2s ease',
                     pointerEvents: isAnnotationsDrawerOpen ? 'auto' : 'none',
-                    zIndex: 30,
+                    zIndex: 10,
                   }}
                 >
                   {/* Inline editor inside right sidebar instead of overlay popover to prevent shifting */}
