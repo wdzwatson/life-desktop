@@ -25,9 +25,21 @@ export const shouldShowEpubToc = (
   return !isPdf && hasChapters
 }
 
-export const getReaderContentGridColumns = (showEpubToc: boolean) => {
-  void showEpubToc
-  return 'minmax(0, 1fr)'
+export const getReaderContentGridColumns = (
+  showEpubToc: boolean,
+  isTocDrawerOpen = false,
+  tocDrawerWidth = 260,
+  isAnnotationsDrawerOpen = false,
+  annotationsDrawerWidth = 320,
+  reserveClosedSideColumns = false,
+  readerMainMinWidth = 0,
+) => {
+  const tocColumn =
+    showEpubToc && (isTocDrawerOpen || reserveClosedSideColumns) ? `${tocDrawerWidth}px` : '0px'
+  const annotationsColumn =
+    isAnnotationsDrawerOpen || reserveClosedSideColumns ? `${annotationsDrawerWidth}px` : '0px'
+  const readerColumn = readerMainMinWidth > 0 ? `${readerMainMinWidth}px` : '0'
+  return `${tocColumn} minmax(${readerColumn}, 1fr) ${annotationsColumn}`
 }
 
 export const getPdfPageRenderWidth = (readerWidth: number, pdfLayoutMode: PdfLayoutMode) => {

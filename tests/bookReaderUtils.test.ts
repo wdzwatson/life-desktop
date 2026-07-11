@@ -28,9 +28,43 @@ test('EPUB TOC drawer is available for EPUB chapters', () => {
   assert.equal(shouldShowEpubToc(false, false, 'single'), false)
 })
 
-test('reader content grid does not reserve drawer widths', () => {
-  assert.equal(getReaderContentGridColumns(true), 'minmax(0, 1fr)')
-  assert.equal(getReaderContentGridColumns(false), 'minmax(0, 1fr)')
+test('reader content grid reserves space only for open side drawers', () => {
+  assert.equal(getReaderContentGridColumns(true), '0px minmax(0, 1fr) 0px')
+  assert.equal(getReaderContentGridColumns(false), '0px minmax(0, 1fr) 0px')
+  assert.equal(
+    getReaderContentGridColumns(true, true, 260, false, 320),
+    '260px minmax(0, 1fr) 0px',
+  )
+  assert.equal(
+    getReaderContentGridColumns(false, true, 260, true, 280),
+    '0px minmax(0, 1fr) 280px',
+  )
+  assert.equal(
+    getReaderContentGridColumns(true, true, 240, true, 300),
+    '240px minmax(0, 1fr) 300px',
+  )
+})
+
+test('reader content grid can keep side columns reserved while drawers are closed', () => {
+  assert.equal(
+    getReaderContentGridColumns(true, false, 260, false, 320, true),
+    '260px minmax(0, 1fr) 320px',
+  )
+  assert.equal(
+    getReaderContentGridColumns(false, false, 260, false, 320, true),
+    '0px minmax(0, 1fr) 320px',
+  )
+})
+
+test('reader content grid can enforce a minimum reading column width', () => {
+  assert.equal(
+    getReaderContentGridColumns(true, false, 260, false, 320, true, 640),
+    '260px minmax(640px, 1fr) 320px',
+  )
+  assert.equal(
+    getReaderContentGridColumns(true, true, 260, true, 320, false, 720),
+    '260px minmax(720px, 1fr) 320px',
+  )
 })
 
 test('PDF page render width uses more of the reader column', () => {
