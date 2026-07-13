@@ -11,6 +11,7 @@
     "dev": "node scripts/run-with-electron-env.mjs vite",
     "rebuild:native": "node scripts/rebuild-native.mjs",
     "postinstall": "npm run rebuild:native",
+    "test": "node scripts/run-tests.mjs",
     "build": "tsc -b && vite build",
     "build:app": "npm run build && electron-builder",
     "lint": "eslint .",
