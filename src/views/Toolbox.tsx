@@ -46,7 +46,8 @@ export const Toolbox: React.FC = () => {
     // Load active tasks to select for Pomodoro
     const tasksRes = await api.dbQuery(
       'tasks',
-      'SELECT * FROM tasks WHERE is_completed = 0 AND status != "已关闭"',
+      'SELECT * FROM tasks WHERE is_completed = 0 AND status != ?',
+      ['已关闭'],
     )
     if (tasksRes?.success) setActiveTasks(tasksRes.data)
 

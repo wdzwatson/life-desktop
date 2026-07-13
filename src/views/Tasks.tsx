@@ -235,8 +235,8 @@ export const Tasks: React.FC = () => {
     if (nextDone) {
       await api.dbQuery(
         'tasks',
-        'UPDATE tasks SET is_completed = 1, status = "已关闭", progress = 100 WHERE parent_id = ?',
-        [task.id],
+        'UPDATE tasks SET is_completed = 1, status = ?, progress = 100 WHERE parent_id = ?',
+        ['已关闭', task.id],
       )
     }
 

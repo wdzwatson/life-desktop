@@ -124,8 +124,8 @@ export const Dashboard: React.FC = () => {
       const todayYMD = new Date().toISOString().slice(0, 10)
       const res = await api.dbQuery(
         'tasks',
-        'SELECT * FROM tasks WHERE due_date = ? OR status = "已逾期" LIMIT 3',
-        [todayYMD],
+        'SELECT * FROM tasks WHERE due_date = ? OR status = ? LIMIT 3',
+        [todayYMD, '已逾期'],
       )
       if (res?.success) setTodayTasks(res.data)
     }

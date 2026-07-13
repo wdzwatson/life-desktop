@@ -293,8 +293,8 @@ export const Books: React.FC = () => {
         // Insert translation for the active locale
         await api.dbQuery(
           'books',
-          'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("category", ?, ?, ?)',
-          [String(catId), i18n.language, mainName],
+          'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+          ['category', String(catId), i18n.language, mainName],
         )
 
         // Insert translations for other locales
@@ -303,8 +303,8 @@ export const Books: React.FC = () => {
           const transValue = (newCatTrans[locale.code] || '').trim() || mainName
           await api.dbQuery(
             'books',
-            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("category", ?, ?, ?)',
-            [String(catId), locale.code, transValue],
+            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+            ['category', String(catId), locale.code, transValue],
           )
         }
       }
@@ -423,8 +423,8 @@ export const Books: React.FC = () => {
       // Save translation for active locale
       await api.dbQuery(
         'books',
-        'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("category", ?, ?, ?)',
-        [catIdStr, i18n.language, newName],
+        'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+        ['category', catIdStr, i18n.language, newName],
       )
 
       // Save translations for other locales
@@ -433,8 +433,8 @@ export const Books: React.FC = () => {
         const transValue = (editCatTrans[locale.code] || '').trim() || newName
         await api.dbQuery(
           'books',
-          'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("category", ?, ?, ?)',
-          [catIdStr, locale.code, transValue],
+          'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+          ['category', catIdStr, locale.code, transValue],
         )
       }
 

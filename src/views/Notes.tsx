@@ -475,8 +475,8 @@ export const Notes: React.FC = () => {
           // Insert active language translation for notebook name
           await api.dbQuery(
             'notes',
-            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook", ?, ?, ?)',
-            [nbIdStr, i18n.language, mainName],
+            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+            ['notebook', nbIdStr, i18n.language, mainName],
           )
           // Insert other language translations for notebook name
           for (const locale of SUPPORTED_LOCALES) {
@@ -484,8 +484,8 @@ export const Notes: React.FC = () => {
             const val = (nbNameTrans[locale.code] || '').trim() || mainName
             await api.dbQuery(
               'notes',
-              'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook", ?, ?, ?)',
-              [nbIdStr, locale.code, val],
+              'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+              ['notebook', nbIdStr, locale.code, val],
             )
           }
 
@@ -493,16 +493,16 @@ export const Notes: React.FC = () => {
           if (categoryToSave !== '默认') {
             await api.dbQuery(
               'notes',
-              'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook_category", ?, ?, ?)',
-              [categoryToSave, i18n.language, nbModalCategory.trim()],
+              'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+              ['notebook_category', categoryToSave, i18n.language, nbModalCategory.trim()],
             )
             for (const locale of SUPPORTED_LOCALES) {
               if (locale.code === i18n.language) continue
               const val = (nbCatTrans[locale.code] || '').trim() || nbModalCategory.trim()
               await api.dbQuery(
                 'notes',
-                'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook_category", ?, ?, ?)',
-                [categoryToSave, locale.code, val],
+                'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+                ['notebook_category', categoryToSave, locale.code, val],
               )
             }
           }
@@ -537,16 +537,16 @@ export const Notes: React.FC = () => {
         // Save notebook name translations
         await api.dbQuery(
           'notes',
-          'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook", ?, ?, ?)',
-          [nbIdStr, i18n.language, mainName],
+          'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+          ['notebook', nbIdStr, i18n.language, mainName],
         )
         for (const locale of SUPPORTED_LOCALES) {
           if (locale.code === i18n.language) continue
           const val = (nbNameTrans[locale.code] || '').trim() || mainName
           await api.dbQuery(
             'notes',
-            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook", ?, ?, ?)',
-            [nbIdStr, locale.code, val],
+            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+            ['notebook', nbIdStr, locale.code, val],
           )
         }
 
@@ -554,16 +554,16 @@ export const Notes: React.FC = () => {
         if (categoryToSave !== '默认') {
           await api.dbQuery(
             'notes',
-            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook_category", ?, ?, ?)',
-            [categoryToSave, i18n.language, nbModalCategory.trim()],
+            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+            ['notebook_category', categoryToSave, i18n.language, nbModalCategory.trim()],
           )
           for (const locale of SUPPORTED_LOCALES) {
             if (locale.code === i18n.language) continue
             const val = (nbCatTrans[locale.code] || '').trim() || nbModalCategory.trim()
             await api.dbQuery(
               'notes',
-              'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ("notebook_category", ?, ?, ?)',
-              [categoryToSave, locale.code, val],
+              'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+              ['notebook_category', categoryToSave, locale.code, val],
             )
           }
         }

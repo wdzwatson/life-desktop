@@ -289,7 +289,7 @@ export const Settings: React.FC = () => {
     if (!api || !window.confirm(confirmMsg)) return
 
     // 1. Update books
-    await api.dbQuery('books', 'UPDATE books SET category = "未分类" WHERE category = ?', [name])
+    await api.dbQuery('books', 'UPDATE books SET category = ? WHERE category = ?', ['未分类', name])
     // 2. Delete category
     await api.dbQuery('books', 'DELETE FROM categories WHERE id = ?', [id])
 
