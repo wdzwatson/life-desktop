@@ -11,6 +11,8 @@ import {
   getReadingProgressForLocation,
   getReaderContentGridColumns,
   isReadingBlockHeading,
+  decodeHtmlText,
+  normalizeTocTitle,
   resolveChapterTitleFromHtml,
   resolveReaderTocEntry,
   resolveTocTarget,
@@ -122,9 +124,27 @@ test('reading progress is derived from EPUB chapter and paragraph position', () 
   assert.equal(getReadingProgressForLocation(chapters, 1, 6), 100)
 })
 
+test('reading progress clamps out-of-range chapter and paragraph positions', () => {
+  const chapters = [
+    { title: 'Chapter 1', paragraphs: ['Intro'] },
+    { title: 'Chapter 2', paragraphs: Array.from({ length: 7 }, (_, idx) => `paragraph ${idx + 1}`) },
+  ]
+
+  assert.equal(getReadingProgressForLocation(chapters, -4, 0), 0)
+  assert.equal(getReadingProgressForLocation(chapters, 99, 99), 100)
+})
+
 test('anchor positions on a heading opening tag resolve to that heading block', () => {
   assert.equal(getAnchorBlockOffset(104, [100, 160, 220]), 0)
   assert.equal(getAnchorBlockOffset(180, [100, 160, 220]), 1)
+})
+
+test('HTML and TOC text normalization strips markup, entities, spacing, and case', () => {
+  assert.equal(normalizeTocTitle('  Go&nbsp;语言 &amp; TypeScript  '), 'go 语言 & typescript')
+  assert.equal(
+    decodeHtmlText('<span>Go&nbsp;语言</span> &amp; <strong>TypeScript</strong> &#39;notes&#39;'),
+    "Go 语言 & TypeScript 'notes'",
+  )
 })
 
 test('TOC target resolution prefers href over same-title matches in other chapters', () => {
