@@ -142,6 +142,58 @@ test('sortVideoRecords supports title and duration ordering', () => {
   assert.deepEqual(sortVideoRecords(records, { key: 'duration', direction: 'desc' }).map((video) => video.id), [1, 2])
 })
 
+test('sortVideoRecords supports date, status, group, and batch ordering', () => {
+  const records: VideoRecord[] = [
+    base({
+      id: 1,
+      title: 'Beta 2',
+      status: 'downloaded',
+      group_name: 'Course',
+      created_at: '2026-01-02T00:00:00Z',
+      downloaded_at: '2026-01-04T00:00:00Z',
+      download_batch_created_at: '2026-01-03T00:00:00Z',
+      download_batch_order: 2,
+    }),
+    base({
+      id: 2,
+      title: 'Alpha 10',
+      status: 'downloading',
+      group_name: 'Course',
+      created_at: '2026-01-03T00:00:00Z',
+      downloaded_at: '2026-01-02T00:00:00Z',
+      download_batch_created_at: '2026-01-03T00:00:00Z',
+      download_batch_order: 1,
+    }),
+    base({
+      id: 3,
+      title: 'Gamma',
+      status: 'invalid',
+      group_name: 'Archive',
+      created_at: '2026-01-01T00:00:00Z',
+      downloaded_at: '2026-01-05T00:00:00Z',
+      download_batch_created_at: '2026-01-01T00:00:00Z',
+      download_batch_order: 1,
+    }),
+  ]
+
+  assert.deepEqual(sortVideoRecords(records, { key: 'recently_added', direction: 'desc' }).map((video) => video.id), [
+    2,
+    1,
+    3,
+  ])
+  assert.deepEqual(
+    sortVideoRecords(records, { key: 'recently_downloaded', direction: 'asc' }).map((video) => video.id),
+    [2, 1, 3],
+  )
+  assert.deepEqual(sortVideoRecords(records, { key: 'status', direction: 'asc' }).map((video) => video.id), [2, 1, 3])
+  assert.deepEqual(sortVideoRecords(records, { key: 'group', direction: 'asc' }).map((video) => video.id), [3, 2, 1])
+  assert.deepEqual(sortVideoRecords(records, { key: 'download_batch', direction: 'asc' }).map((video) => video.id), [
+    3,
+    2,
+    1,
+  ])
+})
+
 test('getSortDirectionIconName maps sort direction to compact icon names', () => {
   assert.equal(getSortDirectionIconName('asc'), 'sort-asc')
   assert.equal(getSortDirectionIconName('desc'), 'sort-desc')
