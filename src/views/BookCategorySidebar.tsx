@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type FormEvent,
@@ -59,13 +60,16 @@ export function BookCategorySidebar({
   const [addName, setAddName] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<BookShelf['id'] | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [initialRenameValue, setInitialRenameValue] = useState('')
   const [inlineError, setInlineError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  const [menuFocusIndex, setMenuFocusIndex] = useState(0)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const originatingRowRef = useRef<HTMLButtonElement | null>(null)
   const isSubmittingRef = useRef(false)
   const isMountedRef = useRef(true)
+  const inlineErrorId = useId()
 
   const isAdding = addName !== null
 
@@ -92,7 +96,7 @@ export function BookCategorySidebar({
 
   useEffect(() => {
     if (!contextMenu) return
-    menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+    menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"][tabindex="0"]')?.focus()
   }, [contextMenu])
 
   const cancelAdd = () => {
@@ -105,6 +109,7 @@ export function BookCategorySidebar({
     setAddName('')
     setRenamingId(null)
     setRenameValue('')
+    setInitialRenameValue('')
     setInlineError('')
   }
 
@@ -143,6 +148,7 @@ export function BookCategorySidebar({
   const cancelRename = () => {
     setRenamingId(null)
     setRenameValue('')
+    setInitialRenameValue('')
     setInlineError('')
   }
 
@@ -151,9 +157,11 @@ export function BookCategorySidebar({
       closeContextMenu(false)
       return
     }
+    const displayName = getCategoryDisplayName(category)
     setAddName(null)
     setRenamingId(category.id)
-    setRenameValue(getCategoryDisplayName(category))
+    setRenameValue(displayName)
+    setInitialRenameValue(displayName.trim())
     setInlineError('')
     closeContextMenu(false)
   }
@@ -164,6 +172,13 @@ export function BookCategorySidebar({
     const name = renameValue.trim()
     if (!name) {
       setInlineError(t('books.shelf_name_required'))
+      return
+    }
+    if (name === initialRenameValue) {
+      setRenamingId(null)
+      setRenameValue('')
+      setInitialRenameValue('')
+      setInlineError('')
       return
     }
 
@@ -178,6 +193,7 @@ export function BookCategorySidebar({
       }
       setRenamingId(null)
       setRenameValue('')
+      setInitialRenameValue('')
       setInlineError('')
     } catch (error) {
       if (isMountedRef.current) {
@@ -195,6 +211,7 @@ export function BookCategorySidebar({
     event.preventDefault()
     event.stopPropagation()
     originatingRowRef.current = event.currentTarget
+    setMenuFocusIndex(0)
     const position = getContextMenuPosition({
       clientX: event.clientX,
       clientY: event.clientY,
@@ -214,6 +231,11 @@ export function BookCategorySidebar({
       return
     }
 
+    if (event.key === 'Tab') {
+      closeContextMenu(false)
+      return
+    }
+
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
 
     event.preventDefault()
@@ -223,10 +245,12 @@ export function BookCategorySidebar({
     if (items.length === 0) return
 
     const activeIndex = items.findIndex((item) => item === document.activeElement)
+    const currentIndex = activeIndex >= 0 ? activeIndex : menuFocusIndex
     const nextIndex =
       event.key === 'ArrowDown'
-        ? (activeIndex + 1) % items.length
-        : (activeIndex - 1 + items.length) % items.length
+        ? (currentIndex + 1) % items.length
+        : (currentIndex - 1 + items.length) % items.length
+    setMenuFocusIndex(nextIndex)
     items[nextIndex].focus()
   }
 
@@ -249,6 +273,7 @@ export function BookCategorySidebar({
           <button
             type="button"
             className={`book-category-sidebar__row ${activeCategory === 'all' ? 'active' : ''}`}
+            aria-current={activeCategory === 'all' ? 'page' : undefined}
             onClick={() => onSelectCategory('all')}
             onContextMenu={(event) => event.preventDefault()}
           >
@@ -264,6 +289,7 @@ export function BookCategorySidebar({
             className={`book-category-sidebar__row book-category-sidebar__to-organize ${
               toOrganizeCount > 0 ? 'has-items' : ''
             } ${activeCategory === 'uncategorized' ? 'active' : ''}`}
+            aria-current={activeCategory === 'uncategorized' ? 'page' : undefined}
             onClick={() => onSelectCategory('uncategorized')}
             onContextMenu={(event) => event.preventDefault()}
           >
@@ -298,6 +324,7 @@ export function BookCategorySidebar({
                   value={addName ?? ''}
                   disabled={isSubmitting}
                   aria-invalid={inlineError ? 'true' : undefined}
+                  aria-describedby={inlineError ? inlineErrorId : undefined}
                   aria-label={t('books.add_shelf')}
                   onChange={(event) => setAddName(event.target.value)}
                   onBlur={() => {
@@ -311,7 +338,11 @@ export function BookCategorySidebar({
                   }}
                 />
               </div>
-              {inlineError && <p className="book-category-sidebar__error">{inlineError}</p>}
+              {inlineError && (
+                <p id={inlineErrorId} className="book-category-sidebar__error" role="alert">
+                  {inlineError}
+                </p>
+              )}
             </form>
           )}
 
@@ -331,6 +362,7 @@ export function BookCategorySidebar({
                       value={renameValue}
                       disabled={isSubmitting}
                       aria-invalid={inlineError ? 'true' : undefined}
+                      aria-describedby={inlineError ? inlineErrorId : undefined}
                       aria-label={t('books.rename_shelf')}
                       onChange={(event) => setRenameValue(event.target.value)}
                       onBlur={() => {
@@ -344,7 +376,11 @@ export function BookCategorySidebar({
                       }}
                     />
                   </div>
-                  {inlineError && <p className="book-category-sidebar__error">{inlineError}</p>}
+                  {inlineError && (
+                    <p id={inlineErrorId} className="book-category-sidebar__error" role="alert">
+                      {inlineError}
+                    </p>
+                  )}
                 </form>
               )
             }
@@ -357,6 +393,7 @@ export function BookCategorySidebar({
                 className={`book-category-sidebar__row ${
                   activeCategory === category.name ? 'active' : ''
                 } ${isContextOpen ? 'context-open' : ''}`}
+                aria-current={activeCategory === category.name ? 'page' : undefined}
                 onClick={() => onSelectCategory(category.name)}
                 onContextMenu={(event) => openContextMenu(event, category)}
               >
@@ -382,13 +419,21 @@ export function BookCategorySidebar({
           onPointerDown={(event) => event.stopPropagation()}
           onKeyDown={handleMenuKeyDown}
         >
-          <button type="button" role="menuitem" onClick={() => startRename(contextMenu.category)}>
+          <button
+            type="button"
+            role="menuitem"
+            tabIndex={menuFocusIndex === 0 ? 0 : -1}
+            onFocus={() => setMenuFocusIndex(0)}
+            onClick={() => startRename(contextMenu.category)}
+          >
             <Pencil aria-hidden="true" />
             <span>{t('books.rename_shelf')}</span>
           </button>
           <button
             type="button"
             role="menuitem"
+            tabIndex={menuFocusIndex === 1 ? 0 : -1}
+            onFocus={() => setMenuFocusIndex(1)}
             onClick={() => {
               onEditTranslations(contextMenu.category)
               closeContextMenu(false)
@@ -402,6 +447,8 @@ export function BookCategorySidebar({
             type="button"
             role="menuitem"
             className="danger"
+            tabIndex={menuFocusIndex === 2 ? 0 : -1}
+            onFocus={() => setMenuFocusIndex(2)}
             onClick={() => {
               onRequestDelete(contextMenu.category)
               closeContextMenu(false)
