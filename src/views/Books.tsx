@@ -10,9 +10,7 @@ import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
   Plus,
-  Tag,
   ExternalLink,
-  Bookmark,
   Edit3,
   Save,
   Copy,
@@ -39,6 +37,8 @@ import {
   type ReadingBlock,
   type TocEntry,
 } from './bookReaderUtils'
+import { BookCategorySidebar, type BookShelf } from './BookCategorySidebar'
+import { isReservedBookCategory } from './bookCategorySidebarUtils'
 
 export const SUPPORTED_LOCALES = [
   { code: 'zh-CN', label: '简体中文' },
@@ -60,11 +60,6 @@ export const Books: React.FC = () => {
   const [readingProgress, setReadingProgress] = useState<number>(0)
 
   // Modals state
-  const [isAddCatOpen, setIsAddCatOpen] = useState(false)
-  const [newCatName, setNewCatName] = useState('')
-  const [newCatTrans, setNewCatTrans] = useState<{ [key: string]: string }>({})
-  const [isAddCatTransOpen, setIsAddCatTransOpen] = useState(false)
-
   const [isImportOpen, setIsImportOpen] = useState(false)
   const [importTitle, setImportTitle] = useState('')
   const [importAuthor, setImportAuthor] = useState('')
@@ -261,63 +256,150 @@ export const Books: React.FC = () => {
     }
   }, [userId])
 
-  // Confirm Category addition
-  const confirmAddCategory = async () => {
-    if (!api || !newCatName.trim()) return
-
-    const mainName = newCatName.trim()
-
-    // Check duplicate category name
-    if (categories.some((c) => c.name === mainName)) {
-      showToast(t('books.prompt_add_category') + ' (Category already exists)')
-      return
+  const createCategory = async (name: string) => {
+    if (!api) {
+      return { ok: false as const, error: t('books.toast_category_create_failed') }
     }
 
-    const res = await api.dbQuery(
-      'books',
-      'INSERT INTO categories (name, sort_order) VALUES (?, ?)',
-      [mainName, categories.length + 1],
-    )
-    if (res?.success) {
-      let catId = res.data?.lastInsertRowid
-      if (!catId) {
-        const findRes = await api.dbQuery('books', 'SELECT id FROM categories WHERE name = ?', [
+    const mainName = name.trim()
+    if (!mainName) {
+      return { ok: false as const, error: t('books.shelf_name_required') }
+    }
+    if (
+      isReservedBookCategory(mainName) ||
+      categories.some((category) => category.name === mainName)
+    ) {
+      return { ok: false as const, error: t('books.shelf_name_duplicate') }
+    }
+
+    try {
+      const insertResult = await api.dbQuery(
+        'books',
+        'INSERT INTO categories (name, sort_order) VALUES (?, ?)',
+        [mainName, categories.length + 1],
+      )
+      if (!insertResult?.success) {
+        await loadData()
+        return { ok: false as const, error: t('books.toast_category_create_failed') }
+      }
+
+      let categoryId = insertResult.data?.lastInsertRowid
+      if (!categoryId) {
+        const findResult = await api.dbQuery('books', 'SELECT id FROM categories WHERE name = ?', [
           mainName,
         ])
-        if (findRes?.success && findRes.data.length > 0) {
-          catId = findRes.data[0].id
+        if (findResult?.success && findResult.data.length > 0) {
+          categoryId = findResult.data[0].id
         }
       }
 
-      if (catId) {
-        // Insert translation for the active locale
-        await api.dbQuery(
+      let translationSaved = false
+      if (categoryId) {
+        const translationResult = await api.dbQuery(
           'books',
           'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-          ['category', String(catId), i18n.language, mainName],
+          ['category', String(categoryId), i18n.language, mainName],
         )
-
-        // Insert translations for other locales
-        for (const locale of SUPPORTED_LOCALES) {
-          if (locale.code === i18n.language) continue
-          const transValue = (newCatTrans[locale.code] || '').trim() || mainName
-          await api.dbQuery(
-            'books',
-            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-            ['category', String(catId), locale.code, transValue],
-          )
-        }
+        translationSaved = translationResult?.success === true
       }
 
-      // Safe fallback name resolve for toast
-      const displayName = mainName
-      showToast(t('books.toast_category_added', { name: displayName }))
-      setIsAddCatOpen(false)
-      setNewCatName('')
-      setNewCatTrans({})
-      setIsAddCatTransOpen(false)
-      loadData()
+      await loadData()
+      setActiveCategory(mainName)
+      showToast(
+        translationSaved
+          ? t('books.toast_category_added', { name: mainName })
+          : t('books.toast_category_update_failed'),
+      )
+      return { ok: true as const }
+    } catch {
+      await loadData()
+      return { ok: false as const, error: t('books.toast_category_create_failed') }
     }
+  }
+
+  const renameCategoryInline = async (category: BookShelf, name: string) => {
+    if (!api) {
+      return { ok: false as const, error: t('books.toast_category_update_failed') }
+    }
+
+    const newName = name.trim()
+    if (!newName) {
+      return { ok: false as const, error: t('books.shelf_name_required') }
+    }
+    if (
+      isReservedBookCategory(newName) ||
+      categories.some(
+        (candidate) => candidate.name === newName && String(candidate.id) !== String(category.id),
+      )
+    ) {
+      return { ok: false as const, error: t('books.shelf_name_duplicate') }
+    }
+    if (newName === category.name) {
+      return { ok: true as const }
+    }
+
+    try {
+      const updateBooksResult = await api.dbQuery(
+        'books',
+        'UPDATE books SET category = ? WHERE category = ?',
+        [newName, category.name],
+      )
+      const updateCategoryResult = await api.dbQuery(
+        'books',
+        'UPDATE categories SET name = ? WHERE id = ?',
+        [newName, category.id],
+      )
+      const updateTranslationResult = await api.dbQuery(
+        'books',
+        'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+        ['category', String(category.id), i18n.language, newName],
+      )
+
+      if (
+        !updateBooksResult?.success ||
+        !updateCategoryResult?.success ||
+        !updateTranslationResult?.success
+      ) {
+        await loadData()
+        return { ok: false as const, error: t('books.toast_category_update_failed') }
+      }
+
+      if (activeCategory === category.name) {
+        setActiveCategory(newName)
+      }
+      await loadData()
+      showToast(t('books.toast_category_updated'))
+      return { ok: true as const }
+    } catch {
+      await loadData()
+      return { ok: false as const, error: t('books.toast_category_update_failed') }
+    }
+  }
+
+  const openCategoryTranslationEditor = (category: BookShelf) => {
+    const currentLocale = i18n.language
+    const primaryTranslation = translations.find(
+      (translation) =>
+        translation.entity_type === 'category' &&
+        translation.entity_id === String(category.id) &&
+        translation.locale === currentLocale,
+    )
+    const otherTranslations: { [key: string]: string } = {}
+    SUPPORTED_LOCALES.forEach((locale) => {
+      if (locale.code === currentLocale) return
+      const translation = translations.find(
+        (candidate) =>
+          candidate.entity_type === 'category' &&
+          candidate.entity_id === String(category.id) &&
+          candidate.locale === locale.code,
+      )
+      otherTranslations[locale.code] = translation?.translation ?? ''
+    })
+
+    setEditingCategory(category)
+    setEditCatName(primaryTranslation?.translation ?? category.name)
+    setEditCatTrans(otherTranslations)
+    setIsEditCatTransOpen(true)
   }
 
   const handleSelectBookFile = async () => {
@@ -393,62 +475,83 @@ export const Books: React.FC = () => {
     }
   }
 
-  // Confirm Category edit (with cascading updates to books and translations)
   const confirmEditCategory = async () => {
-    if (!api || !editingCategory || !editCatName.trim()) return
-
-    const newName = editCatName.trim()
-    const oldName = editingCategory.name
-
-    // Check duplicate category name
-    if (categories.some((c) => c.name === newName && c.id !== editingCategory.id)) {
-      showToast(t('books.prompt_add_category') + ' (Category already exists)')
+    if (!editingCategory) return
+    if (!api) {
+      showToast(t('books.toast_category_update_failed'))
       return
     }
 
-    // Update categories table and cascade update matching books
-    await api.dbQuery('books', 'UPDATE books SET category = ? WHERE category = ?', [
-      newName,
-      oldName,
-    ])
-    const updateCatRes = await api.dbQuery('books', 'UPDATE categories SET name = ? WHERE id = ?', [
-      newName,
-      editingCategory.id,
-    ])
-
-    if (updateCatRes?.success) {
-      // Update translations
-      const catIdStr = String(editingCategory.id)
-
-      // Save translation for active locale
-      await api.dbQuery(
-        'books',
-        'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-        ['category', catIdStr, i18n.language, newName],
+    const newName = editCatName.trim()
+    if (!newName) {
+      showToast(t('books.shelf_name_required'))
+      return
+    }
+    const oldName = editingCategory.name
+    if (
+      isReservedBookCategory(newName) ||
+      categories.some(
+        (category) =>
+          category.name === newName && String(category.id) !== String(editingCategory.id),
       )
+    ) {
+      showToast(t('books.shelf_name_duplicate'))
+      return
+    }
 
-      // Save translations for other locales
-      for (const locale of SUPPORTED_LOCALES) {
-        if (locale.code === i18n.language) continue
-        const transValue = (editCatTrans[locale.code] || '').trim() || newName
+    try {
+      const results = []
+      results.push(
+        await api.dbQuery('books', 'UPDATE books SET category = ? WHERE category = ?', [
+          newName,
+          oldName,
+        ]),
+      )
+      results.push(
+        await api.dbQuery('books', 'UPDATE categories SET name = ? WHERE id = ?', [
+          newName,
+          editingCategory.id,
+        ]),
+      )
+      const catIdStr = String(editingCategory.id)
+      results.push(
         await api.dbQuery(
           'books',
           'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-          ['category', catIdStr, locale.code, transValue],
+          ['category', catIdStr, i18n.language, newName],
+        ),
+      )
+
+      for (const locale of SUPPORTED_LOCALES) {
+        if (locale.code === i18n.language) continue
+        const transValue = (editCatTrans[locale.code] || '').trim() || newName
+        results.push(
+          await api.dbQuery(
+            'books',
+            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+            ['category', catIdStr, locale.code, transValue],
+          ),
         )
       }
 
-      showToast(t('books.toast_category_updated'))
+      if (results.some((result) => !result?.success)) {
+        await loadData()
+        showToast(t('books.toast_category_update_failed'))
+        return
+      }
+
+      if (activeCategory === oldName) {
+        setActiveCategory(newName)
+      }
       setEditingCategory(null)
       setEditCatName('')
       setEditCatTrans({})
       setIsEditCatTransOpen(false)
-      loadData()
-
-      // Keep active state consistent if the current selected category name was updated
-      if (activeCategory === oldName) {
-        setActiveCategory(newName)
-      }
+      await loadData()
+      showToast(t('books.toast_category_updated'))
+    } catch {
+      await loadData()
+      showToast(t('books.toast_category_update_failed'))
     }
   }
 
@@ -1234,7 +1337,7 @@ export const Books: React.FC = () => {
   // Check if a book's category qualifies it as Uncategorized
   const isUncategorized = (book: any) => {
     if (!book.category) return true
-    if (['未分类', 'Uncategorized', 'Category', '分类'].includes(book.category)) return true
+    if (isReservedBookCategory(book.category)) return true
     return !categories.some((cat) => isBookInCategory(book, cat))
   }
 
@@ -1433,9 +1536,6 @@ export const Books: React.FC = () => {
       }}
     >
       <style>{`
-        .nav-item:hover .cat-actions {
-          opacity: 1 !important;
-        }
         .card:hover .book-actions {
           opacity: 1 !important;
         }
@@ -1468,243 +1568,21 @@ export const Books: React.FC = () => {
           gap: '16px',
         }}
       >
-        {/* Left Categories pane */}
-        <aside
-          className="card"
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-            height: '100%',
-            overflowY: 'auto',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <strong style={{ fontSize: '13px' }}>{t('books.categories')}</strong>
-            <button
-              className="btn sm"
-              style={{ padding: '0 6px' }}
-              onClick={() => setIsAddCatOpen(true)}
-            >
-              ＋
-            </button>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <button
-              className={`nav-item ${activeCategory === 'all' ? 'active' : ''}`}
-              onClick={() => setActiveCategory('all')}
-              style={{ width: '100%', border: 'none', background: 'none', paddingRight: '8px' }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  minWidth: 0,
-                  flexGrow: 1,
-                  width: '100%',
-                }}
-              >
-                <span className="nav-icon" style={{ flexShrink: 0 }}>
-                  <Bookmark size={15} />
-                </span>
-                <span
-                  className="nav-label"
-                  style={{
-                    opacity: 1,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    flexGrow: 1,
-                    minWidth: 0,
-                  }}
-                  title={t('books.all_books')}
-                >
-                  {t('books.all_books')}
-                </span>
-                <span
-                  style={{
-                    flexShrink: 0,
-                    color: 'var(--text-muted)',
-                    fontSize: '12px',
-                    marginRight: '8px',
-                  }}
-                >
-                  ({books.length})
-                </span>
-              </div>
-            </button>
-
-            {/* Built-in Uncategorized item */}
-            <button
-              className={`nav-item ${activeCategory === 'uncategorized' ? 'active' : ''}`}
-              onClick={() => setActiveCategory('uncategorized')}
-              style={{ width: '100%', border: 'none', background: 'none', paddingRight: '8px' }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  minWidth: 0,
-                  flexGrow: 1,
-                  width: '100%',
-                }}
-              >
-                <span className="nav-icon" style={{ flexShrink: 0 }}>
-                  <Tag size={14} />
-                </span>
-                <span
-                  className="nav-label"
-                  style={{
-                    opacity: 1,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    flexGrow: 1,
-                    minWidth: 0,
-                  }}
-                  title={t('books.uncategorized')}
-                >
-                  {t('books.uncategorized')}
-                </span>
-                <span
-                  style={{
-                    flexShrink: 0,
-                    color: 'var(--text-muted)',
-                    fontSize: '12px',
-                    marginRight: '8px',
-                  }}
-                >
-                  ({uncategorizedBooksCount})
-                </span>
-              </div>
-            </button>
-
-            {categories
-              .filter((cat) => !['未分类', 'Uncategorized', 'Category', '分类'].includes(cat.name))
-              .map((cat) => {
-                const catBooks = books.filter((b) => isBookInCategory(b, cat))
-                const displayName = getCategoryDisplayName(cat.name, cat.id)
-                return (
-                  <div
-                    key={cat.id}
-                    className={`nav-item ${activeCategory === cat.name ? 'active' : ''}`}
-                    style={{
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      paddingRight: '8px',
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => setActiveCategory(cat.name)}
-                  >
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        minWidth: 0,
-                        flexGrow: 1,
-                      }}
-                    >
-                      <span className="nav-icon" style={{ flexShrink: 0 }}>
-                        <Tag size={14} />
-                      </span>
-                      <span
-                        className="nav-label"
-                        style={{
-                          opacity: 1,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          flexGrow: 1,
-                          minWidth: 0,
-                        }}
-                        title={displayName}
-                      >
-                        {displayName}
-                      </span>
-                      <span
-                        style={{
-                          flexShrink: 0,
-                          color: 'var(--text-muted)',
-                          fontSize: '12px',
-                          marginRight: '8px',
-                        }}
-                      >
-                        ({catBooks.length})
-                      </span>
-                    </div>
-
-                    {/* Hover Action Buttons */}
-                    <div
-                      className="cat-actions"
-                      style={{
-                        display: 'flex',
-                        gap: '6px',
-                        opacity: 0,
-                        transition: 'opacity 0.15s ease',
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        style={{
-                          border: 'none',
-                          background: 'none',
-                          padding: '2px',
-                          cursor: 'pointer',
-                          color: 'var(--text-muted)',
-                        }}
-                        onClick={() => {
-                          setEditingCategory(cat)
-                          const currentLocale = i18n.language
-                          const mainTrans = translations.find(
-                            (t) =>
-                              t.entity_type === 'category' &&
-                              t.entity_id === String(cat.id) &&
-                              t.locale === currentLocale,
-                          )
-                          setEditCatName(mainTrans ? mainTrans.translation : cat.name)
-
-                          // Initialize other translations
-                          const transObj: { [key: string]: string } = {}
-                          SUPPORTED_LOCALES.forEach((locale) => {
-                            if (locale.code !== currentLocale) {
-                              const match = translations.find(
-                                (t) =>
-                                  t.entity_type === 'category' &&
-                                  t.entity_id === String(cat.id) &&
-                                  t.locale === locale.code,
-                              )
-                              transObj[locale.code] = match ? match.translation : ''
-                            }
-                          })
-                          setEditCatTrans(transObj)
-                          setIsEditCatTransOpen(false)
-                        }}
-                      >
-                        <Edit3 size={12} />
-                      </button>
-                      <button
-                        style={{
-                          border: 'none',
-                          background: 'none',
-                          padding: '2px',
-                          cursor: 'pointer',
-                          color: '#EF4444',
-                        }}
-                        onClick={() => setDeletingCategory(cat)}
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-          </div>
-        </aside>
+        <BookCategorySidebar
+          categories={categories.filter((category) => !isReservedBookCategory(category.name))}
+          activeCategory={activeCategory}
+          allBooksCount={books.length}
+          toOrganizeCount={uncategorizedBooksCount}
+          getCategoryDisplayName={(category) => getCategoryDisplayName(category.name, category.id)}
+          getCategoryBookCount={(category) =>
+            books.filter((book) => isBookInCategory(book, category)).length
+          }
+          onSelectCategory={setActiveCategory}
+          onCreateCategory={createCategory}
+          onRenameCategory={renameCategoryInline}
+          onEditTranslations={openCategoryTranslationEditor}
+          onRequestDelete={setDeletingCategory}
+        />
 
         {/* Right bookshelf grid */}
         <section
@@ -3048,108 +2926,6 @@ export const Books: React.FC = () => {
                 </aside>
               </>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Premium Add Category Modal */}
-      {isAddCatOpen && (
-        <div style={modalOverlayStyle}>
-          <div style={modalContentStyle}>
-            <h3 style={modalTitleStyle}>{t('books.prompt_add_category')}</h3>
-
-            {/* Primary input */}
-            <div>
-              <label style={labelStyle}>{t('common.main_name_label')}</label>
-              <input
-                className="form-field"
-                style={{ width: '100%' }}
-                value={newCatName}
-                onChange={(e) => setNewCatName(e.target.value)}
-                placeholder={t('books.prompt_add_category')}
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') confirmAddCategory()
-                }}
-              />
-            </div>
-
-            {/* Collapsible panel for other translations */}
-            <div style={{ marginTop: '8px', marginBottom: '12px' }}>
-              <button
-                type="button"
-                className="btn sm"
-                style={{
-                  border: 'none',
-                  background: 'none',
-                  color: 'var(--text-muted)',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: 0,
-                }}
-                onClick={() => setIsAddCatTransOpen(!isAddCatTransOpen)}
-              >
-                {t('common.more_translations')} {isAddCatTransOpen ? '▲' : '▼'}
-              </button>
-
-              {isAddCatTransOpen && (
-                <div
-                  style={{
-                    marginTop: '10px',
-                    padding: '10px',
-                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                    borderRadius: '6px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '8px',
-                  }}
-                >
-                  {SUPPORTED_LOCALES.filter((l) => l.code !== i18n.language).map((locale) => (
-                    <div
-                      key={locale.code}
-                      style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}
-                    >
-                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        {locale.label}
-                      </label>
-                      <input
-                        className="form-field"
-                        style={{ width: '100%', fontSize: '12px', padding: '6px 8px' }}
-                        value={newCatTrans[locale.code] || ''}
-                        onChange={(e) =>
-                          setNewCatTrans({ ...newCatTrans, [locale.code]: e.target.value })
-                        }
-                        placeholder={`e.g. translation for ${locale.label}`}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button
-                className="btn"
-                onClick={() => {
-                  setIsAddCatOpen(false)
-                  setNewCatName('')
-                  setNewCatTrans({})
-                  setIsAddCatTransOpen(false)
-                }}
-              >
-                {t('common.cancel')}
-              </button>
-              <button
-                className="btn primary"
-                onClick={confirmAddCategory}
-                disabled={!newCatName.trim()}
-              >
-                {t('common.confirm')}
-              </button>
-            </div>
           </div>
         </div>
       )}
