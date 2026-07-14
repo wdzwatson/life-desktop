@@ -1,6 +1,6 @@
-import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import test from 'node:test';
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import test from 'node:test'
 
 const requiredKeys = [
   'sidebar_title',
@@ -17,19 +17,16 @@ const requiredKeys = [
   'toast_category_delete_failed',
   'confirm_delete_shelf_title',
   'confirm_delete_shelf_desc',
-];
+]
 
 for (const locale of ['zh-CN', 'en-US']) {
   test(`${locale} book category sidebar translations`, async () => {
-    const source = await readFile(
-      new URL(`../src/locales/${locale}.json`, import.meta.url),
-      'utf8',
-    );
-    const { books } = JSON.parse(source);
+    const source = await readFile(new URL(`../src/locales/${locale}.json`, import.meta.url), 'utf8')
+    const { books } = JSON.parse(source)
 
     for (const key of requiredKeys) {
-      assert.equal(typeof books?.[key], 'string', `missing books.${key}`);
-      assert.notEqual(books[key].trim(), '', `empty books.${key}`);
+      assert.equal(typeof books?.[key], 'string', `missing books.${key}`)
+      assert.notEqual(books[key].trim(), '', `empty books.${key}`)
     }
-  });
+  })
 }
