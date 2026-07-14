@@ -17,7 +17,7 @@ const allTests = readdirSync(testsDir)
   .sort()
   .map((file) => path.join('tests', file))
 
-const electronNodeTests = new Set(['tests/videoSchema.test.mjs'])
+const electronNodeTests = new Set(['tests/dbTransaction.test.mjs', 'tests/videoSchema.test.mjs'])
 const nodeTests = allTests.filter((file) => !electronNodeTests.has(file))
 
 function run(command, args, options = {}) {

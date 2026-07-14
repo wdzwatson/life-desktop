@@ -7,7 +7,7 @@ import {
 } from '../src/views/bookCategorySidebarUtils.ts'
 
 test('isReservedBookCategory recognizes reserved category names', () => {
-  for (const name of ['', '未分类', 'Uncategorized', 'Category', '分类']) {
+  for (const name of ['', '未分类', 'Uncategorized', 'Category', '分类', 'all', 'uncategorized']) {
     assert.equal(isReservedBookCategory(name), true)
   }
 

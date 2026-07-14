@@ -4,6 +4,8 @@ const reservedBookCategories = new Set([
   'Uncategorized',
   'Category',
   '分类',
+  'all',
+  'uncategorized',
 ])
 
 export function isReservedBookCategory(name?: string | null) {

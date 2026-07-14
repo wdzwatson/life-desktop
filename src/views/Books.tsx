@@ -257,7 +257,7 @@ export const Books: React.FC = () => {
   }, [userId])
 
   const createCategory = async (name: string) => {
-    if (!api) {
+    if (!api?.dbTransaction) {
       return { ok: false as const, error: t('books.toast_category_create_failed') }
     }
 
@@ -273,43 +273,27 @@ export const Books: React.FC = () => {
     }
 
     try {
-      const insertResult = await api.dbQuery(
-        'books',
-        'INSERT INTO categories (name, sort_order) VALUES (?, ?)',
-        [mainName, categories.length + 1],
-      )
-      if (!insertResult?.success) {
+      const transactionResult = await api.dbTransaction('books', [
+        {
+          sql: 'INSERT INTO categories (name, sort_order) VALUES (?, ?)',
+          params: [mainName, categories.length + 1],
+        },
+        {
+          sql: `
+            INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation)
+            VALUES ('category', CAST(last_insert_rowid() AS TEXT), ?, ?)
+          `,
+          params: [i18n.language, mainName],
+        },
+      ])
+      if (!transactionResult?.success) {
         await loadData()
         return { ok: false as const, error: t('books.toast_category_create_failed') }
       }
 
-      let categoryId = insertResult.data?.lastInsertRowid
-      if (!categoryId) {
-        const findResult = await api.dbQuery('books', 'SELECT id FROM categories WHERE name = ?', [
-          mainName,
-        ])
-        if (findResult?.success && findResult.data.length > 0) {
-          categoryId = findResult.data[0].id
-        }
-      }
-
-      let translationSaved = false
-      if (categoryId) {
-        const translationResult = await api.dbQuery(
-          'books',
-          'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-          ['category', String(categoryId), i18n.language, mainName],
-        )
-        translationSaved = translationResult?.success === true
-      }
-
       await loadData()
       setActiveCategory(mainName)
-      showToast(
-        translationSaved
-          ? t('books.toast_category_added', { name: mainName })
-          : t('books.toast_category_update_failed'),
-      )
+      showToast(t('books.toast_category_added', { name: mainName }))
       return { ok: true as const }
     } catch {
       await loadData()
@@ -318,7 +302,7 @@ export const Books: React.FC = () => {
   }
 
   const renameCategoryInline = async (category: BookShelf, name: string) => {
-    if (!api) {
+    if (!api?.dbTransaction) {
       return { ok: false as const, error: t('books.toast_category_update_failed') }
     }
 
@@ -339,34 +323,27 @@ export const Books: React.FC = () => {
     }
 
     try {
-      const updateBooksResult = await api.dbQuery(
-        'books',
-        'UPDATE books SET category = ? WHERE category = ?',
-        [newName, category.name],
-      )
-      const updateCategoryResult = await api.dbQuery(
-        'books',
-        'UPDATE categories SET name = ? WHERE id = ?',
-        [newName, category.id],
-      )
-      const updateTranslationResult = await api.dbQuery(
-        'books',
-        'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-        ['category', String(category.id), i18n.language, newName],
-      )
+      const transactionResult = await api.dbTransaction('books', [
+        {
+          sql: 'UPDATE books SET category = ? WHERE category = ?',
+          params: [newName, category.name],
+        },
+        {
+          sql: 'UPDATE categories SET name = ? WHERE id = ?',
+          params: [newName, category.id],
+        },
+        {
+          sql: 'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+          params: ['category', String(category.id), i18n.language, newName],
+        },
+      ])
 
-      if (
-        !updateBooksResult?.success ||
-        !updateCategoryResult?.success ||
-        !updateTranslationResult?.success
-      ) {
+      if (!transactionResult?.success) {
         await loadData()
         return { ok: false as const, error: t('books.toast_category_update_failed') }
       }
 
-      if (activeCategory === category.name) {
-        setActiveCategory(newName)
-      }
+      setActiveCategory((current) => (current === category.name ? newName : current))
       await loadData()
       showToast(t('books.toast_category_updated'))
       return { ok: true as const }
@@ -477,7 +454,7 @@ export const Books: React.FC = () => {
 
   const confirmEditCategory = async () => {
     if (!editingCategory) return
-    if (!api) {
+    if (!api?.dbTransaction) {
       showToast(t('books.toast_category_update_failed'))
       return
     }
@@ -500,49 +477,39 @@ export const Books: React.FC = () => {
     }
 
     try {
-      const results = []
-      results.push(
-        await api.dbQuery('books', 'UPDATE books SET category = ? WHERE category = ?', [
-          newName,
-          oldName,
-        ]),
-      )
-      results.push(
-        await api.dbQuery('books', 'UPDATE categories SET name = ? WHERE id = ?', [
-          newName,
-          editingCategory.id,
-        ]),
-      )
       const catIdStr = String(editingCategory.id)
-      results.push(
-        await api.dbQuery(
-          'books',
-          'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-          ['category', catIdStr, i18n.language, newName],
-        ),
-      )
+      const statements = [
+        {
+          sql: 'UPDATE books SET category = ? WHERE category = ?',
+          params: [newName, oldName],
+        },
+        {
+          sql: 'UPDATE categories SET name = ? WHERE id = ?',
+          params: [newName, editingCategory.id],
+        },
+        {
+          sql: 'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+          params: ['category', catIdStr, i18n.language, newName],
+        },
+      ]
 
       for (const locale of SUPPORTED_LOCALES) {
         if (locale.code === i18n.language) continue
         const transValue = (editCatTrans[locale.code] || '').trim() || newName
-        results.push(
-          await api.dbQuery(
-            'books',
-            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-            ['category', catIdStr, locale.code, transValue],
-          ),
-        )
+        statements.push({
+          sql: 'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+          params: ['category', catIdStr, locale.code, transValue],
+        })
       }
 
-      if (results.some((result) => !result?.success)) {
+      const transactionResult = await api.dbTransaction('books', statements)
+      if (!transactionResult?.success) {
         await loadData()
         showToast(t('books.toast_category_update_failed'))
         return
       }
 
-      if (activeCategory === oldName) {
-        setActiveCategory(newName)
-      }
+      setActiveCategory((current) => (current === oldName ? newName : current))
       setEditingCategory(null)
       setEditCatName('')
       setEditCatTrans({})

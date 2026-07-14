@@ -3,6 +3,7 @@ import path from 'path'
 import fs from 'fs'
 import Database from 'better-sqlite3'
 import { initializeUserDatabase } from './db/schema'
+import { runDbTransaction } from './db/transaction'
 import AdmZip from 'adm-zip'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { autoUpdater } from 'electron-updater'
@@ -1413,6 +1414,17 @@ ipcMain.handle('db:query', async (_, { dbName, sql, params = [] }) => {
     }
   } catch (err: any) {
     console.error(`DB Error (${dbName}):`, err)
+    return { success: false, error: err.message }
+  }
+})
+
+ipcMain.handle('db:transaction', async (_, { dbName, statements }) => {
+  try {
+    const db = getUserDb(dbName)
+    const data = runDbTransaction(db, statements)
+    return { success: true, data }
+  } catch (err: any) {
+    console.error(`DB Transaction Error (${dbName}):`, err)
     return { success: false, error: err.message }
   }
 })

@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Database IPC Bridge
   dbQuery: (dbName: string, sql: string, params?: any[]) =>
     ipcRenderer.invoke('db:query', { dbName, sql, params }),
+  dbTransaction: (dbName: string, statements: Array<{ sql: string; params?: unknown[] }>) =>
+    ipcRenderer.invoke('db:transaction', { dbName, statements }),
 
   // Note Export IPC Bridge
   exportNote: (data: { title: string; content: string; htmlContent: string; format: string }) =>
