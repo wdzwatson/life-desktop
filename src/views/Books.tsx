@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/TextLayer.css'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -39,6 +39,7 @@ import {
 } from './bookReaderUtils'
 import { BookCategorySidebar, type BookShelf } from './BookCategorySidebar'
 import {
+  buildCategoryStorageAliasMap,
   getActiveCategoryAfterDelete,
   isReservedBookCategory,
 } from './bookCategorySidebarUtils'
@@ -122,9 +123,15 @@ export const Books: React.FC = () => {
   const [editCatTrans, setEditCatTrans] = useState<{ [key: string]: string }>({})
   const [isEditCatTransOpen, setIsEditCatTransOpen] = useState(false)
   const [deletingCategory, setDeletingCategory] = useState<any | null>(null)
+  const [isDeletingCategoryPending, setIsDeletingCategoryPending] = useState(false)
+  const deleteCategoryPendingRef = useRef(false)
 
   // Category translations state
   const [translations, setTranslations] = useState<any[]>([])
+  const categoryStorageAliases = useMemo(
+    () => buildCategoryStorageAliasMap(categories, translations),
+    [categories, translations],
+  )
 
   // Get translation matching current locale from database or default back to name
   const getCategoryDisplayName = (catName: string, catId?: any) => {
@@ -165,12 +172,10 @@ export const Books: React.FC = () => {
   }
 
   const isBookInCategory = (book: any, cat: any) => {
-    if (!book.category) return false
-    if (book.category === cat.name) return true
-    const catTrans = translations.filter(
-      (t) => t.entity_type === 'category' && String(t.entity_id) === String(cat.id),
-    )
-    return catTrans.some((t) => t.translation === book.category)
+    if (typeof book.category !== 'string') return false
+    const storedCategory = book.category.trim()
+    if (!storedCategory) return false
+    return categoryStorageAliases.get(String(cat.id))?.has(storedCategory) ?? false
   }
 
   const chapters = [
@@ -526,7 +531,7 @@ export const Books: React.FC = () => {
   }
 
   const confirmDeleteCategory = async () => {
-    if (!deletingCategory) return
+    if (!deletingCategory || deleteCategoryPendingRef.current) return
     if (!api?.dbTransaction) {
       setDeletingCategory(null)
       await loadData()
@@ -537,21 +542,11 @@ export const Books: React.FC = () => {
     const category = deletingCategory
     const categoryName = category.name
     const categoryId = String(category.id)
-    const storageAliases = new Set<string>()
-    const addStorageAlias = (value: unknown) => {
-      if (typeof value !== 'string') return
-      const alias = value.trim()
-      if (alias) storageAliases.add(alias)
+    const mappedAliases = categoryStorageAliases.get(categoryId)
+    const storageAliases = new Set(mappedAliases ?? [])
+    if (!mappedAliases && typeof categoryName === 'string' && categoryName.trim()) {
+      storageAliases.add(categoryName.trim())
     }
-
-    addStorageAlias(categoryName)
-    translations
-      .filter(
-        (translation) =>
-          translation.entity_type === 'category' &&
-          String(translation.entity_id) === categoryId,
-      )
-      .forEach((translation) => addStorageAlias(translation.translation))
 
     const statements = Array.from(storageAliases, (alias) => ({
       sql: "UPDATE books SET category = '未分类' WHERE category = ?",
@@ -565,6 +560,8 @@ export const Books: React.FC = () => {
       },
     )
 
+    deleteCategoryPendingRef.current = true
+    setIsDeletingCategoryPending(true)
     try {
       const transactionResult = await api.dbTransaction('books', statements)
       if (!transactionResult?.success) {
@@ -582,6 +579,9 @@ export const Books: React.FC = () => {
       setDeletingCategory(null)
       await loadData()
       showToast(t('books.toast_category_delete_failed'))
+    } finally {
+      deleteCategoryPendingRef.current = false
+      setIsDeletingCategoryPending(false)
     }
   }
 
@@ -3177,11 +3177,16 @@ export const Books: React.FC = () => {
               })}
             </p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button className="btn" onClick={() => setDeletingCategory(null)}>
+              <button
+                className="btn"
+                disabled={isDeletingCategoryPending}
+                onClick={() => setDeletingCategory(null)}
+              >
                 {t('common.cancel')}
               </button>
               <button
                 className="btn primary"
+                disabled={isDeletingCategoryPending}
                 style={{
                   backgroundColor: 'var(--color-danger)',
                   borderColor: 'var(--color-danger)',

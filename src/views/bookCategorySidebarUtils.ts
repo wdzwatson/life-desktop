@@ -8,6 +8,63 @@ const reservedBookCategories = new Set([
   'uncategorized',
 ])
 
+function normalizeCategoryId(value: unknown) {
+  if (typeof value !== 'string' && typeof value !== 'number') return null
+  const id = String(value).trim()
+  return id || null
+}
+
+function normalizeCategoryAlias(value: unknown) {
+  if (typeof value !== 'string') return null
+  const alias = value.trim()
+  return alias || null
+}
+
+export function buildCategoryStorageAliasMap(
+  categories: Array<{ id: string | number; name?: unknown }>,
+  translations: Array<{
+    entity_type?: unknown
+    entity_id?: unknown
+    translation?: unknown
+  }>,
+) {
+  const aliasesByCategoryId = new Map<string, Set<string>>()
+  const canonicalNames = new Set<string>()
+
+  for (const category of categories) {
+    const categoryId = normalizeCategoryId(category.id)
+    if (!categoryId) continue
+    const aliases = aliasesByCategoryId.get(categoryId) ?? new Set<string>()
+    aliasesByCategoryId.set(categoryId, aliases)
+
+    const canonicalName = normalizeCategoryAlias(category.name)
+    if (!canonicalName) continue
+    canonicalNames.add(canonicalName)
+    aliases.add(canonicalName)
+  }
+
+  const translationOwners = new Map<string, Set<string>>()
+  for (const translation of translations) {
+    if (translation.entity_type !== 'category') continue
+    const categoryId = normalizeCategoryId(translation.entity_id)
+    const alias = normalizeCategoryAlias(translation.translation)
+    if (!categoryId || !alias || !aliasesByCategoryId.has(categoryId)) continue
+    if (canonicalNames.has(alias)) continue
+
+    const owners = translationOwners.get(alias) ?? new Set<string>()
+    owners.add(categoryId)
+    translationOwners.set(alias, owners)
+  }
+
+  for (const [alias, owners] of translationOwners) {
+    if (owners.size !== 1) continue
+    const [ownerId] = owners
+    aliasesByCategoryId.get(ownerId)?.add(alias)
+  }
+
+  return aliasesByCategoryId
+}
+
 export function isReservedBookCategory(name?: string | null) {
   return reservedBookCategories.has(name?.trim() ?? '')
 }
