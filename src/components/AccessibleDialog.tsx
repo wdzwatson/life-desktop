@@ -29,6 +29,10 @@ export function getTrappedFocusIndex(currentIndex: number, itemCount: number, sh
   return shiftKey ? (currentIndex - 1 + itemCount) % itemCount : (currentIndex + 1) % itemCount
 }
 
+export function shouldRestoreDialogFocus(element: Pick<HTMLElement, 'isConnected'> | null) {
+  return !element?.isConnected
+}
+
 type AccessibleDialogProps = {
   title: ReactNode
   children: ReactNode
@@ -60,19 +64,19 @@ export function AccessibleDialog({
   latestInitialFocusRef.current = initialFocusRef
 
   useEffect(() => {
-    const content = contentRef.current
+    const mountedContent = contentRef.current
     const initialTarget = latestInitialFocusRef.current?.current
     const enabledInitialTarget =
       initialTarget &&
       (!('disabled' in initialTarget) || !(initialTarget as HTMLButtonElement).disabled)
         ? initialTarget
         : null
-    const firstFocusable = content ? getEnabledFocusableElements(content)[0] : null
-    const focusTarget = enabledInitialTarget ?? firstFocusable ?? content
+    const firstFocusable = mountedContent ? getEnabledFocusableElements(mountedContent)[0] : null
+    const focusTarget = enabledInitialTarget ?? firstFocusable ?? mountedContent
     focusTarget?.focus()
 
     return () => {
-      latestReturnFocusRef.current?.()
+      if (shouldRestoreDialogFocus(mountedContent)) latestReturnFocusRef.current?.()
     }
   }, [])
 
