@@ -34,11 +34,11 @@ export function buildCategoryStorageAliasMap(
   for (const category of categories) {
     const categoryId = normalizeCategoryId(category.id)
     if (!categoryId) continue
+    const canonicalName = normalizeCategoryAlias(category.name)
+    if (!canonicalName || isReservedBookCategory(canonicalName)) continue
+
     const aliases = aliasesByCategoryId.get(categoryId) ?? new Set<string>()
     aliasesByCategoryId.set(categoryId, aliases)
-
-    const canonicalName = normalizeCategoryAlias(category.name)
-    if (!canonicalName) continue
     canonicalNames.add(canonicalName)
     aliases.add(canonicalName)
   }
@@ -49,6 +49,7 @@ export function buildCategoryStorageAliasMap(
     const categoryId = normalizeCategoryId(translation.entity_id)
     const alias = normalizeCategoryAlias(translation.translation)
     if (!categoryId || !alias || !aliasesByCategoryId.has(categoryId)) continue
+    if (isReservedBookCategory(alias)) continue
     if (canonicalNames.has(alias)) continue
 
     const owners = translationOwners.get(alias) ?? new Set<string>()

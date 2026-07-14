@@ -531,38 +531,39 @@ export const Books: React.FC = () => {
   }
 
   const confirmDeleteCategory = async () => {
-    if (!deletingCategory || deleteCategoryPendingRef.current) return
-    if (!api?.dbTransaction) {
-      setDeletingCategory(null)
-      await loadData()
-      showToast(t('books.toast_category_delete_failed'))
-      return
-    }
-
-    const category = deletingCategory
-    const categoryName = category.name
-    const categoryId = String(category.id)
-    const mappedAliases = categoryStorageAliases.get(categoryId)
-    const storageAliases = new Set(mappedAliases ?? [])
-    if (!mappedAliases && typeof categoryName === 'string' && categoryName.trim()) {
-      storageAliases.add(categoryName.trim())
-    }
-
-    const statements = Array.from(storageAliases, (alias) => ({
-      sql: "UPDATE books SET category = '未分类' WHERE category = ?",
-      params: [alias],
-    }))
-    statements.push(
-      { sql: 'DELETE FROM categories WHERE id = ?', params: [category.id] },
-      {
-        sql: "DELETE FROM translations WHERE entity_type = 'category' AND entity_id = ?",
-        params: [categoryId],
-      },
-    )
-
+    if (!deletingCategory) return
+    if (deleteCategoryPendingRef.current) return
     deleteCategoryPendingRef.current = true
     setIsDeletingCategoryPending(true)
     try {
+      if (!api?.dbTransaction) {
+        setDeletingCategory(null)
+        await loadData()
+        showToast(t('books.toast_category_delete_failed'))
+        return
+      }
+
+      const category = deletingCategory
+      const categoryName = category.name
+      const categoryId = String(category.id)
+      const mappedAliases = categoryStorageAliases.get(categoryId)
+      const storageAliases = new Set(mappedAliases ?? [])
+      if (!mappedAliases && typeof categoryName === 'string' && categoryName.trim()) {
+        storageAliases.add(categoryName.trim())
+      }
+
+      const statements = Array.from(storageAliases, (alias) => ({
+        sql: "UPDATE books SET category = '未分类' WHERE TRIM(category) = ?",
+        params: [alias],
+      }))
+      statements.push(
+        { sql: 'DELETE FROM categories WHERE id = ?', params: [category.id] },
+        {
+          sql: "DELETE FROM translations WHERE entity_type = 'category' AND entity_id = ?",
+          params: [categoryId],
+        },
+      )
+
       const transactionResult = await api.dbTransaction('books', statements)
       if (!transactionResult?.success) {
         setDeletingCategory(null)

@@ -12,6 +12,7 @@ test('buildCategoryStorageAliasMap keeps only uniquely owned translation aliases
     { id: 1, name: '技术' },
     { id: 2, name: 'Design' },
     { id: 3, name: '文学' },
+    { id: 4, name: 'all' },
   ]
   const translations = [
     { entity_type: 'category', entity_id: 1, locale: 'en-US', translation: 'Design' },
@@ -20,6 +21,7 @@ test('buildCategoryStorageAliasMap keeps only uniquely owned translation aliases
     { entity_type: 'category', entity_id: 3, locale: 'shared-3', translation: 'Shared' },
     { entity_type: 'category', entity_id: 2, locale: 'zh-CN', translation: '设计' },
     { entity_type: 'category', entity_id: 3, locale: 'en-US', translation: 'Literature' },
+    { entity_type: 'category', entity_id: 3, locale: 'reserved', translation: '未分类' },
   ]
 
   const aliases = buildCategoryStorageAliasMap(categories, translations)
@@ -27,6 +29,8 @@ test('buildCategoryStorageAliasMap keeps only uniquely owned translation aliases
   assert.deepEqual([...aliases.get('1')], ['技术'])
   assert.deepEqual([...aliases.get('2')], ['Design', '设计'])
   assert.deepEqual([...aliases.get('3')], ['文学', 'Literature'])
+  assert.equal(aliases.has('4'), false)
+  assert.equal([...aliases.values()].some((categoryAliases) => categoryAliases.has('未分类')), false)
 })
 
 test('isReservedBookCategory recognizes reserved category names', () => {
