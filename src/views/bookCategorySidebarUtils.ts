@@ -20,6 +20,30 @@ function normalizeCategoryAlias(value: unknown) {
   return alias || null
 }
 
+export type DbMutationStatement = {
+  sql: string
+  params: unknown[]
+}
+
+export function buildBookCategoryMigrationStatements(
+  aliases: Iterable<string>,
+  nextName: string,
+): DbMutationStatement[] {
+  const normalizedNextName = normalizeCategoryAlias(nextName)
+  if (!normalizedNextName) return []
+
+  const uniqueAliases = new Set<string>()
+  for (const value of aliases) {
+    const alias = normalizeCategoryAlias(value)
+    if (alias) uniqueAliases.add(alias)
+  }
+
+  return Array.from(uniqueAliases, (alias) => ({
+    sql: 'UPDATE books SET category = ? WHERE TRIM(category) = ?',
+    params: [normalizedNextName, alias],
+  }))
+}
+
 export function buildCategoryStorageAliasMap(
   categories: Array<{ id: string | number; name?: unknown }>,
   translations: Array<{

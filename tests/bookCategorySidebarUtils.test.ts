@@ -30,7 +30,10 @@ test('buildCategoryStorageAliasMap keeps only uniquely owned translation aliases
   assert.deepEqual([...aliases.get('2')], ['Design', '设计'])
   assert.deepEqual([...aliases.get('3')], ['文学', 'Literature'])
   assert.equal(aliases.has('4'), false)
-  assert.equal([...aliases.values()].some((categoryAliases) => categoryAliases.has('未分类')), false)
+  assert.equal(
+    [...aliases.values()].some((categoryAliases) => categoryAliases.has('未分类')),
+    false,
+  )
 })
 
 test('isReservedBookCategory recognizes reserved category names', () => {

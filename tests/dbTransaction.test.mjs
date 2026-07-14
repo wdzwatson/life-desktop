@@ -2,6 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import Database from 'better-sqlite3'
 import { runDbTransaction } from '../electron/db/transaction.ts'
+import {
+  buildBookCategoryMigrationStatements,
+  buildCategoryStorageAliasMap,
+} from '../src/views/bookCategorySidebarUtils.ts'
 
 function createDatabase() {
   const db = new Database(':memory:')
@@ -16,6 +20,11 @@ function createDatabase() {
       locale TEXT NOT NULL,
       translation TEXT NOT NULL,
       PRIMARY KEY (entity_type, entity_id, locale)
+    );
+    CREATE TABLE books (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      category TEXT
     );
   `)
   return db
@@ -52,6 +61,64 @@ test('runDbTransaction commits every statement and returns run results', () => {
   } finally {
     db.close()
   }
+})
+
+test('category migration updates only canonical and uniquely owned aliases', () => {
+  const db = createDatabase()
+  try {
+    db.prepare('INSERT INTO categories (id, name) VALUES (?, ?)').run(1, '技术')
+    db.prepare('INSERT INTO categories (id, name) VALUES (?, ?)').run(2, 'Design')
+    db.prepare(
+      `
+        INSERT INTO translations (entity_type, entity_id, locale, translation)
+        VALUES ('category', ?, ?, ?)
+      `,
+    ).run('1', 'en-US', 'Technology')
+    db.prepare(
+      `
+        INSERT INTO translations (entity_type, entity_id, locale, translation)
+        VALUES ('category', ?, ?, ?)
+      `,
+    ).run('1', 'other', 'Design')
+    const insertBook = db.prepare('INSERT INTO books (title, category) VALUES (?, ?)')
+    insertBook.run('Canonical', '技术')
+    insertBook.run('Unique translation', 'Technology')
+    insertBook.run('Other shelf', 'Design')
+
+    const aliases = buildCategoryStorageAliasMap(
+      db.prepare('SELECT id, name FROM categories').all(),
+      db.prepare('SELECT * FROM translations').all(),
+    )
+    const statements = [
+      ...buildBookCategoryMigrationStatements(aliases.get('1') ?? [], 'Engineering'),
+      {
+        sql: 'UPDATE categories SET name = ? WHERE id = ?',
+        params: ['Engineering', 1],
+      },
+      {
+        sql: `
+          INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation)
+          VALUES ('category', ?, ?, ?)
+        `,
+        params: ['1', 'zh-CN', 'Engineering'],
+      },
+    ]
+
+    runDbTransaction(db, statements)
+
+    assert.deepEqual(db.prepare('SELECT title, category FROM books ORDER BY id').all(), [
+      { title: 'Canonical', category: 'Engineering' },
+      { title: 'Unique translation', category: 'Engineering' },
+      { title: 'Other shelf', category: 'Design' },
+    ])
+    assert.equal(db.prepare('SELECT name FROM categories WHERE id = 1').get().name, 'Engineering')
+  } finally {
+    db.close()
+  }
+})
+
+test('category migration returns no statements for a blank next name', () => {
+  assert.deepEqual(buildBookCategoryMigrationStatements(['技术'], '   '), [])
 })
 
 test('runDbTransaction rolls back earlier statements when a later statement fails', () => {

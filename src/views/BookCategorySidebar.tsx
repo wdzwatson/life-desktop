@@ -30,8 +30,8 @@ export type BookCategorySidebarProps = {
   onSelectCategory: (category: string) => void
   onCreateCategory: (name: string) => Promise<MutationResult>
   onRenameCategory: (category: BookShelf, name: string) => Promise<MutationResult>
-  onEditTranslations: (category: BookShelf) => void
-  onRequestDelete: (category: BookShelf) => void
+  onEditTranslations: (category: BookShelf, returnFocus: () => void) => void
+  onRequestDelete: (category: BookShelf, returnFocus: () => void) => void
 }
 
 type ContextMenuState = {
@@ -67,6 +67,7 @@ export function BookCategorySidebar({
   const [menuFocusIndex, setMenuFocusIndex] = useState(0)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const originatingRowRef = useRef<HTMLButtonElement | null>(null)
+  const addButtonRef = useRef<HTMLButtonElement | null>(null)
   const isSubmittingRef = useRef(false)
   const isMountedRef = useRef(true)
   const inlineErrorId = useId()
@@ -77,6 +78,14 @@ export function BookCategorySidebar({
     setContextMenu(null)
     if (restoreFocus) originatingRowRef.current?.focus()
   }, [])
+
+  const createMenuReturnFocus = () => {
+    const originatingRow = originatingRowRef.current
+    return () => {
+      if (originatingRow?.isConnected) originatingRow.focus()
+      else addButtonRef.current?.focus()
+    }
+  }
 
   useEffect(() => {
     isMountedRef.current = true
@@ -304,6 +313,7 @@ export function BookCategorySidebar({
         <div className="book-category-sidebar__group-title">
           <span>{t('books.my_shelves')}</span>
           <button
+            ref={addButtonRef}
             type="button"
             className="book-category-sidebar__add-button"
             aria-label={t('books.add_shelf')}
@@ -435,7 +445,7 @@ export function BookCategorySidebar({
             tabIndex={menuFocusIndex === 1 ? 0 : -1}
             onFocus={() => setMenuFocusIndex(1)}
             onClick={() => {
-              onEditTranslations(contextMenu.category)
+              onEditTranslations(contextMenu.category, createMenuReturnFocus())
               closeContextMenu(false)
             }}
           >
@@ -450,7 +460,7 @@ export function BookCategorySidebar({
             tabIndex={menuFocusIndex === 2 ? 0 : -1}
             onFocus={() => setMenuFocusIndex(2)}
             onClick={() => {
-              onRequestDelete(contextMenu.category)
+              onRequestDelete(contextMenu.category, createMenuReturnFocus())
               closeContextMenu(false)
             }}
           >

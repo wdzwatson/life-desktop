@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react'
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/TextLayer.css'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -38,7 +38,9 @@ import {
   type TocEntry,
 } from './bookReaderUtils'
 import { BookCategorySidebar, type BookShelf } from './BookCategorySidebar'
+import { AccessibleDialog } from '../components/AccessibleDialog'
 import {
+  buildBookCategoryMigrationStatements,
   buildCategoryStorageAliasMap,
   getActiveCategoryAfterDelete,
   isReservedBookCategory,
@@ -125,6 +127,15 @@ export const Books: React.FC = () => {
   const [deletingCategory, setDeletingCategory] = useState<any | null>(null)
   const [isDeletingCategoryPending, setIsDeletingCategoryPending] = useState(false)
   const deleteCategoryPendingRef = useRef(false)
+  const categoryDialogReturnFocusRef = useRef<(() => void) | null>(null)
+  const editCategoryNameInputRef = useRef<HTMLInputElement | null>(null)
+  const deleteCategoryCancelButtonRef = useRef<HTMLButtonElement | null>(null)
+
+  const restoreCategoryDialogFocus = useCallback(() => {
+    const returnFocus = categoryDialogReturnFocusRef.current
+    categoryDialogReturnFocusRef.current = null
+    returnFocus?.()
+  }, [])
 
   // Category translations state
   const [translations, setTranslations] = useState<any[]>([])
@@ -331,11 +342,9 @@ export const Books: React.FC = () => {
     }
 
     try {
+      const categoryAliases = categoryStorageAliases.get(String(category.id)) ?? [category.name]
       const transactionResult = await api.dbTransaction('books', [
-        {
-          sql: 'UPDATE books SET category = ? WHERE category = ?',
-          params: [newName, category.name],
-        },
+        ...buildBookCategoryMigrationStatements(categoryAliases, newName),
         {
           sql: 'UPDATE categories SET name = ? WHERE id = ?',
           params: [newName, category.id],
@@ -361,7 +370,14 @@ export const Books: React.FC = () => {
     }
   }
 
-  const openCategoryTranslationEditor = (category: BookShelf) => {
+  const closeCategoryTranslationEditor = () => {
+    setEditingCategory(null)
+    setEditCatName('')
+    setEditCatTrans({})
+    setIsEditCatTransOpen(false)
+  }
+
+  const openCategoryTranslationEditor = (category: BookShelf, returnFocus: () => void) => {
     const currentLocale = i18n.language
     const primaryTranslation = translations.find(
       (translation) =>
@@ -381,10 +397,20 @@ export const Books: React.FC = () => {
       otherTranslations[locale.code] = translation?.translation ?? ''
     })
 
+    categoryDialogReturnFocusRef.current = returnFocus
     setEditingCategory(category)
     setEditCatName(primaryTranslation?.translation ?? category.name)
     setEditCatTrans(otherTranslations)
     setIsEditCatTransOpen(true)
+  }
+
+  const openCategoryDeleteDialog = (category: BookShelf, returnFocus: () => void) => {
+    categoryDialogReturnFocusRef.current = returnFocus
+    setDeletingCategory(category)
+  }
+
+  const closeCategoryDeleteDialog = () => {
+    if (!deleteCategoryPendingRef.current) setDeletingCategory(null)
   }
 
   const handleSelectBookFile = async () => {
@@ -486,11 +512,9 @@ export const Books: React.FC = () => {
 
     try {
       const catIdStr = String(editingCategory.id)
+      const categoryAliases = categoryStorageAliases.get(catIdStr) ?? [oldName]
       const statements = [
-        {
-          sql: 'UPDATE books SET category = ? WHERE category = ?',
-          params: [newName, oldName],
-        },
+        ...buildBookCategoryMigrationStatements(categoryAliases, newName),
         {
           sql: 'UPDATE categories SET name = ? WHERE id = ?',
           params: [newName, editingCategory.id],
@@ -518,10 +542,7 @@ export const Books: React.FC = () => {
       }
 
       setActiveCategory((current) => (current === oldName ? newName : current))
-      setEditingCategory(null)
-      setEditCatName('')
-      setEditCatTrans({})
-      setIsEditCatTransOpen(false)
+      closeCategoryTranslationEditor()
       await loadData()
       showToast(t('books.toast_category_updated'))
     } catch {
@@ -572,9 +593,9 @@ export const Books: React.FC = () => {
         return
       }
 
-      setDeletingCategory(null)
       setActiveCategory((current) => getActiveCategoryAfterDelete(current, categoryName))
       await loadData()
+      setDeletingCategory(null)
       showToast(t('books.toast_category_deleted'))
     } catch {
       setDeletingCategory(null)
@@ -1582,7 +1603,7 @@ export const Books: React.FC = () => {
           onCreateCategory={createCategory}
           onRenameCategory={renameCategoryInline}
           onEditTranslations={openCategoryTranslationEditor}
-          onRequestDelete={setDeletingCategory}
+          onRequestDelete={openCategoryDeleteDialog}
         />
 
         {/* Right bookshelf grid */}
@@ -3057,148 +3078,148 @@ export const Books: React.FC = () => {
 
       {/* Premium Edit Category Modal */}
       {editingCategory && (
-        <div style={modalOverlayStyle}>
-          <div style={modalContentStyle}>
-            <h3 style={modalTitleStyle}>{t('books.prompt_edit_category')}</h3>
-
-            {/* Primary input */}
-            <div>
-              <label style={labelStyle}>{t('common.main_name_label')}</label>
-              <input
-                className="form-field"
-                style={{ width: '100%' }}
-                value={editCatName}
-                onChange={(e) => setEditCatName(e.target.value)}
-                placeholder={t('books.prompt_edit_category')}
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') confirmEditCategory()
-                }}
-              />
-            </div>
-
-            {/* Collapsible panel for other translations */}
-            <div style={{ marginTop: '8px', marginBottom: '12px' }}>
-              <button
-                type="button"
-                className="btn sm"
-                style={{
-                  border: 'none',
-                  background: 'none',
-                  color: 'var(--text-muted)',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: 0,
-                }}
-                onClick={() => setIsEditCatTransOpen(!isEditCatTransOpen)}
-              >
-                {t('common.more_translations')} {isEditCatTransOpen ? '▲' : '▼'}
-              </button>
-
-              {isEditCatTransOpen && (
-                <div
-                  style={{
-                    marginTop: '10px',
-                    padding: '10px',
-                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                    borderRadius: '6px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '8px',
-                  }}
-                >
-                  {SUPPORTED_LOCALES.filter((l) => l.code !== i18n.language).map((locale) => (
-                    <div
-                      key={locale.code}
-                      style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}
-                    >
-                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        {locale.label}
-                      </label>
-                      <input
-                        className="form-field"
-                        style={{ width: '100%', fontSize: '12px', padding: '6px 8px' }}
-                        value={editCatTrans[locale.code] || ''}
-                        onChange={(e) =>
-                          setEditCatTrans({ ...editCatTrans, [locale.code]: e.target.value })
-                        }
-                        placeholder={`e.g. translation for ${locale.label}`}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button
-                className="btn"
-                onClick={() => {
-                  setEditingCategory(null)
-                  setEditCatName('')
-                  setEditCatTrans({})
-                  setIsEditCatTransOpen(false)
-                }}
-              >
-                {t('common.cancel')}
-              </button>
-              <button
-                className="btn primary"
-                onClick={confirmEditCategory}
-                disabled={!editCatName.trim()}
-              >
-                {t('common.confirm')}
-              </button>
-            </div>
+        <AccessibleDialog
+          title={t('books.prompt_edit_category')}
+          onClose={closeCategoryTranslationEditor}
+          returnFocus={restoreCategoryDialogFocus}
+          initialFocusRef={editCategoryNameInputRef}
+          overlayStyle={modalOverlayStyle}
+          contentStyle={modalContentStyle}
+          titleStyle={modalTitleStyle}
+        >
+          {/* Primary input */}
+          <div>
+            <label style={labelStyle}>{t('common.main_name_label')}</label>
+            <input
+              ref={editCategoryNameInputRef}
+              className="form-field"
+              style={{ width: '100%' }}
+              value={editCatName}
+              onChange={(e) => setEditCatName(e.target.value)}
+              placeholder={t('books.prompt_edit_category')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') confirmEditCategory()
+              }}
+            />
           </div>
-        </div>
+
+          {/* Collapsible panel for other translations */}
+          <div style={{ marginTop: '8px', marginBottom: '12px' }}>
+            <button
+              type="button"
+              className="btn sm"
+              style={{
+                border: 'none',
+                background: 'none',
+                color: 'var(--text-muted)',
+                fontSize: '12px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: 0,
+              }}
+              onClick={() => setIsEditCatTransOpen(!isEditCatTransOpen)}
+            >
+              {t('common.more_translations')} {isEditCatTransOpen ? '▲' : '▼'}
+            </button>
+
+            {isEditCatTransOpen && (
+              <div
+                style={{
+                  marginTop: '10px',
+                  padding: '10px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                {SUPPORTED_LOCALES.filter((l) => l.code !== i18n.language).map((locale) => (
+                  <div
+                    key={locale.code}
+                    style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}
+                  >
+                    <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      {locale.label}
+                    </label>
+                    <input
+                      className="form-field"
+                      style={{ width: '100%', fontSize: '12px', padding: '6px 8px' }}
+                      value={editCatTrans[locale.code] || ''}
+                      onChange={(e) =>
+                        setEditCatTrans({ ...editCatTrans, [locale.code]: e.target.value })
+                      }
+                      placeholder={`e.g. translation for ${locale.label}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <button className="btn" onClick={closeCategoryTranslationEditor}>
+              {t('common.cancel')}
+            </button>
+            <button
+              className="btn primary"
+              onClick={confirmEditCategory}
+              disabled={!editCatName.trim()}
+            >
+              {t('common.confirm')}
+            </button>
+          </div>
+        </AccessibleDialog>
       )}
 
       {/* Premium Delete Category Confirm Modal */}
       {deletingCategory && (
-        <div style={modalOverlayStyle}>
-          <div style={modalContentStyle}>
-            <h3 style={{ ...modalTitleStyle, color: 'var(--color-danger)' }}>
-              {t('books.confirm_delete_shelf_title')}
-            </h3>
-            <p
-              style={{
-                fontSize: '13px',
-                color: 'var(--text-main)',
-                margin: '0 0 12px 0',
-                lineHeight: 1.5,
-              }}
+        <AccessibleDialog
+          title={t('books.confirm_delete_shelf_title')}
+          onClose={closeCategoryDeleteDialog}
+          returnFocus={restoreCategoryDialogFocus}
+          initialFocusRef={deleteCategoryCancelButtonRef}
+          overlayStyle={modalOverlayStyle}
+          contentStyle={modalContentStyle}
+          titleStyle={{ ...modalTitleStyle, color: 'var(--color-danger)' }}
+        >
+          <p
+            style={{
+              fontSize: '13px',
+              color: 'var(--text-main)',
+              margin: '0 0 12px 0',
+              lineHeight: 1.5,
+            }}
+          >
+            {t('books.confirm_delete_shelf_desc', {
+              name: getCategoryDisplayName(deletingCategory.name, deletingCategory.id),
+              count: deletingCategoryBookCount,
+            })}
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <button
+              ref={deleteCategoryCancelButtonRef}
+              className="btn"
+              disabled={isDeletingCategoryPending}
+              onClick={closeCategoryDeleteDialog}
             >
-              {t('books.confirm_delete_shelf_desc', {
-                name: getCategoryDisplayName(deletingCategory.name, deletingCategory.id),
-                count: deletingCategoryBookCount,
-              })}
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button
-                className="btn"
-                disabled={isDeletingCategoryPending}
-                onClick={() => setDeletingCategory(null)}
-              >
-                {t('common.cancel')}
-              </button>
-              <button
-                className="btn primary"
-                disabled={isDeletingCategoryPending}
-                style={{
-                  backgroundColor: 'var(--color-danger)',
-                  borderColor: 'var(--color-danger)',
-                }}
-                onClick={confirmDeleteCategory}
-              >
-                {t('common.confirm')}
-              </button>
-            </div>
+              {t('common.cancel')}
+            </button>
+            <button
+              className="btn primary"
+              disabled={isDeletingCategoryPending}
+              style={{
+                backgroundColor: 'var(--color-danger)',
+                borderColor: 'var(--color-danger)',
+              }}
+              onClick={confirmDeleteCategory}
+            >
+              {t('common.confirm')}
+            </button>
           </div>
-        </div>
+        </AccessibleDialog>
       )}
 
       {/* Premium Edit Book Modal */}
