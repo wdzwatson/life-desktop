@@ -526,7 +526,13 @@ export const Books: React.FC = () => {
   }
 
   const confirmDeleteCategory = async () => {
-    if (!api?.dbTransaction || !deletingCategory) return
+    if (!deletingCategory) return
+    if (!api?.dbTransaction) {
+      setDeletingCategory(null)
+      await loadData()
+      showToast(t('books.toast_category_delete_failed'))
+      return
+    }
 
     const category = deletingCategory
     const categoryName = category.name
