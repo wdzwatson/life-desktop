@@ -438,7 +438,7 @@ export const Books: React.FC = () => {
     }
 
     // Insert category automatically if not existing and not "未分类"
-    const isUncat = ['未分类', 'Uncategorized', 'Category', '分类', ''].includes(finalCategory)
+    const isUncat = isReservedBookCategory(finalCategory)
     if (!isUncat && !categories.some((c) => c.name === finalCategory)) {
       await api.dbQuery(
         'books',
@@ -616,7 +616,7 @@ export const Books: React.FC = () => {
     }
 
     // Insert category automatically if not existing and not "未分类"
-    const isUncat = ['未分类', 'Uncategorized', 'Category', '分类', ''].includes(finalCategory)
+    const isUncat = isReservedBookCategory(finalCategory)
     if (!isUncat && !categories.some((c) => c.name === finalCategory)) {
       await api.dbQuery(
         'books',
@@ -3003,9 +3003,7 @@ export const Books: React.FC = () => {
               >
                 <option value="">{t('books.uncategorized')}</option>
                 {categories
-                  .filter(
-                    (cat) => !['未分类', 'Uncategorized', 'Category', '分类'].includes(cat.name),
-                  )
+                  .filter((cat) => !isReservedBookCategory(cat.name))
                   .map((cat) => (
                     <option key={cat.id} value={cat.name}>
                       {getCategoryDisplayName(cat.name, cat.id)}
@@ -3241,9 +3239,7 @@ export const Books: React.FC = () => {
               >
                 <option value="">{t('books.uncategorized')}</option>
                 {categories
-                  .filter(
-                    (cat) => !['未分类', 'Uncategorized', 'Category', '分类'].includes(cat.name),
-                  )
+                  .filter((cat) => !isReservedBookCategory(cat.name))
                   .map((cat) => (
                     <option key={cat.id} value={cat.name}>
                       {getCategoryDisplayName(cat.name, cat.id)}
