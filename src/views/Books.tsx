@@ -38,7 +38,10 @@ import {
   type TocEntry,
 } from './bookReaderUtils'
 import { BookCategorySidebar, type BookShelf } from './BookCategorySidebar'
-import { isReservedBookCategory } from './bookCategorySidebarUtils'
+import {
+  getActiveCategoryAfterDelete,
+  isReservedBookCategory,
+} from './bookCategorySidebarUtils'
 
 export const SUPPORTED_LOCALES = [
   { code: 'zh-CN', label: '简体中文' },
@@ -522,36 +525,57 @@ export const Books: React.FC = () => {
     }
   }
 
-  // Confirm Category deletion (cascade move books to Uncategorized and clear translations)
   const confirmDeleteCategory = async () => {
-    if (!api || !deletingCategory) return
+    if (!api?.dbTransaction || !deletingCategory) return
 
-    const catName = deletingCategory.name
-    const catIdStr = String(deletingCategory.id)
+    const category = deletingCategory
+    const categoryName = category.name
+    const categoryId = String(category.id)
+    const storageAliases = new Set<string>()
+    const addStorageAlias = (value: unknown) => {
+      if (typeof value !== 'string') return
+      const alias = value.trim()
+      if (alias) storageAliases.add(alias)
+    }
 
-    // Cascade move books under this category to "未分类"
-    await api.dbQuery('books', "UPDATE books SET category = '未分类' WHERE category = ?", [catName])
-    // Delete target category row
-    const deleteCatRes = await api.dbQuery('books', 'DELETE FROM categories WHERE id = ?', [
-      deletingCategory.id,
-    ])
-
-    if (deleteCatRes?.success) {
-      // Clean up translations
-      await api.dbQuery(
-        'books',
-        "DELETE FROM translations WHERE entity_type = 'category' AND entity_id = ?",
-        [catIdStr],
+    addStorageAlias(categoryName)
+    translations
+      .filter(
+        (translation) =>
+          translation.entity_type === 'category' &&
+          String(translation.entity_id) === categoryId,
       )
+      .forEach((translation) => addStorageAlias(translation.translation))
 
-      showToast(t('books.toast_category_deleted'))
-      setDeletingCategory(null)
-      loadData()
+    const statements = Array.from(storageAliases, (alias) => ({
+      sql: "UPDATE books SET category = '未分类' WHERE category = ?",
+      params: [alias],
+    }))
+    statements.push(
+      { sql: 'DELETE FROM categories WHERE id = ?', params: [category.id] },
+      {
+        sql: "DELETE FROM translations WHERE entity_type = 'category' AND entity_id = ?",
+        params: [categoryId],
+      },
+    )
 
-      // Fall back to 'all' if the active category was deleted
-      if (activeCategory === catName) {
-        setActiveCategory('all')
+    try {
+      const transactionResult = await api.dbTransaction('books', statements)
+      if (!transactionResult?.success) {
+        setDeletingCategory(null)
+        await loadData()
+        showToast(t('books.toast_category_delete_failed'))
+        return
       }
+
+      setDeletingCategory(null)
+      setActiveCategory((current) => getActiveCategoryAfterDelete(current, categoryName))
+      await loadData()
+      showToast(t('books.toast_category_deleted'))
+    } catch {
+      setDeletingCategory(null)
+      await loadData()
+      showToast(t('books.toast_category_delete_failed'))
     }
   }
 
@@ -1309,6 +1333,9 @@ export const Books: React.FC = () => {
   }
 
   const uncategorizedBooksCount = books.filter(isUncategorized).length
+  const deletingCategoryBookCount = deletingCategory
+    ? books.filter((book) => isBookInCategory(book, deletingCategory)).length
+    : 0
 
   const filteredBooks = books.filter((b) => {
     if (activeCategory === 'all') return true
@@ -3127,8 +3154,8 @@ export const Books: React.FC = () => {
       {deletingCategory && (
         <div style={modalOverlayStyle}>
           <div style={modalContentStyle}>
-            <h3 style={{ ...modalTitleStyle, color: '#EF4444' }}>
-              {t('books.confirm_delete_category_title')}
+            <h3 style={{ ...modalTitleStyle, color: 'var(--color-danger)' }}>
+              {t('books.confirm_delete_shelf_title')}
             </h3>
             <p
               style={{
@@ -3138,8 +3165,9 @@ export const Books: React.FC = () => {
                 lineHeight: 1.5,
               }}
             >
-              {t('books.confirm_delete_category_desc', {
+              {t('books.confirm_delete_shelf_desc', {
                 name: getCategoryDisplayName(deletingCategory.name, deletingCategory.id),
+                count: deletingCategoryBookCount,
               })}
             </p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -3148,7 +3176,10 @@ export const Books: React.FC = () => {
               </button>
               <button
                 className="btn primary"
-                style={{ backgroundColor: '#EF4444', borderColor: '#EF4444' }}
+                style={{
+                  backgroundColor: 'var(--color-danger)',
+                  borderColor: 'var(--color-danger)',
+                }}
                 onClick={confirmDeleteCategory}
               >
                 {t('common.confirm')}
