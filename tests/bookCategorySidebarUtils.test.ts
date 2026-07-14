@@ -11,6 +11,9 @@ test('isReservedBookCategory recognizes reserved category names', () => {
     assert.equal(isReservedBookCategory(name), true)
   }
 
+  assert.equal(isReservedBookCategory('  未分类  '), true)
+  assert.equal(isReservedBookCategory(null), true)
+  assert.equal(isReservedBookCategory(undefined), true)
   assert.equal(isReservedBookCategory('技术'), false)
   assert.equal(isReservedBookCategory('Design'), false)
 })
@@ -27,6 +30,20 @@ test('getContextMenuPosition clamps a menu inside the viewport', () => {
       margin: 8,
     }),
     { left: 616, top: 460 },
+  )
+})
+
+test('getContextMenuPosition applies the default margin at the lower viewport bound', () => {
+  assert.deepEqual(
+    getContextMenuPosition({
+      clientX: 2,
+      clientY: 3,
+      viewportWidth: 800,
+      viewportHeight: 600,
+      menuWidth: 176,
+      menuHeight: 132,
+    }),
+    { left: 8, top: 8 },
   )
 })
 
