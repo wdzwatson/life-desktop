@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
@@ -70,7 +70,11 @@ import {
 import type { VideoSortState } from './videoStateUtils'
 import { VideoGroupSidebar } from './VideoGroupSidebar'
 import type { VideoGroupMutationResult } from './VideoGroupSidebar'
-import { localizeVideoGroups } from './videoGroupSidebarUtils'
+import {
+  localizeVideoGroups,
+  localizeVideoRecords,
+  repairVideoGroupSelection,
+} from './videoGroupSidebarUtils'
 import type {
   VideoGroupRecord,
   VideoGroupTranslation,
@@ -89,6 +93,23 @@ function getVideoDownloadPhaseKey(video: VideoRecord) {
   if (video.download_phase === 'preparing') return 'videos.download_stage_preparing'
   if ((video.download_progress || 0) >= 99) return 'videos.download_stage_processing'
   return 'videos.download_stage_preparing'
+}
+
+function replaceVideoGroupTranslationValues(
+  current: VideoGroupTranslation[],
+  groupId: number,
+  values: Record<string, string>,
+) {
+  const replacedLocales = new Set(Object.keys(values))
+  const retained = current.filter(
+    (translation) =>
+      translation.group_id !== groupId || !replacedLocales.has(translation.locale),
+  )
+  const replacements = Object.entries(values).flatMap(([locale, rawValue]) => {
+    const translation = normalizeVideoGroupName(rawValue)
+    return translation ? [{ group_id: groupId, locale, translation }] : []
+  })
+  return [...retained, ...replacements]
 }
 
 export const Videos: React.FC = () => {
@@ -136,66 +157,110 @@ export const Videos: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const groupDropdownButtonRef = useRef<HTMLButtonElement | null>(null)
   const groupDropdownPanelRef = useRef<HTMLDivElement | null>(null)
+  const loadDataRequestIdRef = useRef(0)
 
-  const loadData = async (): Promise<VideoDataLoadResult> => {
-    const fallbackError = t('videos.toast_group_save_failed')
+  const loadData = useCallback(async (): Promise<VideoDataLoadResult> => {
+    const fallbackError = t('videos.toast_video_details_save_failed')
     if (!api) return { ok: false, error: fallbackError }
-    let loadError = ''
+    const requestId = loadDataRequestIdRef.current + 1
+    loadDataRequestIdRef.current = requestId
+    try {
+      void Promise.resolve()
+        .then(() => api.getSettings?.())
+        .then((settings) => {
+          if (settings && requestId === loadDataRequestIdRef.current) {
+            setMaxConcurrentDownloads((settings as Record<string, any>).maxDownloads ?? 3)
+          }
+        })
+        .catch(() => undefined)
 
-    const settings = await api.getSettings?.()
-    setMaxConcurrentDownloads((settings as Record<string, any>)?.maxDownloads ?? 3)
+      const [groupsRes, translationsRes, tagsRes, videosRes] = await Promise.all([
+        api.dbQuery(
+          'videos',
+          'SELECT * FROM video_groups ORDER BY sort_order ASC, name ASC',
+        ),
+        api.dbQuery(
+          'videos',
+          'SELECT group_id, locale, translation FROM video_group_translations',
+        ),
+        api.dbQuery('videos', 'SELECT * FROM video_tags ORDER BY name ASC'),
+        api.dbQuery(
+          'videos',
+          `
+          SELECT v.*,
+                 g.name as group_name,
+                 b.batch_key as download_batch_key,
+                 b.created_at as download_batch_created_at,
+                 COALESCE(GROUP_CONCAT(t.name), '') as tag_names
+          FROM videos v
+          LEFT JOIN video_groups g ON g.id = v.group_id
+          LEFT JOIN video_download_batches b ON b.id = v.download_batch_id
+          LEFT JOIN video_tag_links vtl ON vtl.video_id = v.id
+          LEFT JOIN video_tags t ON t.id = vtl.tag_id
+          GROUP BY v.id
+          ORDER BY v.priority = 'high' DESC, v.priority = 'mid' DESC, v.favorite_time DESC
+          `,
+        ),
+      ])
+      const failedResult = [groupsRes, translationsRes, tagsRes, videosRes].find(
+        (result) => !result?.success,
+      )
+      if (requestId !== loadDataRequestIdRef.current) return { ok: true }
+      if (failedResult) return { ok: false, error: failedResult.error || fallbackError }
 
-    const groupsRes = await api.dbQuery(
-      'videos',
-      'SELECT * FROM video_groups ORDER BY sort_order ASC, name ASC',
-    )
-    if (groupsRes?.success) setGroups(groupsRes.data)
-    else loadError ||= groupsRes?.error || fallbackError
-
-    const translationsRes = await api.dbQuery(
-      'videos',
-      'SELECT group_id, locale, translation FROM video_group_translations',
-    )
-    if (translationsRes?.success) setGroupTranslations(translationsRes.data)
-    else loadError ||= translationsRes?.error || fallbackError
-
-    const tagsRes = await api.dbQuery('videos', 'SELECT * FROM video_tags ORDER BY name ASC')
-    if (tagsRes?.success) setTags(tagsRes.data)
-    else loadError ||= tagsRes?.error || fallbackError
-
-    const videosRes = await api.dbQuery(
-      'videos',
-      `
-      SELECT v.*,
-             g.name as group_name,
-             b.batch_key as download_batch_key,
-             b.created_at as download_batch_created_at,
-             COALESCE(GROUP_CONCAT(t.name), '') as tag_names
-      FROM videos v
-      LEFT JOIN video_groups g ON g.id = v.group_id
-      LEFT JOIN video_download_batches b ON b.id = v.download_batch_id
-      LEFT JOIN video_tag_links vtl ON vtl.video_id = v.id
-      LEFT JOIN video_tags t ON t.id = vtl.tag_id
-      GROUP BY v.id
-      ORDER BY v.priority = 'high' DESC, v.priority = 'mid' DESC, v.favorite_time DESC
-      `,
-    )
-    if (videosRes?.success) {
+      const nextGroups = groupsRes.data as VideoGroupRecord[]
+      const nextTranslations = translationsRes.data as VideoGroupTranslation[]
+      const nextTags = tagsRes.data as VideoTagRecord[]
       const nextVideos = videosRes.data.map((video: any) => ({
         ...video,
         tags: video.tag_names ? String(video.tag_names).split(',').filter(Boolean) : [],
-      }))
-      setLocalVideos(nextVideos)
-      setSelectedVideo((current: any) =>
-        current ? nextVideos.find((video: any) => video.id === current.id) || null : null,
-      )
-    } else loadError ||= videosRes?.error || fallbackError
+      })) as VideoRecord[]
+      const nextValidGroupIds = new Set(nextGroups.map((group) => group.id))
 
-    return loadError ? { ok: false, error: loadError } : { ok: true }
+      setGroups(nextGroups)
+      setGroupTranslations(nextTranslations)
+      setTags(nextTags)
+      setLocalVideos(nextVideos)
+      setActiveGroupId((current) =>
+        repairVideoGroupSelection(current, nextValidGroupIds, 'all'),
+      )
+      setDraftGroupId((current) =>
+        repairVideoGroupSelection(current, nextValidGroupIds, null),
+      )
+      setParseImportGroupId((current) =>
+        repairVideoGroupSelection(current, nextValidGroupIds, null),
+      )
+      setSelectedVideo((current: any) =>
+        current ? nextVideos.find((video) => video.id === current.id) || null : null,
+      )
+
+      return { ok: true }
+    } catch (cause) {
+      if (requestId !== loadDataRequestIdRef.current) return { ok: true }
+      const error = cause instanceof Error && cause.message ? cause.message : fallbackError
+      return { ok: false, error }
+    }
+  }, [api, t])
+
+  const refreshData = useCallback(async () => {
+    const result = await loadData()
+    if (!result.ok) showToast(result.error)
+    return result
+  }, [loadData, showToast])
+
+  const finishSuccessfulGroupMutation = async (successToastKey: string) => {
+    const reloadResult = await loadData()
+    showToast(reloadResult.ok ? t(successToastKey) : reloadResult.error)
+  }
+
+  const finishFailedGroupMutation = async (error: string): Promise<VideoGroupMutationResult> => {
+    const reloadResult = await loadData()
+    showToast(reloadResult.ok ? error : `${error}: ${reloadResult.error}`)
+    return { ok: false, error }
   }
 
   useEffect(() => {
-    loadData()
+    void refreshData()
 
     if (!api) return
     const unsubProgress = api.onDownloadProgress((data: any) => {
@@ -229,7 +294,7 @@ export const Videos: React.FC = () => {
     const unsubFinished = api.onDownloadFinished((data: any) => {
       showToast(t('videos.toast_download_finished', { title: data.title }))
       setDownloadQueue((prev) => prev.filter((item) => item.title !== data.title))
-      loadData()
+      void refreshData()
     })
     const unsubFailed = api.onDownloadFailed?.((data: any) => {
       showToast(t('videos.toast_download_failed', getDownloadFailureToastData(data.title, data.message)))
@@ -240,15 +305,16 @@ export const Videos: React.FC = () => {
             : item,
         ),
       )
-      loadData()
+      void refreshData()
     })
 
     return () => {
+      loadDataRequestIdRef.current += 1
       unsubProgress()
       unsubFinished()
       unsubFailed?.()
     }
-  }, [userId, i18n.language])
+  }, [api, i18n.language, refreshData, showToast, t, userId])
 
   useEffect(() => {
     if (!api) return
@@ -276,7 +342,13 @@ export const Videos: React.FC = () => {
       return
     }
     const draft = createVideoDetailDraft(selectedVideo)
-    setDraftGroupId(draft.groupId)
+    setDraftGroupId(
+      repairVideoGroupSelection(
+        draft.groupId,
+        groups.map((group) => group.id),
+        null,
+      ),
+    )
     setDraftTitle(selectedVideo.title || '')
     setSelectedTagNames(draft.tags)
     setTagDraft('')
@@ -315,6 +387,10 @@ export const Videos: React.FC = () => {
     () => localizeVideoGroups(groups, groupTranslations, i18n.language),
     [groupTranslations, groups, i18n.language],
   )
+  const localizedVideos = useMemo(
+    () => localizeVideoRecords(localVideos, localizedGroups),
+    [localVideos, localizedGroups],
+  )
   const groupOptions = useMemo(() => getVideoGroupOptions(localizedGroups), [localizedGroups])
   const validGroupIds = useMemo(() => groups.map((group) => group.id), [groups])
   const selectedGroupIds = useMemo(
@@ -338,7 +414,7 @@ export const Videos: React.FC = () => {
   const filteredLocalVideos = useMemo(
     () =>
       sortVideoRecords(
-        getVideoLibraryVideos(localVideos, {
+        getVideoLibraryVideos(localizedVideos, {
           query: searchQuery,
           groupId: activeGroupId,
           groupIds: selectedGroupIds,
@@ -347,7 +423,7 @@ export const Videos: React.FC = () => {
         }),
         videoSort,
       ),
-    [localVideos, searchQuery, activeGroupId, selectedGroupIds, validGroupIds, activeTag, videoSort],
+    [localizedVideos, searchQuery, activeGroupId, selectedGroupIds, validGroupIds, activeTag, videoSort],
   )
   const bulkSelectedVideos = useMemo(
     () => localVideos.filter((video) => bulkSelectedVideoIds.includes(video.id)),
@@ -591,7 +667,7 @@ export const Videos: React.FC = () => {
       ])
       showToast(t('videos.toast_download_failed', { title: task.title, error: message }))
     }
-    loadData()
+    void refreshData()
   }
 
   const handleAddSelectedToVideoList = async () => {
@@ -616,7 +692,7 @@ export const Videos: React.FC = () => {
       closeParsedData()
       setVideoUrl('')
       showToast(t('videos.toast_videos_added_to_list', { count: selected.length }))
-      loadData()
+      void refreshData()
     } catch (error: any) {
       showToast(t('videos.toast_parse_failed', { error: error?.message || String(error) }))
     } finally {
@@ -670,7 +746,7 @@ export const Videos: React.FC = () => {
       closeParsedData()
       setVideoUrl('')
       showToast(t('videos.toast_videos_download_started', { count: selected.length }))
-      loadData()
+      void refreshData()
 
       await runVideoDownloadTasksWithLimit(tasks, maxConcurrentDownloads, runDownloadTask)
     } catch (error: any) {
@@ -738,18 +814,39 @@ export const Videos: React.FC = () => {
       }
       const insertedId = Number(result?.data?.lastInsertRowid)
       const groupId = Number.isFinite(insertedId) && insertedId > 0 ? insertedId : undefined
-      const reloadResult = await loadData()
-      if (!reloadResult.ok) {
-        showToast(reloadResult.error)
-        return reloadResult
+      if (groupId === undefined) {
+        return finishFailedGroupMutation(fallbackError)
       }
-      if (groupId !== undefined) setActiveGroupId(groupId)
-      showToast(t('videos.toast_group_created'))
+      const translationResult = await api.dbQuery(
+        'videos',
+        `INSERT OR REPLACE INTO video_group_translations
+          (group_id, locale, translation) VALUES (?, ?, ?)`,
+        [groupId, i18n.language, name],
+      )
+      if (!translationResult?.success) {
+        return finishFailedGroupMutation(translationResult?.error || fallbackError)
+      }
+
+      const optimisticGroup: VideoGroupRecord = {
+        id: groupId,
+        name,
+        parent_id: parentId,
+        sort_order: sortOrder,
+      }
+      setGroups((current) =>
+        current.some((item) => item.id === groupId) ? current : [...current, optimisticGroup],
+      )
+      setGroupTranslations((current) =>
+        replaceVideoGroupTranslationValues(current, groupId, {
+          [i18n.language]: name,
+        }),
+      )
+      setActiveGroupId(groupId)
+      await finishSuccessfulGroupMutation('videos.toast_group_created')
       return { ok: true, groupId }
     } catch (cause) {
       const error = cause instanceof Error && cause.message ? cause.message : fallbackError
-      showToast(error)
-      return { ok: false, error }
+      return finishFailedGroupMutation(error)
     }
   }
 
@@ -783,22 +880,30 @@ export const Videos: React.FC = () => {
         [group.id, i18n.language, name],
       )
       if (!translationResult?.success) {
-        const error = translationResult?.error || fallbackError
-        await loadData()
-        showToast(error)
-        return { ok: false, error }
+        return finishFailedGroupMutation(translationResult?.error || fallbackError)
       }
-      const reloadResult = await loadData()
-      if (!reloadResult.ok) {
-        showToast(reloadResult.error)
-        return reloadResult
-      }
-      showToast(t('videos.toast_group_updated'))
+
+      setGroups((current) =>
+        current.map((item) => (item.id === group.id ? { ...item, name } : item)),
+      )
+      setGroupTranslations((current) =>
+        replaceVideoGroupTranslationValues(current, group.id, {
+          [i18n.language]: name,
+        }),
+      )
+      setLocalVideos((current) =>
+        current.map((video) =>
+          video.group_id === group.id ? { ...video, group_name: name } : video,
+        ),
+      )
+      setSelectedVideo((current: VideoRecord | null) =>
+        current?.group_id === group.id ? { ...current, group_name: name } : current,
+      )
+      await finishSuccessfulGroupMutation('videos.toast_group_updated')
       return { ok: true, groupId: group.id }
     } catch (cause) {
       const error = cause instanceof Error && cause.message ? cause.message : fallbackError
-      showToast(error)
-      return { ok: false, error }
+      return finishFailedGroupMutation(error)
     }
   }
 
@@ -838,23 +943,37 @@ export const Videos: React.FC = () => {
               [group.id, locale],
             )
         if (!result?.success) {
-          const error = result?.error || fallbackError
-          showToast(error)
-          return { ok: false, error }
+          return finishFailedGroupMutation(result?.error || fallbackError)
         }
       }
 
-      const reloadResult = await loadData()
-      if (!reloadResult.ok) {
-        showToast(reloadResult.error)
-        return reloadResult
+      if (currentLocaleName) {
+        setGroups((current) =>
+          current.map((item) =>
+            item.id === group.id ? { ...item, name: currentLocaleName } : item,
+          ),
+        )
+        setLocalVideos((current) =>
+          current.map((video) =>
+            video.group_id === group.id
+              ? { ...video, group_name: currentLocaleName }
+              : video,
+          ),
+        )
+        setSelectedVideo((current: VideoRecord | null) =>
+          current?.group_id === group.id
+            ? { ...current, group_name: currentLocaleName }
+            : current,
+        )
       }
-      showToast(t('videos.toast_group_updated'))
+      setGroupTranslations((current) =>
+        replaceVideoGroupTranslationValues(current, group.id, values),
+      )
+      await finishSuccessfulGroupMutation('videos.toast_group_updated')
       return { ok: true, groupId: group.id }
     } catch (cause) {
       const error = cause instanceof Error && cause.message ? cause.message : fallbackError
-      showToast(error)
-      return { ok: false, error }
+      return finishFailedGroupMutation(error)
     }
   }
 
@@ -877,30 +996,45 @@ export const Videos: React.FC = () => {
         group.id,
       ])
       if (!promoteResult?.success) {
-        const error = promoteResult?.error || fallbackError
-        showToast(error)
-        return { ok: false, error }
+        return finishFailedGroupMutation(promoteResult?.error || fallbackError)
       }
       const deleteResult = await api.dbQuery('videos', 'DELETE FROM video_groups WHERE id = ?', [group.id])
       if (!deleteResult?.success) {
-        const error = deleteResult?.error || fallbackError
-        showToast(error)
-        return { ok: false, error }
+        return finishFailedGroupMutation(deleteResult?.error || fallbackError)
       }
-      if (activeGroupId === group.id) setActiveGroupId('all')
-      if (selectedVideo?.group_id === group.id) setSelectedVideo({ ...selectedVideo, group_id: null, group_name: null })
-      if (draftGroupId === group.id) setDraftGroupId(null)
-      const reloadResult = await loadData()
-      if (!reloadResult.ok) {
-        showToast(reloadResult.error)
-        return reloadResult
-      }
-      showToast(t('videos.toast_group_deleted'))
+
+      setGroups((current) =>
+        current
+          .filter((item) => item.id !== group.id)
+          .map((item) =>
+            item.parent_id === group.id
+              ? { ...item, parent_id: group.parent_id ?? null }
+              : item,
+          ),
+      )
+      setGroupTranslations((current) =>
+        current.filter((translation) => translation.group_id !== group.id),
+      )
+      setLocalVideos((current) =>
+        current.map((video) =>
+          video.group_id === group.id
+            ? { ...video, group_id: null, group_name: null }
+            : video,
+        ),
+      )
+      setActiveGroupId((current) => (current === group.id ? 'all' : current))
+      setDraftGroupId((current) => (current === group.id ? null : current))
+      setParseImportGroupId((current) => (current === group.id ? null : current))
+      setSelectedVideo((current: VideoRecord | null) =>
+        current?.group_id === group.id
+          ? { ...current, group_id: null, group_name: null }
+          : current,
+      )
+      await finishSuccessfulGroupMutation('videos.toast_group_deleted')
       return { ok: true }
     } catch (cause) {
       const error = cause instanceof Error && cause.message ? cause.message : fallbackError
-      showToast(error)
-      return { ok: false, error }
+      return finishFailedGroupMutation(error)
     }
   }
 
@@ -952,7 +1086,7 @@ export const Videos: React.FC = () => {
     const feedback = getVideoDetailsSaveSuccessFeedback()
     showToast(t(feedback.toastKey))
     updateDrawer(feedback.drawerAction)
-    loadData()
+    void refreshData()
   }
 
   const handleAddTagDraft = () => {
@@ -983,14 +1117,14 @@ export const Videos: React.FC = () => {
     await api.dbQuery('videos', 'DELETE FROM videos WHERE id = ?', [id])
     if (selectedVideo?.id === id) setSelectedVideo(null)
     showToast(t('videos.toast_video_deleted'))
-    loadData()
+    void refreshData()
   }
 
   const closeBulkMetadataOperation = async () => {
     setBulkTagDraft('')
     setBulkMetadataMode(null)
     setBulkSelectedVideoIds([])
-    await loadData()
+    await refreshData()
   }
 
   const handleReadonlyOnlyBulkMetadataSelection = async () => {
@@ -1099,7 +1233,7 @@ export const Videos: React.FC = () => {
       const deleteResult = await api.dbQuery('videos', 'DELETE FROM videos WHERE id = ?', [videoId])
       if (!isBulkMetadataWriteResultSuccess(deleteResult)) {
         showBulkMetadataWriteFailure(deleteResult?.error)
-        await loadData()
+        await refreshData()
         return
       }
     }
@@ -1107,7 +1241,7 @@ export const Videos: React.FC = () => {
     showToast(t('videos.bulk_deleted', { count: bulkSelectedVideoIds.length }))
     setBulkMetadataMode(null)
     setBulkSelectedVideoIds([])
-    await loadData()
+    await refreshData()
   }
 
   const selectedDetailsEditable = selectedVideo ? canEditVideoDetails(selectedVideo) : false

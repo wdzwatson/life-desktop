@@ -3,6 +3,7 @@ import type {
   VideoGroupRecord,
   VideoGroupTranslation,
   VideoGroupTreeNode,
+  VideoRecord,
 } from './videoTypes'
 
 export type VideoGroupFilterId = number | null | 'all'
@@ -34,6 +35,37 @@ export function localizeVideoGroups(
     ...group,
     name: getVideoGroupDisplayName(group, translations, locale),
   }))
+}
+
+export function localizeVideoRecords(
+  videos: VideoRecord[],
+  localizedGroups: VideoGroupRecord[],
+) {
+  const groupNamesById = new Map(localizedGroups.map((group) => [group.id, group.name]))
+  return videos.map((video) => ({
+    ...video,
+    group_name:
+      video.group_id == null ? null : (groupNamesById.get(video.group_id) ?? null),
+  }))
+}
+
+export function repairVideoGroupSelection(
+  selection: number | null,
+  validGroupIds: Iterable<number>,
+  invalidNumericSelection: null,
+): number | null
+export function repairVideoGroupSelection(
+  selection: VideoGroupFilterId,
+  validGroupIds: Iterable<number>,
+  invalidNumericSelection: 'all',
+): VideoGroupFilterId
+export function repairVideoGroupSelection(
+  selection: VideoGroupFilterId,
+  validGroupIds: Iterable<number>,
+  invalidNumericSelection: null | 'all',
+) {
+  if (typeof selection !== 'number') return selection
+  return new Set(validGroupIds).has(selection) ? selection : invalidNumericSelection
 }
 
 export function getVideoGroupTranslationDraft(

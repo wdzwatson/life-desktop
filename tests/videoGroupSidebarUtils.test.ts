@@ -22,7 +22,9 @@ import {
   getVideoGroupTranslationDraft,
   isVideoGroupInSubtree,
   localizeVideoGroups,
+  localizeVideoRecords,
   normalizeVideoGroupDisplayName,
+  repairVideoGroupSelection,
   resolveVideoGroupRovingFocusId,
   toggleExpandedVideoGroup,
 } from '../src/views/videoGroupSidebarUtils.ts'
@@ -30,6 +32,7 @@ import type {
   VideoGroupRecord,
   VideoGroupTranslation,
   VideoGroupTreeNode,
+  VideoRecord,
   VideoTagRecord,
 } from '../src/views/videoTypes.ts'
 
@@ -91,6 +94,37 @@ test('localizeVideoGroups clones groups with current display names without mutat
   )
   assert.deepEqual(canonicalGroups, originalGroups)
   assert.notEqual(localizedGroups[0], canonicalGroups[0])
+})
+
+test('localizeVideoRecords projects localized group names without mutating canonical videos', () => {
+  const canonicalVideos: VideoRecord[] = [
+    { id: 1, title: 'Course', group_id: 1, group_name: 'Courses' },
+    { id: 2, title: 'Agent', group_id: 3, group_name: 'Agents' },
+    { id: 3, title: 'Orphan', group_id: 99, group_name: 'Stale group' },
+    { id: 4, title: 'Ungrouped', group_id: null, group_name: null },
+  ]
+  const originalVideos = canonicalVideos.map((video) => ({ ...video }))
+  const localizedGroups = localizeVideoGroups(groups, translations, 'zh-CN')
+
+  const localizedVideos = localizeVideoRecords(canonicalVideos, localizedGroups)
+
+  assert.deepEqual(
+    localizedVideos.map((video) => video.group_name),
+    ['课程', 'Agents', null, null],
+  )
+  assert.deepEqual(canonicalVideos, originalVideos)
+  assert.notEqual(localizedVideos[0], canonicalVideos[0])
+})
+
+test('repairVideoGroupSelection keeps valid and special selections and repairs invalid numeric ids', () => {
+  const validGroupIds = [1, 2, 3]
+
+  assert.equal(repairVideoGroupSelection(2, validGroupIds, 'all'), 2)
+  assert.equal(repairVideoGroupSelection(99, validGroupIds, 'all'), 'all')
+  assert.equal(repairVideoGroupSelection('all', validGroupIds, 'all'), 'all')
+  assert.equal(repairVideoGroupSelection(null, validGroupIds, 'all'), null)
+  assert.equal(repairVideoGroupSelection(99, validGroupIds, null), null)
+  assert.equal(repairVideoGroupSelection(null, validGroupIds, null), null)
 })
 
 test('translation drafts use only exact rows and keep missing current locale blank', () => {
