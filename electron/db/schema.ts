@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
+import { ensureVideoGroupSchema } from './videoGroupSchema'
 
 const VIDEO_STATUS_CHECK =
   "CHECK(status IN ('unclassified', 'not_downloaded', 'queued', 'downloading', 'downloaded', 'download_failed', 'invalid'))"
@@ -400,7 +401,7 @@ export function initializeUserDatabase(userDbDir: string) {
   videosDb.exec(`
     CREATE TABLE IF NOT EXISTS video_groups (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
       parent_id INTEGER,
       sort_order INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -436,6 +437,8 @@ export function initializeUserDatabase(userDbDir: string) {
     );
   `)
 
+  ensureVideoGroupSchema(videosDb)
+
   try {
     videosDb
       .prepare(
@@ -459,15 +462,6 @@ export function initializeUserDatabase(userDbDir: string) {
       .run()
   } catch (error) {
     console.error('Failed to normalize legacy video statuses:', error)
-  }
-  const groupColumns = videosDb.prepare('PRAGMA table_info(video_groups)').all() as any[]
-  const hasParentId = groupColumns.some((column) => column.name === 'parent_id')
-  if (!hasParentId) {
-    try {
-      videosDb.prepare('ALTER TABLE video_groups ADD COLUMN parent_id INTEGER').run()
-    } catch (error: any) {
-      if (!String(error?.message || error).toLowerCase().includes('duplicate column')) throw error
-    }
   }
   videosDb.close()
 
