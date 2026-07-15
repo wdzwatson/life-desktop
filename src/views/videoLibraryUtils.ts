@@ -314,7 +314,14 @@ export function filterVideos(videos: VideoRecord[], filter: VideoFilter) {
       const groupIds = filter.groupIds?.length ? filter.groupIds : [filter.groupId]
       if (!video.group_id || !groupIds.includes(video.group_id)) return false
     }
-    if (filter.groupId === null && video.group_id) return false
+    if (filter.groupId === null) {
+      const isUngrouped = video.group_id == null
+      const isMissingGroup =
+        filter.validGroupIds !== undefined &&
+        typeof video.group_id === 'number' &&
+        !filter.validGroupIds.includes(video.group_id)
+      if (!isUngrouped && !isMissingGroup) return false
+    }
     if (filter.tag && !video.tags?.includes(filter.tag)) return false
     return true
   })

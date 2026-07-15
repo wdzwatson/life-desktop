@@ -60,6 +60,7 @@ export interface VideoFilter {
   query: string
   groupId: number | null | 'all'
   groupIds?: number[]
+  validGroupIds?: number[]
   tag: string | null
 }
 

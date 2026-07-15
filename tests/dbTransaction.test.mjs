@@ -6,6 +6,11 @@ import {
   buildBookCategoryMigrationStatements,
   buildCategoryStorageAliasMap,
 } from '../src/views/bookCategorySidebarUtils.ts'
+import {
+  buildCreateVideoGroupStatements,
+  buildDeleteVideoGroupStatements,
+  buildUpdateVideoGroupTranslationsStatements,
+} from '../src/views/videoGroupSidebarUtils.ts'
 
 function createDatabase() {
   const db = new Database(':memory:')
@@ -28,6 +33,53 @@ function createDatabase() {
     );
   `)
   return db
+}
+
+function createVideoGroupDatabase() {
+  const db = new Database(':memory:')
+  db.pragma('foreign_keys = ON')
+  db.exec(`
+    CREATE TABLE video_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      parent_id INTEGER,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (parent_id) REFERENCES video_groups(id)
+    );
+    CREATE TABLE video_group_translations (
+      group_id INTEGER NOT NULL,
+      locale TEXT NOT NULL,
+      translation TEXT NOT NULL,
+      PRIMARY KEY (group_id, locale),
+      FOREIGN KEY (group_id) REFERENCES video_groups(id) ON DELETE CASCADE
+    );
+    CREATE TABLE videos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      group_id INTEGER,
+      FOREIGN KEY (group_id) REFERENCES video_groups(id) ON DELETE SET NULL
+    );
+  `)
+  return db
+}
+
+function seedVideoGroupTree(db) {
+  const insertGroup = db.prepare(
+    'INSERT INTO video_groups (id, name, parent_id, sort_order) VALUES (?, ?, ?, ?)',
+  )
+  insertGroup.run(1, 'Parent', null, 0)
+  insertGroup.run(2, 'Target', 1, 1)
+  insertGroup.run(3, 'Child', 2, 2)
+
+  const insertTranslation = db.prepare(
+    'INSERT INTO video_group_translations (group_id, locale, translation) VALUES (?, ?, ?)',
+  )
+  insertTranslation.run(2, 'en-US', 'Target')
+  insertTranslation.run(3, 'en-US', 'Child')
+
+  const insertVideo = db.prepare('INSERT INTO videos (id, title, group_id) VALUES (?, ?, ?)')
+  insertVideo.run(1, 'Target video', 2)
+  insertVideo.run(2, 'Child video', 3)
 }
 
 test('runDbTransaction commits every statement and returns run results', () => {
@@ -149,6 +201,124 @@ test('runDbTransaction rolls back earlier statements when a later statement fail
       db.prepare('SELECT COUNT(*) AS count FROM categories WHERE name = ?').get('Rollback').count,
       0,
     )
+  } finally {
+    db.close()
+  }
+})
+
+test('create video group statements attach the trimmed locale translation to the inserted group', () => {
+  const db = createVideoGroupDatabase()
+  try {
+    db.prepare('INSERT INTO video_groups (id, name) VALUES (?, ?)').run(1, 'Parent')
+
+    runDbTransaction(db, buildCreateVideoGroupStatements('  AI  ', 1, 'en-US', 4))
+
+    assert.deepEqual(
+      db.prepare('SELECT id, name, parent_id, sort_order FROM video_groups ORDER BY id').all(),
+      [
+        { id: 1, name: 'Parent', parent_id: null, sort_order: 0 },
+        { id: 2, name: 'AI', parent_id: 1, sort_order: 4 },
+      ],
+    )
+    assert.deepEqual(db.prepare('SELECT * FROM video_group_translations').all(), [
+      { group_id: 2, locale: 'en-US', translation: 'AI' },
+    ])
+  } finally {
+    db.close()
+  }
+})
+
+test('update video group translation statements replace nonblank locales and delete blank locales', () => {
+  const db = createVideoGroupDatabase()
+  try {
+    db.prepare('INSERT INTO video_groups (id, name) VALUES (?, ?)').run(2, 'AI')
+    const insertTranslation = db.prepare(
+      'INSERT INTO video_group_translations (group_id, locale, translation) VALUES (?, ?, ?)',
+    )
+    insertTranslation.run(2, 'en-US', 'Old AI')
+    insertTranslation.run(2, 'ja-JP', 'Old Japanese')
+
+    runDbTransaction(
+      db,
+      buildUpdateVideoGroupTranslationsStatements(2, {
+        'en-US': '  Artificial Intelligence  ',
+        'ja-JP': '   ',
+        'zh-CN': '  人工智能  ',
+      }),
+    )
+
+    assert.deepEqual(
+      db.prepare('SELECT * FROM video_group_translations ORDER BY locale').all(),
+      [
+        { group_id: 2, locale: 'en-US', translation: 'Artificial Intelligence' },
+        { group_id: 2, locale: 'zh-CN', translation: '人工智能' },
+      ],
+    )
+  } finally {
+    db.close()
+  }
+})
+
+test('delete video group statements atomically detach videos, promote children, and delete the target', () => {
+  const db = createVideoGroupDatabase()
+  try {
+    seedVideoGroupTree(db)
+
+    runDbTransaction(db, buildDeleteVideoGroupStatements(2, 1))
+
+    assert.deepEqual(
+      db.prepare('SELECT id, name, parent_id FROM video_groups ORDER BY id').all(),
+      [
+        { id: 1, name: 'Parent', parent_id: null },
+        { id: 3, name: 'Child', parent_id: 1 },
+      ],
+    )
+    assert.deepEqual(db.prepare('SELECT id, title, group_id FROM videos ORDER BY id').all(), [
+      { id: 1, title: 'Target video', group_id: null },
+      { id: 2, title: 'Child video', group_id: 3 },
+    ])
+    assert.deepEqual(db.prepare('SELECT * FROM video_group_translations ORDER BY group_id').all(), [
+      { group_id: 3, locale: 'en-US', translation: 'Child' },
+    ])
+  } finally {
+    db.close()
+  }
+})
+
+test('delete video group statements roll back every preceding change when the final delete fails', () => {
+  const db = createVideoGroupDatabase()
+  try {
+    seedVideoGroupTree(db)
+    db.exec(`
+      CREATE TRIGGER block_target_group_delete
+      BEFORE DELETE ON video_groups
+      WHEN OLD.id = 2
+      BEGIN
+        SELECT RAISE(ABORT, 'blocked target group deletion');
+      END;
+    `)
+
+    assert.throws(
+      () => runDbTransaction(db, buildDeleteVideoGroupStatements(2, 1)),
+      /blocked target group deletion/,
+    )
+
+    assert.deepEqual(
+      db.prepare('SELECT id, name, parent_id FROM video_groups ORDER BY id').all(),
+      [
+        { id: 1, name: 'Parent', parent_id: null },
+        { id: 2, name: 'Target', parent_id: 1 },
+        { id: 3, name: 'Child', parent_id: 2 },
+      ],
+    )
+    assert.deepEqual(db.prepare('SELECT id, title, group_id FROM videos ORDER BY id').all(), [
+      { id: 1, title: 'Target video', group_id: 2 },
+      { id: 2, title: 'Child video', group_id: 3 },
+    ])
+    assert.deepEqual(db.prepare('SELECT * FROM video_group_translations ORDER BY group_id').all(), [
+      { group_id: 2, locale: 'en-US', translation: 'Target' },
+      { group_id: 3, locale: 'en-US', translation: 'Child' },
+    ])
   } finally {
     db.close()
   }

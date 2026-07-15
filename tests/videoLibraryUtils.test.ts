@@ -83,6 +83,28 @@ test('filterVideos includes child groups when descendant ids are provided', () =
   )
 })
 
+test('filterVideos treats videos assigned to missing groups as needing organization', () => {
+  const records = [
+    { id: 1, title: 'Ungrouped', group_id: null, tags: [] },
+    { id: 2, title: 'Known group', group_id: 2, tags: [] },
+    { id: 3, title: 'Missing group', group_id: 99, tags: [] },
+  ]
+
+  assert.deepEqual(
+    filterVideos(records, {
+      query: '',
+      groupId: null,
+      validGroupIds: [2],
+      tag: null,
+    }).map((video) => video.id),
+    [1, 3],
+  )
+  assert.deepEqual(
+    filterVideos(records, { query: '', groupId: null, tag: null }).map((video) => video.id),
+    [1],
+  )
+})
+
 test('bulk selection reports checked, unchecked, and indeterminate states', () => {
   const ids = ['a', 'b', 'c']
   assert.deepEqual(getBulkSelectionState(ids, []), {
