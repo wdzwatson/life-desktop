@@ -38,6 +38,7 @@ import {
   getNextMenuFocusIndex,
   getVideoGroupDeleteImpact,
   getVideoGroupDisplayName,
+  getVideoGroupTranslationDraft,
   toggleExpandedVideoGroup,
 } from './videoGroupSidebarUtils'
 import { getChipStyle } from './videoLibraryUtils'
@@ -467,16 +468,7 @@ export function VideoGroupSidebar({
       closeContextMenu(false)
       return
     }
-    const values = Object.fromEntries(
-      configuredLocales.map(({ code }) => {
-        const exactValue = translations.find(
-          (translation) => translation.group_id === groupId && translation.locale === code,
-        )?.translation
-        const fallbackValue =
-          code === locale ? getVideoGroupDisplayName(group, translations, locale) : ''
-        return [code, exactValue ?? fallbackValue]
-      }),
-    )
+    const values = getVideoGroupTranslationDraft(group, translations, configuredLocales)
     setTranslationDialog({
       groupId,
       values,
@@ -499,14 +491,6 @@ export function VideoGroupSidebar({
       setTranslationDialog(null)
       return
     }
-    if (!(translationDialog.values[locale] ?? '').trim()) {
-      setTranslationDialog({
-        ...translationDialog,
-        error: t('videos.group_name_required'),
-      })
-      return
-    }
-
     translationPendingRef.current = true
     setTranslationPending(true)
     try {

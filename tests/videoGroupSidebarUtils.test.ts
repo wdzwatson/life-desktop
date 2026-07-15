@@ -16,6 +16,7 @@ import {
   getVideoGroupDeleteImpact,
   getVideoGroupDisplayName,
   getVideoGroupIdAfterDelete,
+  getVideoGroupTranslationDraft,
   normalizeVideoGroupDisplayName,
   toggleExpandedVideoGroup,
 } from '../src/views/videoGroupSidebarUtils.ts'
@@ -69,6 +70,24 @@ test('video group display names use a nonblank current translation then canonica
       'ja-JP',
     ),
     'Courses',
+  )
+})
+
+test('translation drafts use only exact rows and keep missing current locale blank', () => {
+  assert.deepEqual(
+    getVideoGroupTranslationDraft(
+      groups[0],
+      [
+        { group_id: 1, locale: 'en-US', translation: 'Courses translated' },
+        { group_id: 2, locale: 'zh-CN', translation: '其他分组' },
+      ],
+      [{ code: 'zh-CN' }, { code: 'en-US' }, { code: 'ja-JP' }],
+    ),
+    {
+      'zh-CN': '',
+      'en-US': 'Courses translated',
+      'ja-JP': '',
+    },
   )
 })
 

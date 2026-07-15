@@ -25,6 +25,21 @@ export function getVideoGroupDisplayName(
   )
 }
 
+export function getVideoGroupTranslationDraft(
+  group: VideoGroupRecord,
+  translations: VideoGroupTranslation[],
+  configuredLocales: Array<{ code: string }>,
+) {
+  return Object.fromEntries(
+    configuredLocales.map(({ code }) => [
+      code,
+      translations.find(
+        (translation) => translation.group_id === group.id && translation.locale === code,
+      )?.translation ?? '',
+    ]),
+  )
+}
+
 function getCyclicVideoGroupIds(groupsById: Map<number, VideoGroupRecord>) {
   const cyclicIds = new Set<number>()
   const visitStates = new Map<number, 'visiting' | 'visited'>()
