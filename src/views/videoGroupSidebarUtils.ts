@@ -12,6 +12,10 @@ export function normalizeVideoGroupDisplayName(value: unknown) {
   return String(value ?? '').trim()
 }
 
+export function getVideoGroupTransactionError(error: unknown, fallback: string) {
+  return typeof error === 'string' && error ? error : fallback
+}
+
 export function getVideoGroupDisplayName(
   group: VideoGroupRecord,
   translations: VideoGroupTranslation[],
@@ -548,7 +552,7 @@ export function buildRenameVideoGroupStatements(
   const normalizedName = name.trim()
   return [
     {
-      sql: 'UPDATE video_groups SET name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+      sql: 'UPDATE video_groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       params: [normalizedName, groupId],
     },
     {

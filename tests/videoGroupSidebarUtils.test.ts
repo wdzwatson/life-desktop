@@ -20,6 +20,7 @@ import {
   getVideoGroupDeleteImpact,
   getVideoGroupDisplayName,
   getVideoGroupIdAfterDelete,
+  getVideoGroupTransactionError,
   getVideoGroupTranslationDraft,
   isVideoGroupInSubtree,
   localizeVideoGroups,
@@ -516,7 +517,7 @@ test('create statements insert the canonical group and current locale translatio
 test('rename statements update the canonical group and current locale translation atomically', () => {
   assert.deepEqual(buildRenameVideoGroupStatements(2, '  Artificial Intelligence  ', 'en-US'), [
     {
-      sql: 'UPDATE video_groups SET name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+      sql: 'UPDATE video_groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       params: ['Artificial Intelligence', 2],
     },
     {
@@ -525,6 +526,15 @@ test('rename statements update the canonical group and current locale translatio
       params: [2, 'en-US', 'Artificial Intelligence'],
     },
   ])
+})
+
+test('video group transaction errors preserve returned messages with fallback', () => {
+  assert.equal(
+    getVideoGroupTransactionError('constraint failed', 'Could not save'),
+    'constraint failed',
+  )
+  assert.equal(getVideoGroupTransactionError('', 'Could not save'), 'Could not save')
+  assert.equal(getVideoGroupTransactionError(undefined, 'Could not save'), 'Could not save')
 })
 
 test('translation statements insert nonblank values and delete blank values in entry order', () => {

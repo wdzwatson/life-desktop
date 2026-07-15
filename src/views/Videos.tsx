@@ -78,6 +78,7 @@ import {
   buildUpdateVideoGroupTranslationsStatements,
   findSiblingCanonicalNameConflict,
   findSiblingDisplayNameConflict,
+  getVideoGroupTransactionError,
   localizeVideoGroups,
   localizeVideoRecords,
   normalizeVideoGroupDisplayName,
@@ -258,7 +259,11 @@ export const Videos: React.FC = () => {
 
   const finishSuccessfulGroupMutation = async (successToastKey: string) => {
     const reloadResult = await loadData()
-    showToast(reloadResult.ok ? t(successToastKey) : reloadResult.error)
+    showToast(
+      reloadResult.ok
+        ? t(successToastKey)
+        : t('videos.toast_group_saved_refresh_failed', { error: reloadResult.error }),
+    )
   }
 
   const finishFailedGroupMutation = async (error: string): Promise<VideoGroupMutationResult> => {
@@ -795,6 +800,9 @@ export const Videos: React.FC = () => {
     const fallbackError = t('videos.group_create_failed')
     if (!api?.dbTransaction) return { ok: false, error: fallbackError }
     try {
+      if (parentId != null && !groups.some((group) => group.id === parentId)) {
+        return finishFailedGroupMutation(t('videos.group_unavailable'))
+      }
       const name = normalizeVideoGroupDisplayName(rawName)
       if (!name) {
         return { ok: false, error: t('videos.group_name_required') }
@@ -826,7 +834,9 @@ export const Videos: React.FC = () => {
         buildCreateVideoGroupStatements(name, parentId, i18n.language, sortOrder),
       )
       if (!result?.success) {
-        return finishFailedGroupMutation(fallbackError)
+        return finishFailedGroupMutation(
+          getVideoGroupTransactionError(result?.error, fallbackError),
+        )
       }
       const insertedId = Number(result?.data?.[0]?.lastInsertRowid)
       const groupId = Number.isFinite(insertedId) && insertedId > 0 ? insertedId : undefined
@@ -851,8 +861,10 @@ export const Videos: React.FC = () => {
       setActiveGroupId(groupId)
       await finishSuccessfulGroupMutation('videos.toast_group_created')
       return { ok: true, groupId }
-    } catch {
-      return finishFailedGroupMutation(fallbackError)
+    } catch (error) {
+      return finishFailedGroupMutation(
+        error instanceof Error ? error.message : fallbackError,
+      )
     }
   }
 
@@ -899,7 +911,9 @@ export const Videos: React.FC = () => {
         buildRenameVideoGroupStatements(target.id, name, i18n.language),
       )
       if (!result?.success) {
-        return finishFailedGroupMutation(fallbackError)
+        return finishFailedGroupMutation(
+          getVideoGroupTransactionError(result?.error, fallbackError),
+        )
       }
 
       setGroups((current) =>
@@ -920,8 +934,10 @@ export const Videos: React.FC = () => {
       )
       await finishSuccessfulGroupMutation('videos.toast_group_updated')
       return { ok: true, groupId: target.id }
-    } catch {
-      return finishFailedGroupMutation(fallbackError)
+    } catch (error) {
+      return finishFailedGroupMutation(
+        error instanceof Error ? error.message : fallbackError,
+      )
     }
   }
 
@@ -988,7 +1004,9 @@ export const Videos: React.FC = () => {
         ...buildUpdateVideoGroupTranslationsStatements(target.id, values),
       ])
       if (!result?.success) {
-        return finishFailedGroupMutation(fallbackError)
+        return finishFailedGroupMutation(
+          getVideoGroupTransactionError(result?.error, fallbackError),
+        )
       }
 
       const nextCurrentLocaleDisplayName = currentLocaleName || nextCanonicalName
@@ -1014,8 +1032,10 @@ export const Videos: React.FC = () => {
       )
       await finishSuccessfulGroupMutation('videos.toast_group_updated')
       return { ok: true, groupId: target.id }
-    } catch {
-      return finishFailedGroupMutation(fallbackError)
+    } catch (error) {
+      return finishFailedGroupMutation(
+        error instanceof Error ? error.message : fallbackError,
+      )
     }
   }
 
@@ -1034,7 +1054,9 @@ export const Videos: React.FC = () => {
         buildDeleteVideoGroupStatements(target.id, target.parent_id ?? null),
       )
       if (!result?.success) {
-        return finishFailedGroupMutation(fallbackError)
+        return finishFailedGroupMutation(
+          getVideoGroupTransactionError(result?.error, fallbackError),
+        )
       }
 
       setGroups((current) =>
@@ -1066,8 +1088,10 @@ export const Videos: React.FC = () => {
       )
       await finishSuccessfulGroupMutation('videos.toast_group_deleted')
       return { ok: true }
-    } catch {
-      return finishFailedGroupMutation(fallbackError)
+    } catch (error) {
+      return finishFailedGroupMutation(
+        error instanceof Error ? error.message : fallbackError,
+      )
     }
   }
 
