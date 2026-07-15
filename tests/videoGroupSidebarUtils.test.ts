@@ -12,11 +12,13 @@ import {
   getContextMenuPosition,
   getDirectVideoGroupCounts,
   getNextMenuFocusIndex,
+  getVideoGroupTreeKeyboardAction,
   getVideoGroupAncestorIds,
   getVideoGroupDeleteImpact,
   getVideoGroupDisplayName,
   getVideoGroupIdAfterDelete,
   getVideoGroupTranslationDraft,
+  isVideoGroupInSubtree,
   normalizeVideoGroupDisplayName,
   toggleExpandedVideoGroup,
 } from '../src/views/videoGroupSidebarUtils.ts'
@@ -142,6 +144,61 @@ test('tree flattening keeps roots visible and hides descendants below collapsed 
   assert.deepEqual(flattenVisibleVideoGroupTree(tree, new Set([1])).map((row) => row.id), [1, 2, 4])
 })
 
+test('tree keyboard navigation moves through visible rows and respects boundaries', () => {
+  const rows = flattenVisibleVideoGroupTree(
+    buildVideoGroupTree(groups, translations, 'zh-CN'),
+    new Set([1, 2]),
+  )
+
+  assert.deepEqual(getVideoGroupTreeKeyboardAction(rows, new Set([1, 2]), 1, 'ArrowDown'), {
+    type: 'focus',
+    groupId: 2,
+  })
+  assert.deepEqual(getVideoGroupTreeKeyboardAction(rows, new Set([1, 2]), 1, 'ArrowUp'), {
+    type: 'none',
+  })
+  assert.deepEqual(getVideoGroupTreeKeyboardAction(rows, new Set([1, 2]), 2, 'Home'), {
+    type: 'focus',
+    groupId: 1,
+  })
+  assert.deepEqual(getVideoGroupTreeKeyboardAction(rows, new Set([1, 2]), 2, 'End'), {
+    type: 'focus',
+    groupId: 4,
+  })
+})
+
+test('tree keyboard navigation expands, collapses, enters children, returns to parents, and selects', () => {
+  const tree = buildVideoGroupTree(groups, translations, 'zh-CN')
+  const expanded = new Set([1, 2])
+  const rows = flattenVisibleVideoGroupTree(tree, expanded)
+  const collapsedRows = flattenVisibleVideoGroupTree(tree, new Set())
+
+  assert.deepEqual(getVideoGroupTreeKeyboardAction(collapsedRows, new Set(), 1, 'ArrowRight'), {
+    type: 'expand',
+    groupId: 1,
+  })
+  assert.deepEqual(getVideoGroupTreeKeyboardAction(rows, expanded, 1, 'ArrowRight'), {
+    type: 'focus',
+    groupId: 2,
+  })
+  assert.deepEqual(getVideoGroupTreeKeyboardAction(rows, expanded, 1, 'ArrowLeft'), {
+    type: 'collapse',
+    groupId: 1,
+  })
+  assert.deepEqual(getVideoGroupTreeKeyboardAction(rows, expanded, 3, 'ArrowLeft'), {
+    type: 'focus',
+    groupId: 2,
+  })
+  assert.deepEqual(getVideoGroupTreeKeyboardAction(rows, expanded, 3, 'Enter'), {
+    type: 'select',
+    groupId: 3,
+  })
+  assert.deepEqual(getVideoGroupTreeKeyboardAction(rows, expanded, 3, ' '), {
+    type: 'select',
+    groupId: 3,
+  })
+})
+
 test('tree construction surfaces orphaned and cyclic groups exactly once without recursive cycles', () => {
   const malformed: VideoGroupRecord[] = [
     { id: 1, name: 'Cycle A', parent_id: 2 },
@@ -201,6 +258,23 @@ test('getVideoGroupAncestorIds returns root-to-parent ancestors and stops at cyc
       1,
     ),
     [2],
+  )
+})
+
+test('subtree membership includes the ancestor, descendants, and remains cycle-safe', () => {
+  assert.equal(isVideoGroupInSubtree(groups, 1, 1), true)
+  assert.equal(isVideoGroupInSubtree(groups, 1, 3), true)
+  assert.equal(isVideoGroupInSubtree(groups, 1, 4), false)
+  assert.equal(
+    isVideoGroupInSubtree(
+      [
+        { id: 1, name: 'A', parent_id: 2 },
+        { id: 2, name: 'B', parent_id: 1 },
+      ],
+      1,
+      2,
+    ),
+    true,
   )
 })
 

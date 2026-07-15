@@ -193,6 +193,60 @@ export function flattenVisibleVideoGroupTree(
   return rows
 }
 
+export type VideoGroupTreeKeyboardAction =
+  | { type: 'none' }
+  | { type: 'focus'; groupId: number }
+  | { type: 'expand'; groupId: number }
+  | { type: 'collapse'; groupId: number }
+  | { type: 'select'; groupId: number }
+
+export function getVideoGroupTreeKeyboardAction(
+  rows: VideoGroupTreeNode[],
+  expandedIds: ReadonlySet<number>,
+  currentGroupId: number,
+  key: string,
+): VideoGroupTreeKeyboardAction {
+  const currentIndex = rows.findIndex((row) => row.id === currentGroupId)
+  if (currentIndex < 0) return { type: 'none' }
+
+  const current = rows[currentIndex]
+  if (key === 'ArrowDown') {
+    return currentIndex < rows.length - 1
+      ? { type: 'focus', groupId: rows[currentIndex + 1].id }
+      : { type: 'none' }
+  }
+  if (key === 'ArrowUp') {
+    return currentIndex > 0
+      ? { type: 'focus', groupId: rows[currentIndex - 1].id }
+      : { type: 'none' }
+  }
+  if (key === 'Home') return { type: 'focus', groupId: rows[0].id }
+  if (key === 'End') return { type: 'focus', groupId: rows[rows.length - 1].id }
+  if (key === 'ArrowRight') {
+    if (current.children.length === 0) return { type: 'none' }
+    if (!expandedIds.has(current.id)) return { type: 'expand', groupId: current.id }
+    const firstChild = rows[currentIndex + 1]
+    return firstChild && firstChild.depth > current.depth
+      ? { type: 'focus', groupId: firstChild.id }
+      : { type: 'none' }
+  }
+  if (key === 'ArrowLeft') {
+    if (current.children.length > 0 && expandedIds.has(current.id)) {
+      return { type: 'collapse', groupId: current.id }
+    }
+    for (let index = currentIndex - 1; index >= 0; index -= 1) {
+      if (rows[index].depth < current.depth) {
+        return { type: 'focus', groupId: rows[index].id }
+      }
+    }
+    return { type: 'none' }
+  }
+  if (key === 'Enter' || key === ' ' || key === 'Spacebar') {
+    return { type: 'select', groupId: current.id }
+  }
+  return { type: 'none' }
+}
+
 export function getVideoGroupAncestorIds(groups: VideoGroupRecord[], groupId: number) {
   const groupsById = new Map(groups.map((group) => [group.id, group]))
   const group = groupsById.get(groupId)
@@ -211,6 +265,25 @@ export function getVideoGroupAncestorIds(groups: VideoGroupRecord[], groupId: nu
   }
 
   return ancestors.reverse()
+}
+
+export function isVideoGroupInSubtree(
+  groups: VideoGroupRecord[],
+  ancestorId: number,
+  groupId: number,
+) {
+  if (ancestorId === groupId) return true
+  const groupsById = new Map(groups.map((group) => [group.id, group]))
+  const visited = new Set<number>()
+  let current = groupsById.get(groupId)
+
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id)
+    if (current.parent_id === ancestorId) return true
+    current = current.parent_id == null ? undefined : groupsById.get(current.parent_id)
+  }
+
+  return false
 }
 
 export function toggleExpandedVideoGroup(current: Set<number>, groupId: number) {

@@ -66,6 +66,7 @@
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
   gap: 2px;
+  cursor: pointer;
 }
 
 .video-group-sidebar__row-select {
@@ -109,7 +110,7 @@
 }
 
 .video-group-sidebar__fixed-row:focus-visible,
-.video-group-sidebar__tree-row:has(.video-group-sidebar__row-select:focus-visible),
+.video-group-sidebar__tree-row:focus-visible,
 .video-group-sidebar__add-button:focus-visible,
 .video-group-sidebar__chevron:focus-visible,
 .video-group-sidebar__tag:focus-visible,
@@ -472,6 +473,11 @@
 .video-group-sidebar__more-translations:focus-visible {
   outline: none;
   color: var(--text-main);
+}
+
+.video-group-sidebar__more-translations:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .video-group-sidebar__more-translations:focus-visible {

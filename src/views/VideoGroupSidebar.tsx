@@ -38,8 +38,9 @@ import {
   getNextMenuFocusIndex,
   getVideoGroupDeleteImpact,
   getVideoGroupDisplayName,
+  getVideoGroupTreeKeyboardAction,
   getVideoGroupTranslationDraft,
-  toggleExpandedVideoGroup,
+  isVideoGroupInSubtree,
 } from './videoGroupSidebarUtils'
 import { getChipStyle } from './videoLibraryUtils'
 import type {
@@ -94,6 +95,10 @@ type DeleteDialogState = {
   error: string
   returnFocus: () => void
 }
+
+type SidebarFocusRequest =
+  | { type: 'add' }
+  | { type: 'group'; groupId: number; waitForMount: boolean }
 
 const CONTEXT_MENU_WIDTH = 208
 const CONTEXT_MENU_HEIGHT = 164
@@ -196,12 +201,17 @@ export function VideoGroupSidebar({
   const [translationPending, setTranslationPending] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null)
   const [deletePending, setDeletePending] = useState(false)
+  const [focusedGroupId, setFocusedGroupId] = useState<number | null>(() =>
+    typeof activeGroupId === 'number' ? activeGroupId : (tree[0]?.id ?? null),
+  )
+  const [focusRequest, setFocusRequest] = useState<SidebarFocusRequest | null>(null)
 
   const initializedTopLevelIdsRef = useRef(new Set(tree.map((group) => group.id)))
-  const rowRefs = useRef(new Map<number, HTMLButtonElement>())
-  const originatingRowRef = useRef<HTMLButtonElement | null>(null)
+  const rowRefs = useRef(new Map<number, HTMLDivElement>())
+  const originatingRowRef = useRef<HTMLElement | null>(null)
   const addButtonRef = useRef<HTMLButtonElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const inlineInputRef = useRef<HTMLInputElement | null>(null)
   const translationInputRef = useRef<HTMLInputElement | null>(null)
   const deleteCancelButtonRef = useRef<HTMLButtonElement | null>(null)
   const inlinePendingRef = useRef(false)
@@ -271,6 +281,42 @@ export function VideoGroupSidebar({
     setExpandedGroupIds((current) => expandVideoGroupWithAncestors(current, groups, activeGroupId))
   }, [activeGroupId, groups])
 
+  const renamingGroupId = inlineEditor?.mode === 'rename' ? inlineEditor.groupId : null
+  useEffect(() => {
+    const focusableRows = visibleRows.filter((row) => row.id !== renamingGroupId)
+    const visibleIds = new Set(focusableRows.map((row) => row.id))
+    setFocusedGroupId((current) => {
+      if (typeof activeGroupId === 'number' && visibleIds.has(activeGroupId)) return activeGroupId
+      if (current != null && visibleIds.has(current)) return current
+      return focusableRows[0]?.id ?? null
+    })
+  }, [activeGroupId, renamingGroupId, visibleRows])
+
+  useEffect(() => {
+    if (!focusRequest) return
+    if (focusRequest.type === 'add') {
+      addButtonRef.current?.focus()
+      setFocusRequest(null)
+      return
+    }
+
+    const row = rowRefs.current.get(focusRequest.groupId)
+    if (row?.isConnected) {
+      setFocusedGroupId(focusRequest.groupId)
+      row.focus()
+      setFocusRequest(null)
+    } else if (!focusRequest.waitForMount) {
+      addButtonRef.current?.focus()
+      setFocusRequest(null)
+    }
+  }, [focusRequest, visibleRows])
+
+  useEffect(() => {
+    if (renamingGroupId == null) return
+    inlineInputRef.current?.focus()
+    inlineInputRef.current?.select()
+  }, [renamingGroupId])
+
   useEffect(() => {
     if (!contextMenu) return
     const handleDocumentPointerDown = () => closeContextMenu(false)
@@ -287,6 +333,7 @@ export function VideoGroupSidebar({
     if (contextMenu && !groupsById.has(contextMenu.groupId)) closeContextMenu()
     if (inlineEditor?.mode === 'rename' && !groupsById.has(inlineEditor.groupId)) {
       setInlineEditor(null)
+      setFocusRequest({ type: 'add' })
     }
     if (
       inlineEditor?.mode === 'create' &&
@@ -294,12 +341,23 @@ export function VideoGroupSidebar({
       !groupsById.has(inlineEditor.parentId)
     ) {
       setInlineEditor(null)
+      setFocusRequest({ type: 'add' })
     }
     if (translationDialog && !groupsById.has(translationDialog.groupId)) {
       setTranslationDialog(null)
     }
     if (deleteDialog && !groupsById.has(deleteDialog.groupId)) setDeleteDialog(null)
   }, [closeContextMenu, contextMenu, deleteDialog, groupsById, inlineEditor, translationDialog])
+
+  const requestGroupFocus = (groupId: number, waitForMount = false) => {
+    setFocusRequest({ type: 'group', groupId, waitForMount })
+  }
+
+  const requestInlineEditorReturnFocus = (editor: InlineEditorState) => {
+    if (editor.mode === 'rename') requestGroupFocus(editor.groupId)
+    else if (editor.parentId != null) requestGroupFocus(editor.parentId)
+    else setFocusRequest({ type: 'add' })
+  }
 
   const startCreate = (parentId: number | null) => {
     if (inlinePendingRef.current) return
@@ -331,8 +389,10 @@ export function VideoGroupSidebar({
   }
 
   const cancelInlineEditor = () => {
-    if (inlinePendingRef.current) return
+    if (!inlineEditor || inlinePendingRef.current) return
+    const editor = inlineEditor
     setInlineEditor(null)
+    requestInlineEditorReturnFocus(editor)
   }
 
   const submitInlineEditor = async () => {
@@ -345,6 +405,7 @@ export function VideoGroupSidebar({
 
     if (inlineEditor.mode === 'rename' && name === inlineEditor.initialValue) {
       setInlineEditor(null)
+      requestGroupFocus(inlineEditor.groupId)
       return
     }
 
@@ -352,6 +413,7 @@ export function VideoGroupSidebar({
       inlineEditor.mode === 'rename' ? groupsById.get(inlineEditor.groupId) : undefined
     if (inlineEditor.mode === 'rename' && !renameGroup) {
       setInlineEditor(null)
+      setFocusRequest({ type: 'add' })
       return
     }
 
@@ -382,8 +444,15 @@ export function VideoGroupSidebar({
         return
       }
       setInlineEditor(null)
-      if (inlineEditor.mode === 'create' && typeof result.groupId === 'number') {
+      if (inlineEditor.mode === 'rename') {
+        requestGroupFocus(inlineEditor.groupId)
+      } else if (typeof result.groupId === 'number') {
+        requestGroupFocus(result.groupId, true)
         onSelectGroup(result.groupId)
+      } else if (inlineEditor.parentId != null) {
+        requestGroupFocus(inlineEditor.parentId)
+      } else {
+        setFocusRequest({ type: 'add' })
       }
     } catch (error) {
       const targetStillExists =
@@ -417,7 +486,7 @@ export function VideoGroupSidebar({
   const openContextMenu = (
     event: MouseEvent<HTMLElement>,
     groupId: number,
-    sourceRow: HTMLButtonElement | null,
+    sourceRow: HTMLElement | null,
   ) => {
     event.preventDefault()
     event.stopPropagation()
@@ -442,7 +511,7 @@ export function VideoGroupSidebar({
       return
     }
     if (event.key === 'Tab') {
-      closeContextMenu(false)
+      closeContextMenu()
       return
     }
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
@@ -588,6 +657,69 @@ export function VideoGroupSidebar({
     void submitInlineEditor()
   }
 
+  const focusTreeItem = (groupId: number) => {
+    setFocusedGroupId(groupId)
+    rowRefs.current.get(groupId)?.focus()
+  }
+
+  const collapseGroup = (groupId: number) => {
+    const editor = inlineEditorRef.current
+    const shouldCancelEditor =
+      editor?.mode === 'create'
+        ? editor.parentId != null && isVideoGroupInSubtree(groups, groupId, editor.parentId)
+        : editor?.mode === 'rename'
+          ? editor.groupId !== groupId && isVideoGroupInSubtree(groups, groupId, editor.groupId)
+          : false
+
+    if (shouldCancelEditor) {
+      setInlineEditor(null)
+      requestGroupFocus(groupId)
+    }
+    setExpandedGroupIds((current) => {
+      const next = new Set(current)
+      next.delete(groupId)
+      return next
+    })
+  }
+
+  const toggleGroupExpansion = (groupId: number) => {
+    focusTreeItem(groupId)
+    if (expandedGroupIds.has(groupId)) collapseGroup(groupId)
+    else setExpandedGroupIds((current) => new Set([...current, groupId]))
+  }
+
+  const handleTreeItemKeyDown = (
+    event: KeyboardEvent<HTMLDivElement>,
+    groupId: number,
+  ) => {
+    const action = getVideoGroupTreeKeyboardAction(
+      visibleRows,
+      expandedGroupIds,
+      groupId,
+      event.key,
+    )
+    if (action.type === 'none') {
+      if (
+        event.key === 'ArrowDown' ||
+        event.key === 'ArrowUp' ||
+        event.key === 'ArrowRight' ||
+        event.key === 'ArrowLeft' ||
+        event.key === 'Home' ||
+        event.key === 'End'
+      ) {
+        event.preventDefault()
+      }
+      return
+    }
+
+    event.preventDefault()
+    if (action.type === 'focus') focusTreeItem(action.groupId)
+    else if (action.type === 'expand') {
+      setExpandedGroupIds((current) => new Set([...current, action.groupId]))
+    } else if (action.type === 'collapse') collapseGroup(action.groupId)
+    else onSelectGroup(action.groupId)
+  }
+
   const renderInlineEditor = (depth: number) => {
     if (!inlineEditor) return null
     const labelKey =
@@ -607,6 +739,7 @@ export function VideoGroupSidebar({
           <span className="video-group-sidebar__chevron-spacer" aria-hidden="true" />
           <FolderPlus aria-hidden="true" />
           <input
+            ref={inlineInputRef}
             autoFocus
             value={inlineEditor.value}
             disabled={inlinePending}
@@ -732,17 +865,30 @@ export function VideoGroupSidebar({
                   renderInlineEditor(node.depth)
                 ) : (
                   <div
+                    ref={(element) => {
+                      if (element) rowRefs.current.set(node.id, element)
+                      else rowRefs.current.delete(node.id)
+                    }}
+                    role="treeitem"
+                    tabIndex={focusedGroupId === node.id ? 0 : -1}
                     className={`video-group-sidebar__row video-group-sidebar__tree-row ${
                       isActive ? 'active' : ''
                     } ${isContextOpen ? 'context-open' : ''}`}
                     style={getDepthStyle(node.depth)}
-                    onContextMenu={(event) =>
-                      openContextMenu(event, node.id, rowRefs.current.get(node.id) ?? null)
-                    }
+                    aria-label={node.displayName}
+                    aria-level={node.depth + 1}
+                    aria-selected={isActive}
+                    aria-current={isActive ? 'page' : undefined}
+                    aria-expanded={hasChildren ? isExpanded : undefined}
+                    onFocus={() => setFocusedGroupId(node.id)}
+                    onKeyDown={(event) => handleTreeItemKeyDown(event, node.id)}
+                    onClick={() => onSelectGroup(node.id)}
+                    onContextMenu={(event) => openContextMenu(event, node.id, event.currentTarget)}
                   >
                     {hasChildren ? (
                       <button
                         type="button"
+                        tabIndex={-1}
                         className="video-group-sidebar__chevron"
                         aria-expanded={isExpanded}
                         aria-label={t(
@@ -752,11 +898,10 @@ export function VideoGroupSidebar({
                         title={t(isExpanded ? 'videos.collapse_group' : 'videos.expand_group', {
                           name: node.displayName,
                         })}
+                        onMouseDown={(event) => event.preventDefault()}
                         onClick={(event) => {
                           event.stopPropagation()
-                          setExpandedGroupIds((current) =>
-                            toggleExpandedVideoGroup(current, node.id),
-                          )
+                          toggleGroupExpansion(node.id)
                         }}
                       >
                         <ChevronRight aria-hidden="true" />
@@ -764,19 +909,7 @@ export function VideoGroupSidebar({
                     ) : (
                       <span className="video-group-sidebar__chevron-spacer" aria-hidden="true" />
                     )}
-                    <button
-                      ref={(element) => {
-                        if (element) rowRefs.current.set(node.id, element)
-                        else rowRefs.current.delete(node.id)
-                      }}
-                      type="button"
-                      role="treeitem"
-                      className="video-group-sidebar__row-select"
-                      aria-level={node.depth + 1}
-                      aria-selected={isActive}
-                      aria-current={isActive ? 'page' : undefined}
-                      onClick={() => onSelectGroup(node.id)}
-                    >
+                    <span className="video-group-sidebar__row-select">
                       <Folder aria-hidden="true" />
                       <span className="video-group-sidebar__label" title={node.path}>
                         {node.displayName}
@@ -784,7 +917,7 @@ export function VideoGroupSidebar({
                       <span className="video-group-sidebar__count">
                         {directCounts.get(node.id) ?? 0}
                       </span>
-                    </button>
+                    </span>
                   </div>
                 )}
                 {isAddingChild ? renderInlineEditor(node.depth + 1) : null}
@@ -934,6 +1067,7 @@ export function VideoGroupSidebar({
                 type="button"
                 className="video-group-sidebar__more-translations"
                 aria-expanded={translationDialog.showMore}
+                disabled={translationPending}
                 onClick={() =>
                   setTranslationDialog({
                     ...translationDialog,
