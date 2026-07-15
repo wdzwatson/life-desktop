@@ -69,3 +69,22 @@ export interface VideoGroupRecord {
   parent_id?: number | null
   sort_order?: number
 }
+
+export interface VideoGroupTranslation {
+  group_id: number
+  locale: string
+  translation: string
+}
+
+export interface VideoTagRecord {
+  id: number
+  name: string
+  color?: string
+}
+
+export interface VideoGroupTreeNode extends VideoGroupRecord {
+  displayName: string
+  depth: number
+  path: string
+  children: VideoGroupTreeNode[]
+}
