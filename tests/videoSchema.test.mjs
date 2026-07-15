@@ -23,6 +23,23 @@ function assertVideoGroupLocalizationSchema(db) {
   assert.match(index.sql.replaceAll(/\s+/g, ''), /COALESCE\(parent_id,-1\).*LOWER\(TRIM\(name\)\)/i)
 }
 
+function hasSingleColumnUniqueIndex(db, columnName) {
+  const indexes = db
+    .prepare('SELECT name, "unique" AS is_unique FROM pragma_index_list(?)')
+    .all('video_groups')
+  return indexes.some((index) => {
+    if (!index.is_unique) return false
+    const columns = db.prepare('SELECT name FROM pragma_index_info(?)').all(index.name)
+    return columns.length === 1 && columns[0].name === columnName
+  })
+}
+
+function hasSchemaObject(db, type, name) {
+  return Boolean(
+    db.prepare('SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?').get(type, name),
+  )
+}
+
 test('video schema includes stateful list columns, scoped groups, translations, and download batches', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-schema-'))
   initializeUserDatabase(dir)
@@ -228,4 +245,76 @@ test('legacy video groups without parent_id gain the scoped hierarchy schema', (
   )
   assertVideoGroupLocalizationSchema(migratedDb)
   migratedDb.close()
+})
+
+test('failed legacy rebuild preserves the original global unique schema atomically', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-schema-conflict-'))
+  const dbPath = path.join(dir, 'videos.db')
+  const legacyDb = new Database(dbPath)
+  legacyDb.exec(`
+    CREATE TABLE video_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      parent_id INTEGER,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    INSERT INTO video_groups (id, name, parent_id) VALUES
+      (1, 'Parent', NULL),
+      (2, 'AI', 1),
+      (3, ' ai ', 1);
+  `)
+  legacyDb.close()
+
+  assert.throws(() => initializeUserDatabase(dir), /UNIQUE constraint failed/i)
+
+  const unchangedDb = new Database(dbPath)
+  assert.deepEqual(
+    unchangedDb.prepare('SELECT id, name, parent_id FROM video_groups ORDER BY id').all(),
+    [
+      { id: 1, name: 'Parent', parent_id: null },
+      { id: 2, name: 'AI', parent_id: 1 },
+      { id: 3, name: ' ai ', parent_id: 1 },
+    ],
+  )
+  assert.equal(hasSingleColumnUniqueIndex(unchangedDb, 'name'), true)
+  assert.equal(hasSchemaObject(unchangedDb, 'index', VIDEO_GROUP_NAME_INDEX), false)
+  assert.equal(hasSchemaObject(unchangedDb, 'table', 'video_group_translations'), false)
+  unchangedDb.close()
+})
+
+test('failed normalized index creation rolls back no-rebuild group schema changes', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-schema-no-rebuild-conflict-'))
+  const dbPath = path.join(dir, 'videos.db')
+  const legacyDb = new Database(dbPath)
+  legacyDb.exec(`
+    CREATE TABLE video_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    INSERT INTO video_groups (id, name) VALUES
+      (1, 'AI'),
+      (2, ' ai ');
+  `)
+  legacyDb.close()
+
+  assert.throws(() => initializeUserDatabase(dir), /UNIQUE constraint failed/i)
+
+  const unchangedDb = new Database(dbPath)
+  const columns = unchangedDb
+    .prepare('PRAGMA table_info(video_groups)')
+    .all()
+    .map((column) => column.name)
+  assert.equal(columns.includes('parent_id'), false)
+  assert.deepEqual(unchangedDb.prepare('SELECT id, name FROM video_groups ORDER BY id').all(), [
+    { id: 1, name: 'AI' },
+    { id: 2, name: ' ai ' },
+  ])
+  assert.equal(hasSchemaObject(unchangedDb, 'index', VIDEO_GROUP_NAME_INDEX), false)
+  assert.equal(hasSchemaObject(unchangedDb, 'table', 'video_group_translations'), false)
+  unchangedDb.close()
 })
