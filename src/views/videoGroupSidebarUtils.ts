@@ -1,3 +1,4 @@
+import type { DbTransactionStatement } from '../../electron/db/transaction.ts'
 import type {
   VideoGroupRecord,
   VideoGroupTranslation,
@@ -5,11 +6,6 @@ import type {
 } from './videoTypes'
 
 export type VideoGroupFilterId = number | null | 'all'
-
-export type VideoGroupMutationStatement = {
-  sql: string
-  params?: unknown[]
-}
 
 export function normalizeVideoGroupDisplayName(value: unknown) {
   return String(value ?? '').trim()
@@ -31,54 +27,91 @@ export function getVideoGroupDisplayName(
 
 function getCyclicVideoGroupIds(groupsById: Map<number, VideoGroupRecord>) {
   const cyclicIds = new Set<number>()
+  const visitStates = new Map<number, 'visiting' | 'visited'>()
 
   for (const group of groupsById.values()) {
+    if (visitStates.has(group.id)) continue
+
     const path: number[] = []
     const pathIndexes = new Map<number, number>()
     let current: VideoGroupRecord | undefined = group
 
-    while (current) {
-      const existingIndex = pathIndexes.get(current.id)
-      if (existingIndex !== undefined) {
-        for (const id of path.slice(existingIndex)) cyclicIds.add(id)
-        break
-      }
-
+    while (current && !visitStates.has(current.id)) {
+      visitStates.set(current.id, 'visiting')
       pathIndexes.set(current.id, path.length)
       path.push(current.id)
 
       const parentId: number | null | undefined = current.parent_id
       current = parentId == null ? undefined : groupsById.get(parentId)
     }
+
+    if (current && visitStates.get(current.id) === 'visiting') {
+      const cycleStartIndex = pathIndexes.get(current.id)
+      if (cycleStartIndex !== undefined) {
+        for (let index = cycleStartIndex; index < path.length; index += 1) {
+          cyclicIds.add(path[index])
+        }
+      }
+    }
+
+    for (const id of path) visitStates.set(id, 'visited')
   }
 
   return cyclicIds
 }
 
-function sortVideoGroupNodes(nodes: VideoGroupTreeNode[]) {
-  nodes.sort(
-    (left, right) =>
-      (left.sort_order ?? Number.MAX_SAFE_INTEGER) -
-        (right.sort_order ?? Number.MAX_SAFE_INTEGER) ||
-      left.displayName.localeCompare(right.displayName),
-  )
+function sortVideoGroupNodes(nodes: VideoGroupTreeNode[], collator: Intl.Collator) {
+  const siblingLists = [nodes]
 
-  for (const node of nodes) sortVideoGroupNodes(node.children)
+  while (siblingLists.length > 0) {
+    const siblings = siblingLists.pop()
+    if (!siblings) continue
+
+    siblings.sort(
+      (left, right) =>
+        (left.sort_order ?? Number.MAX_SAFE_INTEGER) -
+          (right.sort_order ?? Number.MAX_SAFE_INTEGER) ||
+        collator.compare(left.displayName, right.displayName),
+    )
+
+    for (const node of siblings) siblingLists.push(node.children)
+  }
 }
 
-function setVideoGroupNodePaths(
-  nodes: VideoGroupTreeNode[],
-  depth: number,
-  parentPath: string,
-  visited: Set<number>,
-) {
-  for (const node of nodes) {
+function setVideoGroupNodePaths(nodes: VideoGroupTreeNode[]) {
+  const visited = new Set<number>()
+  const pending = nodes
+    .map((node) => ({ node, depth: 0, parentPath: '' }))
+    .reverse()
+
+  while (pending.length > 0) {
+    const item = pending.pop()
+    if (!item) continue
+    const { node, depth, parentPath } = item
     if (visited.has(node.id)) continue
     visited.add(node.id)
     node.depth = depth
     node.path = parentPath ? `${parentPath} / ${node.displayName}` : node.displayName
-    setVideoGroupNodePaths(node.children, depth + 1, node.path, visited)
+
+    for (let index = node.children.length - 1; index >= 0; index -= 1) {
+      pending.push({ node: node.children[index], depth: depth + 1, parentPath: node.path })
+    }
   }
+}
+
+function indexVideoGroupTranslations(translations: VideoGroupTranslation[]) {
+  const translationsByGroupAndLocale = new Map<number, Map<string, string>>()
+
+  for (const translation of translations) {
+    const translationsByLocale =
+      translationsByGroupAndLocale.get(translation.group_id) ?? new Map<string, string>()
+    translationsByGroupAndLocale.set(translation.group_id, translationsByLocale)
+    if (!translationsByLocale.has(translation.locale)) {
+      translationsByLocale.set(translation.locale, translation.translation)
+    }
+  }
+
+  return translationsByGroupAndLocale
 }
 
 export function buildVideoGroupTree(
@@ -89,9 +122,14 @@ export function buildVideoGroupTree(
   const groupsById = new Map(groups.map((group) => [group.id, group]))
   const cyclicIds = getCyclicVideoGroupIds(groupsById)
   const nodesById = new Map<number, VideoGroupTreeNode>()
+  const translationsByGroupAndLocale = indexVideoGroupTranslations(translations)
+  const collator = new Intl.Collator(locale)
 
   for (const group of groupsById.values()) {
-    const displayName = getVideoGroupDisplayName(group, translations, locale)
+    const displayName =
+      normalizeVideoGroupDisplayName(
+        translationsByGroupAndLocale.get(group.id)?.get(locale),
+      ) || group.name
     nodesById.set(group.id, {
       ...group,
       displayName,
@@ -111,8 +149,8 @@ export function buildVideoGroupTree(
     else roots.push(node)
   }
 
-  sortVideoGroupNodes(roots)
-  setVideoGroupNodePaths(roots, 0, '', new Set())
+  sortVideoGroupNodes(roots, collator)
+  setVideoGroupNodePaths(roots)
   return roots
 }
 
@@ -122,17 +160,21 @@ export function flattenVisibleVideoGroupTree(
 ) {
   const rows: VideoGroupTreeNode[] = []
   const visited = new Set<number>()
+  const pending = [...tree].reverse()
 
-  const appendVisible = (nodes: VideoGroupTreeNode[]) => {
-    for (const node of nodes) {
-      if (visited.has(node.id)) continue
-      visited.add(node.id)
-      rows.push(node)
-      if (expandedIds.has(node.id)) appendVisible(node.children)
+  while (pending.length > 0) {
+    const node = pending.pop()
+    if (!node || visited.has(node.id)) continue
+    visited.add(node.id)
+    rows.push(node)
+
+    if (expandedIds.has(node.id)) {
+      for (let index = node.children.length - 1; index >= 0; index -= 1) {
+        pending.push(node.children[index])
+      }
     }
   }
 
-  appendVisible(tree)
   return rows
 }
 
@@ -187,7 +229,30 @@ export function getVideoGroupIdAfterDelete(
   return activeGroupId === deletedGroupId ? 'all' : activeGroupId
 }
 
-export function findSiblingVideoGroupNameConflict({
+export function findSiblingCanonicalNameConflict({
+  groups,
+  parentId,
+  name,
+  excludeGroupId,
+}: {
+  groups: VideoGroupRecord[]
+  parentId: number | null
+  name: string
+  excludeGroupId?: number
+}) {
+  const normalizedName = normalizeVideoGroupDisplayName(name).toLowerCase()
+
+  return (
+    groups.find(
+      (group) =>
+        group.id !== excludeGroupId &&
+        (group.parent_id ?? null) === parentId &&
+        normalizeVideoGroupDisplayName(group.name).toLowerCase() === normalizedName,
+    ) ?? null
+  )
+}
+
+export function findSiblingDisplayNameConflict({
   groups,
   translations,
   parentId,
@@ -264,7 +329,7 @@ export function buildCreateVideoGroupStatements(
   parentId: number | null,
   locale: string,
   sortOrder: number,
-): VideoGroupMutationStatement[] {
+): DbTransactionStatement[] {
   const normalizedName = name.trim()
   return [
     {
@@ -282,7 +347,7 @@ export function buildCreateVideoGroupStatements(
 export function buildUpdateVideoGroupTranslationsStatements(
   groupId: number,
   values: Record<string, string>,
-): VideoGroupMutationStatement[] {
+): DbTransactionStatement[] {
   return Object.entries(values).map(([locale, rawValue]) => {
     const value = rawValue.trim()
     return value
@@ -301,7 +366,7 @@ export function buildUpdateVideoGroupTranslationsStatements(
 export function buildDeleteVideoGroupStatements(
   groupId: number,
   parentId: number | null,
-): VideoGroupMutationStatement[] {
+): DbTransactionStatement[] {
   return [
     { sql: 'UPDATE videos SET group_id = NULL WHERE group_id = ?', params: [groupId] },
     {

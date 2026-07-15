@@ -5,7 +5,8 @@ import {
   buildDeleteVideoGroupStatements,
   buildUpdateVideoGroupTranslationsStatements,
   buildVideoGroupTree,
-  findSiblingVideoGroupNameConflict,
+  findSiblingCanonicalNameConflict,
+  findSiblingDisplayNameConflict,
   flattenVisibleVideoGroupTree,
   getContextMenuPosition,
   getDirectVideoGroupCounts,
@@ -77,9 +78,9 @@ test('tree construction orders siblings and produces translated depths and paths
   ]
   const tree = buildVideoGroupTree(sortableGroups, translations, 'zh-CN')
 
-  assert.deepEqual(tree.map((node) => node.id), [6, 5, 1, 4])
-  assert.deepEqual(tree[2].children.map((node) => node.id), [2])
-  assert.deepEqual(tree[2].children[0].children.map((node) => node.id), [3])
+  assert.deepEqual(tree.map((node) => node.id), [1, 6, 5, 4])
+  assert.deepEqual(tree[0].children.map((node) => node.id), [2])
+  assert.deepEqual(tree[0].children[0].children.map((node) => node.id), [3])
   assert.deepEqual(
     flattenVisibleVideoGroupTree(tree, new Set([1, 2])).map(({ id, depth, path }) => ({
       id,
@@ -87,13 +88,29 @@ test('tree construction orders siblings and produces translated depths and paths
       path,
     })),
     [
-      { id: 6, depth: 0, path: 'Alpha' },
-      { id: 5, depth: 0, path: 'Zeta' },
       { id: 1, depth: 0, path: '课程' },
       { id: 2, depth: 1, path: '课程 / 人工智能' },
       { id: 3, depth: 2, path: '课程 / 人工智能 / Agents' },
+      { id: 6, depth: 0, path: 'Alpha' },
+      { id: 5, depth: 0, path: 'Zeta' },
       { id: 4, depth: 0, path: 'Music' },
     ],
+  )
+})
+
+test('tree construction sorts translated sibling names with the app locale', () => {
+  const localizedGroups: VideoGroupRecord[] = [
+    { id: 1, name: 'First', parent_id: null, sort_order: 1 },
+    { id: 2, name: 'Second', parent_id: null, sort_order: 1 },
+  ]
+  const localizedTranslations: VideoGroupTranslation[] = [
+    { group_id: 1, locale: 'zh-CN', translation: '阿' },
+    { group_id: 2, locale: 'zh-CN', translation: '中' },
+  ]
+
+  assert.deepEqual(
+    buildVideoGroupTree(localizedGroups, localizedTranslations, 'zh-CN').map((node) => node.id),
+    [1, 2],
   )
 })
 
@@ -118,6 +135,36 @@ test('tree construction surfaces orphaned and cyclic groups exactly once without
   assert.deepEqual(rows.map((row) => row.id).sort((a, b) => a - b), [1, 2, 3, 4, 5])
   assert.equal(new Set(rows.map((row) => row.id)).size, malformed.length)
   assert.deepEqual(tree.map((node) => node.id).sort((a, b) => a - b), [1, 2, 3, 5])
+})
+
+test('tree construction and flattening handle a 5,000-node hierarchy without overflowing', () => {
+  const nodeCount = 5_000
+  const deepGroups: VideoGroupRecord[] = Array.from({ length: nodeCount }, (_, index) => ({
+    id: index + 1,
+    name: 'G',
+    parent_id: index === 0 ? null : index,
+    sort_order: 1,
+  }))
+  const expectedIds = deepGroups.map((group) => group.id)
+  const originalLastGroup = { ...deepGroups[nodeCount - 1] }
+
+  const tree = buildVideoGroupTree(deepGroups, [], 'en-US')
+  const rows = flattenVisibleVideoGroupTree(tree, new Set(expectedIds))
+
+  assert.deepEqual(rows.map((row) => row.id), expectedIds)
+  assert.deepEqual(
+    { id: rows[0].id, depth: rows[0].depth, path: rows[0].path },
+    { id: 1, depth: 0, path: 'G' },
+  )
+  assert.deepEqual(
+    {
+      id: rows[nodeCount - 1].id,
+      depth: rows[nodeCount - 1].depth,
+      path: rows[nodeCount - 1].path,
+    },
+    { id: nodeCount, depth: nodeCount - 1, path: `${'G / '.repeat(nodeCount - 1)}G` },
+  )
+  assert.deepEqual(deepGroups[nodeCount - 1], originalLastGroup)
 })
 
 test('getVideoGroupAncestorIds returns root-to-parent ancestors and stops at cycles', () => {
@@ -159,9 +206,37 @@ test('getVideoGroupIdAfterDelete resets only the active deleted group', () => {
   assert.equal(getVideoGroupIdAfterDelete('all', 2), 'all')
 })
 
-test('name conflicts are normalized, locale-aware, sibling-scoped, and excludable', () => {
+test('canonical name conflicts cannot be masked by current-locale translations', () => {
   assert.equal(
-    findSiblingVideoGroupNameConflict({
+    findSiblingCanonicalNameConflict({
+      groups,
+      parentId: 1,
+      name: ' ai ',
+    })?.id,
+    2,
+  )
+  assert.equal(
+    findSiblingCanonicalNameConflict({
+      groups,
+      parentId: null,
+      name: ' ai ',
+    }),
+    null,
+  )
+  assert.equal(
+    findSiblingCanonicalNameConflict({
+      groups,
+      parentId: 1,
+      name: 'AI',
+      excludeGroupId: 2,
+    }),
+    null,
+  )
+})
+
+test('display name conflicts are normalized, locale-aware, sibling-scoped, and excludable', () => {
+  assert.equal(
+    findSiblingDisplayNameConflict({
       groups,
       translations,
       parentId: 1,
@@ -171,17 +246,7 @@ test('name conflicts are normalized, locale-aware, sibling-scoped, and excludabl
     2,
   )
   assert.equal(
-    findSiblingVideoGroupNameConflict({
-      groups,
-      translations,
-      parentId: 1,
-      locale: 'en-US',
-      name: ' ai ',
-    })?.id,
-    2,
-  )
-  assert.equal(
-    findSiblingVideoGroupNameConflict({
+    findSiblingDisplayNameConflict({
       groups,
       translations,
       parentId: null,
@@ -191,7 +256,7 @@ test('name conflicts are normalized, locale-aware, sibling-scoped, and excludabl
     null,
   )
   assert.equal(
-    findSiblingVideoGroupNameConflict({
+    findSiblingDisplayNameConflict({
       groups,
       translations,
       parentId: 1,
