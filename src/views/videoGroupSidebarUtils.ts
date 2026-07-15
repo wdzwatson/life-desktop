@@ -25,6 +25,17 @@ export function getVideoGroupDisplayName(
   )
 }
 
+export function localizeVideoGroups(
+  groups: VideoGroupRecord[],
+  translations: VideoGroupTranslation[],
+  locale: string,
+) {
+  return groups.map((group) => ({
+    ...group,
+    name: getVideoGroupDisplayName(group, translations, locale),
+  }))
+}
+
 export function getVideoGroupTranslationDraft(
   group: VideoGroupRecord,
   translations: VideoGroupTranslation[],

@@ -21,6 +21,7 @@ import {
   getVideoGroupIdAfterDelete,
   getVideoGroupTranslationDraft,
   isVideoGroupInSubtree,
+  localizeVideoGroups,
   normalizeVideoGroupDisplayName,
   resolveVideoGroupRovingFocusId,
   toggleExpandedVideoGroup,
@@ -76,6 +77,20 @@ test('video group display names use a nonblank current translation then canonica
     ),
     'Courses',
   )
+})
+
+test('localizeVideoGroups clones groups with current display names without mutating canonical input', () => {
+  const canonicalGroups = groups.slice(0, 3).map((group) => ({ ...group }))
+  const originalGroups = canonicalGroups.map((group) => ({ ...group }))
+
+  const localizedGroups = localizeVideoGroups(canonicalGroups, translations, 'zh-CN')
+
+  assert.deepEqual(
+    localizedGroups.map((group) => group.name),
+    ['课程', '人工智能', 'Agents'],
+  )
+  assert.deepEqual(canonicalGroups, originalGroups)
+  assert.notEqual(localizedGroups[0], canonicalGroups[0])
 })
 
 test('translation drafts use only exact rows and keep missing current locale blank', () => {

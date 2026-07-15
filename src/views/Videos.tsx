@@ -3,12 +3,9 @@ import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
   AlertTriangle,
-  Check,
   Database,
   Download,
-  Edit2,
   ExternalLink,
-  FolderPlus,
   MoreVertical,
   Minus,
   Play,
@@ -17,7 +14,6 @@ import {
   Search,
   SortAsc,
   SortDesc,
-  Tag,
   Trash2,
   X,
 } from 'lucide-react'
@@ -72,16 +68,20 @@ import {
   toggleVisibleBulkSelection,
 } from './videoStateUtils'
 import type { VideoSortState } from './videoStateUtils'
-import type { VideoGroupRecord, VideoRecord } from './videoTypes'
+import { VideoGroupSidebar } from './VideoGroupSidebar'
+import type { VideoGroupMutationResult } from './VideoGroupSidebar'
+import { localizeVideoGroups } from './videoGroupSidebarUtils'
+import type {
+  VideoGroupRecord,
+  VideoGroupTranslation,
+  VideoRecord,
+  VideoTagRecord,
+} from './videoTypes'
 import type { VideoSortKey } from './videoTypes'
 
-interface VideoTag {
-  id: number
-  name: string
-  color?: string
-}
-
 type FilterId = number | null | 'all'
+
+type VideoDataLoadResult = { ok: true } | { ok: false; error: string }
 
 function getVideoDownloadPhaseKey(video: VideoRecord) {
   if (video.download_phase === 'processing') return 'videos.download_stage_processing'
@@ -109,7 +109,8 @@ export const Videos: React.FC = () => {
   const [, setDownloadQueue] = useState<any[]>([])
   const [maxConcurrentDownloads, setMaxConcurrentDownloads] = useState(3)
   const [groups, setGroups] = useState<VideoGroupRecord[]>([])
-  const [tags, setTags] = useState<VideoTag[]>([])
+  const [groupTranslations, setGroupTranslations] = useState<VideoGroupTranslation[]>([])
+  const [tags, setTags] = useState<VideoTagRecord[]>([])
   const [localVideos, setLocalVideos] = useState<VideoRecord[]>([])
   const [bulkSelectedVideoIds, setBulkSelectedVideoIds] = useState<number[]>([])
   const [bulkTagDraft, setBulkTagDraft] = useState('')
@@ -121,10 +122,6 @@ export const Videos: React.FC = () => {
   const [activeTag, setActiveTag] = useState<string | null>(null)
   const [selectedVideo, setSelectedVideo] = useState<any | null>(null)
   const [drawerState, setDrawerState] = useState<VideoDrawerState>({ open: false })
-  const [isCreatingGroup, setIsCreatingGroup] = useState(false)
-  const [newGroupName, setNewGroupName] = useState('')
-  const [editingGroupId, setEditingGroupId] = useState<number | null>(null)
-  const [editingGroupName, setEditingGroupName] = useState('')
   const [isGroupDropdownOpen, setIsGroupDropdownOpen] = useState(false)
   const [groupDropdownFrame, setGroupDropdownFrame] = useState<ReturnType<typeof getFloatingDropdownFrame> | null>(null)
   const [groupSearchQuery, setGroupSearchQuery] = useState('')
@@ -140,8 +137,10 @@ export const Videos: React.FC = () => {
   const groupDropdownButtonRef = useRef<HTMLButtonElement | null>(null)
   const groupDropdownPanelRef = useRef<HTMLDivElement | null>(null)
 
-  const loadData = async () => {
-    if (!api) return
+  const loadData = async (): Promise<VideoDataLoadResult> => {
+    const fallbackError = t('videos.toast_group_save_failed')
+    if (!api) return { ok: false, error: fallbackError }
+    let loadError = ''
 
     const settings = await api.getSettings?.()
     setMaxConcurrentDownloads((settings as Record<string, any>)?.maxDownloads ?? 3)
@@ -151,9 +150,18 @@ export const Videos: React.FC = () => {
       'SELECT * FROM video_groups ORDER BY sort_order ASC, name ASC',
     )
     if (groupsRes?.success) setGroups(groupsRes.data)
+    else loadError ||= groupsRes?.error || fallbackError
+
+    const translationsRes = await api.dbQuery(
+      'videos',
+      'SELECT group_id, locale, translation FROM video_group_translations',
+    )
+    if (translationsRes?.success) setGroupTranslations(translationsRes.data)
+    else loadError ||= translationsRes?.error || fallbackError
 
     const tagsRes = await api.dbQuery('videos', 'SELECT * FROM video_tags ORDER BY name ASC')
     if (tagsRes?.success) setTags(tagsRes.data)
+    else loadError ||= tagsRes?.error || fallbackError
 
     const videosRes = await api.dbQuery(
       'videos',
@@ -181,7 +189,9 @@ export const Videos: React.FC = () => {
       setSelectedVideo((current: any) =>
         current ? nextVideos.find((video: any) => video.id === current.id) || null : null,
       )
-    }
+    } else loadError ||= videosRes?.error || fallbackError
+
+    return loadError ? { ok: false, error: loadError } : { ok: true }
   }
 
   useEffect(() => {
@@ -301,7 +311,12 @@ export const Videos: React.FC = () => {
     }
   }, [isGroupDropdownOpen])
 
-  const groupOptions = useMemo(() => getVideoGroupOptions(groups), [groups])
+  const localizedGroups = useMemo(
+    () => localizeVideoGroups(groups, groupTranslations, i18n.language),
+    [groupTranslations, groups, i18n.language],
+  )
+  const groupOptions = useMemo(() => getVideoGroupOptions(localizedGroups), [localizedGroups])
+  const validGroupIds = useMemo(() => groups.map((group) => group.id), [groups])
   const selectedGroupIds = useMemo(
     () => (typeof activeGroupId === 'number' ? getDescendantGroupIds(groups, activeGroupId) : undefined),
     [groups, activeGroupId],
@@ -327,11 +342,12 @@ export const Videos: React.FC = () => {
           query: searchQuery,
           groupId: activeGroupId,
           groupIds: selectedGroupIds,
+          validGroupIds,
           tag: activeTag,
         }),
         videoSort,
       ),
-    [localVideos, searchQuery, activeGroupId, selectedGroupIds, activeTag, videoSort],
+    [localVideos, searchQuery, activeGroupId, selectedGroupIds, validGroupIds, activeTag, videoSort],
   )
   const bulkSelectedVideos = useMemo(
     () => localVideos.filter((video) => bulkSelectedVideoIds.includes(video.id)),
@@ -689,83 +705,191 @@ export const Videos: React.FC = () => {
     await runDownloadTask(task)
   }
 
-  const handleCreateGroup = async () => {
-    if (!api) return
-    const name = normalizeVideoGroupName(newGroupName)
-    if (!name) {
-      showToast(t('videos.toast_group_name_required'))
-      return
+  const handleCreateGroup = async (
+    parentId: number | null,
+    rawName: string,
+  ): Promise<VideoGroupMutationResult> => {
+    const fallbackError = t('videos.toast_group_save_failed')
+    if (!api) return { ok: false, error: fallbackError }
+    try {
+      const name = normalizeVideoGroupName(rawName)
+      if (!name) {
+        const error = t('videos.toast_group_name_required')
+        showToast(error)
+        return { ok: false, error }
+      }
+      const sortOrder =
+        groups.reduce(
+          (highest, group) =>
+            (group.parent_id ?? null) === parentId
+              ? Math.max(highest, group.sort_order ?? 0)
+              : highest,
+          0,
+        ) + 1
+      const result = await api.dbQuery(
+        'videos',
+        'INSERT INTO video_groups (name, parent_id, sort_order) VALUES (?, ?, ?)',
+        [name, parentId, sortOrder],
+      )
+      if (!result?.success) {
+        const error = result?.error || fallbackError
+        showToast(error)
+        return { ok: false, error }
+      }
+      const insertedId = Number(result?.data?.lastInsertRowid)
+      const groupId = Number.isFinite(insertedId) && insertedId > 0 ? insertedId : undefined
+      const reloadResult = await loadData()
+      if (!reloadResult.ok) {
+        showToast(reloadResult.error)
+        return reloadResult
+      }
+      if (groupId !== undefined) setActiveGroupId(groupId)
+      showToast(t('videos.toast_group_created'))
+      return { ok: true, groupId }
+    } catch (cause) {
+      const error = cause instanceof Error && cause.message ? cause.message : fallbackError
+      showToast(error)
+      return { ok: false, error }
     }
-    const parentId = typeof activeGroupId === 'number' ? activeGroupId : null
-    const result = await api.dbQuery(
-      'videos',
-      'INSERT OR IGNORE INTO video_groups (name, parent_id, sort_order) VALUES (?, ?, ?)',
-      [name, parentId, groups.length + 1],
-    )
-    if (!result?.success) {
-      showToast(result?.error || t('videos.toast_group_save_failed'))
-      return
-    }
-    setNewGroupName('')
-    setIsCreatingGroup(false)
-    showToast(t('videos.toast_group_created'))
-    loadData()
   }
 
-  const handleStartEditGroup = (group: VideoGroupRecord) => {
-    setEditingGroupId(group.id)
-    setEditingGroupName(group.name)
+  const handleRenameGroup = async (
+    group: VideoGroupRecord,
+    rawName: string,
+  ): Promise<VideoGroupMutationResult> => {
+    const fallbackError = t('videos.toast_group_save_failed')
+    if (!api) return { ok: false, error: fallbackError }
+    try {
+      const name = normalizeVideoGroupName(rawName)
+      if (!name) {
+        const error = t('videos.toast_group_name_required')
+        showToast(error)
+        return { ok: false, error }
+      }
+      const result = await api.dbQuery(
+        'videos',
+        'UPDATE video_groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [name, group.id],
+      )
+      if (!result?.success) {
+        const error = result?.error || fallbackError
+        showToast(error)
+        return { ok: false, error }
+      }
+      const reloadResult = await loadData()
+      if (!reloadResult.ok) {
+        showToast(reloadResult.error)
+        return reloadResult
+      }
+      showToast(t('videos.toast_group_updated'))
+      return { ok: true, groupId: group.id }
+    } catch (cause) {
+      const error = cause instanceof Error && cause.message ? cause.message : fallbackError
+      showToast(error)
+      return { ok: false, error }
+    }
   }
 
-  const handleSaveGroupName = async (groupId: number) => {
-    if (!api) return
-    const name = normalizeVideoGroupName(editingGroupName)
-    if (!name) {
-      showToast(t('videos.toast_group_name_required'))
-      return
+  const handleSaveGroupTranslations = async (
+    group: VideoGroupRecord,
+    values: Record<string, string>,
+  ): Promise<VideoGroupMutationResult> => {
+    const fallbackError = t('videos.toast_group_save_failed')
+    if (!api) return { ok: false, error: fallbackError }
+    try {
+      const currentLocaleName = normalizeVideoGroupName(values[i18n.language])
+      if (currentLocaleName) {
+        const canonicalResult = await api.dbQuery(
+          'videos',
+          'UPDATE video_groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+          [currentLocaleName, group.id],
+        )
+        if (!canonicalResult?.success) {
+          const error = canonicalResult?.error || fallbackError
+          showToast(error)
+          return { ok: false, error }
+        }
+      }
+
+      for (const [locale, rawValue] of Object.entries(values)) {
+        const translation = normalizeVideoGroupName(rawValue)
+        const result = translation
+          ? await api.dbQuery(
+              'videos',
+              `INSERT OR REPLACE INTO video_group_translations
+                (group_id, locale, translation) VALUES (?, ?, ?)`,
+              [group.id, locale, translation],
+            )
+          : await api.dbQuery(
+              'videos',
+              'DELETE FROM video_group_translations WHERE group_id = ? AND locale = ?',
+              [group.id, locale],
+            )
+        if (!result?.success) {
+          const error = result?.error || fallbackError
+          showToast(error)
+          return { ok: false, error }
+        }
+      }
+
+      const reloadResult = await loadData()
+      if (!reloadResult.ok) {
+        showToast(reloadResult.error)
+        return reloadResult
+      }
+      showToast(t('videos.toast_group_updated'))
+      return { ok: true, groupId: group.id }
+    } catch (cause) {
+      const error = cause instanceof Error && cause.message ? cause.message : fallbackError
+      showToast(error)
+      return { ok: false, error }
     }
-    const result = await api.dbQuery(
-      'videos',
-      'UPDATE video_groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [name, groupId],
-    )
-    if (!result?.success) {
-      showToast(result?.error || t('videos.toast_group_save_failed'))
-      return
-    }
-    setEditingGroupId(null)
-    setEditingGroupName('')
-    showToast(t('videos.toast_group_updated'))
-    loadData()
   }
 
-  const handleDeleteGroup = async (group: VideoGroupRecord) => {
-    if (!api || !window.confirm(t('videos.confirm_delete_group', { name: group.name }))) return
-    const detachResult = await api.dbQuery('videos', 'UPDATE videos SET group_id = NULL WHERE group_id = ?', [
-      group.id,
-    ])
-    if (!detachResult?.success) {
-      showToast(detachResult?.error || t('videos.toast_group_save_failed'))
-      return
+  const handleDeleteGroup = async (
+    group: VideoGroupRecord,
+  ): Promise<VideoGroupMutationResult> => {
+    const fallbackError = t('videos.toast_group_save_failed')
+    if (!api) return { ok: false, error: fallbackError }
+    try {
+      const detachResult = await api.dbQuery('videos', 'UPDATE videos SET group_id = NULL WHERE group_id = ?', [
+        group.id,
+      ])
+      if (!detachResult?.success) {
+        const error = detachResult?.error || fallbackError
+        showToast(error)
+        return { ok: false, error }
+      }
+      const promoteResult = await api.dbQuery('videos', 'UPDATE video_groups SET parent_id = ? WHERE parent_id = ?', [
+        group.parent_id ?? null,
+        group.id,
+      ])
+      if (!promoteResult?.success) {
+        const error = promoteResult?.error || fallbackError
+        showToast(error)
+        return { ok: false, error }
+      }
+      const deleteResult = await api.dbQuery('videos', 'DELETE FROM video_groups WHERE id = ?', [group.id])
+      if (!deleteResult?.success) {
+        const error = deleteResult?.error || fallbackError
+        showToast(error)
+        return { ok: false, error }
+      }
+      if (activeGroupId === group.id) setActiveGroupId('all')
+      if (selectedVideo?.group_id === group.id) setSelectedVideo({ ...selectedVideo, group_id: null, group_name: null })
+      if (draftGroupId === group.id) setDraftGroupId(null)
+      const reloadResult = await loadData()
+      if (!reloadResult.ok) {
+        showToast(reloadResult.error)
+        return reloadResult
+      }
+      showToast(t('videos.toast_group_deleted'))
+      return { ok: true }
+    } catch (cause) {
+      const error = cause instanceof Error && cause.message ? cause.message : fallbackError
+      showToast(error)
+      return { ok: false, error }
     }
-    const promoteResult = await api.dbQuery('videos', 'UPDATE video_groups SET parent_id = ? WHERE parent_id = ?', [
-      group.parent_id || null,
-      group.id,
-    ])
-    if (!promoteResult?.success) {
-      showToast(promoteResult?.error || t('videos.toast_group_save_failed'))
-      return
-    }
-    const deleteResult = await api.dbQuery('videos', 'DELETE FROM video_groups WHERE id = ?', [group.id])
-    if (!deleteResult?.success) {
-      showToast(deleteResult?.error || t('videos.toast_group_save_failed'))
-      return
-    }
-    if (activeGroupId === group.id) setActiveGroupId('all')
-    if (selectedVideo?.group_id === group.id) setSelectedVideo({ ...selectedVideo, group_id: null, group_name: null })
-    if (draftGroupId === group.id) setDraftGroupId(null)
-    showToast(t('videos.toast_group_deleted'))
-    loadData()
   }
 
   const handleSaveVideoDetails = async (videoId: number, title: string, groupId: number | null, tagNames: string[]) => {
@@ -1015,175 +1139,28 @@ export const Videos: React.FC = () => {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'minmax(180px, 220px) minmax(0, 1fr)',
+          gridTemplateColumns: '240px minmax(0, 1fr)',
           gap: '16px',
           minHeight: 0,
           minWidth: 0,
           flexGrow: 1,
         }}
       >
-        <aside className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <section>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <strong style={{ fontSize: '12px' }}>{t('videos.groups_title')}</strong>
-              <button
-                className="btn sm btn-icon"
-                onClick={() => {
-                  setIsCreatingGroup((current) => !current)
-                  setEditingGroupId(null)
-                }}
-                title={t('videos.btn_new_group')}
-              >
-                <FolderPlus size={14} />
-              </button>
-            </div>
-            {isCreatingGroup && (
-              <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                <input
-                  className="form-field"
-                  value={newGroupName}
-                  onChange={(event) => setNewGroupName(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') handleCreateGroup()
-                    if (event.key === 'Escape') {
-                      setIsCreatingGroup(false)
-                      setNewGroupName('')
-                    }
-                  }}
-                  placeholder={t('videos.group_name_placeholder')}
-                  style={{ minWidth: 0, height: '30px', fontSize: '12px' }}
-                />
-                <button className="btn sm btn-icon primary" onClick={handleCreateGroup} title={t('common.save')}>
-                  <Check size={14} />
-                </button>
-                <button
-                  className="btn sm btn-icon"
-                  onClick={() => {
-                    setIsCreatingGroup(false)
-                    setNewGroupName('')
-                  }}
-                  title={t('common.cancel')}
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
-              {[
-                ['all', t('videos.all_videos')],
-                [null, t('videos.uncategorized')],
-              ].map(([id, label]) => (
-                <button
-                  key={String(id)}
-                  className={`btn sm ${activeGroupId === id ? 'primary' : ''}`}
-                  onClick={() => setActiveGroupId(id as FilterId)}
-                  style={{ justifyContent: 'flex-start' }}
-                >
-                  {label}
-                </button>
-              ))}
-              {groupOptions.map((group) => {
-                const chip = getChipStyle(group.id)
-                const active = activeGroupId === group.id
-                const editing = editingGroupId === group.id
-                return (
-                  <div
-                    key={group.id}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'minmax(0, 1fr) auto auto',
-                      alignItems: 'center',
-                      gap: '4px',
-                      paddingLeft: `${Math.min(group.depth, 5) * 12}px`,
-                    }}
-                  >
-                    {editing ? (
-                      <input
-                        className="form-field"
-                        value={editingGroupName}
-                        onChange={(event) => setEditingGroupName(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') handleSaveGroupName(group.id)
-                          if (event.key === 'Escape') {
-                            setEditingGroupId(null)
-                            setEditingGroupName('')
-                          }
-                        }}
-                        style={{ minWidth: 0, height: '30px', fontSize: '12px' }}
-                      />
-                    ) : (
-                      <button
-                        className={`btn sm ${active ? 'primary' : ''}`}
-                        onClick={() => setActiveGroupId(group.id)}
-                        title={group.name}
-                        style={{
-                          justifyContent: 'flex-start',
-                          minWidth: 0,
-                          height: '30px',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          backgroundColor: active ? undefined : chip.backgroundColor,
-                          color: active ? undefined : chip.color,
-                          borderColor: active ? undefined : chip.borderColor,
-                        }}
-                      >
-                        {group.name}
-                      </button>
-                    )}
-                    <button
-                      className="btn sm btn-icon"
-                      onClick={() => (editing ? handleSaveGroupName(group.id) : handleStartEditGroup(group))}
-                      title={editing ? t('common.save') : t('videos.btn_edit_group')}
-                    >
-                      {editing ? <Check size={14} /> : <Edit2 size={14} />}
-                    </button>
-                    <button
-                      className="btn sm btn-icon"
-                      onClick={() => handleDeleteGroup(group)}
-                      title={t('videos.btn_delete_group')}
-                    >
-                      <Trash2 size={14} color="var(--color-danger)" />
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          </section>
-
-          <section style={{ minHeight: 0 }}>
-            <strong style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
-              <Tag size={14} />
-              {t('videos.tags_title')}
-            </strong>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
-              {tags.length === 0 ? (
-                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-                  {t('videos.empty_tags_tip')}
-                </span>
-              ) : (
-                tags.map((tagItem) => {
-                  const chip = getChipStyle(tagItem.name)
-                  const active = activeTag === tagItem.name
-                  return (
-                    <button
-                      key={tagItem.id}
-                      className={`btn sm ${active ? 'primary' : ''}`}
-                      onClick={() => setActiveTag(active ? null : tagItem.name)}
-                      style={{
-                        fontSize: '11px',
-                        backgroundColor: active ? undefined : chip.backgroundColor,
-                        color: active ? undefined : chip.color,
-                        borderColor: active ? undefined : chip.borderColor,
-                      }}
-                    >
-                      {tagItem.name}
-                    </button>
-                  )
-                })
-              )}
-            </div>
-          </section>
-        </aside>
+        <VideoGroupSidebar
+          groups={groups}
+          translations={groupTranslations}
+          videos={localVideos}
+          tags={tags}
+          activeGroupId={activeGroupId}
+          activeTag={activeTag}
+          locale={i18n.language}
+          onSelectGroup={setActiveGroupId}
+          onSelectTag={setActiveTag}
+          onCreateGroup={handleCreateGroup}
+          onRenameGroup={handleRenameGroup}
+          onSaveTranslations={handleSaveGroupTranslations}
+          onDeleteGroup={handleDeleteGroup}
+        />
 
         <main style={{ display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}>
           <section
