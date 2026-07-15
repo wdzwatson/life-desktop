@@ -48,6 +48,9 @@ const requiredTokens: Partial<Record<(typeof sidebarKeys)[number], readonly stri
   toast_group_saved_refresh_failed: ['error'],
 }
 
+const extractInterpolationTokens = (value: string) =>
+  [...new Set([...value.matchAll(/\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}/g)].map((match) => match[1]))].sort()
+
 for (const [locale, resource] of Object.entries(resources)) {
   test(`${locale} defines complete video group sidebar copy`, () => {
     const videos = resource.videos
@@ -67,12 +70,11 @@ for (const [locale, resource] of Object.entries(resources)) {
     for (const [key, tokens] of Object.entries(requiredTokens)) {
       const value = videos[key]
       assert.equal(typeof value, 'string', `${locale} videos.${key} must be a string`)
-      for (const token of tokens) {
-        assert.ok(
-          value.includes(`{{${token}}}`),
-          `${locale} videos.${key} must include the {{${token}}} token`,
-        )
-      }
+      assert.deepEqual(
+        extractInterpolationTokens(value),
+        [...tokens].sort(),
+        `${locale} videos.${key} must contain exactly the expected interpolation tokens`,
+      )
     }
   })
 }
