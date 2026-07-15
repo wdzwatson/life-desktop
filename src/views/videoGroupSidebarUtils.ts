@@ -87,6 +87,39 @@ export function getVideoGroupTranslationDraft(
   )
 }
 
+export function getProposedVideoGroupDisplayNames({
+  configuredLocales,
+  translations,
+  groupId,
+  canonicalName,
+  values = {},
+}: {
+  configuredLocales: Array<{ code: string }>
+  translations: VideoGroupTranslation[]
+  groupId?: number
+  canonicalName: string
+  values?: Record<string, string>
+}) {
+  const relevantLocales = new Set(configuredLocales.map(({ code }) => code))
+  for (const translation of translations) relevantLocales.add(translation.locale)
+  for (const locale of Object.keys(values)) relevantLocales.add(locale)
+
+  return Array.from(relevantLocales, (locale) => {
+    const rawTranslation = Object.prototype.hasOwnProperty.call(values, locale)
+      ? values[locale]
+      : translations.find(
+          (translation) =>
+            translation.group_id === groupId && translation.locale === locale,
+        )?.translation
+    return {
+      locale,
+      displayName:
+        normalizeVideoGroupDisplayName(rawTranslation) ||
+        normalizeVideoGroupDisplayName(canonicalName),
+    }
+  })
+}
+
 function getCyclicVideoGroupIds(groupsById: Map<number, VideoGroupRecord>) {
   const cyclicIds = new Set<number>()
   const visitStates = new Map<number, 'visiting' | 'visited'>()
@@ -533,12 +566,15 @@ export function buildCreateVideoGroupStatements(
   const normalizedName = name.trim()
   return [
     {
-      sql: 'INSERT INTO video_groups (name, parent_id, sort_order) VALUES (?, ?, ?)',
-      params: [normalizedName, parentId, sortOrder],
+      sql: `INSERT INTO video_groups (name, parent_id, sort_order)
+            SELECT ?, ?, ?
+            WHERE ? IS NULL OR EXISTS (SELECT 1 FROM video_groups WHERE id = ?)`,
+      params: [normalizedName, parentId, sortOrder, parentId, parentId],
     },
     {
       sql: `INSERT INTO video_group_translations (group_id, locale, translation)
-            VALUES (last_insert_rowid(), ?, ?)`,
+            SELECT last_insert_rowid(), ?, ?
+            WHERE changes() > 0`,
       params: [locale, normalizedName],
     },
   ]
@@ -557,8 +593,11 @@ export function buildRenameVideoGroupStatements(
     },
     {
       sql: `INSERT OR REPLACE INTO video_group_translations
-            (group_id, locale, translation) VALUES (?, ?, ?)`,
-      params: [groupId, locale, normalizedName],
+            (group_id, locale, translation)
+            SELECT ?, ?, ?
+            WHERE changes() > 0
+              AND EXISTS (SELECT 1 FROM video_groups WHERE id = ?)`,
+      params: [groupId, locale, normalizedName, groupId],
     },
   ]
 }
@@ -572,12 +611,16 @@ export function buildUpdateVideoGroupTranslationsStatements(
     return value
       ? {
           sql: `INSERT OR REPLACE INTO video_group_translations
-                (group_id, locale, translation) VALUES (?, ?, ?)`,
-          params: [groupId, locale, value],
+                (group_id, locale, translation)
+                SELECT ?, ?, ?
+                WHERE EXISTS (SELECT 1 FROM video_groups WHERE id = ?)`,
+          params: [groupId, locale, value, groupId],
         }
       : {
-          sql: 'DELETE FROM video_group_translations WHERE group_id = ? AND locale = ?',
-          params: [groupId, locale],
+          sql: `DELETE FROM video_group_translations
+                WHERE group_id = ? AND locale = ?
+                  AND EXISTS (SELECT 1 FROM video_groups WHERE id = ?)`,
+          params: [groupId, locale, groupId],
         }
   })
 }
@@ -587,12 +630,24 @@ export function buildDeleteVideoGroupStatements(
   parentId: number | null,
 ): DbTransactionStatement[] {
   return [
-    { sql: 'UPDATE videos SET group_id = NULL WHERE group_id = ?', params: [groupId] },
     {
-      sql: 'UPDATE video_groups SET parent_id = ? WHERE parent_id = ?',
-      params: [parentId, groupId],
+      sql: `UPDATE videos SET group_id = NULL
+            WHERE group_id = ?
+              AND EXISTS (SELECT 1 FROM video_groups WHERE id = ?)`,
+      params: [groupId, groupId],
     },
-    { sql: 'DELETE FROM video_group_translations WHERE group_id = ?', params: [groupId] },
+    {
+      sql: `UPDATE video_groups SET parent_id = ?
+            WHERE parent_id = ?
+              AND EXISTS (SELECT 1 FROM video_groups AS target WHERE target.id = ?)`,
+      params: [parentId, groupId, groupId],
+    },
+    {
+      sql: `DELETE FROM video_group_translations
+            WHERE group_id = ?
+              AND EXISTS (SELECT 1 FROM video_groups WHERE id = ?)`,
+      params: [groupId, groupId],
+    },
     { sql: 'DELETE FROM video_groups WHERE id = ?', params: [groupId] },
   ]
 }

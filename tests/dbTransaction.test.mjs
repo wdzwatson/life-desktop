@@ -38,28 +38,24 @@ function createDatabase() {
 
 function createVideoGroupDatabase() {
   const db = new Database(':memory:')
-  db.pragma('foreign_keys = ON')
   db.exec(`
     CREATE TABLE video_groups (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       parent_id INTEGER,
       sort_order INTEGER NOT NULL DEFAULT 0,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (parent_id) REFERENCES video_groups(id)
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE video_group_translations (
       group_id INTEGER NOT NULL,
       locale TEXT NOT NULL,
       translation TEXT NOT NULL,
-      PRIMARY KEY (group_id, locale),
-      FOREIGN KEY (group_id) REFERENCES video_groups(id) ON DELETE CASCADE
+      PRIMARY KEY (group_id, locale)
     );
     CREATE TABLE videos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
-      group_id INTEGER,
-      FOREIGN KEY (group_id) REFERENCES video_groups(id) ON DELETE SET NULL
+      group_id INTEGER
     );
   `)
   return db
@@ -230,6 +226,22 @@ test('create video group statements attach the trimmed locale translation to the
   }
 })
 
+test('stale parent create changes no group or translation without foreign keys', () => {
+  const db = createVideoGroupDatabase()
+  try {
+    const results = runDbTransaction(
+      db,
+      buildCreateVideoGroupStatements('Orphan', 99, 'en-US', 1),
+    )
+
+    assert.equal(results[0].changes, 0)
+    assert.deepEqual(db.prepare('SELECT * FROM video_groups').all(), [])
+    assert.deepEqual(db.prepare('SELECT * FROM video_group_translations').all(), [])
+  } finally {
+    db.close()
+  }
+})
+
 test('rename video group statements change canonical and current locale translation together', () => {
   const db = createVideoGroupDatabase()
   try {
@@ -290,6 +302,21 @@ test('rename video group statements roll back canonical update when translation 
       ).get(2, 'en-US').translation,
       'AI',
     )
+  } finally {
+    db.close()
+  }
+})
+
+test('missing target rename changes no group or orphan translation without foreign keys', () => {
+  const db = createVideoGroupDatabase()
+  try {
+    const results = runDbTransaction(
+      db,
+      buildRenameVideoGroupStatements(99, 'Missing', 'en-US'),
+    )
+
+    assert.equal(results[0].changes, 0)
+    assert.deepEqual(db.prepare('SELECT * FROM video_group_translations').all(), [])
   } finally {
     db.close()
   }
@@ -366,6 +393,33 @@ test('translation save rolls back canonical and prior locale writes when a later
   }
 })
 
+test('missing translation target neither inserts nor deletes orphan translations without foreign keys', () => {
+  const db = createVideoGroupDatabase()
+  try {
+    db.prepare(
+      'INSERT INTO video_group_translations (group_id, locale, translation) VALUES (?, ?, ?)',
+    ).run(99, 'ja-JP', 'Orphan translation')
+
+    const results = runDbTransaction(db, [
+      {
+        sql: 'UPDATE video_groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        params: ['Missing', 99],
+      },
+      ...buildUpdateVideoGroupTranslationsStatements(99, {
+        'en-US': 'Missing',
+        'ja-JP': '',
+      }),
+    ])
+
+    assert.equal(results[0].changes, 0)
+    assert.deepEqual(db.prepare('SELECT * FROM video_group_translations').all(), [
+      { group_id: 99, locale: 'ja-JP', translation: 'Orphan translation' },
+    ])
+  } finally {
+    db.close()
+  }
+})
+
 test('delete video group statements atomically detach videos, promote children, and delete the target', () => {
   const db = createVideoGroupDatabase()
   try {
@@ -386,6 +440,38 @@ test('delete video group statements atomically detach videos, promote children, 
     ])
     assert.deepEqual(db.prepare('SELECT * FROM video_group_translations ORDER BY group_id').all(), [
       { group_id: 3, locale: 'en-US', translation: 'Child' },
+    ])
+  } finally {
+    db.close()
+  }
+})
+
+test('missing delete target leaves orphan references unchanged without foreign keys', () => {
+  const db = createVideoGroupDatabase()
+  try {
+    db.prepare(
+      'INSERT INTO video_groups (id, name, parent_id) VALUES (?, ?, ?)',
+    ).run(3, 'Orphan child', 99)
+    db.prepare('INSERT INTO videos (id, title, group_id) VALUES (?, ?, ?)').run(
+      1,
+      'Orphan video',
+      99,
+    )
+    db.prepare(
+      'INSERT INTO video_group_translations (group_id, locale, translation) VALUES (?, ?, ?)',
+    ).run(99, 'en-US', 'Orphan translation')
+
+    const results = runDbTransaction(db, buildDeleteVideoGroupStatements(99, null))
+
+    assert.equal(results.at(-1).changes, 0)
+    assert.deepEqual(db.prepare('SELECT id, parent_id FROM video_groups').all(), [
+      { id: 3, parent_id: 99 },
+    ])
+    assert.deepEqual(db.prepare('SELECT id, group_id FROM videos').all(), [
+      { id: 1, group_id: 99 },
+    ])
+    assert.deepEqual(db.prepare('SELECT * FROM video_group_translations').all(), [
+      { group_id: 99, locale: 'en-US', translation: 'Orphan translation' },
     ])
   } finally {
     db.close()

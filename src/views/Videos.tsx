@@ -78,6 +78,7 @@ import {
   buildUpdateVideoGroupTranslationsStatements,
   findSiblingCanonicalNameConflict,
   findSiblingDisplayNameConflict,
+  getProposedVideoGroupDisplayNames,
   getVideoGroupTransactionError,
   localizeVideoGroups,
   localizeVideoRecords,
@@ -810,16 +811,34 @@ export const Videos: React.FC = () => {
       if (findSiblingCanonicalNameConflict({ groups, parentId, name })) {
         return { ok: false, error: t('videos.group_name_duplicate') }
       }
-      if (
-        findSiblingDisplayNameConflict({
+      const configuredLocales = getConfiguredLocales(i18n.language)
+      const localeLabels = new Map(
+        configuredLocales.map((locale) => [locale.code, locale.label]),
+      )
+      for (const proposal of getProposedVideoGroupDisplayNames({
+        configuredLocales,
+        translations: groupTranslations,
+        canonicalName: name,
+        values: { [i18n.language]: name },
+      })) {
+        if (!findSiblingDisplayNameConflict({
           groups,
           translations: groupTranslations,
           parentId,
-          locale: i18n.language,
-          name,
-        })
-      ) {
-        return { ok: false, error: t('videos.group_name_duplicate') }
+          locale: proposal.locale,
+          name: proposal.displayName,
+        })) {
+          continue
+        }
+        return {
+          ok: false,
+          error:
+            proposal.locale === i18n.language
+              ? t('videos.group_name_duplicate')
+              : t('videos.group_translation_duplicate', {
+                  language: localeLabels.get(proposal.locale) || proposal.locale,
+                }),
+        }
       }
       const sortOrder =
         groups.reduce(
@@ -837,6 +856,13 @@ export const Videos: React.FC = () => {
         return finishFailedGroupMutation(
           getVideoGroupTransactionError(result?.error, fallbackError),
         )
+      }
+      const createChanges = Number(result?.data?.[0]?.changes)
+      if (createChanges === 0) {
+        return finishFailedGroupMutation(t('videos.group_unavailable'))
+      }
+      if (!Number.isFinite(createChanges)) {
+        return finishFailedGroupMutation(fallbackError)
       }
       const insertedId = Number(result?.data?.[0]?.lastInsertRowid)
       const groupId = Number.isFinite(insertedId) && insertedId > 0 ? insertedId : undefined
@@ -894,17 +920,36 @@ export const Videos: React.FC = () => {
       ) {
         return { ok: false, error: t('videos.group_name_duplicate') }
       }
-      if (
-        findSiblingDisplayNameConflict({
+      const configuredLocales = getConfiguredLocales(i18n.language)
+      const localeLabels = new Map(
+        configuredLocales.map((locale) => [locale.code, locale.label]),
+      )
+      for (const proposal of getProposedVideoGroupDisplayNames({
+        configuredLocales,
+        translations: groupTranslations,
+        groupId: target.id,
+        canonicalName: name,
+        values: { [i18n.language]: name },
+      })) {
+        if (!findSiblingDisplayNameConflict({
           groups,
           translations: groupTranslations,
           parentId,
-          locale: i18n.language,
-          name,
+          locale: proposal.locale,
+          name: proposal.displayName,
           excludeGroupId: target.id,
-        })
-      ) {
-        return { ok: false, error: t('videos.group_name_duplicate') }
+        })) {
+          continue
+        }
+        return {
+          ok: false,
+          error:
+            proposal.locale === i18n.language
+              ? t('videos.group_name_duplicate')
+              : t('videos.group_translation_duplicate', {
+                  language: localeLabels.get(proposal.locale) || proposal.locale,
+                }),
+        }
       }
       const result = await api.dbTransaction(
         'videos',
@@ -914,6 +959,13 @@ export const Videos: React.FC = () => {
         return finishFailedGroupMutation(
           getVideoGroupTransactionError(result?.error, fallbackError),
         )
+      }
+      const renameChanges = Number(result?.data?.[0]?.changes)
+      if (renameChanges === 0) {
+        return finishFailedGroupMutation(t('videos.group_unavailable'))
+      }
+      if (!Number.isFinite(renameChanges)) {
+        return finishFailedGroupMutation(fallbackError)
       }
 
       setGroups((current) =>
@@ -970,27 +1022,27 @@ export const Videos: React.FC = () => {
       const localeLabels = new Map(
         configuredLocales.map((locale) => [locale.code, locale.label]),
       )
-      const localesToValidate = new Set([
-        ...configuredLocales.map((locale) => locale.code),
-        ...Object.keys(values),
-      ])
-      for (const locale of localesToValidate) {
-        const finalDisplayName =
-          normalizeVideoGroupDisplayName(values[locale]) || nextCanonicalName
+      for (const proposal of getProposedVideoGroupDisplayNames({
+        configuredLocales,
+        translations: groupTranslations,
+        groupId: target.id,
+        canonicalName: nextCanonicalName,
+        values,
+      })) {
         if (
           findSiblingDisplayNameConflict({
             groups,
             translations: groupTranslations,
             parentId,
-            locale,
-            name: finalDisplayName,
+            locale: proposal.locale,
+            name: proposal.displayName,
             excludeGroupId: target.id,
           })
         ) {
           return {
             ok: false,
             error: t('videos.group_translation_duplicate', {
-              language: localeLabels.get(locale) || locale,
+              language: localeLabels.get(proposal.locale) || proposal.locale,
             }),
           }
         }
@@ -1007,6 +1059,13 @@ export const Videos: React.FC = () => {
         return finishFailedGroupMutation(
           getVideoGroupTransactionError(result?.error, fallbackError),
         )
+      }
+      const translationChanges = Number(result?.data?.[0]?.changes)
+      if (translationChanges === 0) {
+        return finishFailedGroupMutation(t('videos.group_unavailable'))
+      }
+      if (!Number.isFinite(translationChanges)) {
+        return finishFailedGroupMutation(fallbackError)
       }
 
       const nextCurrentLocaleDisplayName = currentLocaleName || nextCanonicalName
@@ -1057,6 +1116,14 @@ export const Videos: React.FC = () => {
         return finishFailedGroupMutation(
           getVideoGroupTransactionError(result?.error, fallbackError),
         )
+      }
+      const finalDeleteResult = Array.isArray(result?.data) ? result.data.at(-1) : undefined
+      const deleteChanges = Number(finalDeleteResult?.changes)
+      if (deleteChanges === 0) {
+        return finishFailedGroupMutation(t('videos.group_unavailable'))
+      }
+      if (!Number.isFinite(deleteChanges)) {
+        return finishFailedGroupMutation(fallbackError)
       }
 
       setGroups((current) =>

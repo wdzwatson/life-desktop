@@ -13,6 +13,7 @@ import {
   getContextMenuPosition,
   getDirectVideoGroupCounts,
   getNextMenuFocusIndex,
+  getProposedVideoGroupDisplayNames,
   getVideoGroupCollapseEditorAction,
   getVideoGroupMutationFailureFocusTarget,
   getVideoGroupTreeKeyboardAction,
@@ -500,15 +501,89 @@ test('display name conflicts are normalized, locale-aware, sibling-scoped, and e
   )
 })
 
+test('create display proposals include persisted locales and expose cross-locale fallback conflicts', () => {
+  const siblingGroups: VideoGroupRecord[] = [
+    { id: 1, name: 'Machine Learning', parent_id: null },
+  ]
+  const siblingTranslations: VideoGroupTranslation[] = [
+    { group_id: 1, locale: 'zh-CN', translation: 'AI' },
+  ]
+  const proposals = getProposedVideoGroupDisplayNames({
+    configuredLocales: [{ code: 'en-US' }],
+    translations: siblingTranslations,
+    canonicalName: 'AI',
+    values: { 'en-US': 'AI' },
+  })
+
+  assert.deepEqual(proposals, [
+    { locale: 'en-US', displayName: 'AI' },
+    { locale: 'zh-CN', displayName: 'AI' },
+  ])
+  assert.equal(
+    proposals
+      .map(({ locale, displayName }) =>
+        findSiblingDisplayNameConflict({
+          groups: siblingGroups,
+          translations: siblingTranslations,
+          parentId: null,
+          locale,
+          name: displayName,
+        }),
+      )
+      .find(Boolean)?.id,
+    1,
+  )
+})
+
+test('rename display proposals preserve target translations and fallback to the next canonical name', () => {
+  const persistedTranslations: VideoGroupTranslation[] = [
+    { group_id: 2, locale: 'zh-CN', translation: '保留名称' },
+    { group_id: 3, locale: 'ja-JP', translation: 'Renamed' },
+  ]
+
+  assert.deepEqual(
+    getProposedVideoGroupDisplayNames({
+      configuredLocales: [{ code: 'en-US' }],
+      translations: persistedTranslations,
+      groupId: 2,
+      canonicalName: 'Renamed',
+      values: { 'en-US': 'Renamed' },
+    }),
+    [
+      { locale: 'en-US', displayName: 'Renamed' },
+      { locale: 'zh-CN', displayName: '保留名称' },
+      { locale: 'ja-JP', displayName: 'Renamed' },
+    ],
+  )
+})
+
+test('display proposals include submitted locales beyond configured and persisted locales', () => {
+  assert.deepEqual(
+    getProposedVideoGroupDisplayNames({
+      configuredLocales: [{ code: 'en-US' }],
+      translations: [],
+      canonicalName: 'Canonical',
+      values: { 'fr-FR': ' Français ' },
+    }),
+    [
+      { locale: 'en-US', displayName: 'Canonical' },
+      { locale: 'fr-FR', displayName: 'Français' },
+    ],
+  )
+})
+
 test('create statements insert the canonical group and current locale translation', () => {
   assert.deepEqual(buildCreateVideoGroupStatements('  AI  ', 1, 'en-US', 4), [
     {
-      sql: 'INSERT INTO video_groups (name, parent_id, sort_order) VALUES (?, ?, ?)',
-      params: ['AI', 1, 4],
+      sql: `INSERT INTO video_groups (name, parent_id, sort_order)
+            SELECT ?, ?, ?
+            WHERE ? IS NULL OR EXISTS (SELECT 1 FROM video_groups WHERE id = ?)`,
+      params: ['AI', 1, 4, 1, 1],
     },
     {
       sql: `INSERT INTO video_group_translations (group_id, locale, translation)
-            VALUES (last_insert_rowid(), ?, ?)`,
+            SELECT last_insert_rowid(), ?, ?
+            WHERE changes() > 0`,
       params: ['en-US', 'AI'],
     },
   ])
@@ -522,8 +597,11 @@ test('rename statements update the canonical group and current locale translatio
     },
     {
       sql: `INSERT OR REPLACE INTO video_group_translations
-            (group_id, locale, translation) VALUES (?, ?, ?)`,
-      params: [2, 'en-US', 'Artificial Intelligence'],
+            (group_id, locale, translation)
+            SELECT ?, ?, ?
+            WHERE changes() > 0
+              AND EXISTS (SELECT 1 FROM video_groups WHERE id = ?)`,
+      params: [2, 'en-US', 'Artificial Intelligence', 2],
     },
   ])
 })
@@ -548,23 +626,38 @@ test('translation statements insert nonblank values and delete blank values in e
   assert.deepEqual(
     statements.map((statement) => statement.sql.trim().replace(/\s+/g, ' ')),
     [
-      'INSERT OR REPLACE INTO video_group_translations (group_id, locale, translation) VALUES (?, ?, ?)',
-      'DELETE FROM video_group_translations WHERE group_id = ? AND locale = ?',
-      'INSERT OR REPLACE INTO video_group_translations (group_id, locale, translation) VALUES (?, ?, ?)',
+      'INSERT OR REPLACE INTO video_group_translations (group_id, locale, translation) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM video_groups WHERE id = ?)',
+      'DELETE FROM video_group_translations WHERE group_id = ? AND locale = ? AND EXISTS (SELECT 1 FROM video_groups WHERE id = ?)',
+      'INSERT OR REPLACE INTO video_group_translations (group_id, locale, translation) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM video_groups WHERE id = ?)',
     ],
   )
   assert.deepEqual(statements.map((statement) => statement.params), [
-    [2, 'en-US', 'AI'],
-    [2, 'ja-JP'],
-    [2, 'zh-CN', '人工智能'],
+    [2, 'en-US', 'AI', 2],
+    [2, 'ja-JP', 2],
+    [2, 'zh-CN', '人工智能', 2],
   ])
 })
 
 test('delete statements detach videos, promote children, delete translations, then delete the group', () => {
   assert.deepEqual(buildDeleteVideoGroupStatements(2, 1), [
-    { sql: 'UPDATE videos SET group_id = NULL WHERE group_id = ?', params: [2] },
-    { sql: 'UPDATE video_groups SET parent_id = ? WHERE parent_id = ?', params: [1, 2] },
-    { sql: 'DELETE FROM video_group_translations WHERE group_id = ?', params: [2] },
+    {
+      sql: `UPDATE videos SET group_id = NULL
+            WHERE group_id = ?
+              AND EXISTS (SELECT 1 FROM video_groups WHERE id = ?)`,
+      params: [2, 2],
+    },
+    {
+      sql: `UPDATE video_groups SET parent_id = ?
+            WHERE parent_id = ?
+              AND EXISTS (SELECT 1 FROM video_groups AS target WHERE target.id = ?)`,
+      params: [1, 2, 2],
+    },
+    {
+      sql: `DELETE FROM video_group_translations
+            WHERE group_id = ?
+              AND EXISTS (SELECT 1 FROM video_groups WHERE id = ?)`,
+      params: [2, 2],
+    },
     { sql: 'DELETE FROM video_groups WHERE id = ?', params: [2] },
   ])
 })
