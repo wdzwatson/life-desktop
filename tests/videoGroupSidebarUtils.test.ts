@@ -13,6 +13,7 @@ import {
   getDirectVideoGroupCounts,
   getNextMenuFocusIndex,
   getVideoGroupCollapseEditorAction,
+  getVideoGroupMutationFailureFocusTarget,
   getVideoGroupTreeKeyboardAction,
   getVideoGroupAncestorIds,
   getVideoGroupDeleteImpact,
@@ -324,6 +325,13 @@ test('collapse blocks pending hidden editors, cancels idle hidden editors, and i
     ),
     'none',
   )
+})
+
+test('mutation failures map to the control that should regain focus', () => {
+  assert.equal(getVideoGroupMutationFailureFocusTarget('create'), 'inline')
+  assert.equal(getVideoGroupMutationFailureFocusTarget('rename'), 'inline')
+  assert.equal(getVideoGroupMutationFailureFocusTarget('translation'), 'translation')
+  assert.equal(getVideoGroupMutationFailureFocusTarget('delete'), 'delete-cancel')
 })
 
 test('toggleExpandedVideoGroup toggles one group without mutating the current set', () => {

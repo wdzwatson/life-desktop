@@ -323,6 +323,19 @@ export function getVideoGroupCollapseEditorAction(
   return isPending ? ('block' as const) : ('cancel' as const)
 }
 
+export function getVideoGroupMutationFailureFocusTarget(
+  operation: 'create' | 'rename',
+): 'inline'
+export function getVideoGroupMutationFailureFocusTarget(operation: 'translation'): 'translation'
+export function getVideoGroupMutationFailureFocusTarget(operation: 'delete'): 'delete-cancel'
+export function getVideoGroupMutationFailureFocusTarget(
+  operation: 'create' | 'rename' | 'translation' | 'delete',
+) {
+  if (operation === 'create' || operation === 'rename') return 'inline' as const
+  if (operation === 'translation') return 'translation' as const
+  return 'delete-cancel' as const
+}
+
 export function toggleExpandedVideoGroup(current: Set<number>, groupId: number) {
   const next = new Set(current)
   if (next.has(groupId)) next.delete(groupId)

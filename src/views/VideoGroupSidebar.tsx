@@ -39,6 +39,7 @@ import {
   getVideoGroupCollapseEditorAction,
   getVideoGroupDeleteImpact,
   getVideoGroupDisplayName,
+  getVideoGroupMutationFailureFocusTarget,
   getVideoGroupTreeKeyboardAction,
   getVideoGroupTranslationDraft,
   resolveVideoGroupRovingFocusId,
@@ -99,6 +100,9 @@ type DeleteDialogState = {
 
 type SidebarFocusRequest =
   | { type: 'add' }
+  | { type: 'inline'; editor: InlineEditorState }
+  | { type: 'translation'; groupId: number }
+  | { type: 'delete-cancel'; groupId: number }
   | { type: 'group'; groupId: number; waitForMount: boolean }
 
 const CONTEXT_MENU_WIDTH = 208
@@ -235,6 +239,11 @@ export function VideoGroupSidebar({
     () => flattenVisibleVideoGroupTree(tree, expandedGroupIds),
     [expandedGroupIds, tree],
   )
+  const renamingGroupId = inlineEditor?.mode === 'rename' ? inlineEditor.groupId : null
+  const focusableRows = useMemo(
+    () => visibleRows.filter((row) => row.id !== renamingGroupId),
+    [renamingGroupId, visibleRows],
+  )
 
   const restoreOriginFocus = useCallback(() => {
     if (originatingRowRef.current?.isConnected) originatingRowRef.current.focus()
@@ -282,20 +291,68 @@ export function VideoGroupSidebar({
     setExpandedGroupIds((current) => expandVideoGroupWithAncestors(current, groups, activeGroupId))
   }, [activeGroupId, groups])
 
-  const renamingGroupId = inlineEditor?.mode === 'rename' ? inlineEditor.groupId : null
   useEffect(() => {
-    const focusableRows = visibleRows.filter((row) => row.id !== renamingGroupId)
     const visibleIds = focusableRows.map((row) => row.id)
     setFocusedGroupId((current) =>
       resolveVideoGroupRovingFocusId(visibleIds, current, activeGroupId),
     )
-  }, [activeGroupId, renamingGroupId, visibleRows])
+  }, [activeGroupId, focusableRows])
 
   useEffect(() => {
     if (!focusRequest) return
     if (focusRequest.type === 'add') {
       addButtonRef.current?.focus()
       setFocusRequest(null)
+      return
+    }
+    if (focusRequest.type === 'inline') {
+      const editorTargetExists =
+        focusRequest.editor.mode === 'create'
+          ? focusRequest.editor.parentId == null ||
+            groupsByIdRef.current.has(focusRequest.editor.parentId)
+          : groupsByIdRef.current.has(focusRequest.editor.groupId)
+      if (
+        !editorTargetExists ||
+        !isSameInlineEditor(inlineEditorRef.current, focusRequest.editor)
+      ) {
+        setFocusRequest(null)
+        return
+      }
+      const input = inlineInputRef.current
+      if (input?.isConnected && !input.disabled) {
+        input.focus()
+        setFocusRequest(null)
+      }
+      return
+    }
+    if (focusRequest.type === 'translation') {
+      if (
+        translationDialogRef.current?.groupId !== focusRequest.groupId ||
+        !groupsByIdRef.current.has(focusRequest.groupId)
+      ) {
+        setFocusRequest(null)
+        return
+      }
+      const input = translationInputRef.current
+      if (input?.isConnected && !input.disabled) {
+        input.focus()
+        setFocusRequest(null)
+      }
+      return
+    }
+    if (focusRequest.type === 'delete-cancel') {
+      if (
+        deleteDialogRef.current?.groupId !== focusRequest.groupId ||
+        !groupsByIdRef.current.has(focusRequest.groupId)
+      ) {
+        setFocusRequest(null)
+        return
+      }
+      const button = deleteCancelButtonRef.current
+      if (button?.isConnected && !button.disabled) {
+        button.focus()
+        setFocusRequest(null)
+      }
       return
     }
 
@@ -308,7 +365,7 @@ export function VideoGroupSidebar({
       addButtonRef.current?.focus()
       setFocusRequest(null)
     }
-  }, [focusRequest, visibleRows])
+  }, [deletePending, focusRequest, focusableRows, inlinePending, translationPending])
 
   useEffect(() => {
     if (renamingGroupId == null) return
@@ -440,6 +497,10 @@ export function VideoGroupSidebar({
       }
       if (!result.ok) {
         setInlineEditor({ ...inlineEditor, error: result.error })
+        setFocusRequest({
+          type: getVideoGroupMutationFailureFocusTarget(inlineEditor.mode),
+          editor: inlineEditor,
+        })
         return
       }
       setInlineEditor(null)
@@ -475,6 +536,10 @@ export function VideoGroupSidebar({
               : 'videos.group_update_failed',
           ),
         ),
+      })
+      setFocusRequest({
+        type: getVideoGroupMutationFailureFocusTarget(inlineEditor.mode),
+        editor: inlineEditor,
       })
     } finally {
       inlinePendingRef.current = false
@@ -572,6 +637,10 @@ export function VideoGroupSidebar({
       }
       if (!result.ok) {
         setTranslationDialog({ ...translationDialog, error: result.error })
+        setFocusRequest({
+          type: getVideoGroupMutationFailureFocusTarget('translation'),
+          groupId: translationDialog.groupId,
+        })
         return
       }
       setTranslationDialog(null)
@@ -584,6 +653,10 @@ export function VideoGroupSidebar({
         setTranslationDialog({
           ...translationDialog,
           error: getAsyncError(error, t('videos.group_update_failed')),
+        })
+        setFocusRequest({
+          type: getVideoGroupMutationFailureFocusTarget('translation'),
+          groupId: translationDialog.groupId,
         })
       }
     } finally {
@@ -631,6 +704,10 @@ export function VideoGroupSidebar({
       }
       if (!result.ok) {
         setDeleteDialog({ ...deleteDialog, error: result.error })
+        setFocusRequest({
+          type: getVideoGroupMutationFailureFocusTarget('delete'),
+          groupId: deleteDialog.groupId,
+        })
         return
       }
       setDeleteDialog(null)
@@ -643,6 +720,10 @@ export function VideoGroupSidebar({
         setDeleteDialog({
           ...deleteDialog,
           error: getAsyncError(error, t('videos.group_delete_failed')),
+        })
+        setFocusRequest({
+          type: getVideoGroupMutationFailureFocusTarget('delete'),
+          groupId: deleteDialog.groupId,
         })
       }
     } finally {
@@ -696,7 +777,7 @@ export function VideoGroupSidebar({
     groupId: number,
   ) => {
     const action = getVideoGroupTreeKeyboardAction(
-      visibleRows,
+      focusableRows,
       expandedGroupIds,
       groupId,
       event.key,
