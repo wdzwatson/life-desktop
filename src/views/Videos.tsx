@@ -776,6 +776,18 @@ export const Videos: React.FC = () => {
         showToast(error)
         return { ok: false, error }
       }
+      const translationResult = await api.dbQuery(
+        'videos',
+        `INSERT OR REPLACE INTO video_group_translations
+          (group_id, locale, translation) VALUES (?, ?, ?)`,
+        [group.id, i18n.language, name],
+      )
+      if (!translationResult?.success) {
+        const error = translationResult?.error || fallbackError
+        await loadData()
+        showToast(error)
+        return { ok: false, error }
+      }
       const reloadResult = await loadData()
       if (!reloadResult.ok) {
         showToast(reloadResult.error)
