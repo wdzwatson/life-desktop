@@ -39,6 +39,7 @@ import {
 } from './bookReaderUtils'
 import { BookCategorySidebar, type BookShelf } from './BookCategorySidebar'
 import { AccessibleDialog } from '../components/AccessibleDialog'
+import { getConfiguredLocales } from '../localeRegistry'
 import {
   buildBookCategoryMigrationStatements,
   buildCategoryStorageAliasMap,
@@ -46,15 +47,14 @@ import {
   isReservedBookCategory,
 } from './bookCategorySidebarUtils'
 
-export const SUPPORTED_LOCALES = [
-  { code: 'zh-CN', label: '简体中文' },
-  { code: 'en-US', label: 'English' },
-]
-
 export const Books: React.FC = () => {
   const { t, i18n } = useTranslation()
   const showToast = useAppStore((state) => state.showToast)
   const userId = useAppStore((state) => state.userId)
+  const configuredLocales = useMemo(
+    () => getConfiguredLocales(i18n.language),
+    [i18n.language],
+  )
 
   // DB States
   const [categories, setCategories] = useState<any[]>([])
@@ -386,7 +386,7 @@ export const Books: React.FC = () => {
         translation.locale === currentLocale,
     )
     const otherTranslations: { [key: string]: string } = {}
-    SUPPORTED_LOCALES.forEach((locale) => {
+    configuredLocales.forEach((locale) => {
       if (locale.code === currentLocale) return
       const translation = translations.find(
         (candidate) =>
@@ -525,7 +525,7 @@ export const Books: React.FC = () => {
         },
       ]
 
-      for (const locale of SUPPORTED_LOCALES) {
+      for (const locale of configuredLocales) {
         if (locale.code === i18n.language) continue
         const transValue = (editCatTrans[locale.code] || '').trim() || newName
         statements.push({
@@ -3136,7 +3136,7 @@ export const Books: React.FC = () => {
                   gap: '8px',
                 }}
               >
-                {SUPPORTED_LOCALES.filter((l) => l.code !== i18n.language).map((locale) => (
+                {configuredLocales.filter((l) => l.code !== i18n.language).map((locale) => (
                   <div
                     key={locale.code}
                     style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}

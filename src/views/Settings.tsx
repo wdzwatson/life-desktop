@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
+import { getConfiguredLocales } from '../localeRegistry'
 import { clampVideoConcurrentDownloads } from './videoLibraryUtils'
 import {
   Palette,
@@ -20,7 +21,7 @@ interface UpdateInfo {
 }
 
 export const Settings: React.FC = () => {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const theme = useAppStore((state) => state.theme)
   const setTheme = useAppStore((state) => state.setTheme)
   const language = useAppStore((state) => state.language)
@@ -31,6 +32,10 @@ export const Settings: React.FC = () => {
   const showToast = useAppStore((state) => state.showToast)
   const loadInitialConfig = useAppStore((state) => state.loadInitialConfig)
   const signOut = useAppStore((state) => state.signOut)
+  const configuredLocales = useMemo(
+    () => getConfiguredLocales(i18n.language),
+    [i18n.language],
+  )
 
   // Settings tab switching
   const [activeMenu, setActiveMenu] = useState<
@@ -533,19 +538,18 @@ export const Settings: React.FC = () => {
                 <h3 style={{ fontSize: '15px', fontWeight: 800, marginBottom: '4px' }}>
                   {t('settings.lang_select')}
                 </h3>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                  <button
-                    className={`btn ${language === 'zh-CN' ? 'primary' : ''}`}
-                    onClick={() => setLanguage('zh-CN')}
-                  >
-                    简体中文 (Chinese)
-                  </button>
-                  <button
-                    className={`btn ${language === 'en-US' ? 'primary' : ''}`}
-                    onClick={() => setLanguage('en-US')}
-                  >
-                    English (US)
-                  </button>
+                <div
+                  style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}
+                >
+                  {configuredLocales.map((locale) => (
+                    <button
+                      key={locale.code}
+                      className={`btn ${language === locale.code ? 'primary' : ''}`}
+                      onClick={() => setLanguage(locale.code)}
+                    >
+                      {locale.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             </>

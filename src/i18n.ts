@@ -1,19 +1,11 @@
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
-import zhCN from './locales/zh-CN.json'
-import enUS from './locales/en-US.json'
+import { localeResources } from './localeRegistry'
 
 i18n.use(initReactI18next).init({
   lng: 'zh-CN', // Default language
   fallbackLng: 'en-US',
-  resources: {
-    'zh-CN': {
-      translation: zhCN,
-    },
-    'en-US': {
-      translation: enUS,
-    },
-  },
+  resources: localeResources,
   interpolation: {
     escapeValue: false, // React already escapes values
   },
