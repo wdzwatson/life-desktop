@@ -5,6 +5,7 @@ import {
   buildDeleteVideoGroupStatements,
   buildUpdateVideoGroupTranslationsStatements,
   buildVideoGroupTree,
+  expandVideoGroupWithAncestors,
   findSiblingCanonicalNameConflict,
   findSiblingDisplayNameConflict,
   flattenVisibleVideoGroupTree,
@@ -16,6 +17,7 @@ import {
   getVideoGroupDisplayName,
   getVideoGroupIdAfterDelete,
   normalizeVideoGroupDisplayName,
+  toggleExpandedVideoGroup,
 } from '../src/views/videoGroupSidebarUtils.ts'
 import type {
   VideoGroupRecord,
@@ -181,6 +183,36 @@ test('getVideoGroupAncestorIds returns root-to-parent ancestors and stops at cyc
     ),
     [2],
   )
+})
+
+test('toggleExpandedVideoGroup toggles one group without mutating the current set', () => {
+  const current = new Set([1, 4])
+  const collapsed = toggleExpandedVideoGroup(current, 1)
+  const expanded = toggleExpandedVideoGroup(current, 2)
+
+  assert.notEqual(collapsed, current)
+  assert.notEqual(expanded, current)
+  assert.deepEqual([...current], [1, 4])
+  assert.deepEqual([...collapsed], [4])
+  assert.deepEqual([...expanded], [1, 4, 2])
+})
+
+test('expandVideoGroupWithAncestors preserves existing ids and adds root-to-parent ancestors', () => {
+  const current = new Set([4])
+  const expanded = expandVideoGroupWithAncestors(current, groups, 3)
+
+  assert.notEqual(expanded, current)
+  assert.deepEqual([...current], [4])
+  assert.deepEqual([...expanded], [4, 1, 2])
+})
+
+test('expandVideoGroupWithAncestors is cycle-safe', () => {
+  const cyclicGroups: VideoGroupRecord[] = [
+    { id: 1, name: 'A', parent_id: 2 },
+    { id: 2, name: 'B', parent_id: 1 },
+  ]
+
+  assert.deepEqual([...expandVideoGroupWithAncestors(new Set([9]), cyclicGroups, 1)], [9, 2])
 })
 
 test('direct counts ignore ungrouped videos and delete impact does not include descendants', () => {

@@ -198,6 +198,21 @@ export function getVideoGroupAncestorIds(groups: VideoGroupRecord[], groupId: nu
   return ancestors.reverse()
 }
 
+export function toggleExpandedVideoGroup(current: Set<number>, groupId: number) {
+  const next = new Set(current)
+  if (next.has(groupId)) next.delete(groupId)
+  else next.add(groupId)
+  return next
+}
+
+export function expandVideoGroupWithAncestors(
+  current: Set<number>,
+  groups: VideoGroupRecord[],
+  groupId: number,
+) {
+  return new Set([...current, ...getVideoGroupAncestorIds(groups, groupId)])
+}
+
 export function getDirectVideoGroupCounts(
   videos: Array<{ group_id?: number | null }>,
 ) {
