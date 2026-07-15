@@ -36,11 +36,12 @@ import {
   getContextMenuPosition,
   getDirectVideoGroupCounts,
   getNextMenuFocusIndex,
+  getVideoGroupCollapseEditorAction,
   getVideoGroupDeleteImpact,
   getVideoGroupDisplayName,
   getVideoGroupTreeKeyboardAction,
   getVideoGroupTranslationDraft,
-  isVideoGroupInSubtree,
+  resolveVideoGroupRovingFocusId,
 } from './videoGroupSidebarUtils'
 import { getChipStyle } from './videoLibraryUtils'
 import type {
@@ -284,12 +285,10 @@ export function VideoGroupSidebar({
   const renamingGroupId = inlineEditor?.mode === 'rename' ? inlineEditor.groupId : null
   useEffect(() => {
     const focusableRows = visibleRows.filter((row) => row.id !== renamingGroupId)
-    const visibleIds = new Set(focusableRows.map((row) => row.id))
-    setFocusedGroupId((current) => {
-      if (typeof activeGroupId === 'number' && visibleIds.has(activeGroupId)) return activeGroupId
-      if (current != null && visibleIds.has(current)) return current
-      return focusableRows[0]?.id ?? null
-    })
+    const visibleIds = focusableRows.map((row) => row.id)
+    setFocusedGroupId((current) =>
+      resolveVideoGroupRovingFocusId(visibleIds, current, activeGroupId),
+    )
   }, [activeGroupId, renamingGroupId, visibleRows])
 
   useEffect(() => {
@@ -664,14 +663,14 @@ export function VideoGroupSidebar({
 
   const collapseGroup = (groupId: number) => {
     const editor = inlineEditorRef.current
-    const shouldCancelEditor =
-      editor?.mode === 'create'
-        ? editor.parentId != null && isVideoGroupInSubtree(groups, groupId, editor.parentId)
-        : editor?.mode === 'rename'
-          ? editor.groupId !== groupId && isVideoGroupInSubtree(groups, groupId, editor.groupId)
-          : false
-
-    if (shouldCancelEditor) {
+    const editorAction = getVideoGroupCollapseEditorAction(
+      groups,
+      groupId,
+      editor,
+      inlinePendingRef.current,
+    )
+    if (editorAction === 'block') return false
+    if (editorAction === 'cancel') {
       setInlineEditor(null)
       requestGroupFocus(groupId)
     }
@@ -680,12 +679,16 @@ export function VideoGroupSidebar({
       next.delete(groupId)
       return next
     })
+    return true
   }
 
   const toggleGroupExpansion = (groupId: number) => {
-    focusTreeItem(groupId)
-    if (expandedGroupIds.has(groupId)) collapseGroup(groupId)
-    else setExpandedGroupIds((current) => new Set([...current, groupId]))
+    if (expandedGroupIds.has(groupId)) {
+      if (collapseGroup(groupId)) focusTreeItem(groupId)
+    } else {
+      focusTreeItem(groupId)
+      setExpandedGroupIds((current) => new Set([...current, groupId]))
+    }
   }
 
   const handleTreeItemKeyDown = (

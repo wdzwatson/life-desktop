@@ -12,6 +12,7 @@ import {
   getContextMenuPosition,
   getDirectVideoGroupCounts,
   getNextMenuFocusIndex,
+  getVideoGroupCollapseEditorAction,
   getVideoGroupTreeKeyboardAction,
   getVideoGroupAncestorIds,
   getVideoGroupDeleteImpact,
@@ -20,6 +21,7 @@ import {
   getVideoGroupTranslationDraft,
   isVideoGroupInSubtree,
   normalizeVideoGroupDisplayName,
+  resolveVideoGroupRovingFocusId,
   toggleExpandedVideoGroup,
 } from '../src/views/videoGroupSidebarUtils.ts'
 import type {
@@ -199,6 +201,13 @@ test('tree keyboard navigation expands, collapses, enters children, returns to p
   })
 })
 
+test('roving tree focus keeps current focus before falling back to active, first, or null', () => {
+  assert.equal(resolveVideoGroupRovingFocusId([1, 2, 3], 2, 1), 2)
+  assert.equal(resolveVideoGroupRovingFocusId([1, 2, 3], 9, 1), 1)
+  assert.equal(resolveVideoGroupRovingFocusId([2, 3], 9, 'all'), 2)
+  assert.equal(resolveVideoGroupRovingFocusId([], 2, 1), null)
+})
+
 test('tree construction surfaces orphaned and cyclic groups exactly once without recursive cycles', () => {
   const malformed: VideoGroupRecord[] = [
     { id: 1, name: 'Cycle A', parent_id: 2 },
@@ -275,6 +284,45 @@ test('subtree membership includes the ancestor, descendants, and remains cycle-s
       2,
     ),
     true,
+  )
+})
+
+test('collapse blocks pending hidden editors, cancels idle hidden editors, and ignores visible editors', () => {
+  assert.equal(
+    getVideoGroupCollapseEditorAction(
+      groups,
+      1,
+      { mode: 'create', parentId: 2 },
+      true,
+    ),
+    'block',
+  )
+  assert.equal(
+    getVideoGroupCollapseEditorAction(
+      groups,
+      1,
+      { mode: 'rename', groupId: 3 },
+      false,
+    ),
+    'cancel',
+  )
+  assert.equal(
+    getVideoGroupCollapseEditorAction(
+      groups,
+      1,
+      { mode: 'rename', groupId: 1 },
+      true,
+    ),
+    'none',
+  )
+  assert.equal(
+    getVideoGroupCollapseEditorAction(
+      groups,
+      1,
+      { mode: 'create', parentId: 4 },
+      true,
+    ),
+    'none',
   )
 })
 

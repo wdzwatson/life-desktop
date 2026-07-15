@@ -247,6 +247,20 @@ export function getVideoGroupTreeKeyboardAction(
   return { type: 'none' }
 }
 
+export function resolveVideoGroupRovingFocusId(
+  visibleIds: readonly number[],
+  currentFocusedId: number | null,
+  activeGroupId: VideoGroupFilterId,
+) {
+  if (currentFocusedId != null && visibleIds.includes(currentFocusedId)) {
+    return currentFocusedId
+  }
+  if (typeof activeGroupId === 'number' && visibleIds.includes(activeGroupId)) {
+    return activeGroupId
+  }
+  return visibleIds[0] ?? null
+}
+
 export function getVideoGroupAncestorIds(groups: VideoGroupRecord[], groupId: number) {
   const groupsById = new Map(groups.map((group) => [group.id, group]))
   const group = groupsById.get(groupId)
@@ -284,6 +298,29 @@ export function isVideoGroupInSubtree(
   }
 
   return false
+}
+
+export type VideoGroupCollapseEditor =
+  | { mode: 'create'; parentId: number | null }
+  | { mode: 'rename'; groupId: number }
+
+export function getVideoGroupCollapseEditorAction(
+  groups: VideoGroupRecord[],
+  collapsingGroupId: number,
+  editor: VideoGroupCollapseEditor | null,
+  isPending: boolean,
+) {
+  const wouldHideEditor =
+    editor?.mode === 'create'
+      ? editor.parentId != null &&
+        isVideoGroupInSubtree(groups, collapsingGroupId, editor.parentId)
+      : editor?.mode === 'rename'
+        ? editor.groupId !== collapsingGroupId &&
+          isVideoGroupInSubtree(groups, collapsingGroupId, editor.groupId)
+        : false
+
+  if (!wouldHideEditor) return 'none' as const
+  return isPending ? ('block' as const) : ('cancel' as const)
 }
 
 export function toggleExpandedVideoGroup(current: Set<number>, groupId: number) {
