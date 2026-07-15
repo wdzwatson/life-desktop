@@ -312,158 +312,161 @@ export function initializeUserDatabase(userDbDir: string) {
   // 4. Initialize Videos Database (videos.db)
   const videosDbPath = path.join(userDbDir, 'videos.db')
   const videosDb = new Database(videosDbPath)
-  videosDb.pragma('journal_mode = WAL')
-
-  videosDb.exec(`
-    CREATE TABLE IF NOT EXISTS videos (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      url TEXT,
-      path TEXT,
-      priority TEXT CHECK(priority IN ('high', 'mid', 'low')) DEFAULT 'low',
-      duration TEXT,
-      source TEXT DEFAULT 'local', -- 'bilibili', 'youtube', 'local', etc.
-      status TEXT ${VIDEO_STATUS_CHECK} DEFAULT 'not_downloaded',
-      subtitles_path TEXT,
-      favorite_time TEXT DEFAULT CURRENT_TIMESTAMP,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-  `)
-
-  const migrateVideoStatusCheck = () => {
-    const createSql = videosDb
-      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'videos'")
-      .get() as { sql?: string } | undefined
-    if (!createSql?.sql) return
-    const hasStatefulStatuses = createSql.sql.includes("'not_downloaded'")
-    const hasQueuedStatus = createSql.sql.includes("'queued'")
-    if (hasStatefulStatuses && hasQueuedStatus) return
-
-    const currentColumns = videosDb.prepare('PRAGMA table_info(videos)').all() as Array<{ name: string }>
-    const columnNames = currentColumns
-      .map((column) => column.name)
-      .filter((name) => VIDEO_COLUMN_DEFINITIONS[name])
-    const columnSql = columnNames.map((name) => `${name} ${VIDEO_COLUMN_DEFINITIONS[name]}`).join(',\n')
-    const insertColumns = columnNames.join(', ')
+  try {
+    videosDb.pragma('journal_mode = WAL')
 
     videosDb.exec(`
-      PRAGMA foreign_keys = OFF;
+      CREATE TABLE IF NOT EXISTS videos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        url TEXT,
+        path TEXT,
+        priority TEXT CHECK(priority IN ('high', 'mid', 'low')) DEFAULT 'low',
+        duration TEXT,
+        source TEXT DEFAULT 'local', -- 'bilibili', 'youtube', 'local', etc.
+        status TEXT ${VIDEO_STATUS_CHECK} DEFAULT 'not_downloaded',
+        subtitles_path TEXT,
+        favorite_time TEXT DEFAULT CURRENT_TIMESTAMP,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
 
-      CREATE TABLE videos_new (
-        ${columnSql}
+    const migrateVideoStatusCheck = () => {
+      const createSql = videosDb
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'videos'")
+        .get() as { sql?: string } | undefined
+      if (!createSql?.sql) return
+      const hasStatefulStatuses = createSql.sql.includes("'not_downloaded'")
+      const hasQueuedStatus = createSql.sql.includes("'queued'")
+      if (hasStatefulStatuses && hasQueuedStatus) return
+
+      const currentColumns = videosDb.prepare('PRAGMA table_info(videos)').all() as Array<{ name: string }>
+      const columnNames = currentColumns
+        .map((column) => column.name)
+        .filter((name) => VIDEO_COLUMN_DEFINITIONS[name])
+      const columnSql = columnNames.map((name) => `${name} ${VIDEO_COLUMN_DEFINITIONS[name]}`).join(',\n')
+      const insertColumns = columnNames.join(', ')
+
+      videosDb.exec(`
+        PRAGMA foreign_keys = OFF;
+
+        CREATE TABLE videos_new (
+          ${columnSql}
+        );
+
+        INSERT INTO videos_new (${insertColumns})
+        SELECT ${insertColumns}
+        FROM videos;
+
+        DROP TABLE videos;
+        ALTER TABLE videos_new RENAME TO videos;
+
+        PRAGMA foreign_keys = ON;
+      `)
+    }
+
+    migrateVideoStatusCheck()
+
+    const videoColumns = videosDb.prepare('PRAGMA table_info(videos)').all() as Array<{ name: string }>
+    const videoColumnNames = new Set(videoColumns.map((column) => column.name))
+    const addVideoColumn = (name: string, definition: string) => {
+      if (!videoColumnNames.has(name)) {
+        videosDb.prepare(`ALTER TABLE videos ADD COLUMN ${name} ${definition}`).run()
+        videoColumnNames.add(name)
+      }
+    }
+
+    addVideoColumn('group_id', 'INTEGER')
+    addVideoColumn('source_id', 'TEXT')
+    addVideoColumn('source_cid', 'TEXT')
+    addVideoColumn('source_url', 'TEXT')
+    addVideoColumn('playlist_id', 'TEXT')
+    addVideoColumn('playlist_title', 'TEXT')
+    addVideoColumn('part_index', 'INTEGER')
+    addVideoColumn('thumbnail_url', 'TEXT')
+    addVideoColumn('local_path', 'TEXT')
+    addVideoColumn('selected_quality', "TEXT DEFAULT 'best'")
+    addVideoColumn('parse_status', "TEXT DEFAULT 'ok'")
+    addVideoColumn('diagnostic_message', 'TEXT')
+    addVideoColumn('duration_seconds', 'INTEGER')
+    addVideoColumn('download_progress', 'REAL')
+    addVideoColumn('download_error', 'TEXT')
+    addVideoColumn('invalid_reason', 'TEXT')
+    addVideoColumn('download_batch_id', 'INTEGER')
+    addVideoColumn('download_batch_order', 'INTEGER')
+    addVideoColumn('downloaded_at', 'TEXT')
+    addVideoColumn('created_at', 'TEXT DEFAULT CURRENT_TIMESTAMP')
+    addVideoColumn('updated_at', 'TEXT DEFAULT CURRENT_TIMESTAMP')
+
+    videosDb.exec(`
+      CREATE TABLE IF NOT EXISTS video_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        parent_id INTEGER,
+        sort_order INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
 
-      INSERT INTO videos_new (${insertColumns})
-      SELECT ${insertColumns}
-      FROM videos;
+      CREATE TABLE IF NOT EXISTS video_tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        color TEXT DEFAULT '#64748b',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
 
-      DROP TABLE videos;
-      ALTER TABLE videos_new RENAME TO videos;
+      CREATE TABLE IF NOT EXISTS video_tag_links (
+        video_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL,
+        PRIMARY KEY (video_id, tag_id),
+        FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE,
+        FOREIGN KEY (tag_id) REFERENCES video_tags(id) ON DELETE CASCADE
+      );
 
-      PRAGMA foreign_keys = ON;
+      CREATE TABLE IF NOT EXISTS video_download_batches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        batch_key TEXT NOT NULL UNIQUE,
+        source_url TEXT,
+        source TEXT DEFAULT 'other',
+        title TEXT,
+        item_count INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'downloading',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
     `)
-  }
 
-  migrateVideoStatusCheck()
+    ensureVideoGroupSchema(videosDb)
 
-  const videoColumns = videosDb.prepare('PRAGMA table_info(videos)').all() as Array<{ name: string }>
-  const videoColumnNames = new Set(videoColumns.map((column) => column.name))
-  const addVideoColumn = (name: string, definition: string) => {
-    if (!videoColumnNames.has(name)) {
-      videosDb.prepare(`ALTER TABLE videos ADD COLUMN ${name} ${definition}`).run()
-      videoColumnNames.add(name)
+    try {
+      videosDb
+        .prepare(
+          `
+          UPDATE videos
+          SET status = 'not_downloaded'
+          WHERE status IS NULL OR status = 'unclassified'
+          `,
+        )
+        .run()
+      videosDb
+        .prepare(
+          `
+          UPDATE videos
+          SET status = 'download_failed',
+              download_error = COALESCE(download_error, 'Download was interrupted. Retry is available.'),
+              diagnostic_message = COALESCE(diagnostic_message, 'Download was interrupted. Retry is available.')
+          WHERE status IN ('queued', 'downloading')
+          `,
+        )
+        .run()
+    } catch (error) {
+      console.error('Failed to normalize legacy video statuses:', error)
     }
+  } finally {
+    videosDb.close()
   }
-
-  addVideoColumn('group_id', 'INTEGER')
-  addVideoColumn('source_id', 'TEXT')
-  addVideoColumn('source_cid', 'TEXT')
-  addVideoColumn('source_url', 'TEXT')
-  addVideoColumn('playlist_id', 'TEXT')
-  addVideoColumn('playlist_title', 'TEXT')
-  addVideoColumn('part_index', 'INTEGER')
-  addVideoColumn('thumbnail_url', 'TEXT')
-  addVideoColumn('local_path', 'TEXT')
-  addVideoColumn('selected_quality', "TEXT DEFAULT 'best'")
-  addVideoColumn('parse_status', "TEXT DEFAULT 'ok'")
-  addVideoColumn('diagnostic_message', 'TEXT')
-  addVideoColumn('duration_seconds', 'INTEGER')
-  addVideoColumn('download_progress', 'REAL')
-  addVideoColumn('download_error', 'TEXT')
-  addVideoColumn('invalid_reason', 'TEXT')
-  addVideoColumn('download_batch_id', 'INTEGER')
-  addVideoColumn('download_batch_order', 'INTEGER')
-  addVideoColumn('downloaded_at', 'TEXT')
-  addVideoColumn('created_at', 'TEXT DEFAULT CURRENT_TIMESTAMP')
-  addVideoColumn('updated_at', 'TEXT DEFAULT CURRENT_TIMESTAMP')
-
-  videosDb.exec(`
-    CREATE TABLE IF NOT EXISTS video_groups (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      parent_id INTEGER,
-      sort_order INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS video_tags (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
-      color TEXT DEFAULT '#64748b',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS video_tag_links (
-      video_id INTEGER NOT NULL,
-      tag_id INTEGER NOT NULL,
-      PRIMARY KEY (video_id, tag_id),
-      FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE,
-      FOREIGN KEY (tag_id) REFERENCES video_tags(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS video_download_batches (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      batch_key TEXT NOT NULL UNIQUE,
-      source_url TEXT,
-      source TEXT DEFAULT 'other',
-      title TEXT,
-      item_count INTEGER DEFAULT 0,
-      status TEXT DEFAULT 'downloading',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-  `)
-
-  ensureVideoGroupSchema(videosDb)
-
-  try {
-    videosDb
-      .prepare(
-        `
-        UPDATE videos
-        SET status = 'not_downloaded'
-        WHERE status IS NULL OR status = 'unclassified'
-        `,
-      )
-      .run()
-    videosDb
-      .prepare(
-        `
-        UPDATE videos
-        SET status = 'download_failed',
-            download_error = COALESCE(download_error, 'Download was interrupted. Retry is available.'),
-            diagnostic_message = COALESCE(diagnostic_message, 'Download was interrupted. Retry is available.')
-        WHERE status IN ('queued', 'downloading')
-        `,
-      )
-      .run()
-  } catch (error) {
-    console.error('Failed to normalize legacy video statuses:', error)
-  }
-  videosDb.close()
 
   // 5. Initialize Vault Database (vault.db)
   const vaultDbPath = path.join(userDbDir, 'vault.db')

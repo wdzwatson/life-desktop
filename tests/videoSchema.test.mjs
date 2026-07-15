@@ -9,11 +9,33 @@ import { initializeUserDatabase } from '../electron/db/schema.ts'
 const VIDEO_GROUP_NAME_INDEX = 'video_groups_parent_name_unique'
 
 function assertVideoGroupLocalizationSchema(db) {
-  const translationColumns = db
-    .prepare('PRAGMA table_info(video_group_translations)')
+  const translationColumns = db.prepare('PRAGMA table_info(video_group_translations)').all()
+  assert.deepEqual(
+    translationColumns.map((column) => ({
+      name: column.name,
+      type: column.type,
+      notnull: column.notnull,
+      pk: column.pk,
+    })),
+    [
+      { name: 'group_id', type: 'INTEGER', notnull: 1, pk: 1 },
+      { name: 'locale', type: 'TEXT', notnull: 1, pk: 2 },
+      { name: 'translation', type: 'TEXT', notnull: 1, pk: 0 },
+    ],
+  )
+
+  const translationForeignKeys = db
+    .prepare('PRAGMA foreign_key_list(video_group_translations)')
     .all()
-    .map((column) => column.name)
-  assert.deepEqual(translationColumns, ['group_id', 'locale', 'translation'])
+  assert.deepEqual(
+    translationForeignKeys.map((foreignKey) => ({
+      table: foreignKey.table,
+      from: foreignKey.from,
+      to: foreignKey.to,
+      on_delete: foreignKey.on_delete,
+    })),
+    [{ table: 'video_groups', from: 'group_id', to: 'id', on_delete: 'CASCADE' }],
+  )
 
   const index = db
     .prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?")
@@ -267,7 +289,18 @@ test('failed legacy rebuild preserves the original global unique schema atomical
   `)
   legacyDb.close()
 
-  assert.throws(() => initializeUserDatabase(dir), /UNIQUE constraint failed/i)
+  const originalClose = Database.prototype.close
+  let closedVideosDatabase = false
+  Database.prototype.close = function (...args) {
+    if (this.name === dbPath) closedVideosDatabase = true
+    return originalClose.apply(this, args)
+  }
+  try {
+    assert.throws(() => initializeUserDatabase(dir), /UNIQUE constraint failed/i)
+  } finally {
+    Database.prototype.close = originalClose
+  }
+  assert.equal(closedVideosDatabase, true)
 
   const unchangedDb = new Database(dbPath)
   assert.deepEqual(
@@ -318,3 +351,153 @@ test('failed normalized index creation rolls back no-rebuild group schema change
   assert.equal(hasSchemaObject(unchangedDb, 'table', 'video_group_translations'), false)
   unchangedDb.close()
 })
+
+test('same-named malformed video group index is replaced with the normalized unique index', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-schema-wrong-index-'))
+  const dbPath = path.join(dir, 'videos.db')
+  const malformedDb = new Database(dbPath)
+  malformedDb.exec(`
+    CREATE TABLE video_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      parent_id INTEGER,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX ${VIDEO_GROUP_NAME_INDEX} ON video_groups (name);
+    INSERT INTO video_groups (id, name) VALUES (1, 'Parent');
+  `)
+  malformedDb.close()
+
+  initializeUserDatabase(dir)
+
+  const repairedDb = new Database(dbPath)
+  assertVideoGroupLocalizationSchema(repairedDb)
+  const insertGroup = repairedDb.prepare('INSERT INTO video_groups (name, parent_id) VALUES (?, ?)')
+  assert.doesNotThrow(() => insertGroup.run('AI', 1))
+  assert.throws(() => insertGroup.run(' ai ', 1), /UNIQUE constraint failed/i)
+  repairedDb.close()
+})
+
+test('same-named unique index with the wrong expression is replaced', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-schema-wrong-index-expression-'))
+  const dbPath = path.join(dir, 'videos.db')
+  const malformedDb = new Database(dbPath)
+  malformedDb.exec(`
+    CREATE TABLE video_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      parent_id INTEGER,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX ${VIDEO_GROUP_NAME_INDEX}
+    ON video_groups (COALESCE(parent_id, '-1'), LOWER(TRIM(name)));
+  `)
+  malformedDb.close()
+
+  initializeUserDatabase(dir)
+
+  const repairedDb = new Database(dbPath)
+  assertVideoGroupLocalizationSchema(repairedDb)
+  const insertGroup = repairedDb.prepare('INSERT INTO video_groups (name, parent_id) VALUES (?, ?)')
+  insertGroup.run('AI', null)
+  assert.throws(() => insertGroup.run(' ai ', -1), /UNIQUE constraint failed/i)
+  repairedDb.close()
+})
+
+test('malformed translation table is replaced without losing valid translations and cascades deletes', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-schema-wrong-translations-'))
+  const dbPath = path.join(dir, 'videos.db')
+  const malformedDb = new Database(dbPath)
+  malformedDb.exec(`
+    CREATE TABLE video_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      parent_id INTEGER,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    INSERT INTO video_groups (id, name) VALUES (1, 'Parent');
+    CREATE TABLE video_group_translations (
+      group_id INTEGER,
+      locale TEXT,
+      translation TEXT
+    );
+    INSERT INTO video_group_translations (group_id, locale, translation)
+    VALUES (1, 'en-US', 'Parent');
+  `)
+  malformedDb.close()
+
+  initializeUserDatabase(dir)
+
+  const repairedDb = new Database(dbPath)
+  assertVideoGroupLocalizationSchema(repairedDb)
+  assert.deepEqual(repairedDb.prepare('SELECT * FROM video_group_translations').get(), {
+    group_id: 1,
+    locale: 'en-US',
+    translation: 'Parent',
+  })
+  repairedDb.prepare('DELETE FROM video_groups WHERE id = 1').run()
+  assert.equal(
+    repairedDb.prepare('SELECT COUNT(*) AS count FROM video_group_translations').get().count,
+    0,
+  )
+  repairedDb.close()
+})
+
+for (const malformedTranslations of [
+  {
+    name: 'duplicate translation rows',
+    rows: "(1, 'en-US', 'Parent'), (1, 'en-US', 'Duplicate')",
+  },
+  {
+    name: 'orphaned translation rows',
+    rows: "(999, 'en-US', 'Missing group')",
+  },
+]) {
+  test(`unsafe ${malformedTranslations.name} fail without replacing the malformed table`, () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-schema-unsafe-translations-'))
+    const dbPath = path.join(dir, 'videos.db')
+    const malformedDb = new Database(dbPath)
+    malformedDb.exec(`
+      CREATE TABLE video_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        parent_id INTEGER,
+        sort_order INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT INTO video_groups (id, name) VALUES (1, 'Parent');
+      CREATE TABLE video_group_translations (
+        group_id INTEGER,
+        locale TEXT,
+        translation TEXT
+      );
+      INSERT INTO video_group_translations (group_id, locale, translation)
+      VALUES ${malformedTranslations.rows};
+    `)
+    malformedDb.close()
+
+    assert.throws(() => initializeUserDatabase(dir))
+
+    const unchangedDb = new Database(dbPath)
+    assert.deepEqual(
+      unchangedDb
+        .prepare('PRAGMA table_info(video_group_translations)')
+        .all()
+        .map((column) => column.notnull),
+      [0, 0, 0],
+    )
+    const rowCount = unchangedDb
+      .prepare('SELECT COUNT(*) AS count FROM video_group_translations')
+      .get().count
+    assert.equal(rowCount, malformedTranslations.name.startsWith('duplicate') ? 2 : 1)
+    assert.equal(hasSchemaObject(unchangedDb, 'index', VIDEO_GROUP_NAME_INDEX), false)
+    unchangedDb.close()
+  })
+}
