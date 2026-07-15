@@ -540,6 +540,25 @@ export function buildCreateVideoGroupStatements(
   ]
 }
 
+export function buildRenameVideoGroupStatements(
+  groupId: number,
+  name: string,
+  locale: string,
+): DbTransactionStatement[] {
+  const normalizedName = name.trim()
+  return [
+    {
+      sql: 'UPDATE video_groups SET name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+      params: [normalizedName, groupId],
+    },
+    {
+      sql: `INSERT OR REPLACE INTO video_group_translations
+            (group_id, locale, translation) VALUES (?, ?, ?)`,
+      params: [groupId, locale, normalizedName],
+    },
+  ]
+}
+
 export function buildUpdateVideoGroupTranslationsStatements(
   groupId: number,
   values: Record<string, string>,

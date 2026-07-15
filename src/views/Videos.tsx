@@ -70,9 +70,17 @@ import {
 import type { VideoSortState } from './videoStateUtils'
 import { VideoGroupSidebar } from './VideoGroupSidebar'
 import type { VideoGroupMutationResult } from './VideoGroupSidebar'
+import { getConfiguredLocales } from '../localeRegistry'
 import {
+  buildCreateVideoGroupStatements,
+  buildDeleteVideoGroupStatements,
+  buildRenameVideoGroupStatements,
+  buildUpdateVideoGroupTranslationsStatements,
+  findSiblingCanonicalNameConflict,
+  findSiblingDisplayNameConflict,
   localizeVideoGroups,
   localizeVideoRecords,
+  normalizeVideoGroupDisplayName,
   repairVideoGroupSelection,
 } from './videoGroupSidebarUtils'
 import type {
@@ -254,8 +262,7 @@ export const Videos: React.FC = () => {
   }
 
   const finishFailedGroupMutation = async (error: string): Promise<VideoGroupMutationResult> => {
-    const reloadResult = await loadData()
-    showToast(reloadResult.ok ? error : `${error}: ${reloadResult.error}`)
+    await loadData()
     return { ok: false, error }
   }
 
@@ -785,14 +792,26 @@ export const Videos: React.FC = () => {
     parentId: number | null,
     rawName: string,
   ): Promise<VideoGroupMutationResult> => {
-    const fallbackError = t('videos.toast_group_save_failed')
-    if (!api) return { ok: false, error: fallbackError }
+    const fallbackError = t('videos.group_create_failed')
+    if (!api?.dbTransaction) return { ok: false, error: fallbackError }
     try {
-      const name = normalizeVideoGroupName(rawName)
+      const name = normalizeVideoGroupDisplayName(rawName)
       if (!name) {
-        const error = t('videos.toast_group_name_required')
-        showToast(error)
-        return { ok: false, error }
+        return { ok: false, error: t('videos.group_name_required') }
+      }
+      if (findSiblingCanonicalNameConflict({ groups, parentId, name })) {
+        return { ok: false, error: t('videos.group_name_duplicate') }
+      }
+      if (
+        findSiblingDisplayNameConflict({
+          groups,
+          translations: groupTranslations,
+          parentId,
+          locale: i18n.language,
+          name,
+        })
+      ) {
+        return { ok: false, error: t('videos.group_name_duplicate') }
       }
       const sortOrder =
         groups.reduce(
@@ -802,29 +821,17 @@ export const Videos: React.FC = () => {
               : highest,
           0,
         ) + 1
-      const result = await api.dbQuery(
+      const result = await api.dbTransaction(
         'videos',
-        'INSERT INTO video_groups (name, parent_id, sort_order) VALUES (?, ?, ?)',
-        [name, parentId, sortOrder],
+        buildCreateVideoGroupStatements(name, parentId, i18n.language, sortOrder),
       )
       if (!result?.success) {
-        const error = result?.error || fallbackError
-        showToast(error)
-        return { ok: false, error }
+        return finishFailedGroupMutation(fallbackError)
       }
-      const insertedId = Number(result?.data?.lastInsertRowid)
+      const insertedId = Number(result?.data?.[0]?.lastInsertRowid)
       const groupId = Number.isFinite(insertedId) && insertedId > 0 ? insertedId : undefined
       if (groupId === undefined) {
         return finishFailedGroupMutation(fallbackError)
-      }
-      const translationResult = await api.dbQuery(
-        'videos',
-        `INSERT OR REPLACE INTO video_group_translations
-          (group_id, locale, translation) VALUES (?, ?, ?)`,
-        [groupId, i18n.language, name],
-      )
-      if (!translationResult?.success) {
-        return finishFailedGroupMutation(translationResult?.error || fallbackError)
       }
 
       const optimisticGroup: VideoGroupRecord = {
@@ -844,9 +851,8 @@ export const Videos: React.FC = () => {
       setActiveGroupId(groupId)
       await finishSuccessfulGroupMutation('videos.toast_group_created')
       return { ok: true, groupId }
-    } catch (cause) {
-      const error = cause instanceof Error && cause.message ? cause.message : fallbackError
-      return finishFailedGroupMutation(error)
+    } catch {
+      return finishFailedGroupMutation(fallbackError)
     }
   }
 
@@ -854,56 +860,68 @@ export const Videos: React.FC = () => {
     group: VideoGroupRecord,
     rawName: string,
   ): Promise<VideoGroupMutationResult> => {
-    const fallbackError = t('videos.toast_group_save_failed')
-    if (!api) return { ok: false, error: fallbackError }
+    const fallbackError = t('videos.group_update_failed')
+    if (!api?.dbTransaction) return { ok: false, error: fallbackError }
     try {
-      const name = normalizeVideoGroupName(rawName)
-      if (!name) {
-        const error = t('videos.toast_group_name_required')
-        showToast(error)
-        return { ok: false, error }
+      const target = groups.find((candidate) => candidate.id === group.id)
+      if (!target) {
+        return finishFailedGroupMutation(t('videos.group_unavailable'))
       }
-      const result = await api.dbQuery(
+      const name = normalizeVideoGroupDisplayName(rawName)
+      if (!name) {
+        return { ok: false, error: t('videos.group_name_required') }
+      }
+      const parentId = target.parent_id ?? null
+      if (
+        findSiblingCanonicalNameConflict({
+          groups,
+          parentId,
+          name,
+          excludeGroupId: target.id,
+        })
+      ) {
+        return { ok: false, error: t('videos.group_name_duplicate') }
+      }
+      if (
+        findSiblingDisplayNameConflict({
+          groups,
+          translations: groupTranslations,
+          parentId,
+          locale: i18n.language,
+          name,
+          excludeGroupId: target.id,
+        })
+      ) {
+        return { ok: false, error: t('videos.group_name_duplicate') }
+      }
+      const result = await api.dbTransaction(
         'videos',
-        'UPDATE video_groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [name, group.id],
+        buildRenameVideoGroupStatements(target.id, name, i18n.language),
       )
       if (!result?.success) {
-        const error = result?.error || fallbackError
-        showToast(error)
-        return { ok: false, error }
-      }
-      const translationResult = await api.dbQuery(
-        'videos',
-        `INSERT OR REPLACE INTO video_group_translations
-          (group_id, locale, translation) VALUES (?, ?, ?)`,
-        [group.id, i18n.language, name],
-      )
-      if (!translationResult?.success) {
-        return finishFailedGroupMutation(translationResult?.error || fallbackError)
+        return finishFailedGroupMutation(fallbackError)
       }
 
       setGroups((current) =>
-        current.map((item) => (item.id === group.id ? { ...item, name } : item)),
+        current.map((item) => (item.id === target.id ? { ...item, name } : item)),
       )
       setGroupTranslations((current) =>
-        replaceVideoGroupTranslationValues(current, group.id, {
+        replaceVideoGroupTranslationValues(current, target.id, {
           [i18n.language]: name,
         }),
       )
       setLocalVideos((current) =>
         current.map((video) =>
-          video.group_id === group.id ? { ...video, group_name: name } : video,
+          video.group_id === target.id ? { ...video, group_name: name } : video,
         ),
       )
       setSelectedVideo((current: VideoRecord | null) =>
-        current?.group_id === group.id ? { ...current, group_name: name } : current,
+        current?.group_id === target.id ? { ...current, group_name: name } : current,
       )
       await finishSuccessfulGroupMutation('videos.toast_group_updated')
-      return { ok: true, groupId: group.id }
-    } catch (cause) {
-      const error = cause instanceof Error && cause.message ? cause.message : fallbackError
-      return finishFailedGroupMutation(error)
+      return { ok: true, groupId: target.id }
+    } catch {
+      return finishFailedGroupMutation(fallbackError)
     }
   }
 
@@ -911,130 +929,145 @@ export const Videos: React.FC = () => {
     group: VideoGroupRecord,
     values: Record<string, string>,
   ): Promise<VideoGroupMutationResult> => {
-    const fallbackError = t('videos.toast_group_save_failed')
-    if (!api) return { ok: false, error: fallbackError }
+    const fallbackError = t('videos.group_update_failed')
+    if (!api?.dbTransaction) return { ok: false, error: fallbackError }
     try {
-      const currentLocaleName = normalizeVideoGroupName(values[i18n.language])
-      if (currentLocaleName) {
-        const canonicalResult = await api.dbQuery(
-          'videos',
-          'UPDATE video_groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-          [currentLocaleName, group.id],
-        )
-        if (!canonicalResult?.success) {
-          const error = canonicalResult?.error || fallbackError
-          showToast(error)
-          return { ok: false, error }
+      const target = groups.find((candidate) => candidate.id === group.id)
+      if (!target) {
+        return finishFailedGroupMutation(t('videos.group_unavailable'))
+      }
+      const currentLocaleName = normalizeVideoGroupDisplayName(values[i18n.language])
+      const nextCanonicalName = currentLocaleName || target.name
+      const parentId = target.parent_id ?? null
+      if (
+        findSiblingCanonicalNameConflict({
+          groups,
+          parentId,
+          name: nextCanonicalName,
+          excludeGroupId: target.id,
+        })
+      ) {
+        return { ok: false, error: t('videos.group_name_duplicate') }
+      }
+
+      const configuredLocales = getConfiguredLocales(i18n.language)
+      const localeLabels = new Map(
+        configuredLocales.map((locale) => [locale.code, locale.label]),
+      )
+      const localesToValidate = new Set([
+        ...configuredLocales.map((locale) => locale.code),
+        ...Object.keys(values),
+      ])
+      for (const locale of localesToValidate) {
+        const finalDisplayName =
+          normalizeVideoGroupDisplayName(values[locale]) || nextCanonicalName
+        if (
+          findSiblingDisplayNameConflict({
+            groups,
+            translations: groupTranslations,
+            parentId,
+            locale,
+            name: finalDisplayName,
+            excludeGroupId: target.id,
+          })
+        ) {
+          return {
+            ok: false,
+            error: t('videos.group_translation_duplicate', {
+              language: localeLabels.get(locale) || locale,
+            }),
+          }
         }
       }
 
-      for (const [locale, rawValue] of Object.entries(values)) {
-        const translation = normalizeVideoGroupName(rawValue)
-        const result = translation
-          ? await api.dbQuery(
-              'videos',
-              `INSERT OR REPLACE INTO video_group_translations
-                (group_id, locale, translation) VALUES (?, ?, ?)`,
-              [group.id, locale, translation],
-            )
-          : await api.dbQuery(
-              'videos',
-              'DELETE FROM video_group_translations WHERE group_id = ? AND locale = ?',
-              [group.id, locale],
-            )
-        if (!result?.success) {
-          return finishFailedGroupMutation(result?.error || fallbackError)
-        }
+      const result = await api.dbTransaction('videos', [
+        {
+          sql: 'UPDATE video_groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+          params: [nextCanonicalName, target.id],
+        },
+        ...buildUpdateVideoGroupTranslationsStatements(target.id, values),
+      ])
+      if (!result?.success) {
+        return finishFailedGroupMutation(fallbackError)
       }
 
-      if (currentLocaleName) {
-        setGroups((current) =>
-          current.map((item) =>
-            item.id === group.id ? { ...item, name: currentLocaleName } : item,
-          ),
-        )
-        setLocalVideos((current) =>
-          current.map((video) =>
-            video.group_id === group.id
-              ? { ...video, group_name: currentLocaleName }
-              : video,
-          ),
-        )
-        setSelectedVideo((current: VideoRecord | null) =>
-          current?.group_id === group.id
-            ? { ...current, group_name: currentLocaleName }
-            : current,
-        )
-      }
+      const nextCurrentLocaleDisplayName = currentLocaleName || nextCanonicalName
+      setGroups((current) =>
+        current.map((item) =>
+          item.id === target.id ? { ...item, name: nextCanonicalName } : item,
+        ),
+      )
+      setLocalVideos((current) =>
+        current.map((video) =>
+          video.group_id === target.id
+            ? { ...video, group_name: nextCurrentLocaleDisplayName }
+            : video,
+        ),
+      )
+      setSelectedVideo((current: VideoRecord | null) =>
+        current?.group_id === target.id
+          ? { ...current, group_name: nextCurrentLocaleDisplayName }
+          : current,
+      )
       setGroupTranslations((current) =>
-        replaceVideoGroupTranslationValues(current, group.id, values),
+        replaceVideoGroupTranslationValues(current, target.id, values),
       )
       await finishSuccessfulGroupMutation('videos.toast_group_updated')
-      return { ok: true, groupId: group.id }
-    } catch (cause) {
-      const error = cause instanceof Error && cause.message ? cause.message : fallbackError
-      return finishFailedGroupMutation(error)
+      return { ok: true, groupId: target.id }
+    } catch {
+      return finishFailedGroupMutation(fallbackError)
     }
   }
 
   const handleDeleteGroup = async (
     group: VideoGroupRecord,
   ): Promise<VideoGroupMutationResult> => {
-    const fallbackError = t('videos.toast_group_save_failed')
-    if (!api) return { ok: false, error: fallbackError }
+    const fallbackError = t('videos.group_delete_failed')
+    if (!api?.dbTransaction) return { ok: false, error: fallbackError }
     try {
-      const detachResult = await api.dbQuery('videos', 'UPDATE videos SET group_id = NULL WHERE group_id = ?', [
-        group.id,
-      ])
-      if (!detachResult?.success) {
-        const error = detachResult?.error || fallbackError
-        showToast(error)
-        return { ok: false, error }
+      const target = groups.find((candidate) => candidate.id === group.id)
+      if (!target) {
+        return finishFailedGroupMutation(t('videos.group_unavailable'))
       }
-      const promoteResult = await api.dbQuery('videos', 'UPDATE video_groups SET parent_id = ? WHERE parent_id = ?', [
-        group.parent_id ?? null,
-        group.id,
-      ])
-      if (!promoteResult?.success) {
-        return finishFailedGroupMutation(promoteResult?.error || fallbackError)
-      }
-      const deleteResult = await api.dbQuery('videos', 'DELETE FROM video_groups WHERE id = ?', [group.id])
-      if (!deleteResult?.success) {
-        return finishFailedGroupMutation(deleteResult?.error || fallbackError)
+      const result = await api.dbTransaction(
+        'videos',
+        buildDeleteVideoGroupStatements(target.id, target.parent_id ?? null),
+      )
+      if (!result?.success) {
+        return finishFailedGroupMutation(fallbackError)
       }
 
       setGroups((current) =>
         current
-          .filter((item) => item.id !== group.id)
+          .filter((item) => item.id !== target.id)
           .map((item) =>
-            item.parent_id === group.id
-              ? { ...item, parent_id: group.parent_id ?? null }
+            item.parent_id === target.id
+              ? { ...item, parent_id: target.parent_id ?? null }
               : item,
           ),
       )
       setGroupTranslations((current) =>
-        current.filter((translation) => translation.group_id !== group.id),
+        current.filter((translation) => translation.group_id !== target.id),
       )
       setLocalVideos((current) =>
         current.map((video) =>
-          video.group_id === group.id
+          video.group_id === target.id
             ? { ...video, group_id: null, group_name: null }
             : video,
         ),
       )
-      setActiveGroupId((current) => (current === group.id ? 'all' : current))
-      setDraftGroupId((current) => (current === group.id ? null : current))
-      setParseImportGroupId((current) => (current === group.id ? null : current))
+      setActiveGroupId((current) => (current === target.id ? 'all' : current))
+      setDraftGroupId((current) => (current === target.id ? null : current))
+      setParseImportGroupId((current) => (current === target.id ? null : current))
       setSelectedVideo((current: VideoRecord | null) =>
-        current?.group_id === group.id
+        current?.group_id === target.id
           ? { ...current, group_id: null, group_name: null }
           : current,
       )
       await finishSuccessfulGroupMutation('videos.toast_group_deleted')
       return { ok: true }
-    } catch (cause) {
-      const error = cause instanceof Error && cause.message ? cause.message : fallbackError
-      return finishFailedGroupMutation(error)
+    } catch {
+      return finishFailedGroupMutation(fallbackError)
     }
   }
 

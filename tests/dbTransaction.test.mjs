@@ -9,6 +9,7 @@ import {
 import {
   buildCreateVideoGroupStatements,
   buildDeleteVideoGroupStatements,
+  buildRenameVideoGroupStatements,
   buildUpdateVideoGroupTranslationsStatements,
 } from '../src/views/videoGroupSidebarUtils.ts'
 
@@ -44,6 +45,7 @@ function createVideoGroupDatabase() {
       name TEXT NOT NULL,
       parent_id INTEGER,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (parent_id) REFERENCES video_groups(id)
     );
     CREATE TABLE video_group_translations (
@@ -228,6 +230,71 @@ test('create video group statements attach the trimmed locale translation to the
   }
 })
 
+test('rename video group statements change canonical and current locale translation together', () => {
+  const db = createVideoGroupDatabase()
+  try {
+    db.prepare('INSERT INTO video_groups (id, name) VALUES (?, ?)').run(2, 'AI')
+    db.prepare(
+      'INSERT INTO video_group_translations (group_id, locale, translation) VALUES (?, ?, ?)',
+    ).run(2, 'en-US', 'AI')
+
+    runDbTransaction(
+      db,
+      buildRenameVideoGroupStatements(2, '  Artificial Intelligence  ', 'en-US'),
+    )
+
+    assert.equal(
+      db.prepare('SELECT name FROM video_groups WHERE id = ?').get(2).name,
+      'Artificial Intelligence',
+    )
+    assert.equal(
+      db.prepare(
+        'SELECT translation FROM video_group_translations WHERE group_id = ? AND locale = ?',
+      ).get(2, 'en-US').translation,
+      'Artificial Intelligence',
+    )
+  } finally {
+    db.close()
+  }
+})
+
+test('rename video group statements roll back canonical update when translation write fails', () => {
+  const db = createVideoGroupDatabase()
+  try {
+    db.prepare('INSERT INTO video_groups (id, name) VALUES (?, ?)').run(2, 'AI')
+    db.prepare(
+      'INSERT INTO video_group_translations (group_id, locale, translation) VALUES (?, ?, ?)',
+    ).run(2, 'en-US', 'AI')
+    db.exec(`
+      CREATE TRIGGER block_video_group_translation_rename
+      BEFORE INSERT ON video_group_translations
+      WHEN NEW.group_id = 2 AND NEW.locale = 'en-US'
+      BEGIN
+        SELECT RAISE(ABORT, 'blocked video group translation rename');
+      END;
+    `)
+
+    assert.throws(
+      () =>
+        runDbTransaction(
+          db,
+          buildRenameVideoGroupStatements(2, 'Artificial Intelligence', 'en-US'),
+        ),
+      /blocked video group translation rename/,
+    )
+
+    assert.equal(db.prepare('SELECT name FROM video_groups WHERE id = ?').get(2).name, 'AI')
+    assert.equal(
+      db.prepare(
+        'SELECT translation FROM video_group_translations WHERE group_id = ? AND locale = ?',
+      ).get(2, 'en-US').translation,
+      'AI',
+    )
+  } finally {
+    db.close()
+  }
+})
+
 test('update video group translation statements replace nonblank locales and delete blank locales', () => {
   const db = createVideoGroupDatabase()
   try {
@@ -254,6 +321,46 @@ test('update video group translation statements replace nonblank locales and del
         { group_id: 2, locale: 'zh-CN', translation: '人工智能' },
       ],
     )
+  } finally {
+    db.close()
+  }
+})
+
+test('translation save rolls back canonical and prior locale writes when a later locale fails', () => {
+  const db = createVideoGroupDatabase()
+  try {
+    db.prepare('INSERT INTO video_groups (id, name) VALUES (?, ?)').run(2, 'AI')
+    db.prepare(
+      'INSERT INTO video_group_translations (group_id, locale, translation) VALUES (?, ?, ?)',
+    ).run(2, 'en-US', 'Old AI')
+    db.exec(`
+      CREATE TRIGGER block_zh_video_group_translation
+      BEFORE INSERT ON video_group_translations
+      WHEN NEW.group_id = 2 AND NEW.locale = 'zh-CN'
+      BEGIN
+        SELECT RAISE(ABORT, 'blocked zh video group translation');
+      END;
+    `)
+
+    assert.throws(
+      () =>
+        runDbTransaction(db, [
+          {
+            sql: 'UPDATE video_groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            params: ['Artificial Intelligence', 2],
+          },
+          ...buildUpdateVideoGroupTranslationsStatements(2, {
+            'en-US': 'Artificial Intelligence',
+            'zh-CN': '人工智能',
+          }),
+        ]),
+      /blocked zh video group translation/,
+    )
+
+    assert.equal(db.prepare('SELECT name FROM video_groups WHERE id = ?').get(2).name, 'AI')
+    assert.deepEqual(db.prepare('SELECT * FROM video_group_translations').all(), [
+      { group_id: 2, locale: 'en-US', translation: 'Old AI' },
+    ])
   } finally {
     db.close()
   }

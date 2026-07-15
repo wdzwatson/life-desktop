@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   buildCreateVideoGroupStatements,
   buildDeleteVideoGroupStatements,
+  buildRenameVideoGroupStatements,
   buildUpdateVideoGroupTranslationsStatements,
   buildVideoGroupTree,
   expandVideoGroupWithAncestors,
@@ -508,6 +509,20 @@ test('create statements insert the canonical group and current locale translatio
       sql: `INSERT INTO video_group_translations (group_id, locale, translation)
             VALUES (last_insert_rowid(), ?, ?)`,
       params: ['en-US', 'AI'],
+    },
+  ])
+})
+
+test('rename statements update the canonical group and current locale translation atomically', () => {
+  assert.deepEqual(buildRenameVideoGroupStatements(2, '  Artificial Intelligence  ', 'en-US'), [
+    {
+      sql: 'UPDATE video_groups SET name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+      params: ['Artificial Intelligence', 2],
+    },
+    {
+      sql: `INSERT OR REPLACE INTO video_group_translations
+            (group_id, locale, translation) VALUES (?, ?, ?)`,
+      params: [2, 'en-US', 'Artificial Intelligence'],
     },
   ])
 })
