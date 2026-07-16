@@ -859,10 +859,21 @@ export const Tasks: React.FC = () => {
                                 : 'var(--color-border)',
                             cursor: 'pointer',
                           }}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={task.title}
                           onClick={() => {
                             setSelectedTaskId(task.id)
                             setEditDesc(task.description || '')
                             setEditProgress(task.progress || 0)
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              setSelectedTaskId(task.id)
+                              setEditDesc(task.description || '')
+                              setEditProgress(task.progress || 0)
+                            }
                           }}
                         >
                           <button
@@ -977,10 +988,21 @@ export const Tasks: React.FC = () => {
                                   : 'transparent',
                               cursor: 'pointer',
                             }}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={child.title}
                             onClick={() => {
                               setSelectedTaskId(child.id)
                               setEditDesc(child.description || '')
                               setEditProgress(child.progress || 0)
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault()
+                                setSelectedTaskId(child.id)
+                                setEditDesc(child.description || '')
+                                setEditProgress(child.progress || 0)
+                              }
                             }}
                           >
                             <button
