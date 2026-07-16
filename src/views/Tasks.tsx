@@ -1,12 +1,23 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
+  CalendarDays,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Circle,
   Trash2,
   Plus,
 } from 'lucide-react'
+import {
+  getCalendarMonthDays,
+  getCalendarWeekDays,
+  groupTasksByDueDate,
+  shiftCalendarDate,
+  toCalendarDateKey,
+} from './taskCalendarUtils'
+import './Tasks.css'
 
 export const Tasks: React.FC = () => {
   const { t, i18n } = useTranslation()
@@ -83,6 +94,7 @@ export const Tasks: React.FC = () => {
 
   // Calendar Mode State ('day' | 'week' | 'month')
   const [calendarMode, setCalendarMode] = useState<'day' | 'week' | 'month'>('week')
+  const [calendarDate, setCalendarDate] = useState(() => new Date())
 
   // Templates
   const [templates, setTemplates] = useState<any[]>([])
@@ -157,6 +169,65 @@ export const Tasks: React.FC = () => {
   }, [i18n.language])
 
   const api = (window as any).electronAPI
+
+  const calendarTasksByDate = useMemo(() => groupTasksByDueDate(tasks), [tasks])
+  const calendarWeekDays = useMemo(() => getCalendarWeekDays(calendarDate), [calendarDate])
+  const calendarMonthDays = useMemo(() => getCalendarMonthDays(calendarDate), [calendarDate])
+  const calendarVisibleDays =
+    calendarMode === 'day'
+      ? [calendarDate]
+      : calendarMode === 'week'
+        ? calendarWeekDays
+        : calendarMonthDays.filter((day) => day.getMonth() === calendarDate.getMonth())
+  const calendarVisibleTasks = calendarVisibleDays.flatMap(
+    (day) => calendarTasksByDate.get(toCalendarDateKey(day)) ?? [],
+  )
+  const calendarTodayKey = toCalendarDateKey(new Date())
+  const calendarPeriodLabel = useMemo(() => {
+    if (calendarMode === 'day') {
+      return new Intl.DateTimeFormat(i18n.language, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        weekday: 'short',
+      }).format(calendarDate)
+    }
+
+    if (calendarMode === 'week') {
+      const formatter = new Intl.DateTimeFormat(i18n.language, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      })
+      return `${formatter.format(calendarWeekDays[0])} – ${formatter.format(calendarWeekDays[6])}`
+    }
+
+    return new Intl.DateTimeFormat(i18n.language, {
+      year: 'numeric',
+      month: 'long',
+    }).format(calendarDate)
+  }, [calendarDate, calendarMode, calendarWeekDays, i18n.language])
+
+  const openCalendarTask = (task: any) => {
+    setSelectedTaskId(task.id)
+    setEditDesc(task.description || '')
+    setEditProgress(task.progress || 0)
+    setTaskTab('list')
+  }
+
+  const renderCalendarTask = (task: any) => (
+    <button
+      key={task.id}
+      type="button"
+      className="task-calendar__task"
+      onClick={() => openCalendarTask(task)}
+    >
+      <span className="task-calendar__task-title">{task.title}</span>
+      <span className="task-calendar__task-meta">
+        {getPriorityLabel(task.priority)} · {getStatusLabel(task.status)}
+      </span>
+    </button>
+  )
 
   const loadData = async () => {
     if (api) {
@@ -1021,270 +1092,133 @@ export const Tasks: React.FC = () => {
         {/* TAB: CALENDAR SCHEDULE */}
         {taskTab === 'calendar' && (
           <div
-            className="card"
+            className="card task-calendar"
             style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%' }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <strong style={{ fontSize: '14px' }}>{t('tasks.calendar_title')}</strong>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <button
-                  className={`btn sm ${calendarMode === 'day' ? 'primary' : ''}`}
-                  onClick={() => setCalendarMode('day')}
-                >
-                  {t('tasks.calendar_mode_day')}
-                </button>
-                <button
-                  className={`btn sm ${calendarMode === 'week' ? 'primary' : ''}`}
-                  onClick={() => setCalendarMode('week')}
-                >
-                  {t('tasks.calendar_mode_week')}
-                </button>
-                <button
-                  className={`btn sm ${calendarMode === 'month' ? 'primary' : ''}`}
-                  onClick={() => setCalendarMode('month')}
-                >
-                  {t('tasks.calendar_mode_month')}
-                </button>
+            <div className="task-calendar__header">
+              <div className="task-calendar__title-group">
+                <strong>{t('tasks.calendar_title')}</strong>
+                <span className="task-calendar__period">{calendarPeriodLabel}</span>
+              </div>
+              <div className="task-calendar__controls">
+                <div className="task-calendar__navigation">
+                  <button
+                    type="button"
+                    className="btn sm task-calendar__icon-button"
+                    aria-label={t('tasks.calendar_previous')}
+                    title={t('tasks.calendar_previous')}
+                    onClick={() =>
+                      setCalendarDate((current) => shiftCalendarDate(current, calendarMode, -1))
+                    }
+                  >
+                    <ChevronLeft aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={() => setCalendarDate(new Date())}
+                  >
+                    {t('tasks.calendar_today')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn sm task-calendar__icon-button"
+                    aria-label={t('tasks.calendar_next')}
+                    title={t('tasks.calendar_next')}
+                    onClick={() =>
+                      setCalendarDate((current) => shiftCalendarDate(current, calendarMode, 1))
+                    }
+                  >
+                    <ChevronRight aria-hidden="true" />
+                  </button>
+                </div>
+                <div className="task-calendar__mode-switch">
+                  <button
+                    className={`btn sm ${calendarMode === 'day' ? 'primary' : ''}`}
+                    onClick={() => setCalendarMode('day')}
+                  >
+                    {t('tasks.calendar_mode_day')}
+                  </button>
+                  <button
+                    className={`btn sm ${calendarMode === 'week' ? 'primary' : ''}`}
+                    onClick={() => setCalendarMode('week')}
+                  >
+                    {t('tasks.calendar_mode_week')}
+                  </button>
+                  <button
+                    className={`btn sm ${calendarMode === 'month' ? 'primary' : ''}`}
+                    onClick={() => setCalendarMode('month')}
+                  >
+                    {t('tasks.calendar_mode_month')}
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Day View */}
-            {calendarMode === 'day' && (
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '80px 1fr',
-                  gap: '10px',
-                  flexGrow: 1,
-                  overflowY: 'auto',
-                }}
-              >
-                <div
-                  style={{
-                    borderRight: '1px solid var(--color-border)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '40px',
-                    paddingRight: '8px',
-                    color: 'var(--text-muted)',
-                    fontSize: '11px',
-                    fontFamily: 'var(--font-mono)',
-                  }}
-                >
-                  <div>09:00</div>
-                  <div>12:00</div>
-                  <div>14:00</div>
-                  <div>17:00</div>
+            {calendarVisibleTasks.length === 0 ? (
+              <div className="task-calendar__empty">
+                <div className="task-calendar__empty-icon" aria-hidden="true">
+                  <CalendarDays />
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div
-                    style={{
-                      padding: '8px 12px',
-                      backgroundColor: 'rgba(59, 130, 246, 0.08)',
-                      borderLeft: '4px solid var(--color-accent)',
-                      borderRadius: '4px',
-                    }}
-                  >
-                    <strong style={{ fontSize: '13px', display: 'block' }}>
-                      {t('tasks.calendar_mock_weekly_planning')}
-                    </strong>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      09:00 - 10:00 · {t('tasks.calendar_label_recurring')}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      padding: '8px 12px',
-                      backgroundColor: 'rgba(245, 158, 11, 0.08)',
-                      borderLeft: '4px solid var(--color-warn)',
-                      borderRadius: '4px',
-                    }}
-                  >
-                    <strong style={{ fontSize: '13px', display: 'block' }}>
-                      {t('tasks.calendar_mock_performance_tuning')}
-                    </strong>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      14:00 - 15:30 · {t('tasks.calendar_label_dev')}
-                    </span>
-                  </div>
-                </div>
+                <strong>{t('tasks.calendar_empty_title')}</strong>
+                <p>{t('tasks.calendar_empty_description')}</p>
               </div>
-            )}
-
-            {/* Week View */}
-            {calendarMode === 'week' && (
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(7, 1fr)',
-                  gap: '8px',
-                  flexGrow: 1,
-                  overflowY: 'auto',
-                }}
-              >
-                {[
-                  {
-                    day: t('tasks.calendar_day_mon'),
-                    tasks: [{ title: t('tasks.calendar_mock_weekly_planning'), time: '09:00' }],
-                  },
-                  { day: t('tasks.calendar_day_tue'), tasks: [] },
-                  {
-                    day: t('tasks.calendar_day_wed'),
-                    tasks: [{ title: t('tasks.calendar_mock_perf_tuning_short'), time: '14:00' }],
-                  },
-                  {
-                    day: t('tasks.calendar_day_thu'),
-                    tasks: [{ title: t('tasks.calendar_mock_sync_flow'), time: '10:00' }],
-                  },
-                  { day: t('tasks.calendar_day_fri'), tasks: [] },
-                  {
-                    day: t('tasks.calendar_day_sat'),
-                    tasks: [{ title: t('tasks.calendar_mock_clear_clipboard'), time: '16:00' }],
-                  },
-                  {
-                    day: t('tasks.calendar_day_sun'),
-                    tasks: [{ title: t('tasks.calendar_mock_daily_review'), time: '21:00' }],
-                  },
-                ].map((col) => (
-                  <div
-                    key={col.day}
-                    style={{
-                      border: '1px solid var(--color-border)',
-                      borderRadius: '6px',
-                      padding: '8px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                      backgroundColor: 'var(--bg-app)',
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 'bold',
-                        color: 'var(--text-muted)',
-                        borderBottom: '1px solid var(--color-border)',
-                        paddingBottom: '4px',
-                        textAlign: 'center',
-                      }}
-                    >
-                      {col.day}
-                    </div>
-                    <div
-                      style={{ display: 'flex', flexDirection: 'column', gap: '6px', flexGrow: 1 }}
-                    >
-                      {col.tasks.map((t, idx) => (
-                        <div
-                          key={idx}
-                          style={{
-                            padding: '6px',
-                            fontSize: '11px',
-                            backgroundColor: 'var(--bg-surface)',
-                            border: '1px solid var(--color-border)',
-                            borderRadius: '4px',
-                            borderLeft: '3px solid var(--color-accent)',
-                            whiteSpace: 'normal',
-                            wordBreak: 'break-all',
-                          }}
-                        >
-                          <div style={{ fontWeight: 'bold' }}>{t.title}</div>
-                          <div
-                            style={{
-                              color: 'var(--text-muted)',
-                              fontSize: '9px',
-                              marginTop: '2px',
-                            }}
-                          >
-                            {t.time}
-                          </div>
-                        </div>
-                      ))}
-                      {col.tasks.length === 0 && (
-                        <div
-                          style={{
-                            color: 'var(--text-muted)',
-                            fontSize: '10px',
-                            fontStyle: 'italic',
-                            textAlign: 'center',
-                            marginTop: '10px',
-                          }}
-                        >
-                          {t('tasks.calendar_no_schedule')}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
+            ) : calendarMode === 'day' ? (
+              <div className="task-calendar__day-list">
+                {(calendarTasksByDate.get(toCalendarDateKey(calendarDate)) ?? []).map(
+                  renderCalendarTask,
+                )}
               </div>
-            )}
-
-            {/* Month View */}
-            {calendarMode === 'month' && (
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(7, 1fr)',
-                  gridTemplateRows: '30px repeat(5, 1fr)',
-                  gap: '6px',
-                  flexGrow: 1,
-                }}
-              >
+            ) : calendarMode === 'week' ? (
+              <div className="task-calendar__week">
+                {calendarWeekDays.map((day) => {
+                  const dateKey = toCalendarDateKey(day)
+                  const dayTasks = calendarTasksByDate.get(dateKey) ?? []
+                  return (
+                    <div
+                      key={dateKey}
+                      className={`task-calendar__week-day ${
+                        dateKey === calendarTodayKey ? 'today' : ''
+                      }`}
+                    >
+                      <div className="task-calendar__day-heading">
+                        {new Intl.DateTimeFormat(i18n.language, {
+                          weekday: 'short',
+                          month: 'numeric',
+                          day: 'numeric',
+                        }).format(day)}
+                      </div>
+                      {dayTasks.map(renderCalendarTask)}
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="task-calendar__month">
                 {t('tasks.calendar_month_headers')
                   .split(',')
                   .map((w, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 'bold',
-                        color: 'var(--text-muted)',
-                        textAlign: 'center',
-                      }}
-                    >
+                    <div key={idx} className="task-calendar__month-header">
                       {w}
                     </div>
                   ))}
-                {Array.from({ length: 35 }).map((_, idx) => {
-                  const dayNum = idx + 1 // June 2026 starts on Monday (1st is Monday, so index 0 = June 1st)
-                  const isValidDay = dayNum <= 30
-                  const hasTasks = [8, 10, 11, 13, 14].includes(dayNum)
+                {calendarMonthDays.map((day) => {
+                  const dateKey = toCalendarDateKey(day)
+                  const dayTasks = calendarTasksByDate.get(dateKey) ?? []
+                  const isCurrentMonth = day.getMonth() === calendarDate.getMonth()
                   return (
                     <div
-                      key={idx}
-                      style={{
-                        border: '1px solid var(--color-border)',
-                        borderRadius: '6px',
-                        padding: '6px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        backgroundColor: isValidDay ? 'var(--bg-surface)' : 'rgba(0,0,0,0.02)',
-                        opacity: isValidDay ? 1 : 0.4,
-                      }}
+                      key={dateKey}
+                      className={`task-calendar__month-day ${
+                        isCurrentMonth ? '' : 'outside'
+                      } ${dateKey === calendarTodayKey ? 'today' : ''}`}
                     >
-                      <span
-                        style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-muted)' }}
-                      >
-                        {isValidDay ? dayNum : ''}
-                      </span>
-                      {isValidDay && hasTasks && (
-                        <div
-                          style={{
-                            display: 'flex',
-                            gap: '3px',
-                            justifyContent: 'center',
-                            marginTop: '4px',
-                          }}
-                        >
-                          <span
-                            style={{
-                              width: '6px',
-                              height: '6px',
-                              borderRadius: '50%',
-                              backgroundColor: 'var(--color-accent)',
-                            }}
-                          ></span>
-                        </div>
+                      <span className="task-calendar__month-day-number">{day.getDate()}</span>
+                      {dayTasks.slice(0, 2).map(renderCalendarTask)}
+                      {dayTasks.length > 2 && (
+                        <span className="task-calendar__more">
+                          {t('tasks.calendar_more_tasks', { count: dayTasks.length - 2 })}
+                        </span>
                       )}
                     </div>
                   )
