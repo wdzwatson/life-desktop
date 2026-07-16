@@ -73,3 +73,83 @@
   font-size: 10px;
   line-height: 1.45;
 }
+
+.notebook-modal__translations {
+  margin: 4px 0 0;
+}
+
+.notebook-modal__translations-toggle {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 88%, var(--text-muted));
+  border-radius: calc(var(--radius-card) - 1px);
+  background-color: color-mix(in srgb, var(--text-main) 2.5%, transparent);
+  color: color-mix(in srgb, var(--text-main) 82%, var(--text-muted));
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.notebook-modal__translations-toggle:hover,
+.notebook-modal__translations-toggle.open {
+  border-color: color-mix(in srgb, var(--color-accent) 28%, var(--color-border));
+  background-color: color-mix(in srgb, var(--color-accent) 6%, transparent);
+  color: var(--text-main);
+}
+
+.notebook-modal__translations-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 68%, transparent);
+  outline-offset: 2px;
+}
+
+.notebook-modal__translations-toggle-copy {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.notebook-modal__translations-toggle-copy > svg {
+  width: 15px;
+  height: 15px;
+  min-width: 15px;
+  color: var(--color-accent);
+  stroke-width: 1.8;
+}
+
+.notebook-modal__translations-toggle > svg {
+  width: 15px;
+  height: 15px;
+  min-width: 15px;
+  color: var(--text-muted);
+  stroke-width: 1.8;
+  transition: transform 160ms ease;
+}
+
+.notebook-modal__translations-toggle.open > svg {
+  transform: rotate(180deg);
+}
+
+.notebook-modal__translations-panel {
+  max-height: 180px;
+  margin-bottom: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  border: 1px solid color-mix(in srgb, var(--color-border) 88%, transparent);
+  border-radius: calc(var(--radius-card) - 1px);
+  background-color: color-mix(in srgb, var(--text-main) 3%, transparent);
+}

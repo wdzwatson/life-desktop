@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useId, useMemo } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
+  ChevronDown,
   Plus,
   NotebookPen,
   Eye,
@@ -9,6 +10,7 @@ import {
   Columns,
   Trash2,
   Download,
+  Languages,
 } from 'lucide-react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -105,6 +107,7 @@ export const Notes: React.FC = () => {
   const configuredLocales = useMemo(() => getConfiguredLocales(i18n.language), [i18n.language])
   const notebookCategoryListId = useId()
   const notebookCategoryHelpId = useId()
+  const notebookTranslationsPanelId = useId()
   const currentLocaleLabel =
     configuredLocales.find((locale) => locale.code === i18n.language)?.label || i18n.language
 
@@ -1193,41 +1196,28 @@ export const Notes: React.FC = () => {
                 </span>
               </div>
 
-              {/* Collapsible panel for other translations */}
-              <div style={{ marginTop: '4px', marginBottom: '8px' }}>
+              <div className="notebook-modal__translations">
                 <button
                   type="button"
-                  className="btn sm"
-                  style={{
-                    border: 'none',
-                    background: 'none',
-                    color: 'var(--text-muted)',
-                    fontSize: '11px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: 0,
-                  }}
+                  className={`notebook-modal__translations-toggle ${
+                    isNbTransOpen ? 'open' : ''
+                  }`}
+                  aria-expanded={isNbTransOpen}
+                  aria-controls={notebookTranslationsPanelId}
                   onClick={() => setIsNbTransOpen(!isNbTransOpen)}
                 >
-                  {t('common.more_translations')} {isNbTransOpen ? '▲' : '▼'}
+                  <span className="notebook-modal__translations-toggle-copy">
+                    <Languages aria-hidden="true" />
+                    <span>{t('common.more_translations')}</span>
+                  </span>
+                  <ChevronDown aria-hidden="true" />
                 </button>
               </div>
 
               {isNbTransOpen && (
                 <div
-                  style={{
-                    padding: '10px',
-                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                    borderRadius: '6px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                    maxHeight: '180px',
-                    overflowY: 'auto',
-                    marginBottom: '10px',
-                  }}
+                  id={notebookTranslationsPanelId}
+                  className="notebook-modal__translations-panel"
                 >
                   {configuredLocales.filter((l) => l.code !== i18n.language).map((locale) => (
                     <div
