@@ -182,6 +182,13 @@ export const Dashboard: React.FC = () => {
               todayTasks.map((task: any) => (
                 <div
                   key={task.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={
+                    task.is_completed === 1
+                      ? t('dashboard.task_reopen_action')
+                      : t('dashboard.task_complete_action')
+                  }
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -193,6 +200,12 @@ export const Dashboard: React.FC = () => {
                     cursor: 'pointer',
                   }}
                   onClick={() => toggleTask(task.id, task.is_completed === 1)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      toggleTask(task.id, task.is_completed === 1)
+                    }
+                  }}
                 >
                   {task.is_completed === 1 ? (
                     <CheckCircle size={18} color="var(--color-success)" />

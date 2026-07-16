@@ -44,6 +44,8 @@
     "stats": "Workspace Stats",
     "toast_task_completed": "Task completed",
     "toast_task_reopened": "Task reopened",
+    "task_complete_action": "Mark task complete",
+    "task_reopen_action": "Reopen task",
     "manage_list": "Manage List",
     "no_tasks": "No tasks for today. Enjoy your day!",
     "open_shelf": "Open Shelf",
