@@ -1497,6 +1497,7 @@ export const Tasks: React.FC = () => {
                           key={d}
                           type="button"
                           className="btn sm"
+                          aria-pressed={isActive}
                           style={{
                             minWidth: '32px',
                             backgroundColor: isActive ? 'var(--color-accent)' : 'var(--bg-surface)',
