@@ -239,6 +239,7 @@
     "create_notebook": "Create Notebook",
     "rename_notebook": "Rename Notebook",
     "edit_notebook_translations": "Edit Language Names…",
+    "notebook_more_actions": "More actions: {{name}}",
     "current_language_label": "Current language: {{language}}",
     "notebook_name": "Notebook Name",
     "notebook_category": "Category",

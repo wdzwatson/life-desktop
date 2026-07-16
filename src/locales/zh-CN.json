@@ -239,6 +239,7 @@
     "create_notebook": "新建笔记本",
     "rename_notebook": "重命名笔记本",
     "edit_notebook_translations": "编辑多语言名称…",
+    "notebook_more_actions": "更多操作：{{name}}",
     "current_language_label": "当前语言：{{language}}",
     "notebook_name": "笔记本名称",
     "notebook_category": "分类",

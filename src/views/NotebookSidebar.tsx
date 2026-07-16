@@ -15,6 +15,7 @@ import {
   Inbox,
   Languages,
   Library,
+  MoreHorizontal,
   Pencil,
   Plus,
   Trash2,
@@ -372,37 +373,56 @@ export function NotebookSidebar({
                         const isContextOpen = contextMenu?.notebook.id === notebook.id
                         return (
                           <div key={notebook.id} className="notebook-sidebar__branch">
-                            <button
-                              type="button"
+                            <div
                               className={`notebook-sidebar__row notebook-sidebar__notebook-row ${
                                 isActive ? 'active' : ''
                               } ${isContextOpen ? 'context-open' : ''}`}
-                              aria-expanded={canExpand ? isExpanded : undefined}
-                              aria-current={isActive ? 'page' : undefined}
-                              onClick={() => toggleScope(notebook.name, canExpand)}
-                              onContextMenu={(event) => openContextMenu(event, notebook)}
                             >
-                              {canExpand ? (
-                                isExpanded ? (
-                                  <ChevronDown aria-hidden="true" />
-                                ) : (
-                                  <ChevronRight aria-hidden="true" />
-                                )
-                              ) : (
-                                <span
-                                  className="notebook-sidebar__chevron-spacer"
-                                  aria-hidden="true"
-                                />
-                              )}
-                              <Folder aria-hidden="true" />
-                              <span
-                                className="notebook-sidebar__label"
-                                title={getNotebookDisplayName(notebook)}
+                              <button
+                                type="button"
+                                className="notebook-sidebar__row-select"
+                                aria-expanded={canExpand ? isExpanded : undefined}
+                                aria-current={isActive ? 'page' : undefined}
+                                onClick={() => toggleScope(notebook.name, canExpand)}
+                                onContextMenu={(event) => openContextMenu(event, notebook)}
                               >
-                                {getNotebookDisplayName(notebook)}
-                              </span>
-                              <span className="notebook-sidebar__count">{notebookNotes.length}</span>
-                            </button>
+                                {canExpand ? (
+                                  isExpanded ? (
+                                    <ChevronDown aria-hidden="true" />
+                                  ) : (
+                                    <ChevronRight aria-hidden="true" />
+                                  )
+                                ) : (
+                                  <span
+                                    className="notebook-sidebar__chevron-spacer"
+                                    aria-hidden="true"
+                                  />
+                                )}
+                                <Folder aria-hidden="true" />
+                                <span
+                                  className="notebook-sidebar__label"
+                                  title={getNotebookDisplayName(notebook)}
+                                >
+                                  {getNotebookDisplayName(notebook)}
+                                </span>
+                                <span className="notebook-sidebar__count">
+                                  {notebookNotes.length}
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                className="notebook-sidebar__menu-button"
+                                aria-label={t('notes.notebook_more_actions', {
+                                  name: getNotebookDisplayName(notebook),
+                                })}
+                                title={t('notes.notebook_more_actions', {
+                                  name: getNotebookDisplayName(notebook),
+                                })}
+                                onClick={(event) => openContextMenu(event, notebook)}
+                              >
+                                <MoreHorizontal aria-hidden="true" />
+                              </button>
+                            </div>
                             {isExpanded && renderNotes(notebook.name, notebookNotes)}
                           </div>
                         )

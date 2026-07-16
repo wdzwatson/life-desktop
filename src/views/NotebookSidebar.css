@@ -61,10 +61,30 @@
 }
 
 .notebook-sidebar__notebook-row {
-  padding-left: 7px;
+  padding: 0 4px 0 7px;
+  grid-template-columns: minmax(0, 1fr) 26px;
+  gap: 2px;
+}
+
+.notebook-sidebar__row-select {
+  min-width: 0;
+  height: 36px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 16px 18px minmax(0, 1fr) minmax(26px, auto);
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .notebook-sidebar__row svg,
+.notebook-sidebar__row-select svg,
 .notebook-sidebar__category-row svg {
   width: 16px;
   height: 16px;
@@ -85,6 +105,10 @@
   color: var(--text-main);
 }
 
+.notebook-sidebar__notebook-row:focus-within {
+  border-color: color-mix(in srgb, var(--color-border) 72%, var(--text-muted));
+}
+
 .notebook-sidebar__row.active {
   border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
   background-color: color-mix(in srgb, var(--color-accent) 12%, transparent);
@@ -93,11 +117,60 @@
 }
 
 .notebook-sidebar__row:focus-visible,
+.notebook-sidebar__row-select:focus-visible,
 .notebook-sidebar__category-row:focus-visible,
 .notebook-sidebar__add-button:focus-visible,
 .notebook-sidebar__note:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--color-accent) 72%, transparent);
   outline-offset: -2px;
+}
+
+.notebook-sidebar__row-select:focus-visible {
+  outline-offset: 1px;
+}
+
+.notebook-sidebar__menu-button {
+  width: 26px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-card) - 3px);
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transition:
+    opacity 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.notebook-sidebar__menu-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.notebook-sidebar__notebook-row:hover .notebook-sidebar__menu-button,
+.notebook-sidebar__notebook-row:focus-within .notebook-sidebar__menu-button,
+.notebook-sidebar__notebook-row.context-open .notebook-sidebar__menu-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.notebook-sidebar__menu-button:hover,
+.notebook-sidebar__menu-button:focus-visible {
+  border-color: color-mix(in srgb, var(--color-border) 72%, var(--text-muted));
+  outline: none;
+  background-color: color-mix(in srgb, var(--text-main) 7%, transparent);
+  color: var(--text-main);
+}
+
+.notebook-sidebar__menu-button:focus-visible {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent);
 }
 
 .notebook-sidebar__fixed-row:nth-child(1) {
