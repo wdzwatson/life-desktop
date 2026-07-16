@@ -1449,7 +1449,11 @@ export const Tasks: React.FC = () => {
                   {t('tasks.config_rule_title')}
                 </h3>
                 {selectedRuleId && (
-                  <button className="btn sm" onClick={() => handleDeleteRule(selectedRuleId)}>
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={() => handleDeleteRule(selectedRuleId)}
+                  >
                     <Trash2 size={12} /> {t('common.delete')}
                   </button>
                 )}
@@ -1674,6 +1678,7 @@ export const Tasks: React.FC = () => {
               </div>
 
               <button
+                type="button"
                 className="btn primary"
                 onClick={handleSaveRule}
                 style={{ width: 'max-content', alignSelf: 'flex-end', marginTop: 'auto' }}
@@ -1728,6 +1733,7 @@ export const Tasks: React.FC = () => {
                   ))}
                 </div>
                 <button
+                  type="button"
                   className="btn primary sm"
                   onClick={() => handleUseTemplate(tpl)}
                   style={{ width: 'max-content' }}
@@ -1790,6 +1796,7 @@ export const Tasks: React.FC = () => {
                     </td>
                     <td style={{ padding: '10px 8px' }}>
                       <button
+                        type="button"
                         className="btn sm"
                         onClick={() => showToast(t('tasks.toast_action_triggered'))}
                       >
