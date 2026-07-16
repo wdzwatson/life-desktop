@@ -7,7 +7,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
+  Clock3,
+  Kanban,
+  LayoutTemplate,
+  ListChecks,
   ListTodo,
+  Repeat2,
   Trash2,
   Plus,
 } from 'lucide-react'
@@ -545,53 +550,75 @@ export const Tasks: React.FC = () => {
         </div>
       </div>
 
-      {/* View Tabs */}
-      <div
-        className="tabs"
-        style={{
-          display: 'flex',
-          gap: '4px',
-          borderBottom: '1px solid var(--color-border)',
-          marginBottom: '16px',
-        }}
-      >
-        <button
-          className={`tab ${taskTab === 'kanban' ? 'active' : ''}`}
-          onClick={() => setTaskTab('kanban')}
+      <nav className="task-navigation" aria-label={t('tasks.navigation_label')}>
+        <div
+          className="task-navigation__views"
+          role="group"
+          aria-label={t('tasks.view_modes_label')}
         >
-          {t('tasks.tab_kanban')}
-        </button>
-        <button
-          className={`tab ${taskTab === 'list' ? 'active' : ''}`}
-          onClick={() => setTaskTab('list')}
+          <button
+            type="button"
+            className={`task-navigation__view ${taskTab === 'kanban' ? 'active' : ''}`}
+            aria-pressed={taskTab === 'kanban'}
+            onClick={() => setTaskTab('kanban')}
+          >
+            <Kanban aria-hidden="true" />
+            <span>{t('tasks.tab_kanban')}</span>
+          </button>
+          <button
+            type="button"
+            className={`task-navigation__view ${taskTab === 'list' ? 'active' : ''}`}
+            aria-pressed={taskTab === 'list'}
+            onClick={() => setTaskTab('list')}
+          >
+            <ListChecks aria-hidden="true" />
+            <span>{t('tasks.tab_list')}</span>
+          </button>
+          <button
+            type="button"
+            className={`task-navigation__view ${taskTab === 'calendar' ? 'active' : ''}`}
+            aria-pressed={taskTab === 'calendar'}
+            onClick={() => setTaskTab('calendar')}
+          >
+            <CalendarDays aria-hidden="true" />
+            <span>{t('tasks.tab_calendar')}</span>
+          </button>
+        </div>
+
+        <div
+          className="task-navigation__tools"
+          role="group"
+          aria-label={t('tasks.workflow_tools_label')}
         >
-          {t('tasks.tab_list')}
-        </button>
-        <button
-          className={`tab ${taskTab === 'calendar' ? 'active' : ''}`}
-          onClick={() => setTaskTab('calendar')}
-        >
-          {t('tasks.tab_calendar')}
-        </button>
-        <button
-          className={`tab ${taskTab === 'recurring' ? 'active' : ''}`}
-          onClick={() => setTaskTab('recurring')}
-        >
-          {t('tasks.tab_recurring')}
-        </button>
-        <button
-          className={`tab ${taskTab === 'templates' ? 'active' : ''}`}
-          onClick={() => setTaskTab('templates')}
-        >
-          {t('tasks.tab_templates')}
-        </button>
-        <button
-          className={`tab ${taskTab === 'scheduled' ? 'active' : ''}`}
-          onClick={() => setTaskTab('scheduled')}
-        >
-          {t('tasks.tab_scheduled')}
-        </button>
-      </div>
+          <button
+            type="button"
+            className={`task-navigation__tool ${taskTab === 'recurring' ? 'active' : ''}`}
+            aria-pressed={taskTab === 'recurring'}
+            onClick={() => setTaskTab('recurring')}
+          >
+            <Repeat2 aria-hidden="true" />
+            <span>{t('tasks.tab_recurring')}</span>
+          </button>
+          <button
+            type="button"
+            className={`task-navigation__tool ${taskTab === 'templates' ? 'active' : ''}`}
+            aria-pressed={taskTab === 'templates'}
+            onClick={() => setTaskTab('templates')}
+          >
+            <LayoutTemplate aria-hidden="true" />
+            <span>{t('tasks.tab_templates')}</span>
+          </button>
+          <button
+            type="button"
+            className={`task-navigation__tool ${taskTab === 'scheduled' ? 'active' : ''}`}
+            aria-pressed={taskTab === 'scheduled'}
+            onClick={() => setTaskTab('scheduled')}
+          >
+            <Clock3 aria-hidden="true" />
+            <span>{t('tasks.tab_scheduled')}</span>
+          </button>
+        </div>
+      </nav>
 
       <div style={{ flexGrow: 1, minHeight: 0 }}>
         {/* TAB: KANBAN BOARD */}
