@@ -55,3 +55,21 @@
   min-width: 112px;
   justify-content: center;
 }
+
+.notebook-modal__locale {
+  align-self: flex-start;
+  margin-top: -7px;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 22%, var(--color-border));
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--color-accent) 7%, transparent);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.notebook-modal__field-help {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}

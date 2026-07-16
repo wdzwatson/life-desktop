@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import React, { useEffect, useState, useCallback, useId, useMemo } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
@@ -21,6 +21,7 @@ import {
   buildDeleteNotebookStatements,
   buildRenameNotebookStatements,
   getNotebookTransactionError,
+  resolveNotebookCategoryStorageName,
 } from './notebookSidebarUtils'
 import './Notes.css'
 
@@ -102,6 +103,10 @@ export const Notes: React.FC = () => {
 
   const api = (window as Window & { electronAPI?: ElectronAPI }).electronAPI
   const configuredLocales = useMemo(() => getConfiguredLocales(i18n.language), [i18n.language])
+  const notebookCategoryListId = useId()
+  const notebookCategoryHelpId = useId()
+  const currentLocaleLabel =
+    configuredLocales.find((locale) => locale.code === i18n.language)?.label || i18n.language
 
   const selectNote = useCallback((note: Note, scope = note.notebook) => {
     setActiveNoteId(note.id)
@@ -133,6 +138,35 @@ export const Notes: React.FC = () => {
         ? t('common.default_category')
         : categoryName
   }
+
+  const notebookCategoryOptions = useMemo(() => {
+    const storageNames = [
+      '默认',
+      ...new Set(
+        notebooks
+          .map((notebook) => notebook.category?.trim())
+          .filter((category): category is string => Boolean(category) && category !== '默认'),
+      ),
+    ]
+
+    return storageNames.map((storageName) => {
+      const translation = translations.find(
+        (item) =>
+          item.entity_type === 'notebook_category' &&
+          item.entity_id === storageName &&
+          item.locale === i18n.language,
+      )
+      return {
+        storageName,
+        displayName:
+          typeof translation?.translation === 'string' && translation.translation.trim()
+            ? translation.translation.trim()
+            : storageName === '默认'
+              ? t('common.default_category')
+              : storageName,
+      }
+    })
+  }, [i18n.language, notebooks, t, translations])
 
   const formatTime = (timeStr: string) => {
     if (!timeStr) return ''
@@ -453,7 +487,10 @@ export const Notes: React.FC = () => {
       showToast(t('notes.error_reserved_notebook_name'))
       return
     }
-    let categoryToSave = nbModalCategory.trim()
+    let categoryToSave = resolveNotebookCategoryStorageName(
+      nbModalCategory,
+      notebookCategoryOptions,
+    )
     if (
       categoryToSave === t('common.default_category') ||
       categoryToSave.toLowerCase() === 'default' ||
@@ -692,6 +729,7 @@ export const Notes: React.FC = () => {
         {/* Column 3: Rich Markdown editor + preview */}
         {activeNoteId ? (
           <div
+            className="notebook-modal"
             style={{
               display: 'flex',
               flexDirection: 'column',
@@ -1094,7 +1132,7 @@ export const Notes: React.FC = () => {
               border: '1px solid var(--color-border)',
               borderRadius: '8px',
               padding: '20px',
-              width: '320px',
+              width: '360px',
               boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
               display: 'flex',
               flexDirection: 'column',
@@ -1109,13 +1147,16 @@ export const Notes: React.FC = () => {
                   ? t('notes.edit_notebook_translations')
                   : t('notes.rename_notebook')}
             </h3>
+            <div className="notebook-modal__locale">
+              {t('notes.current_language_label', { language: currentLocaleLabel })}
+            </div>
             <form
               onSubmit={handleNbModalSubmit}
               style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {t('notes.notebook_name')} ({t('common.main_name_label')})
+                  {t('notes.notebook_name')}
                 </label>
                 <input
                   className="form-field"
@@ -1129,16 +1170,27 @@ export const Notes: React.FC = () => {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {t('notes.notebook_category')} ({t('common.main_category_label')})
+                  {t('notes.notebook_category')}
                 </label>
                 <input
                   className="form-field"
                   style={{ width: '100%' }}
+                  list={notebookCategoryListId}
+                  aria-describedby={notebookCategoryHelpId}
+                  autoComplete="off"
                   value={nbModalCategory}
                   onChange={(e) => setNbModalCategory(e.target.value)}
                   placeholder={t('notes.notebook_category_placeholder')}
                   required
                 />
+                <datalist id={notebookCategoryListId}>
+                  {notebookCategoryOptions.map((option) => (
+                    <option key={option.storageName} value={option.displayName} />
+                  ))}
+                </datalist>
+                <span id={notebookCategoryHelpId} className="notebook-modal__field-help">
+                  {t('notes.notebook_category_help')}
+                </span>
               </div>
 
               {/* Collapsible panel for other translations */}

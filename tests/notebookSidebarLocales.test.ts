@@ -25,14 +25,17 @@ const sidebarKeys = [
   'create_notebook',
   'rename_notebook',
   'edit_notebook_translations',
+  'current_language_label',
   'delete_notebook',
   'notebook_name_translation_placeholder',
   'notebook_category_translation_placeholder',
+  'notebook_category_help',
   'error_reserved_notebook_name',
   'error_notebook_unavailable',
 ] as const
 
 const requiredTokens: Partial<Record<(typeof sidebarKeys)[number], readonly string[]>> = {
+  current_language_label: ['language'],
   notebook_name_translation_placeholder: ['language'],
   notebook_category_translation_placeholder: ['language'],
 }

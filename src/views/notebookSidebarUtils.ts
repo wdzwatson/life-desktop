@@ -11,6 +11,28 @@ export type NotebookLocaleValue = {
   translation: string
 }
 
+export type NotebookCategoryOption = {
+  storageName: string
+  displayName: string
+}
+
+const normalizeCategoryAlias = (value: string) =>
+  value.trim().toLocaleLowerCase().replace(/\s+/g, ' ')
+
+export function resolveNotebookCategoryStorageName(
+  value: string,
+  options: NotebookCategoryOption[],
+) {
+  const trimmedValue = value.trim()
+  const normalizedValue = normalizeCategoryAlias(trimmedValue)
+  const existing = options.find(
+    (option) =>
+      normalizeCategoryAlias(option.storageName) === normalizedValue ||
+      normalizeCategoryAlias(option.displayName) === normalizedValue,
+  )
+  return existing?.storageName || trimmedValue
+}
+
 const translationInsertSql =
   'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)'
 
