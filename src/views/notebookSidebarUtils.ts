@@ -16,6 +16,8 @@ export type NotebookCategoryOption = {
   displayName: string
 }
 
+export const canExpandNotebookScope = (childCount: number) => childCount > 0
+
 const normalizeCategoryAlias = (value: string) =>
   value.trim().toLocaleLowerCase().replace(/\s+/g, ' ')
 

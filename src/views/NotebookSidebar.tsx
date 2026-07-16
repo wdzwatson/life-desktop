@@ -21,7 +21,11 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { getContextMenuPosition } from './bookCategorySidebarUtils'
-import { ALL_NOTES_SCOPE, UNCATEGORIZED_NOTEBOOK } from './notebookSidebarUtils'
+import {
+  ALL_NOTES_SCOPE,
+  UNCATEGORIZED_NOTEBOOK,
+  canExpandNotebookScope,
+} from './notebookSidebarUtils'
 import './NotebookSidebar.css'
 
 export type NotebookSidebarNotebook = {
@@ -163,13 +167,15 @@ export function NotebookSidebar({
     menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"][tabindex="0"]')?.focus()
   }, [contextMenu])
 
-  const toggleScope = (scope: string) => {
-    setExpandedScopes((current) => {
-      const next = new Set(current)
-      if (next.has(scope)) next.delete(scope)
-      else next.add(scope)
-      return next
-    })
+  const toggleScope = (scope: string, canExpand: boolean) => {
+    if (canExpand) {
+      setExpandedScopes((current) => {
+        const next = new Set(current)
+        if (next.has(scope)) next.delete(scope)
+        else next.add(scope)
+        return next
+      })
+    }
     onSelectNotebook(scope)
   }
 
@@ -258,7 +264,8 @@ export function NotebookSidebar({
     scopedNotes: NotebookSidebarNote[],
     icon: 'library' | 'inbox',
   ) => {
-    const isExpanded = expandedScopes.has(scope)
+    const canExpand = canExpandNotebookScope(scopedNotes.length)
+    const isExpanded = canExpand && expandedScopes.has(scope)
     const isActive = activeNotebook === scope
     const Icon = icon === 'library' ? Library : Inbox
     return (
@@ -268,12 +275,20 @@ export function NotebookSidebar({
           className={`notebook-sidebar__row notebook-sidebar__fixed-row ${
             isActive ? 'active' : ''
           }`}
-          aria-expanded={isExpanded}
+          aria-expanded={canExpand ? isExpanded : undefined}
           aria-current={isActive ? 'page' : undefined}
-          onClick={() => toggleScope(scope)}
+          onClick={() => toggleScope(scope, canExpand)}
           onContextMenu={(event) => event.preventDefault()}
         >
-          {isExpanded ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
+          {canExpand ? (
+            isExpanded ? (
+              <ChevronDown aria-hidden="true" />
+            ) : (
+              <ChevronRight aria-hidden="true" />
+            )
+          ) : (
+            <span className="notebook-sidebar__chevron-spacer" aria-hidden="true" />
+          )}
           <Icon aria-hidden="true" />
           <span className="notebook-sidebar__label" title={label}>
             {label}
@@ -350,9 +365,10 @@ export function NotebookSidebar({
                   {isCategoryExpanded && (
                     <div className="notebook-sidebar__category-children">
                       {categoryNotebooks.map((notebook) => {
-                        const isExpanded = expandedScopes.has(notebook.name)
                         const isActive = activeNotebook === notebook.name
                         const notebookNotes = notesByNotebook.get(notebook.name) ?? []
+                        const canExpand = canExpandNotebookScope(notebookNotes.length)
+                        const isExpanded = canExpand && expandedScopes.has(notebook.name)
                         const isContextOpen = contextMenu?.notebook.id === notebook.id
                         return (
                           <div key={notebook.id} className="notebook-sidebar__branch">
@@ -361,15 +377,22 @@ export function NotebookSidebar({
                               className={`notebook-sidebar__row notebook-sidebar__notebook-row ${
                                 isActive ? 'active' : ''
                               } ${isContextOpen ? 'context-open' : ''}`}
-                              aria-expanded={isExpanded}
+                              aria-expanded={canExpand ? isExpanded : undefined}
                               aria-current={isActive ? 'page' : undefined}
-                              onClick={() => toggleScope(notebook.name)}
+                              onClick={() => toggleScope(notebook.name, canExpand)}
                               onContextMenu={(event) => openContextMenu(event, notebook)}
                             >
-                              {isExpanded ? (
-                                <ChevronDown aria-hidden="true" />
+                              {canExpand ? (
+                                isExpanded ? (
+                                  <ChevronDown aria-hidden="true" />
+                                ) : (
+                                  <ChevronRight aria-hidden="true" />
+                                )
                               ) : (
-                                <ChevronRight aria-hidden="true" />
+                                <span
+                                  className="notebook-sidebar__chevron-spacer"
+                                  aria-hidden="true"
+                                />
                               )}
                               <Folder aria-hidden="true" />
                               <span

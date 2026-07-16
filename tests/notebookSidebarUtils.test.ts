@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { resolveNotebookCategoryStorageName } from '../src/views/notebookSidebarUtils.ts'
+import {
+  canExpandNotebookScope,
+  resolveNotebookCategoryStorageName,
+} from '../src/views/notebookSidebarUtils.ts'
 
 const options = [
   { storageName: '默认', displayName: 'Default' },
@@ -15,4 +18,11 @@ test('notebook category selection resolves localized labels to existing storage 
 
 test('notebook category selection preserves a trimmed new category name', () => {
   assert.equal(resolveNotebookCategoryStorageName('  Personal Projects  ', options), 'Personal Projects')
+})
+
+test('notebook scopes expose expansion only when they contain child notes', () => {
+  assert.equal(canExpandNotebookScope(0), false)
+  assert.equal(canExpandNotebookScope(-1), false)
+  assert.equal(canExpandNotebookScope(1), true)
+  assert.equal(canExpandNotebookScope(8), true)
 })

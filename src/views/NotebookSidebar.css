@@ -72,6 +72,12 @@
   stroke-width: 1.8;
 }
 
+.notebook-sidebar__chevron-spacer {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
 .notebook-sidebar__row:hover,
 .notebook-sidebar__row.context-open {
   border-color: color-mix(in srgb, var(--color-border) 72%, var(--text-muted));
