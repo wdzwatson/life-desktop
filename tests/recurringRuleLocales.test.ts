@@ -13,10 +13,22 @@ for (const locale of configuredLocales) {
     const resource = JSON.parse(readFileSync(join(localeDirectory, `${locale}.json`), 'utf8'))
     for (const key of [
       'new_rule_tooltip',
+      'freq_daily',
+      'freq_weekday',
+      'freq_weekly',
+      'freq_monthly',
+      'no_cron',
+      'future_triggers_list',
       'holiday_strategy_skip',
       'holiday_strategy_delay',
       'holiday_strategy_advance',
       'btn_run_now',
+      'log_header_name',
+      'log_header_type',
+      'log_header_freq',
+      'log_header_status',
+      'log_header_next',
+      'log_header_ops',
     ]) {
       assert.equal(typeof resource.tasks?.[key], 'string', `missing tasks.${key}`)
       assert.notEqual(resource.tasks[key].trim(), '', `blank tasks.${key}`)
@@ -31,6 +43,29 @@ for (const locale of configuredLocales) {
       resource.tasks.holiday_strategy_delay,
       resource.tasks.holiday_strategy_advance,
       'holiday strategy options should be distinguishable',
+    )
+
+    assert.equal(
+      new Set([
+        resource.tasks.freq_daily,
+        resource.tasks.freq_weekday,
+        resource.tasks.freq_weekly,
+        resource.tasks.freq_monthly,
+      ]).size,
+      4,
+      'frequency options should be distinguishable',
+    )
+    assert.equal(
+      new Set([
+        resource.tasks.log_header_name,
+        resource.tasks.log_header_type,
+        resource.tasks.log_header_freq,
+        resource.tasks.log_header_status,
+        resource.tasks.log_header_next,
+        resource.tasks.log_header_ops,
+      ]).size,
+      6,
+      'scheduled log headers should be distinguishable',
     )
   })
 }
