@@ -119,6 +119,7 @@
     "toast_rule_modified": "周期规则已成功修改",
     "toast_rule_created": "周期规则创建成功",
     "rule_new_name": "新的周期规划任务",
+    "new_rule_tooltip": "新建周期规则",
     "prompt_delete_rule_confirm": "确定要删除此周期任务规则吗？",
     "toast_rule_deleted": "规则已删除",
     "template_created_desc": "从模板创建",

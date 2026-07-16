@@ -119,6 +119,7 @@
     "toast_rule_modified": "Recurring rule modified successfully",
     "toast_rule_created": "Recurring rule created successfully",
     "rule_new_name": "New Recurring Task Rule",
+    "new_rule_tooltip": "Add recurring rule",
     "prompt_delete_rule_confirm": "Are you sure you want to delete this recurring rule?",
     "toast_rule_deleted": "Rule deleted successfully",
     "template_created_desc": "Created from template",

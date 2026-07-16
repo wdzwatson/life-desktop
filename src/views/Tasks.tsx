@@ -1309,8 +1309,14 @@ export const Tasks: React.FC = () => {
                 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
               >
                 <strong style={{ fontSize: '13px' }}>{t('tasks.recurring_rules_title')}</strong>
-                <button className="btn sm primary" onClick={handleNewRule}>
-                  ＋
+                <button
+                  type="button"
+                  className="btn sm primary task-row__subtask-action"
+                  onClick={handleNewRule}
+                  title={t('tasks.new_rule_tooltip')}
+                  aria-label={t('tasks.new_rule_tooltip')}
+                >
+                  <Plus size={14} aria-hidden="true" />
                 </button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
