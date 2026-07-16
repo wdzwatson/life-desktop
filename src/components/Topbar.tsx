@@ -2,6 +2,7 @@ import React from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { Search, Plus, Upload, Globe, Palette } from 'lucide-react'
+import { shouldHighlightTopbarNewTask } from './topbarUtils'
 
 export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch }) => {
   const { t } = useTranslation()
@@ -9,6 +10,7 @@ export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch })
   const setTheme = useAppStore((state) => state.setTheme)
   const language = useAppStore((state) => state.language)
   const setLanguage = useAppStore((state) => state.setLanguage)
+  const activeScreen = useAppStore((state) => state.activeScreen)
   const setActiveScreen = useAppStore((state) => state.setActiveScreen)
   const setTaskTab = useAppStore((state) => state.setTaskTab)
 
@@ -57,7 +59,10 @@ export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch })
       {/* Control buttons */}
       <div className="topbar-actions">
         {/* Module shortcuts */}
-        <button className="btn primary" onClick={handleNewTask}>
+        <button
+          className={`btn ${shouldHighlightTopbarNewTask(activeScreen) ? 'primary' : ''}`.trim()}
+          onClick={handleNewTask}
+        >
           <Plus size={15} />
           {t('common.new_task')}
         </button>
