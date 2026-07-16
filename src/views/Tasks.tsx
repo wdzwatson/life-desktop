@@ -770,30 +770,32 @@ export const Tasks: React.FC = () => {
               style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}
             >
               {/* Quick Add Bar */}
-              <form
-                onSubmit={handleQuickAdd}
-                style={{ display: 'flex', gap: '8px', padding: '4px' }}
-              >
+              <form className="task-quick-add" onSubmit={handleQuickAdd}>
                 <input
                   id="quickTitle"
                   ref={quickTitleInputRef}
                   className="form-field"
+                  aria-label={t('tasks.quick_add_label')}
                   value={quickTitle}
                   onChange={(e) => setQuickTitle(e.target.value)}
                   placeholder={t('tasks.quick_add_placeholder')}
-                  style={{ flexGrow: 1 }}
                 />
                 <select
                   className="form-field"
+                  aria-label={t('tasks.quick_add_priority_label')}
                   value={quickPriority}
                   onChange={(e) => setQuickPriority(e.target.value)}
-                  style={{ width: '80px' }}
                 >
                   <option value="high">{t('tasks.priority_high')}</option>
                   <option value="mid">{t('tasks.priority_mid')}</option>
                   <option value="low">{t('tasks.priority_low')}</option>
                 </select>
-                <button type="submit" className="btn primary">
+                <button
+                  type="submit"
+                  className="btn primary task-quick-add__submit"
+                  aria-label={t('tasks.quick_add_submit_label')}
+                  title={t('tasks.quick_add_submit_label')}
+                >
                   <Plus size={16} />
                 </button>
               </form>
