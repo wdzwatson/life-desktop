@@ -204,6 +204,7 @@
     "all_notes": "All Notes",
     "my_notebooks": "My Notebooks",
     "empty_notebooks": "No custom notebooks yet",
+    "create_first_notebook": "Create your first notebook",
     "live_preview": "Live Preview",
     "toast_saved": "Note autosaved",
     "default_title": "Uncategorized",

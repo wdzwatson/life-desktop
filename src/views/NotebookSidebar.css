@@ -178,18 +178,18 @@
 }
 
 .notebook-sidebar__section-title {
-  height: 32px;
-  min-height: 32px;
-  margin-top: 10px;
-  padding: 0 4px 0 8px;
+  height: 42px;
+  min-height: 42px;
+  margin-top: 14px;
+  padding: 8px 4px 0 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: var(--text-muted);
-  font-size: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
+  color: color-mix(in srgb, var(--text-main) 76%, var(--text-muted));
+  font-size: 11.5px;
   font-weight: 750;
-  letter-spacing: 0.075em;
-  text-transform: uppercase;
+  letter-spacing: 0.015em;
 }
 
 .notebook-sidebar__add-button {
@@ -352,8 +352,59 @@
   line-height: 1.4;
 }
 
-.notebook-sidebar__empty-root {
-  padding: 8px;
+.notebook-sidebar__empty-state {
+  margin: 4px 4px 0;
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  border: 1px dashed color-mix(in srgb, var(--color-border) 84%, var(--text-muted));
+  border-radius: calc(var(--radius-card) - 1px);
+  background-color: color-mix(in srgb, var(--text-main) 2.5%, transparent);
+  text-align: center;
+}
+
+.notebook-sidebar__empty-state-icon {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background-color: color-mix(in srgb, var(--color-accent) 9%, transparent);
+  color: color-mix(in srgb, var(--color-accent) 82%, var(--text-main));
+}
+
+.notebook-sidebar__empty-state-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.7;
+}
+
+.notebook-sidebar__empty-state p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.notebook-sidebar__empty-state button {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.notebook-sidebar__empty-state button:hover,
+.notebook-sidebar__empty-state button:focus-visible {
+  outline: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .notebook-sidebar__context-menu {

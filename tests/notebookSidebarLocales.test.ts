@@ -22,6 +22,7 @@ const sidebarKeys = [
   'default_title',
   'my_notebooks',
   'empty_notebooks',
+  'create_first_notebook',
   'create_notebook',
   'rename_notebook',
   'edit_notebook_translations',

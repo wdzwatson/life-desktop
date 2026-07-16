@@ -12,6 +12,7 @@ import {
   ChevronRight,
   FileText,
   Folder,
+  FolderPlus,
   Inbox,
   Languages,
   Library,
@@ -332,9 +333,15 @@ export function NotebookSidebar({
 
         <div className="notebook-sidebar__tree">
           {groupedNotebooks.length === 0 ? (
-            <p className="notebook-sidebar__empty notebook-sidebar__empty-root">
-              {t('notes.empty_notebooks')}
-            </p>
+            <div className="notebook-sidebar__empty-state">
+              <div className="notebook-sidebar__empty-state-icon" aria-hidden="true">
+                <FolderPlus />
+              </div>
+              <p>{t('notes.empty_notebooks')}</p>
+              <button type="button" onClick={onCreateNotebook}>
+                {t('notes.create_first_notebook')}
+              </button>
+            </div>
           ) : (
             groupedNotebooks.map(([category, categoryNotebooks]) => {
               const isCategoryExpanded = expandedCategories.has(category)

@@ -204,6 +204,7 @@
     "all_notes": "全部笔记",
     "my_notebooks": "我的笔记本",
     "empty_notebooks": "还没有自定义笔记本",
+    "create_first_notebook": "创建第一个笔记本",
     "live_preview": "同步预览",
     "toast_saved": "笔记已自动保存",
     "default_title": "未分类",
