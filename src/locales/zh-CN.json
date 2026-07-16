@@ -224,6 +224,8 @@
     "empty_note_label": "（空笔记）",
     "editor_placeholder": "在此开始使用 Markdown 语法进行撰写...",
     "no_note_selected": "选择或新建一篇笔记以开始",
+    "empty_state_title": "开始记录你的想法",
+    "empty_state_description": "从左侧选择一篇笔记，或创建新笔记开始书写。",
     "toast_navigating_shelf": "正在跳转到书库 - 书籍 ID: {{bookId}} 章节: {{chapter}}",
     "book_ref_label": "双链书架: {{id}}",
     "notebooks_title": "笔记本",

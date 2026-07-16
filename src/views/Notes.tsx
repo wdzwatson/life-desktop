@@ -3,6 +3,7 @@ import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
   Plus,
+  NotebookPen,
   Eye,
   Edit2,
   Columns,
@@ -21,6 +22,7 @@ import {
   buildRenameNotebookStatements,
   getNotebookTransactionError,
 } from './notebookSidebarUtils'
+import './Notes.css'
 
 interface Notebook {
   id: number
@@ -1052,18 +1054,17 @@ export const Notes: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--text-muted)',
-              fontStyle: 'italic',
-              fontSize: '12px',
-            }}
-          >
-            {t('notes.no_note_selected')}
-          </div>
+          <section className="notes-empty-state" aria-labelledby="notes-empty-state-title">
+            <div className="notes-empty-state__icon" aria-hidden="true">
+              <NotebookPen />
+            </div>
+            <h2 id="notes-empty-state-title">{t('notes.empty_state_title')}</h2>
+            <p>{t('notes.empty_state_description')}</p>
+            <button type="button" className="btn primary" onClick={handleCreateNote}>
+              <Plus size={16} aria-hidden="true" />
+              {t('notes.new_note')}
+            </button>
+          </section>
         )}
       </div>
 

@@ -224,6 +224,8 @@
     "empty_note_label": "(Empty Note)",
     "editor_placeholder": "Start writing in Markdown here...",
     "no_note_selected": "Select or create a note to start",
+    "empty_state_title": "Start capturing your ideas",
+    "empty_state_description": "Choose a note from the sidebar, or create a new note to start writing.",
     "toast_navigating_shelf": "Navigating to Shelf - Book ID: {{bookId}} Chapter: {{chapter}}",
     "book_ref_label": "Linked Book: {{id}}",
     "notebooks_title": "Notebooks",
