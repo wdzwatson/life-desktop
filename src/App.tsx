@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { Topbar } from './components/Topbar'
 import { Statusbar } from './components/Statusbar'
@@ -46,9 +46,23 @@ function App() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
+  const [screenProgressVisible, setScreenProgressVisible] = useState(false)
+  const hasMountedScreen = useRef(false)
 
   const api = (window as any).electronAPI
   const isMac = navigator.userAgent.includes('Mac')
+
+  useEffect(() => {
+    if (!hasMountedScreen.current) {
+      hasMountedScreen.current = true
+      return
+    }
+
+    setScreenProgressVisible(true)
+    const timer = window.setTimeout(() => setScreenProgressVisible(false), 360)
+
+    return () => window.clearTimeout(timer)
+  }, [activeScreen])
 
   useEffect(() => {
     // 1. Initialize store config (theme, language, active user)
@@ -294,8 +308,15 @@ function App() {
         <Sidebar />
         <main className="main-workspace">
           <Topbar onOpenSearch={() => setSearchOpen(true)} />
+          <div
+            className={`screen-progress ${screenProgressVisible ? 'is-visible' : ''}`}
+            role="progressbar"
+            aria-hidden="true"
+          />
           <section className="content-pane">
-            <Suspense fallback={<ScreenLoading />}>{renderScreen()}</Suspense>
+            <div key={activeScreen} className="screen-transition">
+              <Suspense fallback={<ScreenLoading />}>{renderScreen()}</Suspense>
+            </div>
           </section>
         </main>
       </div>
