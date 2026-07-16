@@ -164,7 +164,7 @@
     "interval_label": "Interval",
     "time_label": "Time",
     "days_of_week_label": "Days of Week",
-    "cron_hint": "Cron Expression",
+    "cron_hint": "Example: 0 22 * * * (daily at 22:00)",
     "holiday_strategy_label": "Holiday Strategy",
     "holiday_strategy_skip": "Skip holidays",
     "holiday_strategy_delay": "Move to next workday",

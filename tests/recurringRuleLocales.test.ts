@@ -18,6 +18,8 @@ for (const locale of configuredLocales) {
       'freq_weekly',
       'freq_monthly',
       'no_cron',
+      'freq_cron',
+      'cron_hint',
       'future_triggers_list',
       'holiday_strategy_skip',
       'holiday_strategy_delay',
@@ -67,5 +69,6 @@ for (const locale of configuredLocales) {
       6,
       'scheduled log headers should be distinguishable',
     )
+    assert.notEqual(resource.tasks.freq_cron, resource.tasks.cron_hint)
   })
 }
