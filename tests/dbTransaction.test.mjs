@@ -12,6 +12,11 @@ import {
   buildRenameVideoGroupStatements,
   buildUpdateVideoGroupTranslationsStatements,
 } from '../src/views/videoGroupSidebarUtils.ts'
+import {
+  buildCreateNotebookStatements,
+  buildDeleteNotebookStatements,
+  buildRenameNotebookStatements,
+} from '../src/views/notebookSidebarUtils.ts'
 
 function createDatabase() {
   const db = new Database(':memory:')
@@ -78,6 +83,30 @@ function seedVideoGroupTree(db) {
   const insertVideo = db.prepare('INSERT INTO videos (id, title, group_id) VALUES (?, ?, ?)')
   insertVideo.run(1, 'Target video', 2)
   insertVideo.run(2, 'Child video', 3)
+}
+
+function createNotebookDatabase() {
+  const db = new Database(':memory:')
+  db.exec(`
+    CREATE TABLE notebooks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      category TEXT DEFAULT '默认'
+    );
+    CREATE TABLE notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      notebook TEXT DEFAULT '未分类'
+    );
+    CREATE TABLE translations (
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      locale TEXT NOT NULL,
+      translation TEXT NOT NULL,
+      PRIMARY KEY (entity_type, entity_id, locale)
+    );
+  `)
+  return db
 }
 
 test('runDbTransaction commits every statement and returns run results', () => {
@@ -512,6 +541,185 @@ test('delete video group statements roll back every preceding change when the fi
       { group_id: 2, locale: 'en-US', translation: 'Target' },
       { group_id: 3, locale: 'en-US', translation: 'Child' },
     ])
+  } finally {
+    db.close()
+  }
+})
+
+test('create notebook statements save notebook and configured locale values atomically', () => {
+  const db = createNotebookDatabase()
+  try {
+    const results = runDbTransaction(
+      db,
+      buildCreateNotebookStatements({
+        name: 'Research',
+        category: 'Work',
+        nameTranslations: [
+          { locale: 'en-US', translation: 'Research' },
+          { locale: 'zh-CN', translation: '研究' },
+        ],
+        categoryTranslations: [
+          { locale: 'en-US', translation: 'Work' },
+          { locale: 'zh-CN', translation: '工作' },
+        ],
+      }),
+    )
+
+    assert.equal(results[0].changes, 1)
+    assert.deepEqual(db.prepare('SELECT id, name, category FROM notebooks').all(), [
+      { id: 1, name: 'Research', category: 'Work' },
+    ])
+    assert.deepEqual(
+      db.prepare('SELECT * FROM translations ORDER BY entity_type, locale').all(),
+      [
+        {
+          entity_type: 'notebook',
+          entity_id: '1',
+          locale: 'en-US',
+          translation: 'Research',
+        },
+        {
+          entity_type: 'notebook',
+          entity_id: '1',
+          locale: 'zh-CN',
+          translation: '研究',
+        },
+        {
+          entity_type: 'notebook_category',
+          entity_id: 'Work',
+          locale: 'en-US',
+          translation: 'Work',
+        },
+        {
+          entity_type: 'notebook_category',
+          entity_id: 'Work',
+          locale: 'zh-CN',
+          translation: '工作',
+        },
+      ],
+    )
+  } finally {
+    db.close()
+  }
+})
+
+test('create notebook statements roll back the notebook when a translation write fails', () => {
+  const db = createNotebookDatabase()
+  try {
+    db.exec(`
+      CREATE TRIGGER block_notebook_translation
+      BEFORE INSERT ON translations
+      WHEN NEW.entity_type = 'notebook'
+      BEGIN
+        SELECT RAISE(ABORT, 'blocked notebook translation');
+      END;
+    `)
+
+    assert.throws(
+      () =>
+        runDbTransaction(
+          db,
+          buildCreateNotebookStatements({
+            name: 'Research',
+            category: '默认',
+            nameTranslations: [{ locale: 'en-US', translation: 'Research' }],
+            categoryTranslations: [],
+          }),
+        ),
+      /blocked notebook translation/,
+    )
+    assert.deepEqual(db.prepare('SELECT * FROM notebooks').all(), [])
+  } finally {
+    db.close()
+  }
+})
+
+test('rename notebook statements update notebook, notes, and translations together', () => {
+  const db = createNotebookDatabase()
+  try {
+    db.prepare('INSERT INTO notebooks (id, name, category) VALUES (?, ?, ?)').run(
+      2,
+      'Research',
+      'Work',
+    )
+    db.prepare('INSERT INTO notes (title, notebook) VALUES (?, ?)').run('Draft', 'Research')
+
+    const results = runDbTransaction(
+      db,
+      buildRenameNotebookStatements({
+        id: 2,
+        previousName: 'Research',
+        name: 'Knowledge Lab',
+        category: 'Projects',
+        nameTranslations: [
+          { locale: 'en-US', translation: 'Knowledge Lab' },
+          { locale: 'zh-CN', translation: '知识实验室' },
+        ],
+        categoryTranslations: [{ locale: 'zh-CN', translation: '项目' }],
+      }),
+    )
+
+    assert.equal(results[0].changes, 1)
+    assert.deepEqual(db.prepare('SELECT id, name, category FROM notebooks').all(), [
+      { id: 2, name: 'Knowledge Lab', category: 'Projects' },
+    ])
+    assert.equal(db.prepare('SELECT notebook FROM notes').get().notebook, 'Knowledge Lab')
+    assert.equal(
+      db
+        .prepare(
+          "SELECT translation FROM translations WHERE entity_type = 'notebook' AND entity_id = '2' AND locale = 'zh-CN'",
+        )
+        .get().translation,
+      '知识实验室',
+    )
+  } finally {
+    db.close()
+  }
+})
+
+test('stale notebook rename does not create orphan translations without foreign keys', () => {
+  const db = createNotebookDatabase()
+  try {
+    const results = runDbTransaction(
+      db,
+      buildRenameNotebookStatements({
+        id: 99,
+        previousName: 'Missing',
+        name: 'Renamed',
+        category: 'Work',
+        nameTranslations: [{ locale: 'en-US', translation: 'Renamed' }],
+        categoryTranslations: [{ locale: 'en-US', translation: 'Work' }],
+      }),
+    )
+
+    assert.equal(results[0].changes, 0)
+    assert.deepEqual(db.prepare('SELECT * FROM translations').all(), [])
+  } finally {
+    db.close()
+  }
+})
+
+test('delete notebook statements move notes to the fixed uncategorized notebook atomically', () => {
+  const db = createNotebookDatabase()
+  try {
+    db.prepare('INSERT INTO notebooks (id, name, category) VALUES (?, ?, ?)').run(
+      3,
+      'Research',
+      'Work',
+    )
+    db.prepare('INSERT INTO notes (title, notebook) VALUES (?, ?)').run('Draft', 'Research')
+    db.prepare(
+      'INSERT INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
+    ).run('notebook', '3', 'zh-CN', '研究')
+
+    const results = runDbTransaction(db, buildDeleteNotebookStatements(3, 'Research'))
+
+    assert.equal(results.at(-1).changes, 1)
+    assert.deepEqual(db.prepare('SELECT name, category FROM notebooks').all(), [
+      { name: '未分类', category: '默认' },
+    ])
+    assert.equal(db.prepare('SELECT notebook FROM notes').get().notebook, '未分类')
+    assert.deepEqual(db.prepare('SELECT * FROM translations').all(), [])
   } finally {
     db.close()
   }

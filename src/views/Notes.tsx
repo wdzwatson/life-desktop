@@ -1,11 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
-  Folder,
-  FolderOpen,
-  FolderPlus,
-  FileText,
   Plus,
   Eye,
   Edit2,
@@ -15,21 +11,22 @@ import {
 } from 'lucide-react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-
-const SUPPORTED_LOCALES = [
-  { code: 'zh-CN', label: '简体中文' },
-  { code: 'en-US', label: 'English' },
-]
+import { getConfiguredLocales } from '../localeRegistry'
+import { NotebookSidebar } from './NotebookSidebar'
+import {
+  ALL_NOTES_SCOPE,
+  UNCATEGORIZED_NOTEBOOK,
+  buildCreateNotebookStatements,
+  buildDeleteNotebookStatements,
+  buildRenameNotebookStatements,
+  getNotebookTransactionError,
+} from './notebookSidebarUtils'
 
 interface Notebook {
   id: number
   name: string
   category: string
   created_at?: string
-}
-
-interface NotebookWithNotes extends Notebook {
-  notes: Note[]
 }
 
 interface Note {
@@ -50,6 +47,10 @@ interface DBResponse {
 
 interface ElectronAPI {
   dbQuery: (dbName: string, sql: string, params?: unknown[]) => Promise<DBResponse>
+  dbTransaction?: (
+    dbName: string,
+    statements: Array<{ sql: string; params?: unknown[] }>,
+  ) => Promise<DBResponse>
   exportNote?: (data: {
     title: string
     content: string
@@ -69,7 +70,6 @@ export const Notes: React.FC = () => {
   const [activeNotebook, setActiveNotebook] = useState('')
   const [notes, setNotes] = useState<Note[]>([])
   const [activeNoteId, setActiveNoteId] = useState<number | null>(null)
-  const [expandedNotebooks, setExpandedNotebooks] = useState<{ [key: string]: boolean }>({})
 
   // Editor States
   const [noteTitle, setNoteTitle] = useState('')
@@ -88,6 +88,7 @@ export const Notes: React.FC = () => {
   const [nbNameTrans, setNbNameTrans] = useState<{ [key: string]: string }>({})
   const [nbCatTrans, setNbCatTrans] = useState<{ [key: string]: string }>({})
   const [isNbTransOpen, setIsNbTransOpen] = useState(false)
+  const [isNbTranslationIntent, setIsNbTranslationIntent] = useState(false)
 
   // Deletion Modal States
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
@@ -98,16 +99,13 @@ export const Notes: React.FC = () => {
   } | null>(null)
 
   const api = (window as Window & { electronAPI?: ElectronAPI }).electronAPI
+  const configuredLocales = useMemo(() => getConfiguredLocales(i18n.language), [i18n.language])
 
-  const selectNote = useCallback((note: Note) => {
+  const selectNote = useCallback((note: Note, scope = note.notebook) => {
     setActiveNoteId(note.id)
     setNoteTitle(note.title)
     setNoteContent(note.content || '')
-    setActiveNotebook(note.notebook)
-    setExpandedNotebooks((prev) => ({
-      ...prev,
-      [note.notebook]: true,
-    }))
+    setActiveNotebook(scope)
   }, [])
 
   const getNotebookDisplayName = (name: string, id: number) => {
@@ -171,17 +169,19 @@ export const Notes: React.FC = () => {
       setTranslations(transRes.data as any[])
     }
 
+    const customNotebookNames = new Set(
+      list
+        .filter((notebook) => notebook.name !== UNCATEGORIZED_NOTEBOOK)
+        .map((notebook) => notebook.name),
+    )
+
     // Select active notebook or fallback
     let currentActive = activeNotebook
-    if (list.length > 0) {
-      const exists = list.some((n: Notebook) => n.name === currentActive)
-      if (!exists) {
-        currentActive = list[0].name
-        setActiveNotebook(currentActive)
-      }
-    } else {
-      currentActive = ''
-      setActiveNotebook('')
+    const isFixedScope =
+      currentActive === ALL_NOTES_SCOPE || currentActive === UNCATEGORIZED_NOTEBOOK
+    if (!isFixedScope && !customNotebookNames.has(currentActive)) {
+      currentActive = ALL_NOTES_SCOPE
+      setActiveNotebook(currentActive)
     }
 
     // Load ALL notes
@@ -193,12 +193,21 @@ export const Notes: React.FC = () => {
       if (notesList.length > 0) {
         const hasActive = notesList.some((n: Note) => n.id === activeNoteId)
         if (!hasActive || activeNoteId === null) {
-          // Select first note under active notebook if possible, otherwise first note overall
-          let defaultNote = notesList.find((n: Note) => n.notebook === currentActive)
+          let defaultNote =
+            currentActive === ALL_NOTES_SCOPE
+              ? notesList[0]
+              : currentActive === UNCATEGORIZED_NOTEBOOK
+                ? notesList.find(
+                    (note) =>
+                      !note.notebook ||
+                      note.notebook === UNCATEGORIZED_NOTEBOOK ||
+                      !customNotebookNames.has(note.notebook),
+                  )
+                : notesList.find((note) => note.notebook === currentActive)
           if (!defaultNote) {
             defaultNote = notesList[0]
           }
-          selectNote(defaultNote)
+          selectNote(defaultNote, currentActive)
         }
       } else {
         setActiveNoteId(null)
@@ -240,7 +249,12 @@ export const Notes: React.FC = () => {
     const query = 'INSERT INTO notes (title, content, note_type, notebook) VALUES (?, ?, ?, ?)'
     const defaultTitle = t('notes.new_note')
     const defaultContent = t('notes.default_content')
-    const targetNotebookName = activeNotebook || '未分类'
+    const targetNotebookName =
+      !activeNotebook ||
+      activeNotebook === ALL_NOTES_SCOPE ||
+      activeNotebook === UNCATEGORIZED_NOTEBOOK
+        ? UNCATEGORIZED_NOTEBOOK
+        : activeNotebook
     // Ensure the notebook exists in the notebooks table
     const checkNb = await api.dbQuery(
       'notes',
@@ -293,46 +307,24 @@ export const Notes: React.FC = () => {
   }
 
   const executeDeleteNotebook = async (nb: Notebook) => {
-    if (!api) return
-    const res = await api.dbQuery('notes', 'DELETE FROM notebooks WHERE id = ?', [nb.id])
-    if (res?.success) {
-      // Clear translations for this notebook
-      await api.dbQuery(
-        'notes',
-        "DELETE FROM translations WHERE entity_type = 'notebook' AND entity_id = ?",
-        [String(nb.id)],
-      )
-
-      await api.dbQuery('notes', 'UPDATE notes SET notebook = ? WHERE notebook = ?', [
-        '未分类',
-        nb.name,
-      ])
-
-      const checkNb = await api.dbQuery(
-        'notes',
-        'SELECT count(*) as count FROM notebooks WHERE name = ?',
-        ['未分类'],
-      )
-      if (
-        checkNb?.success &&
-        Array.isArray(checkNb.data) &&
-        checkNb.data.length > 0 &&
-        (checkNb.data[0] as { count: number }).count === 0
-      ) {
-        await api.dbQuery('notes', 'INSERT INTO notebooks (name, category) VALUES (?, ?)', [
-          '未分类',
-          '默认',
-        ])
-      }
-
+    if (!api?.dbTransaction) return
+    const res = await api.dbTransaction('notes', buildDeleteNotebookStatements(nb.id, nb.name))
+    const transactionResults = Array.isArray(res?.data)
+      ? (res.data as Array<{ changes?: number }>)
+      : []
+    const deleteChanges = Number(transactionResults.at(-1)?.changes)
+    if (res?.success && Number.isFinite(deleteChanges) && deleteChanges > 0) {
       showToast(t('notes.toast_notebook_deleted'))
       if (activeNotebook === nb.name) {
-        setActiveNotebook('未分类')
-      } else {
-        loadNotes()
+        setActiveNotebook(UNCATEGORIZED_NOTEBOOK)
       }
+      await loadNotes()
     } else {
-      showToast(res?.error || t('notes.error_delete_notebook_failed'))
+      showToast(
+        res?.success
+          ? t('notes.error_notebook_unavailable')
+          : getNotebookTransactionError(res?.error, t('notes.error_delete_notebook_failed')),
+      )
     }
     setDeleteConfirmTarget(null)
   }
@@ -373,11 +365,12 @@ export const Notes: React.FC = () => {
     setNbNameTrans({})
     setNbCatTrans({})
     setIsNbTransOpen(false)
+    setIsNbTranslationIntent(false)
     setTargetNotebook(null)
     setIsNbModalOpen(true)
   }
 
-  const handleRenameNotebook = (nb: Notebook) => {
+  const handleRenameNotebook = (nb: Notebook, openTranslations = false) => {
     setNbModalAction('rename')
     const currentLocale = i18n.language
 
@@ -406,7 +399,7 @@ export const Notes: React.FC = () => {
     // Load other translations
     const nameTransObj: { [key: string]: string } = {}
     const catTransObj: { [key: string]: string } = {}
-    SUPPORTED_LOCALES.forEach((locale) => {
+    configuredLocales.forEach((locale) => {
       if (locale.code !== currentLocale) {
         // Name
         const nt = translations.find(
@@ -430,20 +423,34 @@ export const Notes: React.FC = () => {
 
     setNbNameTrans(nameTransObj)
     setNbCatTrans(catTransObj)
-    setIsNbTransOpen(false)
+    setIsNbTransOpen(openTranslations)
+    setIsNbTranslationIntent(openTranslations)
     setTargetNotebook(nb)
     setIsNbModalOpen(true)
   }
 
   const handleNbModalSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!api) {
+    if (!api?.dbTransaction) {
       showToast(`⚠️ ${t('common.error_db_connect')}`)
       return
     }
     if (!nbModalName.trim()) return
 
     const mainName = nbModalName.trim()
+    const normalizedMainName = mainName.toLocaleLowerCase().replace(/\s+/g, ' ')
+    const reservedNotebookNames = new Set(
+      [UNCATEGORIZED_NOTEBOOK, ...configuredLocales.flatMap((locale) => [
+        i18n.getResource(locale.code, 'translation', 'notes.all_notes'),
+        i18n.getResource(locale.code, 'translation', 'notes.default_title'),
+      ])]
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        .map((value) => value.trim().toLocaleLowerCase().replace(/\s+/g, ' ')),
+    )
+    if (reservedNotebookNames.has(normalizedMainName)) {
+      showToast(t('notes.error_reserved_notebook_name'))
+      return
+    }
     let categoryToSave = nbModalCategory.trim()
     if (
       categoryToSave === t('common.default_category') ||
@@ -453,179 +460,98 @@ export const Notes: React.FC = () => {
       categoryToSave = '默认'
     }
 
-    if (nbModalAction === 'create') {
-      const res = await api.dbQuery(
-        'notes',
-        'INSERT INTO notebooks (name, category) VALUES (?, ?)',
-        [mainName, categoryToSave],
+    const nameTranslations = configuredLocales.map((locale) => ({
+      locale: locale.code,
+      translation:
+        locale.code === i18n.language
+          ? mainName
+          : (nbNameTrans[locale.code] || '').trim() || mainName,
+    }))
+    const currentCategoryName = nbModalCategory.trim() || categoryToSave
+    const categoryTranslations = configuredLocales.map((locale) => ({
+      locale: locale.code,
+      translation:
+        locale.code === i18n.language
+          ? currentCategoryName
+          : (nbCatTrans[locale.code] || '').trim() || currentCategoryName,
+    }))
+
+    const statements =
+      nbModalAction === 'create'
+        ? buildCreateNotebookStatements({
+            name: mainName,
+            category: categoryToSave,
+            nameTranslations,
+            categoryTranslations,
+          })
+        : targetNotebook
+          ? buildRenameNotebookStatements({
+              id: targetNotebook.id,
+              previousName: targetNotebook.name,
+              name: mainName,
+              category: categoryToSave,
+              nameTranslations,
+              categoryTranslations,
+            })
+          : null
+    if (!statements) return
+
+    const res = await api.dbTransaction('notes', statements)
+    if (!res?.success) {
+      showToast(
+        getNotebookTransactionError(res?.error, t('notes.toast_notebook_exists')),
       )
-      if (res?.success) {
-        let nbId = (res.data as any)?.lastInsertRowid
-        if (!nbId) {
-          const findNb = await api.dbQuery('notes', 'SELECT id FROM notebooks WHERE name = ?', [
-            mainName,
-          ])
-          if (findNb?.success && Array.isArray(findNb.data) && findNb.data.length > 0) {
-            nbId = (findNb.data as any)[0].id
-          }
-        }
-
-        if (nbId) {
-          const nbIdStr = String(nbId)
-          // Insert active language translation for notebook name
-          await api.dbQuery(
-            'notes',
-            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-            ['notebook', nbIdStr, i18n.language, mainName],
-          )
-          // Insert other language translations for notebook name
-          for (const locale of SUPPORTED_LOCALES) {
-            if (locale.code === i18n.language) continue
-            const val = (nbNameTrans[locale.code] || '').trim() || mainName
-            await api.dbQuery(
-              'notes',
-              'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-              ['notebook', nbIdStr, locale.code, val],
-            )
-          }
-
-          // Insert translations for category (if custom)
-          if (categoryToSave !== '默认') {
-            await api.dbQuery(
-              'notes',
-              'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-              ['notebook_category', categoryToSave, i18n.language, nbModalCategory.trim()],
-            )
-            for (const locale of SUPPORTED_LOCALES) {
-              if (locale.code === i18n.language) continue
-              const val = (nbCatTrans[locale.code] || '').trim() || nbModalCategory.trim()
-              await api.dbQuery(
-                'notes',
-                'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-                ['notebook_category', categoryToSave, locale.code, val],
-              )
-            }
-          }
-        }
-
-        showToast(t('notes.toast_notebook_created'))
-        setActiveNotebook(mainName)
-        setExpandedNotebooks((prev) => ({
-          ...prev,
-          [mainName]: true,
-        }))
-        setIsNbModalOpen(false)
-        loadNotes()
-      } else {
-        const errMsg = `${t('common.db_error')}: ${res?.error || t('common.db_error_hint')}`
-        alert(errMsg)
-        showToast(t('notes.toast_notebook_exists') || res?.error || '')
-      }
-    } else if (nbModalAction === 'rename' && targetNotebook) {
-      const res = await api.dbQuery(
-        'notes',
-        'UPDATE notebooks SET name = ?, category = ? WHERE id = ?',
-        [mainName, categoryToSave, targetNotebook.id],
-      )
-      if (res?.success) {
-        await api.dbQuery('notes', 'UPDATE notes SET notebook = ? WHERE notebook = ?', [
-          mainName,
-          targetNotebook.name,
-        ])
-
-        const nbIdStr = String(targetNotebook.id)
-        // Save notebook name translations
-        await api.dbQuery(
-          'notes',
-          'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-          ['notebook', nbIdStr, i18n.language, mainName],
-        )
-        for (const locale of SUPPORTED_LOCALES) {
-          if (locale.code === i18n.language) continue
-          const val = (nbNameTrans[locale.code] || '').trim() || mainName
-          await api.dbQuery(
-            'notes',
-            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-            ['notebook', nbIdStr, locale.code, val],
-          )
-        }
-
-        // Save notebook category translations
-        if (categoryToSave !== '默认') {
-          await api.dbQuery(
-            'notes',
-            'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-            ['notebook_category', categoryToSave, i18n.language, nbModalCategory.trim()],
-          )
-          for (const locale of SUPPORTED_LOCALES) {
-            if (locale.code === i18n.language) continue
-            const val = (nbCatTrans[locale.code] || '').trim() || nbModalCategory.trim()
-            await api.dbQuery(
-              'notes',
-              'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
-              ['notebook_category', categoryToSave, locale.code, val],
-            )
-          }
-        }
-
-        showToast(t('notes.toast_notebook_renamed'))
-        setIsNbModalOpen(false)
-        if (activeNotebook === targetNotebook.name) {
-          setActiveNotebook(mainName)
-        } else {
-          loadNotes()
-        }
-      } else {
-        const errMsg = `${t('common.db_error')}: ${res?.error || t('common.db_error_hint')}`
-        alert(errMsg)
-        showToast(t('notes.toast_notebook_exists') || res?.error || '')
-      }
+      return
     }
+    const transactionResults = Array.isArray(res.data)
+      ? (res.data as Array<{ changes?: number }>)
+      : []
+    const primaryChanges = Number(transactionResults[0]?.changes)
+    if (!Number.isFinite(primaryChanges) || primaryChanges === 0) {
+      showToast(t('notes.error_notebook_unavailable'))
+      return
+    }
+
+    setIsNbModalOpen(false)
+    if (nbModalAction === 'create') {
+      showToast(t('notes.toast_notebook_created'))
+      setActiveNotebook(mainName)
+    } else if (targetNotebook) {
+      showToast(t('notes.toast_notebook_renamed'))
+      if (activeNotebook === targetNotebook.name) setActiveNotebook(mainName)
+    }
+    await loadNotes()
   }
 
   const handleDeleteNotebook = (nb: Notebook) => {
-    if (!api) {
+    if (!api?.dbTransaction) {
       showToast(`⚠️ ${t('common.error_electron_required')}`)
       return
     }
     setDeleteConfirmTarget({ type: 'notebook', id: nb.id, name: nb.name, nb })
   }
 
-  const handleNotebookHeaderClick = (notebookName: string) => {
-    setActiveNotebook(notebookName)
-    setExpandedNotebooks((prev) => ({
-      ...prev,
-      [notebookName]: !prev[notebookName],
-    }))
+  const handleNotebookScopeSelect = (scope: string) => {
+    const customNotebookNames = new Set(
+      notebooks
+        .filter((notebook) => notebook.name !== UNCATEGORIZED_NOTEBOOK)
+        .map((notebook) => notebook.name),
+    )
+    const candidate =
+      scope === ALL_NOTES_SCOPE
+        ? notes[0]
+        : scope === UNCATEGORIZED_NOTEBOOK
+          ? notes.find(
+              (note) =>
+                !note.notebook ||
+                note.notebook === UNCATEGORIZED_NOTEBOOK ||
+                !customNotebookNames.has(note.notebook),
+            )
+          : notes.find((note) => note.notebook === scope)
+
+    setActiveNotebook(scope)
+    if (candidate) selectNote(candidate, scope)
   }
-
-  const groupedNotebooks = React.useMemo(() => {
-    const groups: { [key: string]: NotebookWithNotes[] } = {}
-
-    // Group notes by notebook in memory
-    const notesByNotebook: { [key: string]: Note[] } = {}
-    notes.forEach((note) => {
-      const nbName = note.notebook || '未分类'
-      if (!notesByNotebook[nbName]) {
-        notesByNotebook[nbName] = []
-      }
-      notesByNotebook[nbName].push(note)
-    })
-
-    // Group notebooks by category and assign their corresponding notes
-    notebooks.forEach((nb) => {
-      const cat = nb.category || '默认'
-      if (!groups[cat]) {
-        groups[cat] = []
-      }
-      groups[cat].push({
-        ...nb,
-        notes: notesByNotebook[nb.name] || [],
-      })
-    })
-
-    return groups
-  }, [notebooks, notes])
 
   // Handle Double Link Click or E-book Deep Link Click
   const handleDeepLinkClick = useCallback(
@@ -738,244 +664,28 @@ export const Notes: React.FC = () => {
           backgroundColor: 'var(--bg-surface)',
         }}
       >
-        {/* Combined Navigation Column (Tree Explorer) */}
-        <div
-          style={{
-            borderRight: '1px solid var(--color-border)',
-            padding: '12px',
-            overflowY: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
+        <NotebookSidebar
+          notebooks={notebooks}
+          notes={notes}
+          activeNotebook={activeNotebook}
+          activeNoteId={activeNoteId}
+          getNotebookDisplayName={(notebook) =>
+            getNotebookDisplayName(notebook.name, notebook.id)
+          }
+          getCategoryDisplayName={getNotebookCategoryDisplayName}
+          formatTime={formatTime}
+          onSelectNotebook={handleNotebookScopeSelect}
+          onSelectNote={(sidebarNote, scope) => {
+            const note = notes.find((candidate) => candidate.id === sidebarNote.id)
+            if (note) selectNote(note, scope)
           }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3
-              style={{
-                fontSize: '11px',
-                color: 'var(--text-muted)',
-                textTransform: 'uppercase',
-                margin: 0,
-              }}
-            >
-              {t('notes.notebooks')}
-            </h3>
-            <button
-              onClick={handleCreateNotebook}
-              title={t('notes.create_notebook')}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                padding: '2px',
-                color: 'var(--text-muted)',
-                display: 'flex',
-                alignItems: 'center',
-              }}
-            >
-              <FolderPlus size={14} />
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {Object.entries(groupedNotebooks).map(([category, items]) => (
-              <div key={category} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <div
-                  style={{
-                    fontSize: '10px',
-                    fontWeight: 'bold',
-                    color: 'var(--text-muted)',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                  }}
-                >
-                  {getNotebookCategoryDisplayName(category)}
-                </div>
-                {items.map((nb) => {
-                  const isExpanded = !!expandedNotebooks[nb.name]
-                  const isActive = activeNotebook === nb.name
-                  return (
-                    <div key={nb.id} style={{ display: 'flex', flexDirection: 'column' }}>
-                      {/* Notebook Header Row */}
-                      <div
-                        className="notebook-item"
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          borderRadius: '6px',
-                          background: isActive ? 'rgba(59, 130, 246, 0.06)' : 'none',
-                          paddingRight: '6px',
-                        }}
-                      >
-                        <button
-                          onClick={() => handleNotebookHeaderClick(nb.name)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '8px',
-                            borderRadius: '6px',
-                            border: 'none',
-                            background: 'none',
-                            color: isActive ? 'var(--color-accent)' : 'var(--text-main)',
-                            fontWeight: isActive ? 'bold' : 'normal',
-                            textAlign: 'left',
-                            cursor: 'pointer',
-                            flexGrow: 1,
-                            minWidth: 0,
-                            overflow: 'hidden',
-                          }}
-                        >
-                          {isExpanded ? <FolderOpen size={15} /> : <Folder size={15} />}
-                          <span
-                            style={{
-                              fontSize: '13px',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {nb.name === '未分类'
-                              ? t('notes.default_title')
-                              : getNotebookDisplayName(nb.name, nb.id)}
-                            {` (${nb.notes.length})`}
-                          </span>
-                        </button>
-                        <div className="notebook-actions" style={{ display: 'flex', gap: '2px' }}>
-                          <button
-                            onClick={() => handleRenameNotebook(nb)}
-                            title={t('common.edit')}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              padding: '2px',
-                              color: 'var(--text-muted)',
-                            }}
-                          >
-                            <Edit2 size={11} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteNotebook(nb)}
-                            title={t('common.delete')}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              padding: '2px',
-                              color: 'var(--text-muted)',
-                            }}
-                          >
-                            <Trash2 size={11} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Collapsible Notes List */}
-                      {isExpanded && (
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '2px',
-                            paddingLeft: '18px',
-                            marginTop: '2px',
-                            borderLeft: '1px dashed var(--color-border)',
-                            marginLeft: '15px',
-                          }}
-                        >
-                          {nb.notes.length === 0 ? (
-                            <div
-                              style={{
-                                padding: '6px 8px',
-                                fontSize: '11px',
-                                color: 'var(--text-muted)',
-                                fontStyle: 'italic',
-                              }}
-                            >
-                              {t('notes.empty_note_placeholder')}
-                            </div>
-                          ) : (
-                            nb.notes.map((note) => {
-                              const isNoteActive = activeNoteId === note.id
-                              return (
-                                <div
-                                  key={note.id}
-                                  onClick={() => selectNote(note)}
-                                  style={{
-                                    padding: '6px 8px',
-                                    borderRadius: '4px',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '2px',
-                                    backgroundColor: isNoteActive ? 'var(--bg-app)' : 'transparent',
-                                    border:
-                                      '1px solid ' +
-                                      (isNoteActive ? 'var(--color-accent)' : 'transparent'),
-                                    transition: 'all 0.1s ease',
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    if (!isNoteActive) {
-                                      e.currentTarget.style.backgroundColor =
-                                        'rgba(255, 255, 255, 0.03)'
-                                    }
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    if (!isNoteActive) {
-                                      e.currentTarget.style.backgroundColor = 'transparent'
-                                    }
-                                  }}
-                                >
-                                  <div
-                                    style={{
-                                      fontSize: '12px',
-                                      fontWeight: isNoteActive ? 600 : 'normal',
-                                      color: isNoteActive ? 'var(--text-main)' : 'var(--text-main)',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '6px',
-                                    }}
-                                  >
-                                    <FileText
-                                      size={12}
-                                      style={{ color: 'var(--text-muted)', flexShrink: 0 }}
-                                    />
-                                    <span
-                                      style={{
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap',
-                                      }}
-                                    >
-                                      {note.title || t('notes.title_placeholder')}
-                                    </span>
-                                  </div>
-                                  <span
-                                    style={{
-                                      fontSize: '10px',
-                                      color: 'var(--text-muted)',
-                                      paddingLeft: '18px',
-                                    }}
-                                  >
-                                    {formatTime(note.created_at)}
-                                  </span>
-                                </div>
-                              )
-                            })
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            ))}
-          </div>
-        </div>
+          onCreateNotebook={handleCreateNotebook}
+          onRenameNotebook={(notebook) => handleRenameNotebook(notebook as Notebook)}
+          onEditTranslations={(notebook) =>
+            handleRenameNotebook(notebook as Notebook, true)
+          }
+          onDeleteNotebook={(notebook) => handleDeleteNotebook(notebook as Notebook)}
+        />
 
         {/* Column 3: Rich Markdown editor + preview */}
         {activeNoteId ? (
@@ -1392,7 +1102,11 @@ export const Notes: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-main)' }}>
-              {nbModalAction === 'create' ? t('notes.create_notebook') : t('notes.rename_notebook')}
+              {nbModalAction === 'create'
+                ? t('notes.create_notebook')
+                : isNbTranslationIntent
+                  ? t('notes.edit_notebook_translations')
+                  : t('notes.rename_notebook')}
             </h3>
             <form
               onSubmit={handleNbModalSubmit}
@@ -1462,7 +1176,7 @@ export const Notes: React.FC = () => {
                     marginBottom: '10px',
                   }}
                 >
-                  {SUPPORTED_LOCALES.filter((l) => l.code !== i18n.language).map((locale) => (
+                  {configuredLocales.filter((l) => l.code !== i18n.language).map((locale) => (
                     <div
                       key={locale.code}
                       style={{
@@ -1493,7 +1207,9 @@ export const Notes: React.FC = () => {
                           onChange={(e) =>
                             setNbNameTrans({ ...nbNameTrans, [locale.code]: e.target.value })
                           }
-                          placeholder={`e.g. name in ${locale.label}`}
+                          placeholder={t('notes.notebook_name_translation_placeholder', {
+                            language: locale.label,
+                          })}
                         />
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -1507,7 +1223,9 @@ export const Notes: React.FC = () => {
                           onChange={(e) =>
                             setNbCatTrans({ ...nbCatTrans, [locale.code]: e.target.value })
                           }
-                          placeholder={`e.g. category in ${locale.label}`}
+                          placeholder={t('notes.notebook_category_translation_placeholder', {
+                            language: locale.label,
+                          })}
                         />
                       </div>
                     </div>
