@@ -346,6 +346,7 @@ function App() {
       {/* 4. Global Search & Command Palette Modal Overlay */}
       {searchOpen && (
         <div
+          className="command-palette-overlay"
           onClick={() => setSearchOpen(false)}
           style={{
             position: 'fixed',
@@ -357,18 +358,10 @@ function App() {
             alignItems: 'flex-start',
             justifyContent: 'center',
             paddingTop: '80px',
-            animation: 'fadeIn 0.15s ease both',
           }}
         >
-          <style
-            dangerouslySetInnerHTML={{
-              __html: `
-            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-            @keyframes slideDown { from { transform: translateY(-10px); } to { transform: none; } }
-          `,
-            }}
-          />
           <div
+            className="command-palette"
             onClick={(e) => e.stopPropagation()}
             style={{
               width: '600px',
@@ -378,7 +371,6 @@ function App() {
               boxShadow:
                 '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
               overflow: 'hidden',
-              animation: 'slideDown 0.15s ease both',
             }}
           >
             {/* Search Input */}

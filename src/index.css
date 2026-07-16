@@ -627,6 +627,45 @@ body.theme-dense .nav-item.active {
   animation: video-refresh-sweep 900ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
+.dialog-overlay,
+.command-palette-overlay {
+  animation: dialog-overlay-enter 220ms ease both;
+}
+
+.dialog-surface,
+.command-palette {
+  animation: dialog-surface-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform, opacity;
+}
+
+.command-palette-overlay {
+  animation-name: dialog-overlay-enter;
+}
+
+.command-palette {
+  animation-name: dialog-surface-enter;
+}
+
+@keyframes dialog-overlay-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-surface-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @keyframes video-refresh-sweep {
   from {
     transform: translateX(0);
@@ -650,6 +689,14 @@ body.theme-dense .nav-item.active {
 @media (prefers-reduced-motion: reduce) {
   .toast-notification {
     animation: none;
+  }
+
+  .dialog-overlay,
+  .command-palette-overlay,
+  .dialog-surface,
+  .command-palette {
+    animation: none;
+    transform: none;
   }
 
   .video-refresh-indicator,

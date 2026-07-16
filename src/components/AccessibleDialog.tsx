@@ -96,9 +96,10 @@ export function AccessibleDialog({
   }
 
   return (
-    <div style={overlayStyle}>
+    <div className="dialog-overlay" style={overlayStyle}>
       <div
         ref={contentRef}
+        className="dialog-surface"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
