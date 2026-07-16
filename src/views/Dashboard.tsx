@@ -159,6 +159,7 @@ export const Dashboard: React.FC = () => {
           <div className="card-title">
             <span>{t('dashboard.today_tasks')}</span>
             <button
+              type="button"
               className="pill blue"
               onClick={() => navigateTo('tasks', 'list')}
               style={{ cursor: 'pointer', border: 'none' }}
@@ -260,6 +261,7 @@ export const Dashboard: React.FC = () => {
           <div className="card-title">
             <span>{t('dashboard.current_read')}</span>
             <button
+              type="button"
               className="pill blue"
               onClick={() => navigateTo('books')}
               style={{ cursor: 'pointer', border: 'none' }}
@@ -360,6 +362,7 @@ export const Dashboard: React.FC = () => {
           <div className="card-title">
             <span>{t('dashboard.toolbox_pin')}</span>
             <button
+              type="button"
               className="pill green"
               onClick={() => navigateTo('toolbox')}
               style={{ cursor: 'pointer', border: 'none' }}
@@ -419,6 +422,7 @@ export const Dashboard: React.FC = () => {
           <div className="card-title">
             <span>{t('dashboard.recent_notes')}</span>
             <button
+              type="button"
               className="pill blue"
               onClick={() => navigateTo('notes')}
               style={{ cursor: 'pointer', border: 'none' }}
@@ -488,6 +492,7 @@ export const Dashboard: React.FC = () => {
           <div className="card-title">
             <span>{t('dashboard.recent_videos')}</span>
             <button
+              type="button"
               className="pill blue"
               onClick={() => navigateTo('videos')}
               style={{ cursor: 'pointer', border: 'none' }}
