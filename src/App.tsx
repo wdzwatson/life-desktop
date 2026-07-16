@@ -8,9 +8,14 @@ import { useTranslation } from 'react-i18next'
 // Screen views
 import { AuthScreen } from './components/AuthScreen'
 
-function ScreenLoading() {
+function ScreenLoading({ screen }: { screen: string }) {
   return (
-    <div className="screen-loading" role="status" aria-live="polite" aria-label="Loading">
+    <div
+      className={`screen-loading screen-loading--${screen}`}
+      role="status"
+      aria-live="polite"
+      aria-label="Loading"
+    >
       <div className="screen-loading__bar" />
       <div className="screen-loading__row screen-loading__row--wide" />
       <div className="screen-loading__row" />
@@ -63,6 +68,18 @@ function App() {
 
     return () => window.clearTimeout(timer)
   }, [activeScreen])
+
+  useEffect(() => {
+    const preloadTimer = window.setTimeout(() => {
+      // Warm the largest screen chunks while the user is idle. Browser caching
+      // deduplicates these imports when React.lazy needs them later.
+      void import('./views/Notes')
+      void import('./views/Books')
+      void import('./views/Videos')
+    }, 1200)
+
+    return () => window.clearTimeout(preloadTimer)
+  }, [])
 
   useEffect(() => {
     // 1. Initialize store config (theme, language, active user)
@@ -315,7 +332,9 @@ function App() {
           />
           <section className="content-pane">
             <div key={activeScreen} className="screen-transition">
-              <Suspense fallback={<ScreenLoading />}>{renderScreen()}</Suspense>
+              <Suspense fallback={<ScreenLoading screen={activeScreen} />}>
+                {renderScreen()}
+              </Suspense>
             </div>
           </section>
         </main>
