@@ -194,6 +194,18 @@
   font-size: 12.5px;
 }
 
+.task-rule-schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 720px) {
+  .task-rule-schedule-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .task-details-empty {
   min-height: 240px;
   margin: auto;

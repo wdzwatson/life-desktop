@@ -1510,7 +1510,7 @@ export const Tasks: React.FC = () => {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px', gap: '10px' }}>
+              <div className="task-rule-schedule-grid">
                 <div>
                   <label
                     style={{
