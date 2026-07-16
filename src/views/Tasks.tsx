@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
+  ListTodo,
   Trash2,
   Plus,
 } from 'lucide-react'
@@ -74,6 +75,7 @@ export const Tasks: React.FC = () => {
   const [quickTitle, setQuickTitle] = useState('')
   const [quickPriority, setQuickPriority] = useState('mid')
   const [quickDueDate] = useState('')
+  const quickTitleInputRef = useRef<HTMLInputElement | null>(null)
 
   // Detail Panel Edit State
   const [editDesc, setEditDesc] = useState('')
@@ -228,6 +230,11 @@ export const Tasks: React.FC = () => {
       </span>
     </button>
   )
+
+  const handleStartFirstTask = () => {
+    setTaskTab('list')
+    setTimeout(() => quickTitleInputRef.current?.focus(), 0)
+  }
 
   const loadData = async () => {
     if (api) {
@@ -588,120 +595,138 @@ export const Tasks: React.FC = () => {
 
       <div style={{ flexGrow: 1, minHeight: 0 }}>
         {/* TAB: KANBAN BOARD */}
-        {taskTab === 'kanban' && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(5, 1fr)',
-              gap: '12px',
-              height: '100%',
-              overflowY: 'auto',
-            }}
-          >
-            {[
-              { key: 'lane_inbox', dbVal: '待收集' },
-              { key: 'lane_todo', dbVal: '待处理' },
-              { key: 'lane_inprogress', dbVal: '进行中' },
-              { key: 'lane_review', dbVal: '待验收' },
-              { key: 'lane_closed', dbVal: '已关闭' },
-            ].map((lane) => {
-              const laneTasks = tasks.filter(
-                (t) =>
-                  t.status === lane.dbVal || (lane.dbVal === '待处理' && t.status === '已逾期'),
-              )
-              return (
-                <div
-                  key={lane.key}
-                  style={{
-                    backgroundColor: 'var(--bg-sidebar)',
-                    borderRadius: '8px',
-                    padding: '12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                    minHeight: '400px',
-                  }}
-                >
+        {taskTab === 'kanban' &&
+          (tasks.length === 0 ? (
+            <section className="task-board-empty" aria-labelledby="task-board-empty-title">
+              <div className="task-board-empty__icon" aria-hidden="true">
+                <ListTodo />
+              </div>
+              <h2 id="task-board-empty-title">{t('tasks.board_empty_title')}</h2>
+              <p>{t('tasks.board_empty_description')}</p>
+              <button type="button" className="btn primary" onClick={handleStartFirstTask}>
+                <Plus size={16} aria-hidden="true" />
+                {t('tasks.board_empty_action')}
+              </button>
+            </section>
+          ) : (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(5, 1fr)',
+                gap: '12px',
+                height: '100%',
+                overflowY: 'auto',
+              }}
+            >
+              {[
+                { key: 'lane_inbox', dbVal: '待收集' },
+                { key: 'lane_todo', dbVal: '待处理' },
+                { key: 'lane_inprogress', dbVal: '进行中' },
+                { key: 'lane_review', dbVal: '待验收' },
+                { key: 'lane_closed', dbVal: '已关闭' },
+              ].map((lane) => {
+                const laneTasks = tasks.filter(
+                  (t) =>
+                    t.status === lane.dbVal ||
+                    (lane.dbVal === '待处理' && t.status === '已逾期'),
+                )
+                return (
                   <div
+                    key={lane.key}
                     style={{
-                      fontWeight: 'bold',
-                      fontSize: '13px',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      color: 'var(--text-muted)',
-                    }}
-                  >
-                    <span>{getStatusLabel(lane.dbVal)}</span>
-                    <span className="pill">{laneTasks.length}</span>
-                  </div>
-                  <div
-                    style={{
+                      backgroundColor: 'var(--bg-sidebar)',
+                      borderRadius: '8px',
+                      padding: '12px',
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: '8px',
-                      flexGrow: 1,
-                      overflowY: 'auto',
+                      gap: '10px',
+                      minHeight: '400px',
                     }}
                   >
-                    {laneTasks.map((task) => (
-                      <div
-                        key={task.id}
-                        className="card"
-                        style={{
-                          padding: '12px',
-                          cursor: 'pointer',
-                          borderColor:
-                            task.status === '已逾期'
-                              ? 'var(--color-danger)'
-                              : 'var(--color-border)',
-                          boxShadow:
-                            task.status === '已逾期'
-                              ? '0 0 4px rgba(239, 68, 68, 0.15)'
-                              : 'var(--shadow-app)',
-                        }}
-                        onClick={() => {
-                          setSelectedTaskId(task.id)
-                          setEditDesc(task.description || '')
-                          setEditProgress(task.progress || 0)
-                          setTaskTab('list')
-                        }}
-                      >
-                        <h4
-                          style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-main)' }}
-                        >
-                          {task.status === '已逾期' && (
-                            <span style={{ color: 'var(--color-danger)', marginRight: '4px' }}>
-                              [{t('common.overdue')}]
-                            </span>
-                          )}
-                          {task.title}
-                        </h4>
+                    <div
+                      style={{
+                        fontWeight: 'bold',
+                        fontSize: '13px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        color: 'var(--text-muted)',
+                      }}
+                    >
+                      <span>{getStatusLabel(lane.dbVal)}</span>
+                      <span className="pill">{laneTasks.length}</span>
+                    </div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        flexGrow: 1,
+                        overflowY: 'auto',
+                      }}
+                    >
+                      {laneTasks.map((task) => (
                         <div
+                          key={task.id}
+                          className="card"
                           style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            marginTop: '12px',
+                            padding: '12px',
+                            cursor: 'pointer',
+                            borderColor:
+                              task.status === '已逾期'
+                                ? 'var(--color-danger)'
+                                : 'var(--color-border)',
+                            boxShadow:
+                              task.status === '已逾期'
+                                ? '0 0 4px rgba(239, 68, 68, 0.15)'
+                                : 'var(--shadow-app)',
+                          }}
+                          onClick={() => {
+                            setSelectedTaskId(task.id)
+                            setEditDesc(task.description || '')
+                            setEditProgress(task.progress || 0)
+                            setTaskTab('list')
                           }}
                         >
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                            {task.due_date || t('tasks.due_date_not_set')}
-                          </span>
-                          <span
-                            className={`pill ${task.priority === 'high' ? 'red' : task.priority === 'mid' ? 'yellow' : 'green'}`}
-                            style={{ fontSize: '9px', transform: 'scale(0.85)' }}
+                          <h4
+                            style={{
+                              fontSize: '12.5px',
+                              fontWeight: 600,
+                              color: 'var(--text-main)',
+                            }}
                           >
-                            {getPriorityLabel(task.priority)}
-                          </span>
+                            {task.status === '已逾期' && (
+                              <span style={{ color: 'var(--color-danger)', marginRight: '4px' }}>
+                                [{t('common.overdue')}]
+                              </span>
+                            )}
+                            {task.title}
+                          </h4>
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              marginTop: '12px',
+                            }}
+                          >
+                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                              {task.due_date || t('tasks.due_date_not_set')}
+                            </span>
+                            <span
+                              className={`pill ${task.priority === 'high' ? 'red' : task.priority === 'mid' ? 'yellow' : 'green'}`}
+                              style={{ fontSize: '9px', transform: 'scale(0.85)' }}
+                            >
+                              {getPriorityLabel(task.priority)}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
+                )
+              })}
+            </div>
+          ))}
 
         {/* TAB: LIST & DETAIL PANEL */}
         {taskTab === 'list' && (
@@ -723,6 +748,8 @@ export const Tasks: React.FC = () => {
                 style={{ display: 'flex', gap: '8px', padding: '4px' }}
               >
                 <input
+                  id="quickTitle"
+                  ref={quickTitleInputRef}
                   className="form-field"
                   value={quickTitle}
                   onChange={(e) => setQuickTitle(e.target.value)}

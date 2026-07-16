@@ -1,3 +1,59 @@
+.task-board-empty {
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px dashed color-mix(in srgb, var(--color-border) 84%, var(--text-muted));
+  border-radius: var(--radius-card);
+  background-color: color-mix(in srgb, var(--text-main) 2%, transparent);
+  color: var(--text-main);
+  text-align: center;
+}
+
+.task-board-empty__icon {
+  width: 52px;
+  height: 52px;
+  margin-bottom: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 20%, var(--color-border));
+  border-radius: 17px;
+  background-color: color-mix(in srgb, var(--color-accent) 9%, transparent);
+  color: var(--color-accent);
+}
+
+.task-board-empty__icon svg {
+  width: 24px;
+  height: 24px;
+  stroke-width: 1.7;
+}
+
+.task-board-empty h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.task-board-empty p {
+  max-width: 360px;
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.task-board-empty .btn {
+  min-width: 132px;
+  justify-content: center;
+}
+
 .task-calendar {
   min-height: 0;
 }
