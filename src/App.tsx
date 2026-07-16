@@ -8,6 +8,21 @@ import { useTranslation } from 'react-i18next'
 // Screen views
 import { AuthScreen } from './components/AuthScreen'
 
+function ScreenLoading() {
+  return (
+    <div className="screen-loading" role="status" aria-live="polite" aria-label="Loading">
+      <div className="screen-loading__bar" />
+      <div className="screen-loading__row screen-loading__row--wide" />
+      <div className="screen-loading__row" />
+      <div className="screen-loading__grid">
+        <div className="screen-loading__card" />
+        <div className="screen-loading__card" />
+        <div className="screen-loading__card" />
+      </div>
+    </div>
+  )
+}
+
 const Dashboard = lazy(() => import('./views/Dashboard').then(({ Dashboard }) => ({ default: Dashboard })))
 const Tasks = lazy(() => import('./views/Tasks').then(({ Tasks }) => ({ default: Tasks })))
 const Notes = lazy(() => import('./views/Notes').then(({ Notes }) => ({ default: Notes })))
@@ -280,7 +295,7 @@ function App() {
         <main className="main-workspace">
           <Topbar onOpenSearch={() => setSearchOpen(true)} />
           <section className="content-pane">
-            <Suspense fallback={<div style={{ minHeight: '100%' }} />}>{renderScreen()}</Suspense>
+            <Suspense fallback={<ScreenLoading />}>{renderScreen()}</Suspense>
           </section>
         </main>
       </div>
