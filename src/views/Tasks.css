@@ -149,6 +149,13 @@
   justify-content: center;
 }
 
+.task-row__subtask-action {
+  width: 26px;
+  min-width: 26px;
+  padding: 0;
+  justify-content: center;
+}
+
 .task-details-empty {
   min-height: 240px;
   margin: auto;

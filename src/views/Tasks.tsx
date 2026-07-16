@@ -911,14 +911,16 @@ export const Tasks: React.FC = () => {
                             {getPriorityLabel(task.priority)}
                           </span>
                           <button
-                            className="btn sm"
+                            type="button"
+                            className="btn sm task-row__subtask-action"
                             onClick={(e) => {
                               e.stopPropagation()
                               handleAddSubtask(task.id)
                             }}
                             title={t('tasks.add_subtask_tooltip')}
+                            aria-label={t('tasks.add_subtask_tooltip')}
                           >
-                            ＋
+                            <Plus size={13} aria-hidden="true" />
                           </button>
                         </div>
 
