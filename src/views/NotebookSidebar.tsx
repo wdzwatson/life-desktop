@@ -365,8 +365,14 @@ export function NotebookSidebar({
                     ) : (
                       <ChevronRight aria-hidden="true" />
                     )}
-                    <span className="notebook-sidebar__label">
+                    <span
+                      className="notebook-sidebar__category-label"
+                      title={getCategoryDisplayName(category)}
+                    >
                       {getCategoryDisplayName(category)}
+                    </span>
+                    <span className="notebook-sidebar__category-count">
+                      {categoryNotebooks.length}
                     </span>
                   </button>
 
@@ -378,12 +384,18 @@ export function NotebookSidebar({
                         const canExpand = canExpandNotebookScope(notebookNotes.length)
                         const isExpanded = canExpand && expandedScopes.has(notebook.name)
                         const isContextOpen = contextMenu?.notebook.id === notebook.id
+                        const containsActiveNote =
+                          isActive &&
+                          activeNoteId !== null &&
+                          notebookNotes.some((note) => note.id === activeNoteId)
                         return (
                           <div key={notebook.id} className="notebook-sidebar__branch">
                             <div
                               className={`notebook-sidebar__row notebook-sidebar__notebook-row ${
                                 isActive ? 'active' : ''
-                              } ${isContextOpen ? 'context-open' : ''}`}
+                              } ${containsActiveNote ? 'contains-active-note' : ''} ${
+                                isContextOpen ? 'context-open' : ''
+                              }`}
                             >
                               <button
                                 type="button"
@@ -405,7 +417,10 @@ export function NotebookSidebar({
                                     aria-hidden="true"
                                   />
                                 )}
-                                <Folder aria-hidden="true" />
+                                <Folder
+                                  className="notebook-sidebar__notebook-icon"
+                                  aria-hidden="true"
+                                />
                                 <span
                                   className="notebook-sidebar__label"
                                   title={getNotebookDisplayName(notebook)}
