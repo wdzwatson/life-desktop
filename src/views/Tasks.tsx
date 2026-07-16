@@ -1706,9 +1706,9 @@ export const Tasks: React.FC = () => {
         {/* TAB: TEMPLATES */}
         {taskTab === 'templates' && (
           <div
+            className="task-template-grid"
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
               gap: '16px',
               overflowY: 'auto',
               height: '100%',
