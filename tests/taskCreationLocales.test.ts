@@ -19,6 +19,11 @@ for (const locale of configuredLocales) {
       'quick_add_label',
       'quick_add_priority_label',
       'quick_add_submit_label',
+      'quick_token_priority_high',
+      'quick_token_priority_mid',
+      'quick_token_priority_low',
+      'quick_token_due_tomorrow',
+      'quick_token_due_today',
     ]) {
       assert.equal(typeof taskCopy?.[key], 'string', `missing tasks.${key}`)
       assert.notEqual(taskCopy[key].trim(), '', `blank tasks.${key}`)

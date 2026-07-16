@@ -340,26 +340,51 @@ export const Tasks: React.FC = () => {
     let extractedPriority = quickPriority
     let extractedDueDate = quickDueDate || new Date().toISOString().slice(0, 10)
 
-    // NLP parser mock (like Todoist)
-    if (finalTitle.includes('#高') || finalTitle.toLowerCase().includes('#high')) {
-      extractedPriority = 'high'
-      finalTitle = finalTitle.replace('#高', '').replace(/#high/i, '')
-    } else if (finalTitle.includes('#中') || finalTitle.toLowerCase().includes('#mid')) {
-      extractedPriority = 'mid'
-      finalTitle = finalTitle.replace('#中', '').replace(/#mid/i, '')
-    } else if (finalTitle.includes('#低') || finalTitle.toLowerCase().includes('#low')) {
-      extractedPriority = 'low'
-      finalTitle = finalTitle.replace('#低', '').replace(/#low/i, '')
+    const priorityTokens = {
+      high: t('tasks.quick_token_priority_high'),
+      mid: t('tasks.quick_token_priority_mid'),
+      low: t('tasks.quick_token_priority_low'),
+    }
+    const dueTokens = {
+      tomorrow: t('tasks.quick_token_due_tomorrow'),
+      today: t('tasks.quick_token_due_today'),
     }
 
-    if (finalTitle.includes('明天') || finalTitle.toLowerCase().includes('tomorrow')) {
+    // NLP parser mock (like Todoist)
+    if (
+      finalTitle.includes(`#${priorityTokens.high}`) ||
+      finalTitle.toLowerCase().includes('#high')
+    ) {
+      extractedPriority = 'high'
+      finalTitle = finalTitle.replace(`#${priorityTokens.high}`, '').replace(/#high/i, '')
+    } else if (
+      finalTitle.includes(`#${priorityTokens.mid}`) ||
+      finalTitle.toLowerCase().includes('#mid')
+    ) {
+      extractedPriority = 'mid'
+      finalTitle = finalTitle.replace(`#${priorityTokens.mid}`, '').replace(/#mid/i, '')
+    } else if (
+      finalTitle.includes(`#${priorityTokens.low}`) ||
+      finalTitle.toLowerCase().includes('#low')
+    ) {
+      extractedPriority = 'low'
+      finalTitle = finalTitle.replace(`#${priorityTokens.low}`, '').replace(/#low/i, '')
+    }
+
+    if (
+      finalTitle.includes(dueTokens.tomorrow) ||
+      finalTitle.toLowerCase().includes('tomorrow')
+    ) {
       const tomorrow = new Date()
       tomorrow.setDate(tomorrow.getDate() + 1)
       extractedDueDate = tomorrow.toISOString().slice(0, 10)
-      finalTitle = finalTitle.replace('明天', '').replace(/tomorrow/i, '')
-    } else if (finalTitle.includes('今天') || finalTitle.toLowerCase().includes('today')) {
+      finalTitle = finalTitle.replace(dueTokens.tomorrow, '').replace(/tomorrow/i, '')
+    } else if (
+      finalTitle.includes(dueTokens.today) ||
+      finalTitle.toLowerCase().includes('today')
+    ) {
       extractedDueDate = new Date().toISOString().slice(0, 10)
-      finalTitle = finalTitle.replace('今天', '').replace(/today/i, '')
+      finalTitle = finalTitle.replace(dueTokens.today, '').replace(/today/i, '')
     }
 
     const query = `
