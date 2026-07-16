@@ -866,6 +866,17 @@ export const Tasks: React.FC = () => {
                           }}
                         >
                           <button
+                            type="button"
+                            title={
+                              task.is_completed === 1
+                                ? t('tasks.reopen_task_action')
+                                : t('tasks.complete_task_action')
+                            }
+                            aria-label={
+                              task.is_completed === 1
+                                ? t('tasks.reopen_task_action')
+                                : t('tasks.complete_task_action')
+                            }
                             onClick={(e) => {
                               e.stopPropagation()
                               toggleTaskDone(task)
@@ -973,6 +984,17 @@ export const Tasks: React.FC = () => {
                             }}
                           >
                             <button
+                              type="button"
+                              title={
+                                child.is_completed === 1
+                                  ? t('tasks.reopen_task_action')
+                                  : t('tasks.complete_task_action')
+                              }
+                              aria-label={
+                                child.is_completed === 1
+                                  ? t('tasks.reopen_task_action')
+                                  : t('tasks.complete_task_action')
+                              }
                               onClick={(e) => {
                                 e.stopPropagation()
                                 toggleTaskDone(child)

@@ -15,6 +15,8 @@ const requiredKeys = [
   'details_label_title',
   'details_priority_suffix',
   'details_due_prefix',
+  'complete_task_action',
+  'reopen_task_action',
 ]
 
 for (const locale of configuredLocales) {

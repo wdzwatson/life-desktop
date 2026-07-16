@@ -97,6 +97,8 @@
     "quick_token_priority_low": "低",
     "quick_token_due_tomorrow": "明天",
     "quick_token_due_today": "今天",
+    "complete_task_action": "标记任务完成",
+    "reopen_task_action": "重新打开任务",
     "template_prd_title": "新项目启动清单",
     "template_prd_tag_1": "开发",
     "template_prd_tag_2": "Q2",

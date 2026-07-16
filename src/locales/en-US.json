@@ -97,6 +97,8 @@
     "quick_token_priority_low": "Low",
     "quick_token_due_tomorrow": "tomorrow",
     "quick_token_due_today": "today",
+    "complete_task_action": "Mark task complete",
+    "reopen_task_action": "Reopen task",
     "template_prd_title": "New Project Launch Checklist",
     "template_prd_tag_1": "Dev",
     "template_prd_tag_2": "Q2",
