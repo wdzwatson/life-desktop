@@ -277,6 +277,11 @@
   justify-content: center;
 }
 
+.task-board-grid {
+  grid-template-columns: repeat(5, minmax(180px, 1fr));
+  overflow: auto;
+}
+
 .task-calendar {
   min-height: 0;
 }

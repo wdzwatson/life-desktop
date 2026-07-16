@@ -666,12 +666,11 @@ export const Tasks: React.FC = () => {
             </section>
           ) : (
             <div
+              className="task-board-grid"
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(5, 1fr)',
                 gap: '12px',
                 height: '100%',
-                overflowY: 'auto',
               }}
             >
               {[
