@@ -1196,19 +1196,25 @@ export const Tasks: React.FC = () => {
                 </div>
                 <div className="task-calendar__mode-switch">
                   <button
+                    type="button"
                     className={`btn sm ${calendarMode === 'day' ? 'primary' : ''}`}
+                    aria-pressed={calendarMode === 'day'}
                     onClick={() => setCalendarMode('day')}
                   >
                     {t('tasks.calendar_mode_day')}
                   </button>
                   <button
+                    type="button"
                     className={`btn sm ${calendarMode === 'week' ? 'primary' : ''}`}
+                    aria-pressed={calendarMode === 'week'}
                     onClick={() => setCalendarMode('week')}
                   >
                     {t('tasks.calendar_mode_week')}
                   </button>
                   <button
+                    type="button"
                     className={`btn sm ${calendarMode === 'month' ? 'primary' : ''}`}
+                    aria-pressed={calendarMode === 'month'}
                     onClick={() => setCalendarMode('month')}
                   >
                     {t('tasks.calendar_mode_month')}
