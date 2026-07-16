@@ -1398,6 +1398,9 @@ export const Tasks: React.FC = () => {
                 {rules.map((rule) => (
                   <div
                     key={rule.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={rule.title}
                     style={{
                       padding: '10px',
                       border: '1px solid var(--color-border)',
@@ -1409,6 +1412,12 @@ export const Tasks: React.FC = () => {
                       cursor: 'pointer',
                     }}
                     onClick={() => selectRule(rule)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        selectRule(rule)
+                      }
+                    }}
                   >
                     <div style={{ fontWeight: 600, fontSize: '13px' }}>{rule.title}</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
