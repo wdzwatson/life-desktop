@@ -1773,7 +1773,8 @@ export const Tasks: React.FC = () => {
             }}
           >
             <strong style={{ fontSize: '14px' }}>{t('tasks.scheduled_log_title')}</strong>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+            <div className="task-scheduled-log__table-wrap">
+              <table className="task-scheduled-log__table">
               <thead>
                 <tr
                   style={{
@@ -1821,7 +1822,8 @@ export const Tasks: React.FC = () => {
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            </div>
           </div>
         )}
       </div>
