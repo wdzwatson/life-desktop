@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
+import { AlertCircle, CheckCircle2, Info, Trash2 } from 'lucide-react'
 
 export const Statusbar: React.FC = () => {
   const { t } = useTranslation()
@@ -11,6 +12,27 @@ export const Statusbar: React.FC = () => {
   const [taskCount, setTaskCount] = useState(0)
   const [recurCount, setRecurCount] = useState(0)
   const userId = useAppStore((state) => state.userId)
+
+  const toastTone = toastMessage
+    ? /失败|错误|无法|失败|failed|error|unable|could not|cannot|not ready/i.test(toastMessage)
+      ? 'error'
+      : /删除|清除|delete|removed|cleared/i.test(toastMessage)
+        ? 'warning'
+        : /成功|已保存|保存|完成|解锁|已复制|created|saved|completed|success|unlocked|copied/i.test(
+            toastMessage,
+          )
+          ? 'success'
+          : 'info'
+    : 'info'
+
+  const ToastIcon =
+    toastTone === 'error'
+      ? AlertCircle
+      : toastTone === 'warning'
+        ? Trash2
+        : toastTone === 'success'
+          ? CheckCircle2
+          : Info
 
   // Fetch counts when user database changes or screen switches
   useEffect(() => {
@@ -58,31 +80,11 @@ export const Statusbar: React.FC = () => {
       {/* Global overlay Toast notifications */}
       {toastMessage && (
         <div
-          style={{
-            position: 'fixed',
-            bottom: '48px',
-            right: '24px',
-            padding: '10px 18px',
-            borderRadius: '8px',
-            backgroundColor: 'var(--text-main)',
-            color: 'var(--bg-app)',
-            fontSize: '13px',
-            fontWeight: 600,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-            zIndex: 9999,
-            animation: 'toastEnter 0.2s ease both',
-          }}
+          className={`toast-notification toast-notification--${toastTone}`}
+          role="status"
+          aria-live="polite"
         >
-          <style
-            dangerouslySetInnerHTML={{
-              __html: `
-            @keyframes toastEnter {
-              from { opacity: 0; transform: translateY(8px); }
-              to { opacity: 1; transform: none; }
-            }
-          `,
-            }}
-          />
+          <ToastIcon size={16} strokeWidth={2.2} aria-hidden="true" />
           {toastMessage}
         </div>
       )}

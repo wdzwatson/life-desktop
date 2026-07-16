@@ -550,6 +550,66 @@ body.theme-dense .nav-item.active {
   padding: 0 16px;
 }
 
+.toast-notification {
+  position: fixed;
+  right: 24px;
+  bottom: 48px;
+  z-index: 9999;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  max-width: min(420px, calc(100vw - 48px));
+  padding: 9px 14px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--text-muted);
+  border-radius: 10px;
+  background-color: var(--bg-surface);
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+  animation: toast-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.toast-notification--success {
+  border-left-color: var(--color-success);
+  color: color-mix(in srgb, var(--color-success) 72%, var(--text-main));
+}
+
+.toast-notification--warning {
+  border-left-color: var(--color-warn);
+  color: color-mix(in srgb, var(--color-warn) 78%, var(--text-main));
+}
+
+.toast-notification--error {
+  border-left-color: var(--color-danger);
+  color: color-mix(in srgb, var(--color-danger) 78%, var(--text-main));
+}
+
+.toast-notification--info {
+  border-left-color: var(--color-accent);
+  color: var(--text-main);
+}
+
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-notification {
+    animation: none;
+  }
+}
+
 /* Buttons */
 .btn {
   height: 34px;
