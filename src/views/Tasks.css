@@ -156,6 +156,32 @@
   justify-content: center;
 }
 
+.task-rules-empty {
+  min-height: 180px;
+  padding: 24px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px dashed color-mix(in srgb, var(--color-border) 84%, var(--text-muted));
+  border-radius: var(--radius-card);
+  background-color: color-mix(in srgb, var(--text-main) 2%, transparent);
+  text-align: center;
+}
+
+.task-rules-empty strong {
+  font-size: 13px;
+}
+
+.task-rules-empty p {
+  max-width: 220px;
+  margin: 0 0 4px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
 .task-details-empty {
   min-height: 240px;
   margin: auto;

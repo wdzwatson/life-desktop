@@ -1395,45 +1395,60 @@ export const Tasks: React.FC = () => {
                 </button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {rules.map((rule) => (
-                  <div
-                    key={rule.id}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={rule.title}
-                    style={{
-                      padding: '10px',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: '8px',
-                      backgroundColor:
-                        selectedRuleId === rule.id ? 'rgba(59, 130, 246, 0.04)' : 'transparent',
-                      borderColor:
-                        selectedRuleId === rule.id ? 'var(--color-accent)' : 'var(--color-border)',
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => selectRule(rule)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault()
-                        selectRule(rule)
-                      }
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, fontSize: '13px' }}>{rule.title}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                      {rule.frequency === 'daily'
-                        ? t('tasks.freq_daily')
-                        : rule.frequency === 'weekday'
-                          ? t('tasks.freq_weekday')
-                          : rule.frequency === 'weekly'
-                            ? t('tasks.freq_weekly')
-                            : rule.frequency === 'monthly'
-                              ? t('tasks.freq_monthly')
-                              : rule.frequency}{' '}
-                      · {rule.cron || t('tasks.no_cron')}
-                    </div>
+                {rules.length === 0 ? (
+                  <div className="task-rules-empty">
+                    <strong>{t('tasks.rules_empty_title')}</strong>
+                    <p>{t('tasks.rules_empty_description')}</p>
+                    <button type="button" className="btn sm primary" onClick={handleNewRule}>
+                      <Plus size={14} aria-hidden="true" />
+                      {t('tasks.rules_empty_action')}
+                    </button>
                   </div>
-                ))}
+                ) : (
+                  rules.map((rule) => (
+                    <div
+                      key={rule.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={rule.title}
+                      style={{
+                        padding: '10px',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: '8px',
+                        backgroundColor:
+                          selectedRuleId === rule.id ? 'rgba(59, 130, 246, 0.04)' : 'transparent',
+                        borderColor:
+                          selectedRuleId === rule.id
+                            ? 'var(--color-accent)'
+                            : 'var(--color-border)',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => selectRule(rule)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          selectRule(rule)
+                        }
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: '13px' }}>{rule.title}</div>
+                      <div
+                        style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}
+                      >
+                        {rule.frequency === 'daily'
+                          ? t('tasks.freq_daily')
+                          : rule.frequency === 'weekday'
+                            ? t('tasks.freq_weekday')
+                            : rule.frequency === 'weekly'
+                              ? t('tasks.freq_weekly')
+                              : rule.frequency === 'monthly'
+                                ? t('tasks.freq_monthly')
+                                : rule.frequency}{' '}
+                        · {rule.cron || t('tasks.no_cron')}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 

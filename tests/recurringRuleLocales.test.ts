@@ -13,6 +13,9 @@ for (const locale of configuredLocales) {
     const resource = JSON.parse(readFileSync(join(localeDirectory, `${locale}.json`), 'utf8'))
     for (const key of [
       'new_rule_tooltip',
+      'rules_empty_title',
+      'rules_empty_description',
+      'rules_empty_action',
       'freq_daily',
       'freq_weekday',
       'freq_weekly',
