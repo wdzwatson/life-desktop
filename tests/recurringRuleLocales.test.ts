@@ -20,6 +20,7 @@ for (const locale of configuredLocales) {
       'no_cron',
       'freq_cron',
       'cron_hint',
+      'cron_placeholder',
       'future_triggers_list',
       'holiday_strategy_skip',
       'holiday_strategy_delay',

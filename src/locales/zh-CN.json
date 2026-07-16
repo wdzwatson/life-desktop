@@ -165,6 +165,7 @@
     "time_label": "时间",
     "days_of_week_label": "周内星期几",
     "cron_hint": "示例：0 22 * * *（每天 22:00）",
+    "cron_placeholder": "例如：0 22 * * *",
     "holiday_strategy_label": "节假日策略",
     "holiday_strategy_skip": "跳过节假日",
     "holiday_strategy_delay": "顺延到工作日",

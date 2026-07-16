@@ -165,6 +165,7 @@
     "time_label": "Time",
     "days_of_week_label": "Days of Week",
     "cron_hint": "Example: 0 22 * * * (daily at 22:00)",
+    "cron_placeholder": "e.g. 0 22 * * *",
     "holiday_strategy_label": "Holiday Strategy",
     "holiday_strategy_skip": "Skip holidays",
     "holiday_strategy_delay": "Move to next workday",

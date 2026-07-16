@@ -1535,7 +1535,7 @@ export const Tasks: React.FC = () => {
                     className="form-field"
                     value={ruleCron}
                     onChange={(e) => setRuleCron(e.target.value)}
-                    placeholder="0 22 * * *"
+                    placeholder={t('tasks.cron_placeholder')}
                   />
                   <span
                     style={{
