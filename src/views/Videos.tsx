@@ -143,6 +143,7 @@ export const Videos: React.FC = () => {
   const [groupTranslations, setGroupTranslations] = useState<VideoGroupTranslation[]>([])
   const [tags, setTags] = useState<VideoTagRecord[]>([])
   const [localVideos, setLocalVideos] = useState<VideoRecord[]>([])
+  const [isRefreshingData, setIsRefreshingData] = useState(false)
   const [bulkSelectedVideoIds, setBulkSelectedVideoIds] = useState<number[]>([])
   const [bulkTagDraft, setBulkTagDraft] = useState('')
   const [bulkMetadataMode, setBulkMetadataMode] = useState<'group' | 'tags' | null>(null)
@@ -174,6 +175,7 @@ export const Videos: React.FC = () => {
     if (!api) return { ok: false, error: fallbackError }
     const requestId = loadDataRequestIdRef.current + 1
     loadDataRequestIdRef.current = requestId
+    setIsRefreshingData(true)
     try {
       void Promise.resolve()
         .then(() => api.getSettings?.())
@@ -249,6 +251,8 @@ export const Videos: React.FC = () => {
       if (requestId !== loadDataRequestIdRef.current) return { ok: true }
       const error = cause instanceof Error && cause.message ? cause.message : fallbackError
       return { ok: false, error }
+    } finally {
+      if (requestId === loadDataRequestIdRef.current) setIsRefreshingData(false)
     }
   }, [api, t])
 
@@ -1432,7 +1436,16 @@ export const Videos: React.FC = () => {
           onDeleteGroup={handleDeleteGroup}
         />
 
-        <main style={{ display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}>
+        <main
+          className="video-library-main"
+          aria-busy={isRefreshingData}
+          style={{ display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}
+        >
+          <div
+            className={`video-refresh-indicator ${isRefreshingData ? 'is-visible' : ''}`}
+            role="status"
+            aria-label="Refreshing video library"
+          />
           <section
             className="card"
             style={{
