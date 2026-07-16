@@ -393,7 +393,10 @@ export const Dashboard: React.FC = () => {
               </p>
             </div>
             <button
+              type="button"
               className="btn primary"
+              aria-label={t('dashboard.pomodoro')}
+              title={t('dashboard.pomodoro')}
               style={{
                 width: '48px',
                 height: '48px',
