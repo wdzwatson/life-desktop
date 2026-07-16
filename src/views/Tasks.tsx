@@ -236,9 +236,13 @@ export const Tasks: React.FC = () => {
     </button>
   )
 
+  const focusQuickAddInput = () => {
+    setTimeout(() => quickTitleInputRef.current?.focus(), 0)
+  }
+
   const handleStartFirstTask = () => {
     setTaskTab('list')
-    setTimeout(() => quickTitleInputRef.current?.focus(), 0)
+    focusQuickAddInput()
   }
 
   const loadData = async () => {
@@ -1129,16 +1133,16 @@ export const Tasks: React.FC = () => {
                   </button>
                 </>
               ) : (
-                <div
-                  style={{
-                    textAlign: 'center',
-                    color: 'var(--text-muted)',
-                    margin: 'auto',
-                    fontStyle: 'italic',
-                    fontSize: '12px',
-                  }}
-                >
-                  {t('tasks.select_task_tip')}
+                <div className="task-details-empty">
+                  <div className="task-details-empty__icon" aria-hidden="true">
+                    <ListTodo />
+                  </div>
+                  <strong>{t('tasks.details_empty_title')}</strong>
+                  <p>{t('tasks.details_empty_description')}</p>
+                  <button type="button" className="btn sm" onClick={focusQuickAddInput}>
+                    <Plus size={14} aria-hidden="true" />
+                    {t('tasks.details_empty_action')}
+                  </button>
                 </div>
               )}
             </aside>
