@@ -426,8 +426,17 @@ export const Dashboard: React.FC = () => {
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '8px' }}>
             {recentNote ? (
               <div
+                role="button"
+                tabIndex={0}
+                aria-label={t('dashboard.open_notes')}
                 style={{ padding: '8px 4px', cursor: 'pointer' }}
                 onClick={() => navigateTo('notes')}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    navigateTo('notes')
+                  }
+                }}
               >
                 <h4
                   style={{
