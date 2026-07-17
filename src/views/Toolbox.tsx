@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { Lock, Eye, EyeOff, Copy, Trash2 } from 'lucide-react'
+import { copySecretWithAutoClear } from './toolboxVaultUtils'
 
 type VaultStatus =
   | 'not_configured'
@@ -358,14 +359,9 @@ export const Toolbox: React.FC = () => {
       setVaultError(getVaultErrorMessage(res?.error))
       return
     }
-    navigator.clipboard.writeText(res.data.password)
+    await copySecretWithAutoClear(navigator.clipboard.writeText.bind(navigator.clipboard), res.data.password)
     showToast(t('toolbox.toast_password_copied'))
-
-    setTimeout(() => {
-      // Clear clipboard securely
-      navigator.clipboard.writeText('')
-      showToast(t('toolbox.toast_clipboard_cleared'))
-    }, 30000)
+    setTimeout(() => showToast(t('toolbox.toast_clipboard_cleared')), 30000)
   }
 
   const generatePassword = () => {

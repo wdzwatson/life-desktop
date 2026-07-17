@@ -121,9 +121,63 @@ test('vault stores encrypted secrets and reveals them on demand', async () => {
         updatedAt: rows[0].updated_at,
       },
     ])
+    assert.equal(JSON.stringify(service.listCredentials()).includes('plain secret'), false)
+    assert.equal(JSON.stringify(service.listCredentials()).includes('private note'), false)
     assert.deepEqual(service.revealCredential(created.id), {
       password: 'plain secret',
       notes: 'private note',
+    })
+  } finally {
+    service.dispose()
+    db.close()
+  }
+})
+
+test('vault rejects empty credential passwords', async () => {
+  const db = createVaultDatabase()
+  const service = new VaultService(db)
+  try {
+    await service.setup('correct horse battery staple')
+    assert.throws(
+      () =>
+        service.createCredential({
+          websiteName: 'Example',
+          password: '',
+        }),
+      (error) => error instanceof VaultServiceError && error.code === 'INVALID_INPUT',
+    )
+  } finally {
+    service.dispose()
+    db.close()
+  }
+})
+
+test('vault locks sensitive operations and recovers after unlock', async () => {
+  const db = createVaultDatabase()
+  const service = new VaultService(db)
+  try {
+    await service.setup('correct horse battery staple')
+    const created = service.createCredential({
+      websiteName: 'Example',
+      password: 'plain secret',
+    })
+
+    service.lock()
+    for (const operation of [
+      () => service.listCredentials(),
+      () => service.revealCredential(created.id),
+      () => service.createCredential({ websiteName: 'Other', password: 'other secret' }),
+    ]) {
+      assert.throws(
+        operation,
+        (error) => error instanceof VaultServiceError && error.code === 'VAULT_LOCKED',
+      )
+    }
+
+    await service.unlock('correct horse battery staple')
+    assert.deepEqual(service.revealCredential(created.id), {
+      password: 'plain secret',
+      notes: '',
     })
   } finally {
     service.dispose()
