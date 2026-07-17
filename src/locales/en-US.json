@@ -85,6 +85,7 @@
     "board_empty_title": "Start with your first task",
     "board_empty_description": "After you create a task, it will appear in the board according to its current status.",
     "board_empty_action": "Create first task",
+    "toast_task_moved": "Task moved to {{status}}",
     "priority_high": "High",
     "priority_mid": "Medium",
     "priority_low": "Low",

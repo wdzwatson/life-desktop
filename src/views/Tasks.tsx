@@ -75,6 +75,7 @@ export const Tasks: React.FC = () => {
   const [tasks, setTasks] = useState<any[]>([])
   const [translations, setTranslations] = useState<any[]>([])
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
+  const [dragOverStatus, setDragOverStatus] = useState<string | null>(null)
 
   // Quick Add State
   const [quickTitle, setQuickTitle] = useState('')
@@ -162,6 +163,16 @@ export const Tasks: React.FC = () => {
   )
 
   const calendarTasksByDate = useMemo(() => groupTasksByDueDate(tasks), [tasks])
+  const boardLanes = useMemo(
+    () => [
+      { key: 'lane_inbox', dbVal: '待收集' },
+      { key: 'lane_todo', dbVal: '待处理' },
+      { key: 'lane_inprogress', dbVal: '进行中' },
+      { key: 'lane_review', dbVal: '待验收' },
+      { key: 'lane_closed', dbVal: '已关闭' },
+    ],
+    [],
+  )
   const calendarWeekDays = useMemo(() => getCalendarWeekDays(calendarDate), [calendarDate])
   const calendarMonthDays = useMemo(() => getCalendarMonthDays(calendarDate), [calendarDate])
   const calendarVisibleDays =
@@ -227,6 +238,27 @@ export const Tasks: React.FC = () => {
   const handleStartFirstTask = () => {
     setTaskTab('list')
     focusQuickAddInput()
+  }
+
+  const handleMoveTaskStatus = async (task: any, nextStatus: string) => {
+    if (!api || !task || task.status === nextStatus) return
+
+    const nextCompleted = nextStatus === '已关闭' ? 1 : 0
+    const nextProgress = nextCompleted ? 100 : task.progress === 100 ? 0 : task.progress || 0
+    const res = await api.dbQuery(
+      'tasks',
+      'UPDATE tasks SET status = ?, is_completed = ?, progress = ? WHERE id = ?',
+      [nextStatus, nextCompleted, nextProgress, task.id],
+    )
+
+    if (res?.success) {
+      showToast(
+        t('tasks.toast_task_moved', {
+          status: getStatusLabel(nextStatus),
+        }),
+      )
+      await loadData()
+    }
   }
 
   const loadData = async () => {
@@ -306,14 +338,128 @@ export const Tasks: React.FC = () => {
     if (nextDone) {
       await api.dbQuery(
         'tasks',
-        'UPDATE tasks SET is_completed = 1, status = ?, progress = 100 WHERE parent_id = ?',
-        ['已关闭', task.id],
+        `
+          WITH RECURSIVE descendants(id) AS (
+            SELECT id FROM tasks WHERE parent_id = ?
+            UNION ALL
+            SELECT tasks.id FROM tasks
+            INNER JOIN descendants ON tasks.parent_id = descendants.id
+          )
+          UPDATE tasks SET is_completed = 1, status = ?, progress = 100
+          WHERE id IN (SELECT id FROM descendants)
+        `,
+        [task.id, '已关闭'],
       )
     }
 
     showToast(nextDone ? t('tasks.toast_completed') : t('tasks.toast_reopened'))
     loadData()
   }
+
+  const renderSubtaskRows = (
+    parentId: number,
+    depth = 1,
+    visited = new Set<number>(),
+  ): React.ReactNode[] =>
+    tasks
+      .filter((candidate) => candidate.parent_id === parentId && !visited.has(candidate.id))
+      .flatMap((child) => {
+        const nextVisited = new Set(visited)
+        nextVisited.add(child.id)
+        return [
+          <div
+            key={child.id}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'auto auto 1fr auto auto',
+              alignItems: 'center',
+              gap: '12px',
+              padding: `10px 12px 10px ${32 + (depth - 1) * 18}px`,
+              borderLeft: '2px solid var(--color-border)',
+              backgroundColor:
+                selectedTaskId === child.id ? 'rgba(59, 130, 246, 0.02)' : 'transparent',
+              cursor: 'pointer',
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label={child.title}
+            onClick={() => {
+              setSelectedTaskId(child.id)
+              setEditDesc(child.description || '')
+              setEditProgress(child.progress || 0)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                setSelectedTaskId(child.id)
+                setEditDesc(child.description || '')
+                setEditProgress(child.progress || 0)
+              }
+            }}
+          >
+            <button
+              type="button"
+              title={
+                child.is_completed === 1
+                  ? t('tasks.reopen_task_action')
+                  : t('tasks.complete_task_action')
+              }
+              aria-label={
+                child.is_completed === 1
+                  ? t('tasks.reopen_task_action')
+                  : t('tasks.complete_task_action')
+              }
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleTaskDone(child)
+              }}
+              style={{
+                border: 'none',
+                background: 'none',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              {child.is_completed === 1 ? (
+                <Check size={14} color="var(--color-success)" />
+              ) : (
+                <Circle size={14} color="var(--text-muted)" />
+              )}
+            </button>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+              {child.due_date}
+            </span>
+            <span
+              style={{
+                fontSize: '12.5px',
+                textDecoration: child.is_completed === 1 ? 'line-through' : 'none',
+                color: child.is_completed === 1 ? 'var(--text-muted)' : 'var(--text-main)',
+              }}
+            >
+              {child.title}
+            </span>
+            <span
+              className={`pill ${child.priority === 'high' ? 'red' : child.priority === 'mid' ? 'yellow' : 'green'}`}
+              style={{ fontSize: '9px', transform: 'scale(0.85)' }}
+            >
+              {getPriorityLabel(child.priority)}
+            </span>
+            <button
+              type="button"
+              className="btn sm task-row__subtask-action"
+              onClick={(e) => {
+                e.stopPropagation()
+                handleAddSubtask(child.id)
+              }}
+              title={t('tasks.add_subtask_tooltip')}
+              aria-label={t('tasks.add_subtask_tooltip')}
+            >
+              <Plus size={13} aria-hidden="true" />
+            </button>
+          </div>,
+          ...renderSubtaskRows(child.id, depth + 1, nextVisited),
+        ]
+      })
 
   // Quick Add task submit
   const handleQuickAdd = async (e: React.FormEvent) => {
@@ -657,29 +803,47 @@ export const Tasks: React.FC = () => {
                 height: '100%',
               }}
             >
-              {[
-                { key: 'lane_inbox', dbVal: '待收集' },
-                { key: 'lane_todo', dbVal: '待处理' },
-                { key: 'lane_inprogress', dbVal: '进行中' },
-                { key: 'lane_review', dbVal: '待验收' },
-                { key: 'lane_closed', dbVal: '已关闭' },
-              ].map((lane) => {
+              {boardLanes.map((lane) => {
                 const laneTasks = tasks.filter(
                   (t) =>
                     t.status === lane.dbVal ||
                     (lane.dbVal === '待处理' && t.status === '已逾期'),
                 )
+                const isDragTarget = dragOverStatus === lane.dbVal
                 return (
                   <div
                     key={lane.key}
+                    data-kanban-status={lane.dbVal}
+                    onDragOver={(event) => {
+                      event.preventDefault()
+                      event.dataTransfer.dropEffect = 'move'
+                      setDragOverStatus(lane.dbVal)
+                    }}
+                    onDragLeave={(event) => {
+                      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                        setDragOverStatus(null)
+                      }
+                    }}
+                    onDrop={async (event) => {
+                      event.preventDefault()
+                      setDragOverStatus(null)
+                      const taskId = Number(event.dataTransfer.getData('text/plain'))
+                      const task = tasks.find((candidate) => candidate.id === taskId)
+                      await handleMoveTaskStatus(task, lane.dbVal)
+                    }}
                     style={{
-                      backgroundColor: 'var(--bg-sidebar)',
+                      backgroundColor: isDragTarget
+                        ? 'rgba(59, 130, 246, 0.08)'
+                        : 'var(--bg-sidebar)',
                       borderRadius: '8px',
                       padding: '12px',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '10px',
                       minHeight: '400px',
+                      border: isDragTarget
+                        ? '1px solid var(--color-accent)'
+                        : '1px solid transparent',
                     }}
                   >
                     <div
@@ -707,9 +871,16 @@ export const Tasks: React.FC = () => {
                         <div
                           key={task.id}
                           className="card"
+                          data-task-id={task.id}
+                          draggable
+                          onDragStart={(event) => {
+                            event.dataTransfer.effectAllowed = 'move'
+                            event.dataTransfer.setData('text/plain', String(task.id))
+                          }}
+                          onDragEnd={() => setDragOverStatus(null)}
                           style={{
                             padding: '12px',
-                            cursor: 'pointer',
+                            cursor: 'grab',
                             borderColor:
                               task.status === '已逾期'
                                 ? 'var(--color-danger)'
@@ -817,7 +988,6 @@ export const Tasks: React.FC = () => {
                 {tasks
                   .filter((t) => !t.parent_id)
                   .map((task) => {
-                    const children = tasks.filter((c) => c.parent_id === task.id)
                     const isSelected = selectedTaskId === task.id
                     const isOverdue = task.status === '已逾期'
 
@@ -954,92 +1124,7 @@ export const Tasks: React.FC = () => {
                           </button>
                         </div>
 
-                        {/* Render subtasks */}
-                        {children.map((child) => (
-                          <div
-                            key={child.id}
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: 'auto auto 1fr auto',
-                              alignItems: 'center',
-                              gap: '12px',
-                              padding: '10px 12px 10px 32px',
-                              borderLeft: '2px solid var(--color-border)',
-                              backgroundColor:
-                                selectedTaskId === child.id
-                                  ? 'rgba(59, 130, 246, 0.02)'
-                                  : 'transparent',
-                              cursor: 'pointer',
-                            }}
-                            role="button"
-                            tabIndex={0}
-                            aria-label={child.title}
-                            onClick={() => {
-                              setSelectedTaskId(child.id)
-                              setEditDesc(child.description || '')
-                              setEditProgress(child.progress || 0)
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter' || event.key === ' ') {
-                                event.preventDefault()
-                                setSelectedTaskId(child.id)
-                                setEditDesc(child.description || '')
-                                setEditProgress(child.progress || 0)
-                              }
-                            }}
-                          >
-                            <button
-                              type="button"
-                              title={
-                                child.is_completed === 1
-                                  ? t('tasks.reopen_task_action')
-                                  : t('tasks.complete_task_action')
-                              }
-                              aria-label={
-                                child.is_completed === 1
-                                  ? t('tasks.reopen_task_action')
-                                  : t('tasks.complete_task_action')
-                              }
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                toggleTaskDone(child)
-                              }}
-                              style={{
-                                border: 'none',
-                                background: 'none',
-                                display: 'flex',
-                                alignItems: 'center',
-                              }}
-                            >
-                              {child.is_completed === 1 ? (
-                                <Check size={14} color="var(--color-success)" />
-                              ) : (
-                                <Circle size={14} color="var(--text-muted)" />
-                              )}
-                            </button>
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                              {child.due_date}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: '12.5px',
-                                textDecoration: child.is_completed === 1 ? 'line-through' : 'none',
-                                color:
-                                  child.is_completed === 1
-                                    ? 'var(--text-muted)'
-                                    : 'var(--text-main)',
-                              }}
-                            >
-                              {child.title}
-                            </span>
-                            <span
-                              className={`pill ${child.priority === 'high' ? 'red' : child.priority === 'mid' ? 'yellow' : 'green'}`}
-                              style={{ fontSize: '9px', transform: 'scale(0.85)' }}
-                            >
-                              {getPriorityLabel(child.priority)}
-                            </span>
-                          </div>
-                        ))}
+                        {renderSubtaskRows(task.id)}
                       </div>
                     )
                   })}

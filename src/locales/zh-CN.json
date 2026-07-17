@@ -85,6 +85,7 @@
     "board_empty_title": "从第一个任务开始",
     "board_empty_description": "创建任务后，它会按照当前状态出现在看板流程中。",
     "board_empty_action": "创建第一个任务",
+    "toast_task_moved": "任务已移动到 {{status}}",
     "priority_high": "高",
     "priority_mid": "中",
     "priority_low": "低",
