@@ -71,6 +71,7 @@ import type { VideoSortState } from './videoStateUtils'
 import { VideoGroupSidebar } from './VideoGroupSidebar'
 import type { VideoGroupMutationResult } from './VideoGroupSidebar'
 import { getConfiguredLocales } from '../localeRegistry'
+import { ViewportPortal } from '../components/ViewportPortal'
 import {
   buildCreateVideoGroupStatements,
   buildDeleteVideoGroupStatements,
@@ -112,8 +113,7 @@ function replaceVideoGroupTranslationValues(
 ) {
   const replacedLocales = new Set(Object.keys(values))
   const retained = current.filter(
-    (translation) =>
-      translation.group_id !== groupId || !replacedLocales.has(translation.locale),
+    (translation) => translation.group_id !== groupId || !replacedLocales.has(translation.locale),
   )
   const replacements = Object.entries(values).flatMap(([locale, rawValue]) => {
     const translation = normalizeVideoGroupName(rawValue)
@@ -155,7 +155,9 @@ export const Videos: React.FC = () => {
   const [selectedVideo, setSelectedVideo] = useState<any | null>(null)
   const [drawerState, setDrawerState] = useState<VideoDrawerState>({ open: false })
   const [isGroupDropdownOpen, setIsGroupDropdownOpen] = useState(false)
-  const [groupDropdownFrame, setGroupDropdownFrame] = useState<ReturnType<typeof getFloatingDropdownFrame> | null>(null)
+  const [groupDropdownFrame, setGroupDropdownFrame] = useState<ReturnType<
+    typeof getFloatingDropdownFrame
+  > | null>(null)
   const [groupSearchQuery, setGroupSearchQuery] = useState('')
   const [draftGroupId, setDraftGroupId] = useState<number | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
@@ -187,14 +189,8 @@ export const Videos: React.FC = () => {
         .catch(() => undefined)
 
       const [groupsRes, translationsRes, tagsRes, videosRes] = await Promise.all([
-        api.dbQuery(
-          'videos',
-          'SELECT * FROM video_groups ORDER BY sort_order ASC, name ASC',
-        ),
-        api.dbQuery(
-          'videos',
-          'SELECT group_id, locale, translation FROM video_group_translations',
-        ),
+        api.dbQuery('videos', 'SELECT * FROM video_groups ORDER BY sort_order ASC, name ASC'),
+        api.dbQuery('videos', 'SELECT group_id, locale, translation FROM video_group_translations'),
         api.dbQuery('videos', 'SELECT * FROM video_tags ORDER BY name ASC'),
         api.dbQuery(
           'videos',
@@ -233,12 +229,8 @@ export const Videos: React.FC = () => {
       setGroupTranslations(nextTranslations)
       setTags(nextTags)
       setLocalVideos(nextVideos)
-      setActiveGroupId((current) =>
-        repairVideoGroupSelection(current, nextValidGroupIds, 'all'),
-      )
-      setDraftGroupId((current) =>
-        repairVideoGroupSelection(current, nextValidGroupIds, null),
-      )
+      setActiveGroupId((current) => repairVideoGroupSelection(current, nextValidGroupIds, 'all'))
+      setDraftGroupId((current) => repairVideoGroupSelection(current, nextValidGroupIds, null))
       setParseImportGroupId((current) =>
         repairVideoGroupSelection(current, nextValidGroupIds, null),
       )
@@ -287,7 +279,8 @@ export const Videos: React.FC = () => {
             ? {
                 ...video,
                 status: 'downloading',
-                download_progress: typeof data.progress === 'number' ? data.progress : video.download_progress,
+                download_progress:
+                  typeof data.progress === 'number' ? data.progress : video.download_progress,
                 download_phase: data.phase || video.download_phase,
                 download_message: data.message || video.download_message,
               }
@@ -314,7 +307,9 @@ export const Videos: React.FC = () => {
       void refreshData()
     })
     const unsubFailed = api.onDownloadFailed?.((data: any) => {
-      showToast(t('videos.toast_download_failed', getDownloadFailureToastData(data.title, data.message)))
+      showToast(
+        t('videos.toast_download_failed', getDownloadFailureToastData(data.title, data.message)),
+      )
       setDownloadQueue((prev) =>
         prev.map((item) =>
           item.id === data.videoId || item.title === data.title
@@ -341,7 +336,11 @@ export const Videos: React.FC = () => {
     }
     api.getVideoEngineStatus?.().then((status: VideoEngineStatus) => {
       applyStatus(status)
-      if (status?.status === 'idle') api.loadVideoEngine?.().then(applyStatus).catch(() => undefined)
+      if (status?.status === 'idle')
+        api
+          .loadVideoEngine?.()
+          .then(applyStatus)
+          .catch(() => undefined)
     })
     const unsubscribe = api.onVideoEngineStatus?.(applyStatus)
     return () => {
@@ -411,17 +410,15 @@ export const Videos: React.FC = () => {
   const groupOptions = useMemo(() => getVideoGroupOptions(localizedGroups), [localizedGroups])
   const validGroupIds = useMemo(() => groups.map((group) => group.id), [groups])
   const selectedGroupIds = useMemo(
-    () => (typeof activeGroupId === 'number' ? getDescendantGroupIds(groups, activeGroupId) : undefined),
+    () =>
+      typeof activeGroupId === 'number' ? getDescendantGroupIds(groups, activeGroupId) : undefined,
     [groups, activeGroupId],
   )
   const filteredGroupOptions = useMemo(() => {
     const query = groupSearchQuery.trim().toLowerCase()
     if (!query) return groupOptions
     const matched = groupOptions.filter((group) => group.path.toLowerCase().includes(query))
-    if (
-      draftGroupId &&
-      !matched.some((group) => group.id === draftGroupId)
-    ) {
+    if (draftGroupId && !matched.some((group) => group.id === draftGroupId)) {
       const current = groupOptions.find((group) => group.id === draftGroupId)
       return current ? [current, ...matched] : matched
     }
@@ -440,7 +437,15 @@ export const Videos: React.FC = () => {
         }),
         videoSort,
       ),
-    [localizedVideos, searchQuery, activeGroupId, selectedGroupIds, validGroupIds, activeTag, videoSort],
+    [
+      localizedVideos,
+      searchQuery,
+      activeGroupId,
+      selectedGroupIds,
+      validGroupIds,
+      activeTag,
+      videoSort,
+    ],
   )
   const bulkSelectedVideos = useMemo(
     () => localVideos.filter((video) => bulkSelectedVideoIds.includes(video.id)),
@@ -450,7 +455,10 @@ export const Videos: React.FC = () => {
     () => createBulkMetadataEditPlan(bulkSelectedVideos),
     [bulkSelectedVideos],
   )
-  const visibleVideoIds = useMemo(() => filteredLocalVideos.map((video) => video.id), [filteredLocalVideos])
+  const visibleVideoIds = useMemo(
+    () => filteredLocalVideos.map((video) => video.id),
+    [filteredLocalVideos],
+  )
   const bulkVisibleSelectionAction = useMemo(
     () => getBulkVisibleSelectionAction(visibleVideoIds, bulkSelectedVideoIds),
     [visibleVideoIds, bulkSelectedVideoIds],
@@ -578,8 +586,13 @@ export const Videos: React.FC = () => {
   const attachVideoTags = async (videoId: number, tagNames: string[]) => {
     const nextTags = parseTagInput(tagNames.join(','))
     for (const tagName of nextTags) {
-      const insertTagResult = await api.dbQuery('videos', 'INSERT OR IGNORE INTO video_tags (name) VALUES (?)', [tagName])
-      if (!insertTagResult?.success) throw new Error(insertTagResult?.error || t('videos.toast_video_details_save_failed'))
+      const insertTagResult = await api.dbQuery(
+        'videos',
+        'INSERT OR IGNORE INTO video_tags (name) VALUES (?)',
+        [tagName],
+      )
+      if (!insertTagResult?.success)
+        throw new Error(insertTagResult?.error || t('videos.toast_video_details_save_failed'))
       const res = await api.dbQuery('videos', 'SELECT id FROM video_tags WHERE name = ?', [tagName])
       if (!res?.success) throw new Error(res?.error || t('videos.toast_video_details_save_failed'))
       const tagId = res?.data?.[0]?.id
@@ -589,7 +602,8 @@ export const Videos: React.FC = () => {
           'INSERT OR IGNORE INTO video_tag_links (video_id, tag_id) VALUES (?, ?)',
           [videoId, tagId],
         )
-        if (!linkTagResult?.success) throw new Error(linkTagResult?.error || t('videos.toast_video_details_save_failed'))
+        if (!linkTagResult?.success)
+          throw new Error(linkTagResult?.error || t('videos.toast_video_details_save_failed'))
       }
     }
   }
@@ -650,7 +664,15 @@ export const Videos: React.FC = () => {
     setDownloadQueue((prev) =>
       prev.map((item) =>
         item.id === task.id || item.title === task.title
-          ? { ...item, id: task.id, title: task.title, sourceUrl: task.sourceUrl, status: 'downloading', message: '', progress: 0 }
+          ? {
+              ...item,
+              id: task.id,
+              title: task.title,
+              sourceUrl: task.sourceUrl,
+              status: 'downloading',
+              message: '',
+              progress: 0,
+            }
           : item,
       ),
     )
@@ -673,15 +695,16 @@ export const Videos: React.FC = () => {
       const message = error?.message || String(error)
       setDownloadQueue((prev) =>
         prev.map((item) =>
-          item.id === task.id || item.title === task.title ? { ...item, status: 'failed', message } : item,
+          item.id === task.id || item.title === task.title
+            ? { ...item, status: 'failed', message }
+            : item,
         ),
       )
-      await api.dbQuery('videos', 'UPDATE videos SET status = ?, download_error = ?, diagnostic_message = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [
-        'download_failed',
-        message,
-        message,
-        task.id,
-      ])
+      await api.dbQuery(
+        'videos',
+        'UPDATE videos SET status = ?, download_error = ?, diagnostic_message = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        ['download_failed', message, message, task.id],
+      )
       showToast(t('videos.toast_download_failed', { title: task.title, error: message }))
     }
     void refreshData()
@@ -816,22 +839,22 @@ export const Videos: React.FC = () => {
         return { ok: false, error: t('videos.group_name_duplicate') }
       }
       const configuredLocales = getConfiguredLocales(i18n.language)
-      const localeLabels = new Map(
-        configuredLocales.map((locale) => [locale.code, locale.label]),
-      )
+      const localeLabels = new Map(configuredLocales.map((locale) => [locale.code, locale.label]))
       for (const proposal of getProposedVideoGroupDisplayNames({
         configuredLocales,
         translations: groupTranslations,
         canonicalName: name,
         values: { [i18n.language]: name },
       })) {
-        if (!findSiblingDisplayNameConflict({
-          groups,
-          translations: groupTranslations,
-          parentId,
-          locale: proposal.locale,
-          name: proposal.displayName,
-        })) {
+        if (
+          !findSiblingDisplayNameConflict({
+            groups,
+            translations: groupTranslations,
+            parentId,
+            locale: proposal.locale,
+            name: proposal.displayName,
+          })
+        ) {
           continue
         }
         return {
@@ -892,9 +915,7 @@ export const Videos: React.FC = () => {
       await finishSuccessfulGroupMutation('videos.toast_group_created')
       return { ok: true, groupId }
     } catch (error) {
-      return finishFailedGroupMutation(
-        error instanceof Error ? error.message : fallbackError,
-      )
+      return finishFailedGroupMutation(error instanceof Error ? error.message : fallbackError)
     }
   }
 
@@ -925,9 +946,7 @@ export const Videos: React.FC = () => {
         return { ok: false, error: t('videos.group_name_duplicate') }
       }
       const configuredLocales = getConfiguredLocales(i18n.language)
-      const localeLabels = new Map(
-        configuredLocales.map((locale) => [locale.code, locale.label]),
-      )
+      const localeLabels = new Map(configuredLocales.map((locale) => [locale.code, locale.label]))
       for (const proposal of getProposedVideoGroupDisplayNames({
         configuredLocales,
         translations: groupTranslations,
@@ -935,14 +954,16 @@ export const Videos: React.FC = () => {
         canonicalName: name,
         values: { [i18n.language]: name },
       })) {
-        if (!findSiblingDisplayNameConflict({
-          groups,
-          translations: groupTranslations,
-          parentId,
-          locale: proposal.locale,
-          name: proposal.displayName,
-          excludeGroupId: target.id,
-        })) {
+        if (
+          !findSiblingDisplayNameConflict({
+            groups,
+            translations: groupTranslations,
+            parentId,
+            locale: proposal.locale,
+            name: proposal.displayName,
+            excludeGroupId: target.id,
+          })
+        ) {
           continue
         }
         return {
@@ -991,9 +1012,7 @@ export const Videos: React.FC = () => {
       await finishSuccessfulGroupMutation('videos.toast_group_updated')
       return { ok: true, groupId: target.id }
     } catch (error) {
-      return finishFailedGroupMutation(
-        error instanceof Error ? error.message : fallbackError,
-      )
+      return finishFailedGroupMutation(error instanceof Error ? error.message : fallbackError)
     }
   }
 
@@ -1023,9 +1042,7 @@ export const Videos: React.FC = () => {
       }
 
       const configuredLocales = getConfiguredLocales(i18n.language)
-      const localeLabels = new Map(
-        configuredLocales.map((locale) => [locale.code, locale.label]),
-      )
+      const localeLabels = new Map(configuredLocales.map((locale) => [locale.code, locale.label]))
       for (const proposal of getProposedVideoGroupDisplayNames({
         configuredLocales,
         translations: groupTranslations,
@@ -1096,15 +1113,11 @@ export const Videos: React.FC = () => {
       await finishSuccessfulGroupMutation('videos.toast_group_updated')
       return { ok: true, groupId: target.id }
     } catch (error) {
-      return finishFailedGroupMutation(
-        error instanceof Error ? error.message : fallbackError,
-      )
+      return finishFailedGroupMutation(error instanceof Error ? error.message : fallbackError)
     }
   }
 
-  const handleDeleteGroup = async (
-    group: VideoGroupRecord,
-  ): Promise<VideoGroupMutationResult> => {
+  const handleDeleteGroup = async (group: VideoGroupRecord): Promise<VideoGroupMutationResult> => {
     const fallbackError = t('videos.group_delete_failed')
     if (!api?.dbTransaction) return { ok: false, error: fallbackError }
     try {
@@ -1134,9 +1147,7 @@ export const Videos: React.FC = () => {
         current
           .filter((item) => item.id !== target.id)
           .map((item) =>
-            item.parent_id === target.id
-              ? { ...item, parent_id: target.parent_id ?? null }
-              : item,
+            item.parent_id === target.id ? { ...item, parent_id: target.parent_id ?? null } : item,
           ),
       )
       setGroupTranslations((current) =>
@@ -1144,9 +1155,7 @@ export const Videos: React.FC = () => {
       )
       setLocalVideos((current) =>
         current.map((video) =>
-          video.group_id === target.id
-            ? { ...video, group_id: null, group_name: null }
-            : video,
+          video.group_id === target.id ? { ...video, group_id: null, group_name: null } : video,
         ),
       )
       setActiveGroupId((current) => (current === target.id ? 'all' : current))
@@ -1160,35 +1169,46 @@ export const Videos: React.FC = () => {
       await finishSuccessfulGroupMutation('videos.toast_group_deleted')
       return { ok: true }
     } catch (error) {
-      return finishFailedGroupMutation(
-        error instanceof Error ? error.message : fallbackError,
-      )
+      return finishFailedGroupMutation(error instanceof Error ? error.message : fallbackError)
     }
   }
 
-  const handleSaveVideoDetails = async (videoId: number, title: string, groupId: number | null, tagNames: string[]) => {
+  const handleSaveVideoDetails = async (
+    videoId: number,
+    title: string,
+    groupId: number | null,
+    tagNames: string[],
+  ) => {
     if (!api) return
     if (selectedVideo && !canEditVideoDetails(selectedVideo)) return
     const showSaveFailedToast = (message?: string) => {
       showToast(message || t('videos.toast_video_details_save_failed'))
     }
-    const groupResult = await api.dbQuery('videos', 'UPDATE videos SET title = ?, group_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [
-      title.trim() || selectedVideo?.title || '',
-      groupId,
-      videoId,
-    ])
+    const groupResult = await api.dbQuery(
+      'videos',
+      'UPDATE videos SET title = ?, group_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [title.trim() || selectedVideo?.title || '', groupId, videoId],
+    )
     if (!groupResult?.success) {
       showSaveFailedToast(groupResult?.error)
       return
     }
     const nextTags = parseTagInput(tagNames.join(','))
-    const deleteTagsResult = await api.dbQuery('videos', 'DELETE FROM video_tag_links WHERE video_id = ?', [videoId])
+    const deleteTagsResult = await api.dbQuery(
+      'videos',
+      'DELETE FROM video_tag_links WHERE video_id = ?',
+      [videoId],
+    )
     if (!deleteTagsResult?.success) {
       showSaveFailedToast(deleteTagsResult?.error)
       return
     }
     for (const tagName of nextTags) {
-      const insertTagResult = await api.dbQuery('videos', 'INSERT OR IGNORE INTO video_tags (name) VALUES (?)', [tagName])
+      const insertTagResult = await api.dbQuery(
+        'videos',
+        'INSERT OR IGNORE INTO video_tags (name) VALUES (?)',
+        [tagName],
+      )
       if (!insertTagResult?.success) {
         showSaveFailedToast(insertTagResult?.error)
         return
@@ -1263,7 +1283,11 @@ export const Videos: React.FC = () => {
   }
 
   const showBulkMetadataWriteFailure = (message?: string) => {
-    showToast(t('videos.bulk_update_failed', { error: message || t('videos.toast_video_details_save_failed') }))
+    showToast(
+      t('videos.bulk_update_failed', {
+        error: message || t('videos.toast_video_details_save_failed'),
+      }),
+    )
   }
 
   const handleBulkMoveToGroup = async (groupId: number | null) => {
@@ -1294,7 +1318,14 @@ export const Videos: React.FC = () => {
 
   const handleBulkUpdateTags = async (mode: 'add' | 'remove') => {
     if (!api) return
-    const names = Array.from(new Set(bulkTagDraft.split(',').map((tag) => tag.trim()).filter(Boolean)))
+    const names = Array.from(
+      new Set(
+        bulkTagDraft
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+      ),
+    )
     if (names.length === 0) return
     if (bulkEditPlan.editableIds.length === 0) {
       await handleReadonlyOnlyBulkMetadataSelection()
@@ -1356,7 +1387,8 @@ export const Videos: React.FC = () => {
     if (!api) return
     setIsBulkMoreMenuOpen(false)
     setBulkMetadataMode(null)
-    if (!window.confirm(t('videos.confirm_bulk_delete', { count: bulkSelectedVideoIds.length }))) return
+    if (!window.confirm(t('videos.confirm_bulk_delete', { count: bulkSelectedVideoIds.length })))
+      return
     for (const videoId of bulkSelectedVideoIds) {
       const deleteResult = await api.dbQuery('videos', 'DELETE FROM videos WHERE id = ?', [videoId])
       if (!isBulkMetadataWriteResultSuccess(deleteResult)) {
@@ -1390,10 +1422,22 @@ export const Videos: React.FC = () => {
   const isVideoEngineLoading = videoEngineStatus.status === 'loading'
   const videoEngineBadgeStyle =
     videoEngineTone === 'success'
-      ? { backgroundColor: 'rgba(34, 197, 94, 0.14)', color: '#15803d', borderColor: 'rgba(34, 197, 94, 0.28)' }
+      ? {
+          backgroundColor: 'rgba(34, 197, 94, 0.14)',
+          color: '#15803d',
+          borderColor: 'rgba(34, 197, 94, 0.28)',
+        }
       : videoEngineTone === 'danger'
-        ? { backgroundColor: 'rgba(220, 38, 38, 0.12)', color: '#b91c1c', borderColor: 'rgba(220, 38, 38, 0.24)' }
-        : { backgroundColor: 'rgba(100, 116, 139, 0.12)', color: 'var(--text-muted)', borderColor: 'var(--color-border)' }
+        ? {
+            backgroundColor: 'rgba(220, 38, 38, 0.12)',
+            color: '#b91c1c',
+            borderColor: 'rgba(220, 38, 38, 0.24)',
+          }
+        : {
+            backgroundColor: 'rgba(100, 116, 139, 0.12)',
+            color: 'var(--text-muted)',
+            borderColor: 'var(--color-border)',
+          }
 
   return (
     <div
@@ -1469,7 +1513,9 @@ export const Videos: React.FC = () => {
                 lineHeight: 1,
               }}
             >
-              {isVideoEngineLoading && <span className="video-engine-loading-dot" aria-hidden="true" />}
+              {isVideoEngineLoading && (
+                <span className="video-engine-loading-dot" aria-hidden="true" />
+              )}
               {videoEngineStatus.status === 'error' ? (
                 <AlertTriangle size={13} />
               ) : (
@@ -1520,14 +1566,30 @@ export const Videos: React.FC = () => {
               placeholder={t('videos.input_url_placeholder')}
               style={{ flex: '1 1 260px', minWidth: 0 }}
             />
-            <button type="submit" className="btn primary" disabled={isParsingUrl} style={{ flexShrink: 0 }}>
+            <button
+              type="submit"
+              className="btn primary"
+              disabled={isParsingUrl}
+              style={{ flexShrink: 0 }}
+            >
               <Search size={14} />
               {isParsingUrl ? t('videos.status_parsing') : t('videos.btn_parse_url')}
             </button>
           </form>
 
-          <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: '12px', minHeight: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', minWidth: 0 }}>
+          <section
+            className="card"
+            style={{ display: 'flex', flexDirection: 'column', gap: '12px', minHeight: 0 }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                flexWrap: 'wrap',
+                minWidth: 0,
+              }}
+            >
               <strong
                 title={`${t('videos.video_list_title')} (${filteredLocalVideos.length})`}
                 style={{
@@ -1543,7 +1605,14 @@ export const Videos: React.FC = () => {
                 }}
               >
                 <Database size={14} />
-                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span
+                  style={{
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {t('videos.video_list_title')} ({filteredLocalVideos.length})
                 </span>
               </strong>
@@ -1552,7 +1621,9 @@ export const Videos: React.FC = () => {
                 className="btn sm ghost"
                 disabled={visibleVideoIds.length === 0}
                 onClick={() =>
-                  setBulkSelectedVideoIds((current) => toggleVisibleBulkSelection(visibleVideoIds, current))
+                  setBulkSelectedVideoIds((current) =>
+                    toggleVisibleBulkSelection(visibleVideoIds, current),
+                  )
                 }
                 style={{ height: '30px', flex: '0 0 auto' }}
               >
@@ -1805,7 +1876,11 @@ export const Videos: React.FC = () => {
                           role="menuitem"
                           className="btn sm"
                           onClick={handleBulkDeleteSelected}
-                          style={{ justifyContent: 'flex-start', width: '100%', color: 'var(--color-danger)' }}
+                          style={{
+                            justifyContent: 'flex-start',
+                            width: '100%',
+                            color: 'var(--color-danger)',
+                          }}
                         >
                           <Trash2 size={13} />
                           {t('videos.bulk_delete_selected')}
@@ -1817,9 +1892,18 @@ export const Videos: React.FC = () => {
               </div>
             )}
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto' }}>
+            <div
+              style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto' }}
+            >
               {filteredLocalVideos.length === 0 ? (
-                <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', padding: '32px', textAlign: 'center' }}>
+                <p
+                  style={{
+                    color: 'var(--text-muted)',
+                    fontSize: '12.5px',
+                    padding: '32px',
+                    textAlign: 'center',
+                  }}
+                >
                   {t('videos.empty_library_tip')}
                 </p>
               ) : (
@@ -1847,7 +1931,10 @@ export const Videos: React.FC = () => {
                           ? { backgroundColor: 'rgba(14, 165, 233, 0.14)', color: '#0369a1' }
                           : badgeTone === 'muted'
                             ? { backgroundColor: 'rgba(100, 116, 139, 0.16)', color: '#475569' }
-                            : { backgroundColor: 'rgba(148, 163, 184, 0.14)', color: 'var(--text-muted)' }
+                            : {
+                                backgroundColor: 'rgba(148, 163, 184, 0.14)',
+                                color: 'var(--text-muted)',
+                              }
                   return (
                     <article
                       key={video.id}
@@ -1871,9 +1958,14 @@ export const Videos: React.FC = () => {
                       <input
                         type="checkbox"
                         checked={isBulkSelected}
-                        aria-label={t(isBulkSelected ? 'videos.bulk_deselect_video' : 'videos.bulk_select_video', {
-                          title: video.title,
-                        })}
+                        aria-label={t(
+                          isBulkSelected
+                            ? 'videos.bulk_deselect_video'
+                            : 'videos.bulk_select_video',
+                          {
+                            title: video.title,
+                          },
+                        )}
                         onClick={(event) => event.stopPropagation()}
                         onChange={(event) => {
                           const checked = event.target.checked
@@ -1917,9 +2009,17 @@ export const Videos: React.FC = () => {
                         >
                           {video.title}
                         </h4>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            flexWrap: 'wrap',
+                          }}
+                        >
                           <p style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                            {video.source || 'local'} · {getVideoDurationLabel(video) || t('videos.duration_unknown')} ·{' '}
+                            {video.source || 'local'} ·{' '}
+                            {getVideoDurationLabel(video) || t('videos.duration_unknown')} ·{' '}
                             {video.group_name || t('videos.uncategorized')}
                           </p>
                           <span
@@ -1937,7 +2037,8 @@ export const Videos: React.FC = () => {
                         {status === 'downloading' && (
                           <div style={{ display: 'grid', gap: '4px', marginTop: '6px' }}>
                             <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
-                              {t(getVideoDownloadPhaseKey(video))} · {t('videos.download_progress_label')}{' '}
+                              {t(getVideoDownloadPhaseKey(video))} ·{' '}
+                              {t('videos.download_progress_label')}{' '}
                               {getProgressPercentLabel(video.download_progress || 0)}
                             </span>
                             <div
@@ -1960,16 +2061,35 @@ export const Videos: React.FC = () => {
                           </div>
                         )}
                         {status === 'download_failed' && video.download_error && (
-                          <p style={{ color: 'var(--color-danger)', fontSize: '10.5px', marginTop: '4px' }}>
+                          <p
+                            style={{
+                              color: 'var(--color-danger)',
+                              fontSize: '10.5px',
+                              marginTop: '4px',
+                            }}
+                          >
                             {String(video.download_error).slice(0, 160)}
                           </p>
                         )}
                         {status === 'invalid' && video.invalid_reason && (
-                          <p style={{ color: 'var(--text-muted)', fontSize: '10.5px', marginTop: '4px' }}>
+                          <p
+                            style={{
+                              color: 'var(--text-muted)',
+                              fontSize: '10.5px',
+                              marginTop: '4px',
+                            }}
+                          >
                             {String(video.invalid_reason).slice(0, 160)}
                           </p>
                         )}
-                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '4px' }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            gap: '4px',
+                            flexWrap: 'wrap',
+                            marginTop: '4px',
+                          }}
+                        >
                           {(video.tags || []).map((tagName: string) => {
                             const chip = getChipStyle(tagName)
                             return (
@@ -2024,47 +2144,59 @@ export const Videos: React.FC = () => {
             </div>
           </section>
         </main>
-
       </div>
 
       {drawerState.open && (
-        <div
-          onClick={() => updateDrawer('outside-click')}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 900,
-            backgroundColor: 'rgba(0,0,0,0.18)',
-            display: 'flex',
-            justifyContent: 'flex-end',
-          }}
-        >
-          <aside
-            onClick={(event) => event.stopPropagation()}
-            className="card"
+        <ViewportPortal>
+          <div
+            onClick={() => updateDrawer('outside-click')}
             style={{
-              width: '360px',
-              maxWidth: 'calc(100vw - 24px)',
-              height: '100%',
-              borderRadius: 0,
-              borderTop: 0,
-              borderRight: 0,
-              borderBottom: 0,
-              borderLeft: '1px solid var(--color-border)',
+              position: 'fixed',
+              inset: 0,
+              zIndex: 900,
+              backgroundColor: 'rgba(0,0,0,0.18)',
               display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-              boxShadow: 'var(--shadow-lg, 0 18px 45px rgba(15, 23, 42, 0.18))',
+              justifyContent: 'flex-end',
             }}
           >
-            <header style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <strong style={{ fontSize: '13px' }}>{t(getVideoDrawerTitleKey())}</strong>
-              <button className="btn sm btn-icon" onClick={() => updateDrawer('close')} style={{ marginLeft: 'auto' }}>
-                <X size={14} />
-              </button>
-            </header>
+            <aside
+              onClick={(event) => event.stopPropagation()}
+              className="card"
+              style={{
+                width: '360px',
+                maxWidth: 'calc(100vw - 24px)',
+                height: '100%',
+                borderRadius: 0,
+                borderTop: 0,
+                borderRight: 0,
+                borderBottom: 0,
+                borderLeft: '1px solid var(--color-border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                boxShadow: 'var(--shadow-lg, 0 18px 45px rgba(15, 23, 42, 0.18))',
+              }}
+            >
+              <header style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <strong style={{ fontSize: '13px' }}>{t(getVideoDrawerTitleKey())}</strong>
+                <button
+                  className="btn sm btn-icon"
+                  onClick={() => updateDrawer('close')}
+                  style={{ marginLeft: 'auto' }}
+                >
+                  <X size={14} />
+                </button>
+              </header>
 
-            <div style={{ minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div
+                style={{
+                  minHeight: 0,
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                }}
+              >
                 <section style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {selectedVideo ? (
                     <>
@@ -2074,7 +2206,14 @@ export const Videos: React.FC = () => {
                         const sourceUrl = getVideoSourceUrl(selectedVideo)
                         return (
                           <>
-                            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                            <label
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                fontSize: '11px',
+                              }}
+                            >
                               {t('videos.title_label')}
                               <input
                                 className="form-field"
@@ -2093,7 +2232,14 @@ export const Videos: React.FC = () => {
                                 {t('videos.details_readonly_invalid')}
                               </p>
                             )}
-                            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                            <label
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                fontSize: '11px',
+                              }}
+                            >
                               {t('videos.source_url_label')}
                               {sourceUrl ? (
                                 <a
@@ -2102,7 +2248,8 @@ export const Videos: React.FC = () => {
                                   onClick={async (event) => {
                                     event.preventDefault()
                                     const res = await api.openExternal?.(sourceUrl)
-                                    if (res && !res.success) showToast(res.error || t('videos.toast_playback_failed'))
+                                    if (res && !res.success)
+                                      showToast(res.error || t('videos.toast_playback_failed'))
                                   }}
                                   style={{
                                     display: 'inline-flex',
@@ -2129,7 +2276,9 @@ export const Videos: React.FC = () => {
                                   </span>
                                 </a>
                               ) : (
-                                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>-</span>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+                                  -
+                                </span>
                               )}
                             </label>
                           </>
@@ -2138,7 +2287,14 @@ export const Videos: React.FC = () => {
                       <p style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
                         {selectedVideo.source || 'local'} · {selectedVideo.status || 'unclassified'}
                       </p>
-                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                      <label
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px',
+                          fontSize: '11px',
+                        }}
+                      >
                         {t('videos.groups_title')}
                         <div>
                           <button
@@ -2158,7 +2314,13 @@ export const Videos: React.FC = () => {
                               cursor: 'pointer',
                             }}
                           >
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <span
+                              style={{
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
                               {getSelectedGroupPathLabel(
                                 groupOptions,
                                 draftGroupId,
@@ -2168,97 +2330,112 @@ export const Videos: React.FC = () => {
                             <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>⌄</span>
                           </button>
                           {isGroupDropdownOpen && groupDropdownFrame && (
-                            <div
-                              ref={groupDropdownPanelRef}
-                              style={{
-                                position: 'fixed',
-                                top: `${groupDropdownFrame.top}px`,
-                                left: `${groupDropdownFrame.left}px`,
-                                width: `${groupDropdownFrame.width}px`,
-                                zIndex: 1200,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '6px',
-                                maxHeight: `${groupDropdownFrame.maxHeight}px`,
-                                padding: '8px',
-                                border: '1px solid var(--color-border)',
-                                borderRadius: '8px',
-                                backgroundColor: 'var(--bg-surface)',
-                                boxShadow: 'var(--shadow-lg, 0 18px 45px rgba(15, 23, 42, 0.18))',
-                                overflow: 'hidden',
-                              }}
-                            >
-                              <input
-                                className="form-field"
-                                value={groupSearchQuery}
-                                onChange={(e) => setGroupSearchQuery(e.target.value)}
-                                placeholder={t('videos.group_search_placeholder')}
-                                autoFocus
-                                style={{ height: '30px' }}
-                              />
+                            <ViewportPortal>
                               <div
+                                ref={groupDropdownPanelRef}
                                 style={{
-                                  maxHeight: `${Math.max(80, groupDropdownFrame.maxHeight - 58)}px`,
-                                  minHeight: 0,
-                                  overflowY: 'auto',
+                                  position: 'fixed',
+                                  top: `${groupDropdownFrame.top}px`,
+                                  left: `${groupDropdownFrame.left}px`,
+                                  width: `${groupDropdownFrame.width}px`,
+                                  zIndex: 1200,
                                   display: 'flex',
                                   flexDirection: 'column',
-                                  gap: '4px',
+                                  gap: '6px',
+                                  maxHeight: `${groupDropdownFrame.maxHeight}px`,
+                                  padding: '8px',
+                                  border: '1px solid var(--color-border)',
+                                  borderRadius: '8px',
+                                  backgroundColor: 'var(--bg-surface)',
+                                  boxShadow: 'var(--shadow-lg, 0 18px 45px rgba(15, 23, 42, 0.18))',
+                                  overflow: 'hidden',
                                 }}
                               >
-                                <button
-                                  type="button"
-                                  className={`btn sm ${!draftGroupId ? 'primary' : ''}`}
-                                  disabled={!selectedDetailsEditable}
-                                  onClick={() => {
-                                    setDraftGroupId(null)
-                                    setIsGroupDropdownOpen(false)
-                                    setGroupSearchQuery('')
+                                <input
+                                  className="form-field"
+                                  value={groupSearchQuery}
+                                  onChange={(e) => setGroupSearchQuery(e.target.value)}
+                                  placeholder={t('videos.group_search_placeholder')}
+                                  autoFocus
+                                  style={{ height: '30px' }}
+                                />
+                                <div
+                                  style={{
+                                    maxHeight: `${Math.max(80, groupDropdownFrame.maxHeight - 58)}px`,
+                                    minHeight: 0,
+                                    overflowY: 'auto',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '4px',
                                   }}
-                                  style={{ justifyContent: 'flex-start' }}
                                 >
-                                  {t('videos.uncategorized')}
-                                </button>
-                                {filteredGroupOptions.length === 0 ? (
-                                  <span style={{ color: 'var(--text-muted)', fontSize: '11px', padding: '8px' }}>
-                                    {t('videos.empty_group_search_tip')}
-                                  </span>
-                                ) : (
-                                  filteredGroupOptions.map((group) => (
-                                    <button
-                                      key={group.id}
-                                      type="button"
-                                      className={`btn sm ${draftGroupId === group.id ? 'primary' : ''}`}
-                                      disabled={!selectedDetailsEditable}
-                                      onClick={() => {
-                                        setDraftGroupId(group.id)
-                                        setIsGroupDropdownOpen(false)
-                                        setGroupSearchQuery('')
-                                      }}
+                                  <button
+                                    type="button"
+                                    className={`btn sm ${!draftGroupId ? 'primary' : ''}`}
+                                    disabled={!selectedDetailsEditable}
+                                    onClick={() => {
+                                      setDraftGroupId(null)
+                                      setIsGroupDropdownOpen(false)
+                                      setGroupSearchQuery('')
+                                    }}
+                                    style={{ justifyContent: 'flex-start' }}
+                                  >
+                                    {t('videos.uncategorized')}
+                                  </button>
+                                  {filteredGroupOptions.length === 0 ? (
+                                    <span
                                       style={{
-                                        justifyContent: 'flex-start',
-                                        paddingLeft: `${8 + Math.min(group.depth, 5) * 12}px`,
+                                        color: 'var(--text-muted)',
+                                        fontSize: '11px',
+                                        padding: '8px',
                                       }}
-                                      title={group.path}
                                     >
-                                      <span
-                                        style={{
-                                          overflow: 'hidden',
-                                          textOverflow: 'ellipsis',
-                                          whiteSpace: 'nowrap',
+                                      {t('videos.empty_group_search_tip')}
+                                    </span>
+                                  ) : (
+                                    filteredGroupOptions.map((group) => (
+                                      <button
+                                        key={group.id}
+                                        type="button"
+                                        className={`btn sm ${draftGroupId === group.id ? 'primary' : ''}`}
+                                        disabled={!selectedDetailsEditable}
+                                        onClick={() => {
+                                          setDraftGroupId(group.id)
+                                          setIsGroupDropdownOpen(false)
+                                          setGroupSearchQuery('')
                                         }}
+                                        style={{
+                                          justifyContent: 'flex-start',
+                                          paddingLeft: `${8 + Math.min(group.depth, 5) * 12}px`,
+                                        }}
+                                        title={group.path}
                                       >
-                                        {group.path}
-                                      </span>
-                                    </button>
-                                  ))
-                                )}
+                                        <span
+                                          style={{
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                          }}
+                                        >
+                                          {group.path}
+                                        </span>
+                                      </button>
+                                    ))
+                                  )}
+                                </div>
                               </div>
-                            </div>
+                            </ViewportPortal>
                           )}
                         </div>
                       </label>
-                      <section style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '11px' }}>
+                      <section
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '8px',
+                          fontSize: '11px',
+                        }}
+                      >
                         {t('videos.tags_title')}
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                           {tags.map((tagItem) => {
@@ -2269,7 +2446,11 @@ export const Videos: React.FC = () => {
                                 key={tagItem.id}
                                 className={`btn sm ${selected ? 'primary' : ''}`}
                                 disabled={!selectedDetailsEditable}
-                                onClick={() => setSelectedTagNames((current) => toggleSelectedTag(current, tagItem.name))}
+                                onClick={() =>
+                                  setSelectedTagNames((current) =>
+                                    toggleSelectedTag(current, tagItem.name),
+                                  )
+                                }
                                 style={{
                                   fontSize: '11px',
                                   backgroundColor: selected ? undefined : chip.backgroundColor,
@@ -2290,7 +2471,11 @@ export const Videos: React.FC = () => {
                                   key={tagName}
                                   className="btn sm"
                                   disabled={!selectedDetailsEditable}
-                                  onClick={() => setSelectedTagNames((current) => toggleSelectedTag(current, tagName))}
+                                  onClick={() =>
+                                    setSelectedTagNames((current) =>
+                                      toggleSelectedTag(current, tagName),
+                                    )
+                                  }
                                   style={{
                                     fontSize: '11px',
                                     backgroundColor: chip.backgroundColor,
@@ -2318,7 +2503,11 @@ export const Videos: React.FC = () => {
                             placeholder={t('videos.tags_input_placeholder')}
                             style={{ minWidth: 0, height: '30px' }}
                           />
-                          <button className="btn sm" onClick={handleAddTagDraft} disabled={!selectedDetailsEditable}>
+                          <button
+                            className="btn sm"
+                            onClick={handleAddTagDraft}
+                            disabled={!selectedDetailsEditable}
+                          >
                             {t('videos.btn_add_tag')}
                           </button>
                         </div>
@@ -2326,7 +2515,14 @@ export const Videos: React.FC = () => {
                       <button
                         className="btn primary sm"
                         disabled={!selectedDetailsEditable}
-                        onClick={() => handleSaveVideoDetails(selectedVideo.id, draftTitle, draftGroupId, selectedTagNames)}
+                        onClick={() =>
+                          handleSaveVideoDetails(
+                            selectedVideo.id,
+                            draftTitle,
+                            draftGroupId,
+                            selectedTagNames,
+                          )
+                        }
                       >
                         {t('common.save')}
                       </button>
@@ -2346,249 +2542,299 @@ export const Videos: React.FC = () => {
                       )}
                     </>
                   ) : (
-                    <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{t('videos.empty_details_tip')}</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+                      {t('videos.empty_details_tip')}
+                    </p>
                   )}
-              </section>
-            </div>
-          </aside>
-        </div>
+                </section>
+              </div>
+            </aside>
+          </div>
+        </ViewportPortal>
       )}
 
       {parsedData && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <div className="card" style={{ width: '620px', maxHeight: '82vh', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
-              <div>
-                <h3 style={{ fontSize: '15px', fontWeight: 800 }}>{t('videos.parse_result_title')}</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                  {parsedData.title || parsedData.playlistTitle}
-                </p>
-              </div>
-              <button className="btn sm btn-icon" onClick={closeParsedData}>
-                <X size={14} />
-              </button>
-            </div>
-            {parsedData.diagnostics?.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {parsedData.diagnostics.map((diagnostic: any, index: number) => (
-                  <p key={index} style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                    {diagnostic.message}
+        <ViewportPortal>
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              zIndex: 1000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <div
+              className="card"
+              style={{
+                width: '620px',
+                maxHeight: '82vh',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+                <div>
+                  <h3 style={{ fontSize: '15px', fontWeight: 800 }}>
+                    {t('videos.parse_result_title')}
+                  </h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                    {parsedData.title || parsedData.playlistTitle}
                   </p>
-                ))}
+                </div>
+                <button className="btn sm btn-icon" onClick={closeParsedData}>
+                  <X size={14} />
+                </button>
               </div>
-            )}
-            {parsedItems.length > 1 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {shouldEditParsedPlaylistTitle && (
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                      {t('videos.playlist_title_label')}
-                    </span>
-                    <input
-                      className="form-field"
-                      value={editablePlaylistTitle}
-                      onChange={(event) => setEditablePlaylistTitle(event.target.value)}
-                      placeholder={t('videos.playlist_title_placeholder')}
-                    />
-                  </label>
-                )}
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-                  <input
-                    type="checkbox"
-                    checked={bulkSelection.checked}
-                    ref={(node) => {
-                      if (node) node.indeterminate = bulkSelection.indeterminate
-                    }}
-                    onChange={() => setSelectedVideoIds(toggleBulkSelection(parsedItemIds, selectedVideoIds))}
-                  />
-                  {t('videos.select_all_parts')}
-                </label>
-              </div>
-            )}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px' }}>
-              <label style={{ display: 'grid', gap: '4px' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{t('videos.parse_import_group_label')}</span>
-                <select
-                  className="form-field"
-                  value={parseImportGroupId ?? ''}
-                  onChange={(event) => setParseImportGroupId(event.target.value ? Number(event.target.value) : null)}
-                >
-                  <option value="">{t('videos.group_none')}</option>
-                  {groupOptions.map((group) => (
-                    <option key={group.id} value={group.id}>
-                      {group.path}
-                    </option>
+              {parsedData.diagnostics?.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {parsedData.diagnostics.map((diagnostic: any, index: number) => (
+                    <p key={index} style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                      {diagnostic.message}
+                    </p>
                   ))}
-                </select>
-              </label>
-              <label style={{ display: 'grid', gap: '4px' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{t('videos.parse_import_tags_label')}</span>
-                <input
-                  className="form-field"
-                  value={parseImportTagDraft}
-                  onChange={(event) => setParseImportTagDraft(event.target.value)}
-                />
-              </label>
-            </div>
-            <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {parsedItems.map((item: any) => {
-                const checked = selectedVideoIds.includes(item.id)
-                return (
+                </div>
+              )}
+              {parsedItems.length > 1 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {shouldEditParsedPlaylistTitle && (
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                        {t('videos.playlist_title_label')}
+                      </span>
+                      <input
+                        className="form-field"
+                        value={editablePlaylistTitle}
+                        onChange={(event) => setEditablePlaylistTitle(event.target.value)}
+                        placeholder={t('videos.playlist_title_placeholder')}
+                      />
+                    </label>
+                  )}
                   <label
-                    key={item.id}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '20px minmax(0, 1fr) auto',
-                      gap: '10px',
-                      alignItems: 'center',
-                      padding: '8px',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: '6px',
-                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}
                   >
                     <input
                       type="checkbox"
-                      checked={checked}
+                      checked={bulkSelection.checked}
+                      ref={(node) => {
+                        if (node) node.indeterminate = bulkSelection.indeterminate
+                      }}
                       onChange={() =>
-                        setSelectedVideoIds((prev) =>
-                          checked ? prev.filter((id) => id !== item.id) : [...prev, item.id],
-                        )
+                        setSelectedVideoIds(toggleBulkSelection(parsedItemIds, selectedVideoIds))
                       }
                     />
-                    <span style={{ fontSize: '12.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {item.partIndex ? `P${item.partIndex} · ` : ''}
-                      {item.title}
-                    </span>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{item.durationLabel}</span>
+                    {t('videos.select_all_parts')}
                   </label>
-                )
-              })}
-              {parsedItems.length === 0 && (
-                <p style={{ color: 'var(--text-muted)', fontSize: '12px', padding: '16px' }}>
-                  {t('videos.empty_parse_items_tip')}
-                </p>
+                </div>
               )}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button type="button" className="btn" onClick={closeParsedData}>
-                {t(parseActionLabels.cancel)}
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={handleAddSelectedToVideoList}
-                disabled={isAddingToQueue}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+                  gap: '8px',
+                }}
               >
-                {t(parseActionLabels.addToList)}
-              </button>
-              <button
-                type="button"
-                className="btn primary"
-                onClick={handleDownloadSelected}
-                disabled={isAddingToQueue}
+                <label style={{ display: 'grid', gap: '4px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    {t('videos.parse_import_group_label')}
+                  </span>
+                  <select
+                    className="form-field"
+                    value={parseImportGroupId ?? ''}
+                    onChange={(event) =>
+                      setParseImportGroupId(event.target.value ? Number(event.target.value) : null)
+                    }
+                  >
+                    <option value="">{t('videos.group_none')}</option>
+                    {groupOptions.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.path}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: 'grid', gap: '4px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    {t('videos.parse_import_tags_label')}
+                  </span>
+                  <input
+                    className="form-field"
+                    value={parseImportTagDraft}
+                    onChange={(event) => setParseImportTagDraft(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div
+                style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}
               >
-                {isAddingToQueue ? t('videos.status_queued') : t(parseActionLabels.download)}
-              </button>
+                {parsedItems.map((item: any) => {
+                  const checked = selectedVideoIds.includes(item.id)
+                  return (
+                    <label
+                      key={item.id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '20px minmax(0, 1fr) auto',
+                        gap: '10px',
+                        alignItems: 'center',
+                        padding: '8px',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: '6px',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setSelectedVideoIds((prev) =>
+                            checked ? prev.filter((id) => id !== item.id) : [...prev, item.id],
+                          )
+                        }
+                      />
+                      <span
+                        style={{
+                          fontSize: '12.5px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {item.partIndex ? `P${item.partIndex} · ` : ''}
+                        {item.title}
+                      </span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                        {item.durationLabel}
+                      </span>
+                    </label>
+                  )
+                })}
+                {parsedItems.length === 0 && (
+                  <p style={{ color: 'var(--text-muted)', fontSize: '12px', padding: '16px' }}>
+                    {t('videos.empty_parse_items_tip')}
+                  </p>
+                )}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button type="button" className="btn" onClick={closeParsedData}>
+                  {t(parseActionLabels.cancel)}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={handleAddSelectedToVideoList}
+                  disabled={isAddingToQueue}
+                >
+                  {t(parseActionLabels.addToList)}
+                </button>
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={handleDownloadSelected}
+                  disabled={isAddingToQueue}
+                >
+                  {isAddingToQueue ? t('videos.status_queued') : t(parseActionLabels.download)}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ViewportPortal>
       )}
 
       {playingVideo && (
-        <div
-          style={{
-            position: 'fixed',
-            top: playbackChrome.topInset,
-            right: 0,
-            bottom: 0,
-            left: 0,
-            backgroundColor: '#000',
-            color: '#fff',
-            zIndex: 2000,
-            display: 'grid',
-            gridTemplateRows: '52px minmax(0, 1fr)',
-            ...({ WebkitAppRegion: 'no-drag' } as any),
-          }}
-        >
-          <header
+        <ViewportPortal>
+          <div
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '12px',
-              padding: '0 18px',
-              borderBottom: '1px solid rgba(255,255,255,0.12)',
-              ...({ WebkitAppRegion: playbackChrome.headerAppRegion } as any),
+              position: 'fixed',
+              top: playbackChrome.topInset,
+              right: 0,
+              bottom: 0,
+              left: 0,
+              backgroundColor: '#000',
+              color: '#fff',
+              zIndex: 2000,
+              display: 'grid',
+              gridTemplateRows: '52px minmax(0, 1fr)',
+              ...({ WebkitAppRegion: 'no-drag' } as any),
             }}
           >
-            <button
-              className="btn sm"
+            <header
               style={{
-                backgroundColor: '#222',
-                borderColor: '#444',
-                color: '#fff',
-                flexShrink: 0,
-                ...({ WebkitAppRegion: 'no-drag' } as any),
-              }}
-              onClick={() => {
-                setPlayingVideo(null)
-                setPlaybackUrl('')
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+                padding: '0 18px',
+                borderBottom: '1px solid rgba(255,255,255,0.12)',
+                ...({ WebkitAppRegion: playbackChrome.headerAppRegion } as any),
               }}
             >
-              <X size={14} />
-              {t('common.close')}
-            </button>
-            <span
+              <button
+                className="btn sm"
+                style={{
+                  backgroundColor: '#222',
+                  borderColor: '#444',
+                  color: '#fff',
+                  flexShrink: 0,
+                  ...({ WebkitAppRegion: 'no-drag' } as any),
+                }}
+                onClick={() => {
+                  setPlayingVideo(null)
+                  setPlaybackUrl('')
+                }}
+              >
+                <X size={14} />
+                {t('common.close')}
+              </button>
+              <span
+                style={{
+                  fontSize: '13px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  minWidth: 0,
+                  flexGrow: 1,
+                  textAlign: 'center',
+                }}
+              >
+                {playingVideo.title}
+              </span>
+              <select
+                className="form-field"
+                value={playbackSpeed}
+                onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
+                style={{
+                  width: '92px',
+                  flexShrink: 0,
+                  backgroundColor: '#222',
+                  color: '#fff',
+                  borderColor: '#444',
+                  ...({ WebkitAppRegion: 'no-drag' } as any),
+                }}
+              >
+                <option value="0.5">0.5x</option>
+                <option value="1">1.0x</option>
+                <option value="1.5">1.5x</option>
+                <option value="2">2.0x</option>
+                <option value="3">3.0x</option>
+              </select>
+            </header>
+            <video
+              ref={videoRef}
+              src={playbackUrl}
+              controls
+              autoPlay
               style={{
-                fontSize: '13px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                minWidth: 0,
-                flexGrow: 1,
-                textAlign: 'center',
+                width: '100%',
+                height: '100%',
+                objectFit: 'contain',
+                backgroundColor: '#000',
               }}
-            >
-              {playingVideo.title}
-            </span>
-            <select
-              className="form-field"
-              value={playbackSpeed}
-              onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
-              style={{
-                width: '92px',
-                flexShrink: 0,
-                backgroundColor: '#222',
-                color: '#fff',
-                borderColor: '#444',
-                ...({ WebkitAppRegion: 'no-drag' } as any),
-              }}
-            >
-              <option value="0.5">0.5x</option>
-              <option value="1">1.0x</option>
-              <option value="1.5">1.5x</option>
-              <option value="2">2.0x</option>
-              <option value="3">3.0x</option>
-            </select>
-          </header>
-          <video
-            ref={videoRef}
-            src={playbackUrl}
-            controls
-            autoPlay
-            style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
-          />
-        </div>
+            />
+          </div>
+        </ViewportPortal>
       )}
     </div>
   )

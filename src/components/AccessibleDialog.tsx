@@ -7,6 +7,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
+import { ViewportPortal } from './ViewportPortal'
 
 const focusableSelector = [
   'a[href]',
@@ -96,22 +97,24 @@ export function AccessibleDialog({
   }
 
   return (
-    <div className="dialog-overlay" style={overlayStyle}>
-      <div
-        ref={contentRef}
-        className="dialog-surface"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        style={contentStyle}
-        onKeyDown={handleKeyDown}
-      >
-        <h3 id={titleId} style={titleStyle}>
-          {title}
-        </h3>
-        {children}
+    <ViewportPortal>
+      <div className="dialog-overlay" style={overlayStyle}>
+        <div
+          ref={contentRef}
+          className="dialog-surface"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          tabIndex={-1}
+          style={contentStyle}
+          onKeyDown={handleKeyDown}
+        >
+          <h3 id={titleId} style={titleStyle}>
+            {title}
+          </h3>
+          {children}
+        </div>
       </div>
-    </div>
+    </ViewportPortal>
   )
 }

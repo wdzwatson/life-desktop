@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../components/AccessibleDialog'
+import { ViewportPortal } from '../components/ViewportPortal'
 import { getConfiguredLocales } from '../localeRegistry'
 import {
   buildVideoGroupTree,
@@ -772,10 +773,7 @@ export function VideoGroupSidebar({
     }
   }
 
-  const handleTreeItemKeyDown = (
-    event: KeyboardEvent<HTMLDivElement>,
-    groupId: number,
-  ) => {
+  const handleTreeItemKeyDown = (event: KeyboardEvent<HTMLDivElement>, groupId: number) => {
     const action = getVideoGroupTreeKeyboardAction(
       focusableRows,
       expandedGroupIds,
@@ -1047,60 +1045,62 @@ export function VideoGroupSidebar({
       </div>
 
       {contextMenu && menuGroup && (
-        <div
-          ref={menuRef}
-          className="video-group-sidebar__context-menu"
-          role="menu"
-          style={{ left: contextMenu.left, top: contextMenu.top }}
-          onPointerDown={(event) => event.stopPropagation()}
-          onKeyDown={handleMenuKeyDown}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            tabIndex={menuFocusIndex === 0 ? 0 : -1}
-            onFocus={() => setMenuFocusIndex(0)}
-            onClick={() => {
-              startCreate(menuGroup.id)
-              closeContextMenu(false)
-            }}
+        <ViewportPortal>
+          <div
+            ref={menuRef}
+            className="video-group-sidebar__context-menu"
+            role="menu"
+            style={{ left: contextMenu.left, top: contextMenu.top }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={handleMenuKeyDown}
           >
-            <FolderPlus aria-hidden="true" />
-            <span>{t('videos.add_child_group')}</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            tabIndex={menuFocusIndex === 1 ? 0 : -1}
-            onFocus={() => setMenuFocusIndex(1)}
-            onClick={() => startRename(menuGroup.id)}
-          >
-            <Pencil aria-hidden="true" />
-            <span>{t('videos.rename_group')}</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            tabIndex={menuFocusIndex === 2 ? 0 : -1}
-            onFocus={() => setMenuFocusIndex(2)}
-            onClick={() => openTranslationDialog(menuGroup.id)}
-          >
-            <Languages aria-hidden="true" />
-            <span>{t('videos.edit_group_translations')}</span>
-          </button>
-          <div className="video-group-sidebar__menu-separator" role="separator" />
-          <button
-            type="button"
-            role="menuitem"
-            className="danger"
-            tabIndex={menuFocusIndex === 3 ? 0 : -1}
-            onFocus={() => setMenuFocusIndex(3)}
-            onClick={() => openDeleteDialog(menuGroup.id)}
-          >
-            <Trash2 aria-hidden="true" />
-            <span>{t('videos.delete_group')}</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={menuFocusIndex === 0 ? 0 : -1}
+              onFocus={() => setMenuFocusIndex(0)}
+              onClick={() => {
+                startCreate(menuGroup.id)
+                closeContextMenu(false)
+              }}
+            >
+              <FolderPlus aria-hidden="true" />
+              <span>{t('videos.add_child_group')}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={menuFocusIndex === 1 ? 0 : -1}
+              onFocus={() => setMenuFocusIndex(1)}
+              onClick={() => startRename(menuGroup.id)}
+            >
+              <Pencil aria-hidden="true" />
+              <span>{t('videos.rename_group')}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={menuFocusIndex === 2 ? 0 : -1}
+              onFocus={() => setMenuFocusIndex(2)}
+              onClick={() => openTranslationDialog(menuGroup.id)}
+            >
+              <Languages aria-hidden="true" />
+              <span>{t('videos.edit_group_translations')}</span>
+            </button>
+            <div className="video-group-sidebar__menu-separator" role="separator" />
+            <button
+              type="button"
+              role="menuitem"
+              className="danger"
+              tabIndex={menuFocusIndex === 3 ? 0 : -1}
+              onFocus={() => setMenuFocusIndex(3)}
+              onClick={() => openDeleteDialog(menuGroup.id)}
+            >
+              <Trash2 aria-hidden="true" />
+              <span>{t('videos.delete_group')}</span>
+            </button>
+          </div>
+        </ViewportPortal>
       )}
 
       {translationDialog && translationGroup && (

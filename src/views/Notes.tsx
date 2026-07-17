@@ -15,6 +15,7 @@ import {
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { getConfiguredLocales } from '../localeRegistry'
+import { ViewportPortal } from '../components/ViewportPortal'
 import { NotebookSidebar } from './NotebookSidebar'
 import {
   ALL_NOTES_SCOPE,
@@ -479,10 +480,13 @@ export const Notes: React.FC = () => {
     const mainName = nbModalName.trim()
     const normalizedMainName = mainName.toLocaleLowerCase().replace(/\s+/g, ' ')
     const reservedNotebookNames = new Set(
-      [UNCATEGORIZED_NOTEBOOK, ...configuredLocales.flatMap((locale) => [
-        i18n.getResource(locale.code, 'translation', 'notes.all_notes'),
-        i18n.getResource(locale.code, 'translation', 'notes.default_title'),
-      ])]
+      [
+        UNCATEGORIZED_NOTEBOOK,
+        ...configuredLocales.flatMap((locale) => [
+          i18n.getResource(locale.code, 'translation', 'notes.all_notes'),
+          i18n.getResource(locale.code, 'translation', 'notes.default_title'),
+        ]),
+      ]
         .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
         .map((value) => value.trim().toLocaleLowerCase().replace(/\s+/g, ' ')),
     )
@@ -540,9 +544,7 @@ export const Notes: React.FC = () => {
 
     const res = await api.dbTransaction('notes', statements)
     if (!res?.success) {
-      showToast(
-        getNotebookTransactionError(res?.error, t('notes.toast_notebook_exists')),
-      )
+      showToast(getNotebookTransactionError(res?.error, t('notes.toast_notebook_exists')))
       return
     }
     const transactionResults = Array.isArray(res.data)
@@ -711,9 +713,7 @@ export const Notes: React.FC = () => {
           notes={notes}
           activeNotebook={activeNotebook}
           activeNoteId={activeNoteId}
-          getNotebookDisplayName={(notebook) =>
-            getNotebookDisplayName(notebook.name, notebook.id)
-          }
+          getNotebookDisplayName={(notebook) => getNotebookDisplayName(notebook.name, notebook.id)}
           getCategoryDisplayName={getNotebookCategoryDisplayName}
           formatTime={formatTime}
           onSelectNotebook={handleNotebookScopeSelect}
@@ -723,9 +723,7 @@ export const Notes: React.FC = () => {
           }}
           onCreateNotebook={handleCreateNotebook}
           onRenameNotebook={(notebook) => handleRenameNotebook(notebook as Notebook)}
-          onEditTranslations={(notebook) =>
-            handleRenameNotebook(notebook as Notebook, true)
-          }
+          onEditTranslations={(notebook) => handleRenameNotebook(notebook as Notebook, true)}
           onDeleteNotebook={(notebook) => handleDeleteNotebook(notebook as Notebook)}
         />
 
@@ -1111,171 +1109,237 @@ export const Notes: React.FC = () => {
 
       {/* Notebook Creation/Edit Modal */}
       {isNbModalOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.4)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
-          onClick={() => {
-            // Do nothing on backdrop click
-          }}
-        >
+        <ViewportPortal>
           <div
+            className="dialog-overlay"
             style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: '8px',
-              padding: '20px',
-              width: '360px',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.4)',
+              backdropFilter: 'blur(4px)',
               display: 'flex',
-              flexDirection: 'column',
-              gap: '14px',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
             }}
-            onClick={(e) => e.stopPropagation()}
+            onClick={() => {
+              // Do nothing on backdrop click
+            }}
           >
-            <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-main)' }}>
-              {nbModalAction === 'create'
-                ? t('notes.create_notebook')
-                : isNbTranslationIntent
-                  ? t('notes.edit_notebook_translations')
-                  : t('notes.rename_notebook')}
-            </h3>
-            <div className="notebook-modal__locale">
-              {t('notes.current_language_label', { language: currentLocaleLabel })}
-            </div>
-            <form
-              onSubmit={handleNbModalSubmit}
-              style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+            <div
+              className="dialog-surface"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '8px',
+                padding: '20px',
+                width: '360px',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+              }}
+              onClick={(e) => e.stopPropagation()}
             >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {t('notes.notebook_name')}
-                </label>
-                <input
-                  className="form-field"
-                  style={{ width: '100%' }}
-                  value={nbModalName}
-                  onChange={(e) => setNbModalName(e.target.value)}
-                  placeholder={t('notes.notebook_name_placeholder')}
-                  required
-                  autoFocus
-                />
+              <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-main)' }}>
+                {nbModalAction === 'create'
+                  ? t('notes.create_notebook')
+                  : isNbTranslationIntent
+                    ? t('notes.edit_notebook_translations')
+                    : t('notes.rename_notebook')}
+              </h3>
+              <div className="notebook-modal__locale">
+                {t('notes.current_language_label', { language: currentLocaleLabel })}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {t('notes.notebook_category')}
-                </label>
-                <input
-                  className="form-field"
-                  style={{ width: '100%' }}
-                  list={notebookCategoryListId}
-                  aria-describedby={notebookCategoryHelpId}
-                  autoComplete="off"
-                  value={nbModalCategory}
-                  onChange={(e) => setNbModalCategory(e.target.value)}
-                  placeholder={t('notes.notebook_category_placeholder')}
-                  required
-                />
-                <datalist id={notebookCategoryListId}>
-                  {notebookCategoryOptions.map((option) => (
-                    <option key={option.storageName} value={option.displayName} />
-                  ))}
-                </datalist>
-                <span id={notebookCategoryHelpId} className="notebook-modal__field-help">
-                  {t('notes.notebook_category_help')}
-                </span>
-              </div>
-
-              <div className="notebook-modal__translations">
-                <button
-                  type="button"
-                  className={`notebook-modal__translations-toggle ${
-                    isNbTransOpen ? 'open' : ''
-                  }`}
-                  aria-expanded={isNbTransOpen}
-                  aria-controls={notebookTranslationsPanelId}
-                  onClick={() => setIsNbTransOpen(!isNbTransOpen)}
-                >
-                  <span className="notebook-modal__translations-toggle-copy">
-                    <Languages aria-hidden="true" />
-                    <span>{t('common.more_translations')}</span>
-                  </span>
-                  <ChevronDown aria-hidden="true" />
-                </button>
-              </div>
-
-              {isNbTransOpen && (
-                <div
-                  id={notebookTranslationsPanelId}
-                  className="notebook-modal__translations-panel"
-                >
-                  {configuredLocales.filter((l) => l.code !== i18n.language).map((locale) => (
-                    <div
-                      key={locale.code}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px',
-                        borderBottom: '1px solid rgba(255,255,255,0.05)',
-                        paddingBottom: '8px',
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontWeight: 'bold',
-                          fontSize: '11px',
-                          color: 'var(--color-accent)',
-                        }}
-                      >
-                        {locale.label}
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                          {t('notes.notebook_name')}
-                        </label>
-                        <input
-                          className="form-field"
-                          style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }}
-                          value={nbNameTrans[locale.code] || ''}
-                          onChange={(e) =>
-                            setNbNameTrans({ ...nbNameTrans, [locale.code]: e.target.value })
-                          }
-                          placeholder={t('notes.notebook_name_translation_placeholder', {
-                            language: locale.label,
-                          })}
-                        />
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                          {t('notes.notebook_category')}
-                        </label>
-                        <input
-                          className="form-field"
-                          style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }}
-                          value={nbCatTrans[locale.code] || ''}
-                          onChange={(e) =>
-                            setNbCatTrans({ ...nbCatTrans, [locale.code]: e.target.value })
-                          }
-                          placeholder={t('notes.notebook_category_translation_placeholder', {
-                            language: locale.label,
-                          })}
-                        />
-                      </div>
-                    </div>
-                  ))}
+              <form
+                onSubmit={handleNbModalSubmit}
+                style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    {t('notes.notebook_name')}
+                  </label>
+                  <input
+                    className="form-field"
+                    style={{ width: '100%' }}
+                    value={nbModalName}
+                    onChange={(e) => setNbModalName(e.target.value)}
+                    placeholder={t('notes.notebook_name_placeholder')}
+                    required
+                    autoFocus
+                  />
                 </div>
-              )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    {t('notes.notebook_category')}
+                  </label>
+                  <input
+                    className="form-field"
+                    style={{ width: '100%' }}
+                    list={notebookCategoryListId}
+                    aria-describedby={notebookCategoryHelpId}
+                    autoComplete="off"
+                    value={nbModalCategory}
+                    onChange={(e) => setNbModalCategory(e.target.value)}
+                    placeholder={t('notes.notebook_category_placeholder')}
+                    required
+                  />
+                  <datalist id={notebookCategoryListId}>
+                    {notebookCategoryOptions.map((option) => (
+                      <option key={option.storageName} value={option.displayName} />
+                    ))}
+                  </datalist>
+                  <span id={notebookCategoryHelpId} className="notebook-modal__field-help">
+                    {t('notes.notebook_category_help')}
+                  </span>
+                </div>
 
+                <div className="notebook-modal__translations">
+                  <button
+                    type="button"
+                    className={`notebook-modal__translations-toggle ${isNbTransOpen ? 'open' : ''}`}
+                    aria-expanded={isNbTransOpen}
+                    aria-controls={notebookTranslationsPanelId}
+                    onClick={() => setIsNbTransOpen(!isNbTransOpen)}
+                  >
+                    <span className="notebook-modal__translations-toggle-copy">
+                      <Languages aria-hidden="true" />
+                      <span>{t('common.more_translations')}</span>
+                    </span>
+                    <ChevronDown aria-hidden="true" />
+                  </button>
+                </div>
+
+                {isNbTransOpen && (
+                  <div
+                    id={notebookTranslationsPanelId}
+                    className="notebook-modal__translations-panel"
+                  >
+                    {configuredLocales
+                      .filter((l) => l.code !== i18n.language)
+                      .map((locale) => (
+                        <div
+                          key={locale.code}
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '6px',
+                            borderBottom: '1px solid rgba(255,255,255,0.05)',
+                            paddingBottom: '8px',
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontWeight: 'bold',
+                              fontSize: '11px',
+                              color: 'var(--color-accent)',
+                            }}
+                          >
+                            {locale.label}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                              {t('notes.notebook_name')}
+                            </label>
+                            <input
+                              className="form-field"
+                              style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }}
+                              value={nbNameTrans[locale.code] || ''}
+                              onChange={(e) =>
+                                setNbNameTrans({ ...nbNameTrans, [locale.code]: e.target.value })
+                              }
+                              placeholder={t('notes.notebook_name_translation_placeholder', {
+                                language: locale.label,
+                              })}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                              {t('notes.notebook_category')}
+                            </label>
+                            <input
+                              className="form-field"
+                              style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }}
+                              value={nbCatTrans[locale.code] || ''}
+                              onChange={(e) =>
+                                setNbCatTrans({ ...nbCatTrans, [locale.code]: e.target.value })
+                              }
+                              placeholder={t('notes.notebook_category_translation_placeholder', {
+                                language: locale.label,
+                              })}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    gap: '8px',
+                    marginTop: '8px',
+                  }}
+                >
+                  <button type="button" className="btn sm" onClick={() => setIsNbModalOpen(false)}>
+                    {t('notes.cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn sm primary"
+                    onClick={(e) => handleNbModalSubmit(e as unknown as React.FormEvent)}
+                  >
+                    {t('notes.confirm')}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </ViewportPortal>
+      )}
+
+      {deleteConfirmTarget && (
+        <ViewportPortal>
+          <div
+            className="dialog-overlay"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.4)',
+              backdropFilter: 'blur(4px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+            }}
+            onClick={() => setDeleteConfirmTarget(null)}
+          >
+            <div
+              className="dialog-surface"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '8px',
+                padding: '20px',
+                width: '360px',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-main)' }}>
+                {deleteConfirmTarget.type === 'note'
+                  ? t('notes.delete_note')
+                  : t('notes.delete_notebook')}
+              </h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                {deleteConfirmTarget.type === 'note'
+                  ? t('notes.prompt_delete_confirm')
+                  : t('notes.prompt_delete_notebook_confirm', { name: deleteConfirmTarget.name })}
+              </p>
               <div
                 style={{
                   display: 'flex',
@@ -1284,94 +1348,34 @@ export const Notes: React.FC = () => {
                   marginTop: '8px',
                 }}
               >
-                <button type="button" className="btn sm" onClick={() => setIsNbModalOpen(false)}>
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={() => setDeleteConfirmTarget(null)}
+                >
                   {t('notes.cancel')}
                 </button>
                 <button
                   type="button"
                   className="btn sm primary"
-                  onClick={(e) => handleNbModalSubmit(e as unknown as React.FormEvent)}
+                  style={{
+                    backgroundColor: 'var(--color-danger, #ff4d4f)',
+                    borderColor: 'var(--color-danger, #ff4d4f)',
+                  }}
+                  onClick={() => {
+                    if (deleteConfirmTarget.type === 'note') {
+                      executeDeleteNote(deleteConfirmTarget.id)
+                    } else if (deleteConfirmTarget.type === 'notebook' && deleteConfirmTarget.nb) {
+                      executeDeleteNotebook(deleteConfirmTarget.nb)
+                    }
+                  }}
                 >
                   {t('notes.confirm')}
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {deleteConfirmTarget && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.4)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
-          onClick={() => setDeleteConfirmTarget(null)}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: '8px',
-              padding: '20px',
-              width: '360px',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '14px',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-main)' }}>
-              {deleteConfirmTarget.type === 'note'
-                ? t('notes.delete_note')
-                : t('notes.delete_notebook')}
-            </h3>
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-              {deleteConfirmTarget.type === 'note'
-                ? t('notes.prompt_delete_confirm')
-                : t('notes.prompt_delete_notebook_confirm', { name: deleteConfirmTarget.name })}
-            </p>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: '8px',
-                marginTop: '8px',
-              }}
-            >
-              <button type="button" className="btn sm" onClick={() => setDeleteConfirmTarget(null)}>
-                {t('notes.cancel')}
-              </button>
-              <button
-                type="button"
-                className="btn sm primary"
-                style={{
-                  backgroundColor: 'var(--color-danger, #ff4d4f)',
-                  borderColor: 'var(--color-danger, #ff4d4f)',
-                }}
-                onClick={() => {
-                  if (deleteConfirmTarget.type === 'note') {
-                    executeDeleteNote(deleteConfirmTarget.id)
-                  } else if (deleteConfirmTarget.type === 'notebook' && deleteConfirmTarget.nb) {
-                    executeDeleteNotebook(deleteConfirmTarget.nb)
-                  }
-                }}
-              >
-                {t('notes.confirm')}
-              </button>
             </div>
           </div>
-        </div>
+        </ViewportPortal>
       )}
     </div>
   )

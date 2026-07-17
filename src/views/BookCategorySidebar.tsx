@@ -8,9 +8,9 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from 'react'
-import { createPortal } from 'react-dom'
 import { BookOpen, Inbox, Languages, Library, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { ViewportPortal } from '../components/ViewportPortal'
 import { getContextMenuPosition } from './bookCategorySidebarUtils'
 import './BookCategorySidebar.css'
 
@@ -424,8 +424,8 @@ export function BookCategorySidebar({
         </div>
       </div>
 
-      {contextMenu &&
-        createPortal(
+      {contextMenu && (
+        <ViewportPortal>
           <div
             ref={menuRef}
             className="book-category-sidebar__context-menu"
@@ -472,9 +472,9 @@ export function BookCategorySidebar({
               <Trash2 aria-hidden="true" />
               <span>{t('books.delete_shelf')}</span>
             </button>
-          </div>,
-          document.body,
-        )}
+          </div>
+        </ViewportPortal>
+      )}
     </aside>
   )
 }

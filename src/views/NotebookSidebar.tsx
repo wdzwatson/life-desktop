@@ -22,6 +22,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { ViewportPortal } from '../components/ViewportPortal'
 import { getContextMenuPosition } from './bookCategorySidebarUtils'
 import {
   ALL_NOTES_SCOPE,
@@ -242,9 +243,7 @@ export function NotebookSidebar({
             className={`notebook-sidebar__note ${
               activeNoteId === note.id && activeNotebook === scope ? 'active' : ''
             }`}
-            aria-current={
-              activeNoteId === note.id && activeNotebook === scope ? 'page' : undefined
-            }
+            aria-current={activeNoteId === note.id && activeNotebook === scope ? 'page' : undefined}
             onClick={() => onSelectNote(note, scope)}
           >
             <FileText aria-hidden="true" />
@@ -459,56 +458,58 @@ export function NotebookSidebar({
       </div>
 
       {contextMenu && (
-        <div
-          ref={menuRef}
-          className="notebook-sidebar__context-menu"
-          role="menu"
-          style={{ left: contextMenu.left, top: contextMenu.top }}
-          onPointerDown={(event) => event.stopPropagation()}
-          onKeyDown={handleMenuKeyDown}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            tabIndex={menuFocusIndex === 0 ? 0 : -1}
-            onFocus={() => setMenuFocusIndex(0)}
-            onClick={() => {
-              onRenameNotebook(contextMenu.notebook)
-              closeContextMenu(false)
-            }}
+        <ViewportPortal>
+          <div
+            ref={menuRef}
+            className="notebook-sidebar__context-menu"
+            role="menu"
+            style={{ left: contextMenu.left, top: contextMenu.top }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={handleMenuKeyDown}
           >
-            <Pencil aria-hidden="true" />
-            <span>{t('notes.rename_notebook')}</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            tabIndex={menuFocusIndex === 1 ? 0 : -1}
-            onFocus={() => setMenuFocusIndex(1)}
-            onClick={() => {
-              onEditTranslations(contextMenu.notebook)
-              closeContextMenu(false)
-            }}
-          >
-            <Languages aria-hidden="true" />
-            <span>{t('notes.edit_notebook_translations')}</span>
-          </button>
-          <div className="notebook-sidebar__menu-separator" role="separator" />
-          <button
-            type="button"
-            role="menuitem"
-            className="danger"
-            tabIndex={menuFocusIndex === 2 ? 0 : -1}
-            onFocus={() => setMenuFocusIndex(2)}
-            onClick={() => {
-              onDeleteNotebook(contextMenu.notebook)
-              closeContextMenu(false)
-            }}
-          >
-            <Trash2 aria-hidden="true" />
-            <span>{t('notes.delete_notebook')}</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={menuFocusIndex === 0 ? 0 : -1}
+              onFocus={() => setMenuFocusIndex(0)}
+              onClick={() => {
+                onRenameNotebook(contextMenu.notebook)
+                closeContextMenu(false)
+              }}
+            >
+              <Pencil aria-hidden="true" />
+              <span>{t('notes.rename_notebook')}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={menuFocusIndex === 1 ? 0 : -1}
+              onFocus={() => setMenuFocusIndex(1)}
+              onClick={() => {
+                onEditTranslations(contextMenu.notebook)
+                closeContextMenu(false)
+              }}
+            >
+              <Languages aria-hidden="true" />
+              <span>{t('notes.edit_notebook_translations')}</span>
+            </button>
+            <div className="notebook-sidebar__menu-separator" role="separator" />
+            <button
+              type="button"
+              role="menuitem"
+              className="danger"
+              tabIndex={menuFocusIndex === 2 ? 0 : -1}
+              onFocus={() => setMenuFocusIndex(2)}
+              onClick={() => {
+                onDeleteNotebook(contextMenu.notebook)
+                closeContextMenu(false)
+              }}
+            >
+              <Trash2 aria-hidden="true" />
+              <span>{t('notes.delete_notebook')}</span>
+            </button>
+          </div>
+        </ViewportPortal>
       )}
     </aside>
   )
