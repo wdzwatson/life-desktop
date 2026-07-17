@@ -14,6 +14,12 @@
   --color-warn: #f59e0b;
   --color-danger: #ef4444;
   --shadow-app: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --overlay-dialog-bg: rgba(15, 23, 42, 0.16);
+  --overlay-dialog-blur: 8px;
+  --overlay-command-bg: rgba(15, 23, 42, 0.12);
+  --overlay-command-blur: 6px;
+  --overlay-drawer-bg: rgba(15, 23, 42, 0.08);
+  --overlay-drawer-blur: 2px;
   --radius-card: 8px;
   --spacing-unit: 8px;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -31,6 +37,9 @@ body.theme-dense {
   --color-accent-hover: #8b5cf6;
   --color-border: #2e2e2e;
   --shadow-app: none;
+  --overlay-dialog-bg: rgba(0, 0, 0, 0.24);
+  --overlay-command-bg: rgba(0, 0, 0, 0.16);
+  --overlay-drawer-bg: rgba(0, 0, 0, 0.12);
   --radius-card: 4px;
 }
 
@@ -45,6 +54,9 @@ body.theme-card {
   --color-accent-hover: #b45309;
   --color-border: #e6e2d8;
   --shadow-app: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --overlay-dialog-bg: rgba(67, 56, 42, 0.14);
+  --overlay-command-bg: rgba(67, 56, 42, 0.1);
+  --overlay-drawer-bg: rgba(67, 56, 42, 0.07);
   --radius-card: 14px;
 }
 
@@ -59,6 +71,9 @@ body.theme-dark-tech {
   --color-accent-hover: #00aaee;
   --color-border: #00ffcc33;
   --shadow-app: 0 0 10px rgba(0, 255, 204, 0.15);
+  --overlay-dialog-bg: rgba(0, 0, 0, 0.28);
+  --overlay-command-bg: rgba(0, 0, 0, 0.2);
+  --overlay-drawer-bg: rgba(0, 0, 0, 0.14);
   --radius-card: 2px;
   --font-sans: 'Fira Code', 'Courier New', monospace;
   --font-mono: 'Fira Code', 'Courier New', monospace;
@@ -642,6 +657,7 @@ body.theme-dense .nav-item.active {
 .dialog-overlay,
 .command-palette-overlay {
   opacity: 1;
+  box-sizing: border-box;
 }
 
 .dialog-surface,

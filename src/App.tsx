@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { Topbar } from './components/Topbar'
 import { Statusbar } from './components/Statusbar'
+import { ViewportPortal } from './components/ViewportPortal'
 import { useAppStore } from './store/useAppStore'
 import { useTranslation } from 'react-i18next'
 
@@ -345,114 +346,119 @@ function App() {
 
       {/* 4. Global Search & Command Palette Modal Overlay */}
       {searchOpen && (
-        <div
-          className="command-palette-overlay"
-          onClick={() => setSearchOpen(false)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.4)',
-            backdropFilter: 'blur(2px)',
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'center',
-            paddingTop: '80px',
-          }}
-        >
+        <ViewportPortal>
           <div
-            className="command-palette"
-            onClick={(e) => e.stopPropagation()}
+            className="command-palette-overlay"
+            onClick={() => setSearchOpen(false)}
             style={{
-              width: '600px',
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: '12px',
-              boxShadow:
-                '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-              overflow: 'hidden',
+              position: 'fixed',
+              inset: 0,
+              width: '100vw',
+              height: '100vh',
+              backgroundColor: 'var(--overlay-command-bg)',
+              backdropFilter: 'blur(var(--overlay-command-blur))',
+              WebkitBackdropFilter: 'blur(var(--overlay-command-blur))',
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'center',
+              paddingTop: '80px',
             }}
           >
-            {/* Search Input */}
             <div
+              className="command-palette"
+              onClick={(e) => e.stopPropagation()}
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                padding: '14px 18px',
-                borderBottom: '1px solid var(--color-border)',
-                gap: '12px',
+                width: '600px',
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: '12px',
+                boxShadow:
+                  '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+                overflow: 'hidden',
               }}
             >
-              <span style={{ fontSize: '18px', color: 'var(--text-muted)' }}>⌕</span>
-              <input
-                autoFocus
+              {/* Search Input */}
+              <div
                 style={{
-                  border: 'none',
-                  outline: 'none',
-                  fontSize: '14px',
-                  width: '100%',
-                  backgroundColor: 'transparent',
-                  color: 'var(--text-main)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '14px 18px',
+                  borderBottom: '1px solid var(--color-border)',
+                  gap: '12px',
                 }}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t('app.search_placeholder')}
-              />
-              <span className="kbd-shortcut" style={{ margin: 0 }}>
-                Esc
-              </span>
-            </div>
-
-            {/* Results Grid */}
-            <div style={{ maxHeight: '360px', overflowY: 'auto', padding: '8px' }}>
-              {searchResults.length === 0 ? (
-                <div
+              >
+                <span style={{ fontSize: '18px', color: 'var(--text-muted)' }}>⌕</span>
+                <input
+                  autoFocus
                   style={{
-                    padding: '24px',
-                    textAlign: 'center',
-                    color: 'var(--text-muted)',
-                    fontSize: '13px',
+                    border: 'none',
+                    outline: 'none',
+                    fontSize: '14px',
+                    width: '100%',
+                    backgroundColor: 'transparent',
+                    color: 'var(--text-main)',
                   }}
-                >
-                  {searchQuery.trim() ? t('app.search_no_results') : t('app.search_default_hint')}
-                </div>
-              ) : (
-                searchResults.map((result, idx) => (
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t('app.search_placeholder')}
+                />
+                <span className="kbd-shortcut" style={{ margin: 0 }}>
+                  Esc
+                </span>
+              </div>
+
+              {/* Results Grid */}
+              <div style={{ maxHeight: '360px', overflowY: 'auto', padding: '8px' }}>
+                {searchResults.length === 0 ? (
                   <div
-                    key={idx}
-                    onClick={result.action}
                     style={{
-                      padding: '10px 14px',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      backgroundColor: 'transparent',
-                      transition: 'background-color 0.1s',
+                      padding: '24px',
+                      textAlign: 'center',
+                      color: 'var(--text-muted)',
+                      fontSize: '13px',
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-app)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                   >
-                    <div>
-                      <strong
-                        style={{ fontSize: '13px', display: 'block', color: 'var(--text-main)' }}
-                      >
-                        {result.title}
-                      </strong>
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        {result.desc}
+                    {searchQuery.trim() ? t('app.search_no_results') : t('app.search_default_hint')}
+                  </div>
+                ) : (
+                  searchResults.map((result, idx) => (
+                    <div
+                      key={idx}
+                      onClick={result.action}
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        backgroundColor: 'transparent',
+                        transition: 'background-color 0.1s',
+                      }}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-app)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                    >
+                      <div>
+                        <strong
+                          style={{ fontSize: '13px', display: 'block', color: 'var(--text-main)' }}
+                        >
+                          {result.title}
+                        </strong>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          {result.desc}
+                        </span>
+                      </div>
+                    <span className="pill" style={{ textTransform: 'uppercase', fontSize: '9px' }}>
+                        {result.type}
                       </span>
                     </div>
-                    <span className="pill" style={{ textTransform: 'uppercase', fontSize: '9px' }}>
-                      {result.type}
-                    </span>
-                  </div>
-                ))
-              )}
+                  ))
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        </ViewportPortal>
       )}
     </div>
   )

@@ -118,8 +118,12 @@ const dialogOverlayStyle: CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   padding: '24px',
-  backgroundColor: 'color-mix(in srgb, var(--text-main) 38%, transparent)',
-  backdropFilter: 'blur(3px)',
+  width: '100vw',
+  height: '100vh',
+  margin: 0,
+  backgroundColor: 'var(--overlay-dialog-bg)',
+  backdropFilter: 'blur(var(--overlay-dialog-blur))',
+  WebkitBackdropFilter: 'blur(var(--overlay-dialog-blur))',
 }
 
 const dialogContentStyle: CSSProperties = {

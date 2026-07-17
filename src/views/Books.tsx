@@ -39,6 +39,7 @@ import {
 } from './bookReaderUtils'
 import { BookCategorySidebar, type BookShelf } from './BookCategorySidebar'
 import { AccessibleDialog } from '../components/AccessibleDialog'
+import { ViewportPortal } from '../components/ViewportPortal'
 import { getConfiguredLocales } from '../localeRegistry'
 import {
   buildBookCategoryMigrationStatements,
@@ -1381,8 +1382,12 @@ export const Books: React.FC = () => {
   const modalOverlayStyle: React.CSSProperties = {
     position: 'fixed',
     inset: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    backdropFilter: 'blur(8px)',
+    width: '100vw',
+    height: '100vh',
+    margin: 0,
+    backgroundColor: 'var(--overlay-dialog-bg)',
+    backdropFilter: 'blur(var(--overlay-dialog-blur))',
+    WebkitBackdropFilter: 'blur(var(--overlay-dialog-blur))',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
@@ -2963,126 +2968,128 @@ export const Books: React.FC = () => {
 
       {/* Premium Import Book Modal */}
       {isImportOpen && (
-        <div className="dialog-overlay" style={modalOverlayStyle}>
-          <div className="dialog-surface" style={modalContentStyle}>
-            <h3 style={modalTitleStyle}>{t('books.import_book')}</h3>
+        <ViewportPortal>
+          <div className="dialog-overlay" style={modalOverlayStyle}>
+            <div className="dialog-surface" style={modalContentStyle}>
+              <h3 style={modalTitleStyle}>{t('books.import_book')}</h3>
 
-            {/* File Selection */}
-            <div>
+              {/* File Selection */}
+              <div>
               <label style={labelStyle}>{t('books.select_file_label') || '选择电子书文件:'}</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  className="form-field"
-                  style={{ width: '100%', cursor: 'pointer' }}
-                  readOnly
-                  placeholder={
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    className="form-field"
+                    style={{ width: '100%', cursor: 'pointer' }}
+                    readOnly
+                    placeholder={
                     t('books.select_file_placeholder') || '请选择 .epub, .pdf, .txt, .mobi 文件...'
-                  }
-                  value={selectedFileName}
-                  onClick={handleSelectBookFile}
-                />
-                <button
-                  className="btn"
-                  type="button"
-                  style={{ whiteSpace: 'nowrap' }}
-                  onClick={handleSelectBookFile}
-                >
-                  {t('books.browse_btn') || '浏览...'}
-                </button>
+                    }
+                    value={selectedFileName}
+                    onClick={handleSelectBookFile}
+                  />
+                  <button
+                    className="btn"
+                    type="button"
+                    style={{ whiteSpace: 'nowrap' }}
+                    onClick={handleSelectBookFile}
+                  >
+                    {t('books.browse_btn') || '浏览...'}
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {/* Title */}
-            <div>
-              <label style={labelStyle}>{t('books.prompt_import_title')}</label>
-              <input
-                className="form-field"
-                style={{ width: '100%' }}
-                value={importTitle}
-                onChange={(e) => setImportTitle(e.target.value)}
-                placeholder={t('books.prompt_import_title')}
-              />
-            </div>
-
-            {/* Author */}
-            <div>
-              <label style={labelStyle}>{t('books.prompt_import_author')}</label>
-              <input
-                className="form-field"
-                style={{ width: '100%' }}
-                value={importAuthor}
-                onChange={(e) => setImportAuthor(e.target.value)}
-                placeholder={t('books.prompt_import_author')}
-              />
-            </div>
-
-            {/* Category selection */}
-            <div>
-              <label style={labelStyle}>{t('books.prompt_import_category')}</label>
-              <select
-                className="form-field"
-                style={{ width: '100%', marginBottom: isCustomCategory ? '10px' : '0' }}
-                value={isCustomCategory ? 'custom' : importCategory}
-                onChange={(e) => {
-                  if (e.target.value === 'custom') {
-                    setIsCustomCategory(true)
-                  } else {
-                    setIsCustomCategory(false)
-                    setImportCategory(e.target.value)
-                  }
-                }}
-              >
-                <option value="">{t('books.uncategorized')}</option>
-                {categories
-                  .filter((cat) => !isReservedBookCategory(cat.name))
-                  .map((cat) => (
-                    <option key={cat.id} value={cat.name}>
-                      {getCategoryDisplayName(cat.name, cat.id)}
-                    </option>
-                  ))}
-                <option value="custom">＋ {t('books.prompt_add_category')}</option>
-              </select>
-
-              {isCustomCategory && (
+              {/* Title */}
+              <div>
+                <label style={labelStyle}>{t('books.prompt_import_title')}</label>
                 <input
                   className="form-field"
                   style={{ width: '100%' }}
-                  value={importCustomCategory}
-                  onChange={(e) => setImportCustomCategory(e.target.value)}
-                  placeholder={t('books.prompt_add_category')}
-                  autoFocus
+                  value={importTitle}
+                  onChange={(e) => setImportTitle(e.target.value)}
+                  placeholder={t('books.prompt_import_title')}
                 />
-              )}
-            </div>
+              </div>
 
-            <div
+              {/* Author */}
+              <div>
+                <label style={labelStyle}>{t('books.prompt_import_author')}</label>
+                <input
+                  className="form-field"
+                  style={{ width: '100%' }}
+                  value={importAuthor}
+                  onChange={(e) => setImportAuthor(e.target.value)}
+                  placeholder={t('books.prompt_import_author')}
+                />
+              </div>
+
+              {/* Category selection */}
+              <div>
+                <label style={labelStyle}>{t('books.prompt_import_category')}</label>
+                <select
+                  className="form-field"
+                  style={{ width: '100%', marginBottom: isCustomCategory ? '10px' : '0' }}
+                  value={isCustomCategory ? 'custom' : importCategory}
+                  onChange={(e) => {
+                    if (e.target.value === 'custom') {
+                      setIsCustomCategory(true)
+                    } else {
+                      setIsCustomCategory(false)
+                      setImportCategory(e.target.value)
+                    }
+                  }}
+                >
+                  <option value="">{t('books.uncategorized')}</option>
+                  {categories
+                    .filter((cat) => !isReservedBookCategory(cat.name))
+                    .map((cat) => (
+                      <option key={cat.id} value={cat.name}>
+                        {getCategoryDisplayName(cat.name, cat.id)}
+                      </option>
+                    ))}
+                  <option value="custom">＋ {t('books.prompt_add_category')}</option>
+                </select>
+
+                {isCustomCategory && (
+                  <input
+                    className="form-field"
+                    style={{ width: '100%' }}
+                    value={importCustomCategory}
+                    onChange={(e) => setImportCustomCategory(e.target.value)}
+                    placeholder={t('books.prompt_add_category')}
+                    autoFocus
+                  />
+                )}
+              </div>
+
+              <div
               style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}
-            >
-              <button
-                className="btn"
-                onClick={() => {
-                  setIsImportOpen(false)
-                  setImportTitle('')
-                  setImportAuthor('')
-                  setImportCategory('')
-                  setImportCustomCategory('')
-                  setIsCustomCategory(false)
-                  setImportFilePath('')
-                  setSelectedFileName('')
-                }}
               >
-                {t('common.cancel')}
-              </button>
-              <button
-                className="btn primary"
-                onClick={confirmImportBook}
-                disabled={!importTitle.trim() || !importFilePath}
-              >
-                {t('common.confirm')}
-              </button>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    setIsImportOpen(false)
+                    setImportTitle('')
+                    setImportAuthor('')
+                    setImportCategory('')
+                    setImportCustomCategory('')
+                    setIsCustomCategory(false)
+                    setImportFilePath('')
+                    setSelectedFileName('')
+                  }}
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  className="btn primary"
+                  onClick={confirmImportBook}
+                  disabled={!importTitle.trim() || !importFilePath}
+                >
+                  {t('common.confirm')}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ViewportPortal>
       )}
 
       {/* Premium Edit Category Modal */}
@@ -3146,24 +3153,24 @@ export const Books: React.FC = () => {
                 }}
               >
                 {configuredLocales.filter((l) => l.code !== i18n.language).map((locale) => (
-                  <div
-                    key={locale.code}
-                    style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}
-                  >
-                    <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      {locale.label}
-                    </label>
-                    <input
-                      className="form-field"
-                      style={{ width: '100%', fontSize: '12px', padding: '6px 8px' }}
-                      value={editCatTrans[locale.code] || ''}
-                      onChange={(e) =>
-                        setEditCatTrans({ ...editCatTrans, [locale.code]: e.target.value })
-                      }
-                      placeholder={`e.g. translation for ${locale.label}`}
-                    />
-                  </div>
-                ))}
+                    <div
+                      key={locale.code}
+                      style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}
+                    >
+                      <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        {locale.label}
+                      </label>
+                      <input
+                        className="form-field"
+                        style={{ width: '100%', fontSize: '12px', padding: '6px 8px' }}
+                        value={editCatTrans[locale.code] || ''}
+                        onChange={(e) =>
+                          setEditCatTrans({ ...editCatTrans, [locale.code]: e.target.value })
+                        }
+                        placeholder={`e.g. translation for ${locale.label}`}
+                      />
+                    </div>
+                  ))}
               </div>
             )}
           </div>
@@ -3233,133 +3240,137 @@ export const Books: React.FC = () => {
 
       {/* Premium Edit Book Modal */}
       {editingBookInfo && (
-        <div className="dialog-overlay" style={modalOverlayStyle}>
-          <div className="dialog-surface" style={modalContentStyle}>
-            <h3 style={modalTitleStyle}>{t('books.edit_book') || '编辑书籍信息'}</h3>
+        <ViewportPortal>
+          <div className="dialog-overlay" style={modalOverlayStyle}>
+            <div className="dialog-surface" style={modalContentStyle}>
+              <h3 style={modalTitleStyle}>{t('books.edit_book') || '编辑书籍信息'}</h3>
 
-            {/* Title */}
-            <div>
-              <label style={labelStyle}>{t('books.prompt_import_title')}</label>
-              <input
-                className="form-field"
-                style={{ width: '100%' }}
-                value={editBookTitle}
-                onChange={(e) => setEditBookTitle(e.target.value)}
-                placeholder={t('books.prompt_import_title')}
-              />
-            </div>
-
-            {/* Author */}
-            <div>
-              <label style={labelStyle}>{t('books.prompt_import_author')}</label>
-              <input
-                className="form-field"
-                style={{ width: '100%' }}
-                value={editBookAuthor}
-                onChange={(e) => setEditBookAuthor(e.target.value)}
-                placeholder={t('books.prompt_import_author')}
-              />
-            </div>
-
-            {/* Category selection */}
-            <div>
-              <label style={labelStyle}>{t('books.prompt_import_category')}</label>
-              <select
-                className="form-field"
-                style={{ width: '100%', marginBottom: isEditBookCustomCategory ? '10px' : '0' }}
-                value={isEditBookCustomCategory ? 'custom' : editBookCategory}
-                onChange={(e) => {
-                  if (e.target.value === 'custom') {
-                    setIsEditBookCustomCategory(true)
-                  } else {
-                    setIsEditBookCustomCategory(false)
-                    setEditBookCategory(e.target.value)
-                  }
-                }}
-              >
-                <option value="">{t('books.uncategorized')}</option>
-                {categories
-                  .filter((cat) => !isReservedBookCategory(cat.name))
-                  .map((cat) => (
-                    <option key={cat.id} value={cat.name}>
-                      {getCategoryDisplayName(cat.name, cat.id)}
-                    </option>
-                  ))}
-                <option value="custom">＋ {t('books.prompt_add_category')}</option>
-              </select>
-
-              {isEditBookCustomCategory && (
+              {/* Title */}
+              <div>
+                <label style={labelStyle}>{t('books.prompt_import_title')}</label>
                 <input
                   className="form-field"
                   style={{ width: '100%' }}
-                  value={editBookCustomCategory}
-                  onChange={(e) => setEditBookCustomCategory(e.target.value)}
-                  placeholder={t('books.prompt_add_category')}
-                  autoFocus
+                  value={editBookTitle}
+                  onChange={(e) => setEditBookTitle(e.target.value)}
+                  placeholder={t('books.prompt_import_title')}
                 />
-              )}
-            </div>
+              </div>
 
-            <div
+              {/* Author */}
+              <div>
+                <label style={labelStyle}>{t('books.prompt_import_author')}</label>
+                <input
+                  className="form-field"
+                  style={{ width: '100%' }}
+                  value={editBookAuthor}
+                  onChange={(e) => setEditBookAuthor(e.target.value)}
+                  placeholder={t('books.prompt_import_author')}
+                />
+              </div>
+
+              {/* Category selection */}
+              <div>
+                <label style={labelStyle}>{t('books.prompt_import_category')}</label>
+                <select
+                  className="form-field"
+                  style={{ width: '100%', marginBottom: isEditBookCustomCategory ? '10px' : '0' }}
+                  value={isEditBookCustomCategory ? 'custom' : editBookCategory}
+                  onChange={(e) => {
+                    if (e.target.value === 'custom') {
+                      setIsEditBookCustomCategory(true)
+                    } else {
+                      setIsEditBookCustomCategory(false)
+                      setEditBookCategory(e.target.value)
+                    }
+                  }}
+                >
+                  <option value="">{t('books.uncategorized')}</option>
+                  {categories
+                    .filter((cat) => !isReservedBookCategory(cat.name))
+                    .map((cat) => (
+                      <option key={cat.id} value={cat.name}>
+                        {getCategoryDisplayName(cat.name, cat.id)}
+                      </option>
+                    ))}
+                  <option value="custom">＋ {t('books.prompt_add_category')}</option>
+                </select>
+
+                {isEditBookCustomCategory && (
+                  <input
+                    className="form-field"
+                    style={{ width: '100%' }}
+                    value={editBookCustomCategory}
+                    onChange={(e) => setEditBookCustomCategory(e.target.value)}
+                    placeholder={t('books.prompt_add_category')}
+                    autoFocus
+                  />
+                )}
+              </div>
+
+              <div
               style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}
-            >
-              <button
-                className="btn"
-                onClick={() => {
-                  setEditingBookInfo(null)
-                  setEditBookTitle('')
-                  setEditBookAuthor('')
-                  setEditBookCategory('')
-                  setEditBookCustomCategory('')
-                  setIsEditBookCustomCategory(false)
-                }}
               >
-                {t('common.cancel')}
-              </button>
-              <button
-                className="btn primary"
-                onClick={confirmEditBook}
-                disabled={!editBookTitle.trim()}
-              >
-                {t('common.confirm')}
-              </button>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    setEditingBookInfo(null)
+                    setEditBookTitle('')
+                    setEditBookAuthor('')
+                    setEditBookCategory('')
+                    setEditBookCustomCategory('')
+                    setIsEditBookCustomCategory(false)
+                  }}
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  className="btn primary"
+                  onClick={confirmEditBook}
+                  disabled={!editBookTitle.trim()}
+                >
+                  {t('common.confirm')}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ViewportPortal>
       )}
 
       {/* Premium Delete Book Confirm Modal */}
       {deletingBookInfo && (
-        <div className="dialog-overlay" style={modalOverlayStyle}>
-          <div className="dialog-surface" style={modalContentStyle}>
-            <h3 style={{ ...modalTitleStyle, color: '#EF4444' }}>
-              {t('books.delete_book') || '删除书籍确认'}
-            </h3>
-            <p
-              style={{
-                fontSize: '13px',
-                color: 'var(--text-main)',
-                margin: '0 0 12px 0',
-                lineHeight: 1.5,
-              }}
-            >
-              {t('books.delete_book_confirm', { name: deletingBookInfo.title }) ||
-                `确定要删除书籍《${deletingBookInfo.title}》吗？该操作不可逆，将同时删除该书的所有高亮划线与批注。`}
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button className="btn" onClick={() => setDeletingBookInfo(null)}>
-                {t('common.cancel')}
-              </button>
-              <button
-                className="btn primary"
-                style={{ backgroundColor: '#EF4444', borderColor: '#EF4444' }}
-                onClick={confirmDeleteBook}
+        <ViewportPortal>
+          <div className="dialog-overlay" style={modalOverlayStyle}>
+            <div className="dialog-surface" style={modalContentStyle}>
+              <h3 style={{ ...modalTitleStyle, color: '#EF4444' }}>
+                {t('books.delete_book') || '删除书籍确认'}
+              </h3>
+              <p
+                style={{
+                  fontSize: '13px',
+                  color: 'var(--text-main)',
+                  margin: '0 0 12px 0',
+                  lineHeight: 1.5,
+                }}
               >
-                {t('common.confirm')}
-              </button>
+                {t('books.delete_book_confirm', { name: deletingBookInfo.title }) ||
+                  `确定要删除书籍《${deletingBookInfo.title}》吗？该操作不可逆，将同时删除该书的所有高亮划线与批注。`}
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button className="btn" onClick={() => setDeletingBookInfo(null)}>
+                  {t('common.cancel')}
+                </button>
+                <button
+                  className="btn primary"
+                  style={{ backgroundColor: '#EF4444', borderColor: '#EF4444' }}
+                  onClick={confirmDeleteBook}
+                >
+                  {t('common.confirm')}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ViewportPortal>
       )}
     </div>
   )
