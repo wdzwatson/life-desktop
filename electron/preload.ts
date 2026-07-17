@@ -29,6 +29,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbTransaction: (dbName: string, statements: Array<{ sql: string; params?: unknown[] }>) =>
     ipcRenderer.invoke('db:transaction', { dbName, statements }),
 
+  // Encrypted password vault
+  getVaultStatus: () => ipcRenderer.invoke('vault:status'),
+  setupVault: (masterPassword: string) => ipcRenderer.invoke('vault:setup', masterPassword),
+  unlockVault: (masterPassword: string) => ipcRenderer.invoke('vault:unlock', masterPassword),
+  lockVault: () => ipcRenderer.invoke('vault:lock'),
+  listVaultCredentials: () => ipcRenderer.invoke('vault:list'),
+  createVaultCredential: (input: {
+    websiteName: string
+    url?: string
+    username?: string
+    password: string
+    notes?: string
+  }) => ipcRenderer.invoke('vault:create', input),
+  revealVaultCredential: (id: number) => ipcRenderer.invoke('vault:reveal', id),
+  deleteVaultCredential: (id: number) => ipcRenderer.invoke('vault:delete', id),
+
   // Note Export IPC Bridge
   exportNote: (data: { title: string; content: string; htmlContent: string; format: string }) =>
     ipcRenderer.invoke('note:export', data),

@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
 import { ensureVideoGroupSchema } from './videoGroupSchema'
+import { initializeVaultSchema } from '../vault/schema'
 
 const VIDEO_STATUS_CHECK =
   "CHECK(status IN ('unclassified', 'not_downloaded', 'queued', 'downloading', 'downloaded', 'download_failed', 'invalid'))"
@@ -473,18 +474,6 @@ export function initializeUserDatabase(userDbDir: string) {
   const vaultDb = new Database(vaultDbPath)
   vaultDb.pragma('journal_mode = WAL')
 
-  vaultDb.exec(`
-    CREATE TABLE IF NOT EXISTS vault (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      website_name TEXT NOT NULL,
-      url TEXT,
-      username TEXT,
-      password_encrypted TEXT NOT NULL,
-      notes_encrypted TEXT,
-      iv TEXT NOT NULL,
-      tag TEXT NOT NULL, -- AES GCM auth tag
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-  `)
+  initializeVaultSchema(vaultDb)
   vaultDb.close()
 }

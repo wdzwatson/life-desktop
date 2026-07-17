@@ -1,7 +1,36 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { Lock, Eye, EyeOff, Copy, Trash2 } from 'lucide-react'
+
+type VaultStatus =
+  | 'not_configured'
+  | 'locked'
+  | 'unlocked'
+  | 'migration_required'
+  | 'failed'
+  | 'unsupported'
+
+type VaultCredentialSummary = {
+  id: number
+  websiteName: string
+  url: string
+  username: string
+  createdAt: string
+  updatedAt: string
+}
+
+type VaultApiError = {
+  code: string
+  message: string
+  retryAt?: number
+}
+
+type VaultApiResponse<T> = {
+  success: boolean
+  data?: T
+  error?: string | VaultApiError
+}
 
 export const Toolbox: React.FC = () => {
   const { t, i18n } = useTranslation()
@@ -27,10 +56,14 @@ export const Toolbox: React.FC = () => {
   const [convertedValue, setConvertedValue] = useState(7.25) // mock conversion
 
   // 3. Password Manager Vault States
-  const [isUnlocked, setIsUnlocked] = useState(false)
+  const [vaultStatus, setVaultStatus] = useState<VaultStatus>('locked')
+  const [vaultBusy, setVaultBusy] = useState(false)
+  const [vaultError, setVaultError] = useState('')
   const [masterPassword, setMasterPassword] = useState('')
-  const [vaultItems, setVaultItems] = useState<any[]>([])
-  const [showPwdMap, setShowPwdMap] = useState<Record<number, boolean>>({})
+  const [setupPassword, setSetupPassword] = useState('')
+  const [setupConfirmPassword, setSetupConfirmPassword] = useState('')
+  const [vaultItems, setVaultItems] = useState<VaultCredentialSummary[]>([])
+  const [revealedPasswords, setRevealedPasswords] = useState<Record<number, string>>({})
 
   // New Credential Form
   const [newSite, setNewSite] = useState('')
@@ -41,6 +74,58 @@ export const Toolbox: React.FC = () => {
 
   const api = (window as any).electronAPI
 
+  const getVaultErrorMessage = useCallback(
+    (error: unknown) => {
+      if (!error) return t('toolbox.vault_error_generic')
+      if (typeof error === 'string') return error
+      const vaultError = error as VaultApiError
+      if (vaultError.code === 'INVALID_PASSWORD') return t('toolbox.vault_error_invalid_password')
+      if (vaultError.code === 'RATE_LIMITED') {
+        const seconds = vaultError.retryAt
+          ? Math.max(1, Math.ceil((vaultError.retryAt - Date.now()) / 1000))
+          : 30
+        return t('toolbox.vault_error_rate_limited', { seconds })
+      }
+      if (vaultError.code === 'MIGRATION_REQUIRED') {
+        return t('toolbox.vault_migration_required_desc')
+      }
+      if (vaultError.code === 'UNSUPPORTED_VERSION') return t('toolbox.vault_unsupported_desc')
+      if (vaultError.code === 'CORRUPT_DATA') return t('toolbox.vault_failed_desc')
+      if (vaultError.code === 'VAULT_LOCKED') return t('toolbox.vault_locked_desc')
+      return vaultError.message || t('toolbox.vault_error_generic')
+    },
+    [t],
+  )
+
+  const refreshVault = useCallback(async () => {
+    if (!api?.getVaultStatus) return
+    const statusRes = (await api.getVaultStatus()) as VaultApiResponse<VaultStatus>
+    if (!statusRes?.success || !statusRes.data) {
+      setVaultStatus('failed')
+      setVaultError(getVaultErrorMessage(statusRes?.error))
+      setVaultItems([])
+      setRevealedPasswords({})
+      return
+    }
+
+    setVaultStatus(statusRes.data)
+    setVaultError('')
+    if (statusRes.data === 'unlocked') {
+      const listRes = (await api.listVaultCredentials()) as VaultApiResponse<
+        VaultCredentialSummary[]
+      >
+      if (listRes?.success) {
+        setVaultItems(listRes.data ?? [])
+      } else {
+        setVaultItems([])
+        setVaultError(getVaultErrorMessage(listRes?.error))
+      }
+    } else {
+      setVaultItems([])
+      setRevealedPasswords({})
+    }
+  }, [api, getVaultErrorMessage])
+
   const loadData = async () => {
     if (!api) return
     // Load active tasks to select for Pomodoro
@@ -50,17 +135,25 @@ export const Toolbox: React.FC = () => {
       ['已关闭'],
     )
     if (tasksRes?.success) setActiveTasks(tasksRes.data)
-
-    // Load Vault items if unlocked
-    if (isUnlocked) {
-      const vRes = await api.dbQuery('vault', 'SELECT * FROM vault')
-      if (vRes?.success) setVaultItems(vRes.data)
-    }
   }
 
   useEffect(() => {
     loadData()
-  }, [userId, isUnlocked, toolTab])
+  }, [userId, toolTab])
+
+  useEffect(() => {
+    if (toolTab === 'vault') {
+      void refreshVault()
+    }
+  }, [refreshVault, toolTab, userId])
+
+  useEffect(() => {
+    setMasterPassword('')
+    setSetupPassword('')
+    setSetupConfirmPassword('')
+    setRevealedPasswords({})
+    setVaultError('')
+  }, [userId])
 
   // 1. Pomodoro Countdown Timer Hook
   useEffect(() => {
@@ -115,37 +208,70 @@ export const Toolbox: React.FC = () => {
     }
   }, [inputValue, targetUnit, convertType])
 
-  // 3. Vault Password Lock Toggler
-  const handleUnlockVault = () => {
-    if (masterPassword === 'admin' || masterPassword.length >= 4) {
-      setIsUnlocked(true)
-      showToast(t('toolbox.toast_vault_unlocked'))
-    } else {
-      showToast(t('toolbox.toast_vault_incorrect_password'))
+  const handleSetupVault = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!api?.setupVault) return
+    if (setupPassword !== setupConfirmPassword) {
+      setVaultError(t('toolbox.vault_error_password_mismatch'))
+      return
     }
+
+    setVaultBusy(true)
+    setVaultError('')
+    const res = (await api.setupVault(setupPassword)) as VaultApiResponse<{ status: VaultStatus }>
+    setVaultBusy(false)
+    if (!res?.success) {
+      setVaultError(getVaultErrorMessage(res?.error))
+      return
+    }
+    setSetupPassword('')
+    setSetupConfirmPassword('')
+    showToast(t('toolbox.toast_vault_setup_complete'))
+    await refreshVault()
+  }
+
+  const handleUnlockVault = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!api?.unlockVault) return
+
+    setVaultBusy(true)
+    setVaultError('')
+    const res = (await api.unlockVault(masterPassword)) as VaultApiResponse<{ status: VaultStatus }>
+    setVaultBusy(false)
+    if (!res?.success) {
+      setVaultError(getVaultErrorMessage(res?.error))
+      showToast(t('toolbox.toast_vault_incorrect_password'))
+      return
+    }
+
+    setMasterPassword('')
+    showToast(t('toolbox.toast_vault_unlocked'))
+    await refreshVault()
+  }
+
+  const handleLockVault = async () => {
+    if (!api?.lockVault) return
+    await api.lockVault()
+    setMasterPassword('')
+    setRevealedPasswords({})
+    showToast(t('toolbox.toast_vault_locked'))
+    await refreshVault()
   }
 
   const handleCreateCredential = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newSite || !newPassword || !api) return
+    if (!newSite || !newPassword || !api?.createVaultCredential) return
 
-    // App-level simulated encryption storage
-    const mockIv = 'iv_' + Math.random().toString(36).substring(4)
-    const mockTag = 'tag_' + Math.random().toString(36).substring(4)
-
-    const query = `
-      INSERT INTO vault (website_name, url, username, password_encrypted, notes_encrypted, iv, tag)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `
-    const res = await api.dbQuery('vault', query, [
-      newSite,
-      newUrl,
-      newUsername,
-      newPassword, // Stored directly in encrypted column name for mock
-      newNotes,
-      mockIv,
-      mockTag,
-    ])
+    setVaultBusy(true)
+    setVaultError('')
+    const res = (await api.createVaultCredential({
+      websiteName: newSite,
+      url: newUrl,
+      username: newUsername,
+      password: newPassword,
+      notes: newNotes,
+    })) as VaultApiResponse<{ id: number }>
+    setVaultBusy(false)
 
     if (res?.success) {
       showToast(t('toolbox.toast_credential_saved'))
@@ -154,20 +280,58 @@ export const Toolbox: React.FC = () => {
       setNewUsername('')
       setNewPassword('')
       setNewNotes('')
-      loadData()
+      await refreshVault()
+    } else {
+      setVaultError(getVaultErrorMessage(res?.error))
     }
   }
 
   const handleDeleteCredential = async (id: number) => {
-    if (!api || !window.confirm(t('toolbox.confirm_delete_credential'))) return
-    await api.dbQuery('vault', 'DELETE FROM vault WHERE id = ?', [id])
-    showToast(t('toolbox.toast_credential_deleted'))
-    loadData()
+    if (!api?.deleteVaultCredential || !window.confirm(t('toolbox.confirm_delete_credential'))) {
+      return
+    }
+    const res = (await api.deleteVaultCredential(id)) as VaultApiResponse<{ success: boolean }>
+    if (res?.success) {
+      setRevealedPasswords((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+      showToast(t('toolbox.toast_credential_deleted'))
+      await refreshVault()
+    } else {
+      setVaultError(getVaultErrorMessage(res?.error))
+    }
+  }
+
+  const handleToggleReveal = async (id: number) => {
+    if (revealedPasswords[id]) {
+      setRevealedPasswords((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+      return
+    }
+    if (!api?.revealVaultCredential) return
+    const res = (await api.revealVaultCredential(id)) as VaultApiResponse<{ password: string }>
+    const secret = res?.data
+    if (res?.success && secret) {
+      setRevealedPasswords((prev) => ({ ...prev, [id]: secret.password }))
+    } else {
+      setVaultError(getVaultErrorMessage(res?.error))
+    }
   }
 
   // Secure Password Copier with 30s auto-clear clipboard
-  const handleCopyPassword = (pwd: string) => {
-    navigator.clipboard.writeText(pwd)
+  const handleCopyPassword = async (id: number) => {
+    if (!api?.revealVaultCredential) return
+    const res = (await api.revealVaultCredential(id)) as VaultApiResponse<{ password: string }>
+    if (!res?.success || !res.data) {
+      setVaultError(getVaultErrorMessage(res?.error))
+      return
+    }
+    navigator.clipboard.writeText(res.data.password)
     showToast(t('toolbox.toast_password_copied'))
 
     setTimeout(() => {
@@ -175,6 +339,13 @@ export const Toolbox: React.FC = () => {
       navigator.clipboard.writeText('')
       showToast(t('toolbox.toast_clipboard_cleared'))
     }, 30000)
+  }
+
+  const generatePassword = () => {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*'
+    const bytes = new Uint8Array(20)
+    crypto.getRandomValues(bytes)
+    setNewPassword(Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join(''))
   }
 
   return (
@@ -505,8 +676,63 @@ export const Toolbox: React.FC = () => {
         {/* SUB-VIEW: PASSWORD MANAGER VAULT */}
         {toolTab === 'vault' && (
           <div style={{ height: '100%' }}>
-            {!isUnlocked ? (
-              /* Lock screen overlay */
+            {vaultStatus === 'not_configured' ? (
+              <form
+                onSubmit={handleSetupVault}
+                className="card"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                  gap: '16px',
+                }}
+              >
+                <Lock size={42} color="var(--text-muted)" />
+                <h3 style={{ fontSize: '15px', fontWeight: 800 }}>
+                  {t('toolbox.vault_setup_title')}
+                </h3>
+                <p
+                  style={{
+                    fontSize: '12px',
+                    color: 'var(--text-muted)',
+                    width: '360px',
+                    textAlign: 'center',
+                  }}
+                >
+                  {t('toolbox.vault_setup_desc')}
+                </p>
+                <div style={{ display: 'grid', gap: '8px', width: '300px' }}>
+                  <input
+                    className="form-field"
+                    type="password"
+                    placeholder={t('toolbox.vault_setup_password_placeholder')}
+                    value={setupPassword}
+                    minLength={8}
+                    onChange={(e) => setSetupPassword(e.target.value)}
+                  />
+                  <input
+                    className="form-field"
+                    type="password"
+                    placeholder={t('toolbox.vault_confirm_password_placeholder')}
+                    value={setupConfirmPassword}
+                    minLength={8}
+                    onChange={(e) => setSetupConfirmPassword(e.target.value)}
+                  />
+                  <button
+                    className="btn primary"
+                    type="submit"
+                    disabled={vaultBusy || setupPassword.length < 8 || !setupConfirmPassword}
+                  >
+                    {t('toolbox.vault_btn_setup')}
+                  </button>
+                </div>
+                {vaultError && (
+                  <p style={{ color: 'var(--color-danger)', fontSize: '12px' }}>{vaultError}</p>
+                )}
+              </form>
+            ) : vaultStatus === 'locked' ? (
               <div
                 className="card"
                 style={{
@@ -532,7 +758,10 @@ export const Toolbox: React.FC = () => {
                 >
                   {t('toolbox.vault_locked_desc')}
                 </p>
-                <div style={{ display: 'flex', gap: '8px', width: '280px' }}>
+                <form
+                  onSubmit={handleUnlockVault}
+                  style={{ display: 'flex', gap: '8px', width: '300px' }}
+                >
                   <input
                     className="form-field"
                     type="password"
@@ -540,10 +769,48 @@ export const Toolbox: React.FC = () => {
                     value={masterPassword}
                     onChange={(e) => setMasterPassword(e.target.value)}
                   />
-                  <button className="btn primary" onClick={handleUnlockVault}>
+                  <button
+                    className="btn primary"
+                    type="submit"
+                    disabled={vaultBusy || !masterPassword}
+                  >
                     {t('toolbox.btn_unlock')}
                   </button>
-                </div>
+                </form>
+                {vaultError && (
+                  <p style={{ color: 'var(--color-danger)', fontSize: '12px' }}>{vaultError}</p>
+                )}
+              </div>
+            ) : vaultStatus === 'migration_required' ||
+              vaultStatus === 'failed' ||
+              vaultStatus === 'unsupported' ? (
+              <div
+                className="card"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                  gap: '12px',
+                  textAlign: 'center',
+                }}
+              >
+                <Lock size={42} color="var(--text-muted)" />
+                <h3 style={{ fontSize: '15px', fontWeight: 800 }}>
+                  {vaultStatus === 'migration_required'
+                    ? t('toolbox.vault_migration_required_title')
+                    : vaultStatus === 'unsupported'
+                      ? t('toolbox.vault_unsupported_title')
+                      : t('toolbox.vault_failed_title')}
+                </h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', width: '380px' }}>
+                  {vaultStatus === 'migration_required'
+                    ? t('toolbox.vault_migration_required_desc')
+                    : vaultStatus === 'unsupported'
+                      ? t('toolbox.vault_unsupported_desc')
+                      : t('toolbox.vault_failed_desc')}
+                </p>
               </div>
             ) : (
               /* Unlocked Vault layout */
@@ -575,10 +842,13 @@ export const Toolbox: React.FC = () => {
                     <strong style={{ fontSize: '13.5px' }}>
                       {t('toolbox.vault_saved_credentials')} ({vaultItems.length})
                     </strong>
-                    <button className="btn sm" onClick={() => setIsUnlocked(false)}>
+                    <button className="btn sm" onClick={handleLockVault}>
                       {t('toolbox.btn_lock_vault')}
                     </button>
                   </div>
+                  {vaultError && (
+                    <p style={{ color: 'var(--color-danger)', fontSize: '12px' }}>{vaultError}</p>
+                  )}
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {vaultItems.length === 0 ? (
@@ -595,7 +865,8 @@ export const Toolbox: React.FC = () => {
                       </p>
                     ) : (
                       vaultItems.map((item) => {
-                        const isVisible = showPwdMap[item.id] || false
+                        const revealedPassword = revealedPasswords[item.id]
+                        const isVisible = Boolean(revealedPassword)
                         return (
                           <div
                             key={item.id}
@@ -612,20 +883,28 @@ export const Toolbox: React.FC = () => {
                           >
                             <div>
                               <strong style={{ fontSize: '13px', display: 'block' }}>
-                                {item.website_name}
+                                {item.websiteName}
                               </strong>
                               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                                 {item.username || t('toolbox.vault_no_username')}
                               </span>
                             </div>
                             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' }}>
-                              {isVisible ? item.password_encrypted : '••••••••'}
+                              {isVisible ? revealedPassword : '••••••••'}
                             </div>
                             <button
                               className="btn sm btn-icon"
                               style={{ border: 'none', background: 'none' }}
-                              onClick={() =>
-                                setShowPwdMap((prev) => ({ ...prev, [item.id]: !isVisible }))
+                              onClick={() => handleToggleReveal(item.id)}
+                              title={
+                                isVisible
+                                  ? t('toolbox.vault_hide_tooltip')
+                                  : t('toolbox.vault_reveal_tooltip')
+                              }
+                              aria-label={
+                                isVisible
+                                  ? t('toolbox.vault_hide_tooltip')
+                                  : t('toolbox.vault_reveal_tooltip')
                               }
                             >
                               {isVisible ? <EyeOff size={13} /> : <Eye size={13} />}
@@ -633,8 +912,9 @@ export const Toolbox: React.FC = () => {
                             <button
                               className="btn sm btn-icon"
                               style={{ border: 'none', background: 'none' }}
-                              onClick={() => handleCopyPassword(item.password_encrypted)}
+                              onClick={() => handleCopyPassword(item.id)}
                               title={t('toolbox.vault_copy_tooltip')}
+                              aria-label={t('toolbox.vault_copy_tooltip')}
                             >
                               <Copy size={13} />
                             </button>
@@ -750,7 +1030,7 @@ export const Toolbox: React.FC = () => {
                           fontSize: '10px',
                           color: 'var(--color-accent)',
                         }}
-                        onClick={() => setNewPassword(Math.random().toString(36).substring(2, 12))}
+                        onClick={generatePassword}
                       >
                         {t('toolbox.vault_btn_generate_password')}
                       </button>
@@ -781,7 +1061,12 @@ export const Toolbox: React.FC = () => {
                       onChange={(e) => setNewNotes(e.target.value)}
                     />
                   </div>
-                  <button type="submit" className="btn primary" style={{ marginTop: 'auto' }}>
+                  <button
+                    type="submit"
+                    className="btn primary"
+                    style={{ marginTop: 'auto' }}
+                    disabled={vaultBusy}
+                  >
                     {t('toolbox.vault_btn_save_credential')}
                   </button>
                 </form>

@@ -33,6 +33,8 @@ import {
 } from './video/service'
 import { classifyVideoDownloadFailure } from './video/downloadState'
 import { normalizeBulkVideoTagPayload } from '../src/views/videoStateUtils'
+import { VaultService, serializeVaultError } from './vault/service'
+import { getDirectDbAccessError } from './db/accessPolicy'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -50,6 +52,7 @@ const openDbs: Map<string, any> = new Map() // dbName -> Database instance
 let schedulerInterval: NodeJS.Timeout | null = null
 let videoEngineStatus: VideoEngineStatus = createInitialVideoEngineStatus()
 let videoEngineLoadPromise: Promise<VideoEngineStatus> | null = null
+let vaultService: VaultService | null = null
 
 // Default Paths
 const BASE_DIR = path.join(app.getPath('home'), 'LifeOS')
@@ -151,6 +154,8 @@ function saveSettings(settings: any) {
 
 // Close and clear all open databases
 function closeUserDbs() {
+  vaultService?.dispose()
+  vaultService = null
   for (const db of openDbs.values()) {
     try {
       db.close()
@@ -179,6 +184,19 @@ function getUserDb(dbName: string): any {
   db.pragma('journal_mode = WAL')
   openDbs.set(dbName, db)
   return db
+}
+
+function getVaultService() {
+  if (!vaultService) vaultService = new VaultService(getUserDb('vault'))
+  return vaultService
+}
+
+async function runVaultAction(action: () => unknown | Promise<unknown>) {
+  try {
+    return { success: true, data: await action() }
+  } catch (error) {
+    return serializeVaultError(error)
+  }
 }
 
 function getActiveUserVideoDir() {
@@ -616,6 +634,7 @@ ipcMain.handle('user:getCurrent', async () => {
 })
 
 ipcMain.handle('user:logout', async () => {
+  vaultService?.lock()
   const settings = getSettings()
   const profile = settings.userProfiles[activeUserId]
   if (profile) {
@@ -1401,6 +1420,13 @@ ipcMain.handle('note:export', async (event, { title, content, htmlContent, forma
 // IPC Handlers: Dynamic SQL Queries
 ipcMain.handle('db:query', async (_, { dbName, sql, params = [] }) => {
   try {
+    const directAccessError = getDirectDbAccessError(dbName)
+    if (directAccessError) {
+      return {
+        success: false,
+        error: directAccessError,
+      }
+    }
     const db = getUserDb(dbName)
     const normalizedSql = sql.trim().toLowerCase()
 
@@ -1420,6 +1446,13 @@ ipcMain.handle('db:query', async (_, { dbName, sql, params = [] }) => {
 
 ipcMain.handle('db:transaction', async (_, { dbName, statements }) => {
   try {
+    const directAccessError = getDirectDbAccessError(dbName)
+    if (directAccessError) {
+      return {
+        success: false,
+        error: directAccessError,
+      }
+    }
     const db = getUserDb(dbName)
     const data = runDbTransaction(db, statements)
     return { success: true, data }
@@ -1428,6 +1461,35 @@ ipcMain.handle('db:transaction', async (_, { dbName, statements }) => {
     return { success: false, error: err.message }
   }
 })
+
+// IPC Handlers: Encrypted password vault
+ipcMain.handle('vault:status', async () => runVaultAction(() => getVaultService().getStatus()))
+
+ipcMain.handle('vault:setup', async (_, masterPassword: string) =>
+  runVaultAction(() => getVaultService().setup(masterPassword)),
+)
+
+ipcMain.handle('vault:unlock', async (_, masterPassword: string) =>
+  runVaultAction(() => getVaultService().unlock(masterPassword)),
+)
+
+ipcMain.handle('vault:lock', async () => runVaultAction(() => getVaultService().lock()))
+
+ipcMain.handle('vault:list', async () =>
+  runVaultAction(() => getVaultService().listCredentials()),
+)
+
+ipcMain.handle('vault:create', async (_, input) =>
+  runVaultAction(() => getVaultService().createCredential(input)),
+)
+
+ipcMain.handle('vault:reveal', async (_, id: number) =>
+  runVaultAction(() => getVaultService().revealCredential(id)),
+)
+
+ipcMain.handle('vault:delete', async (_, id: number) =>
+  runVaultAction(() => getVaultService().deleteCredential(id)),
+)
 
 // IPC Handlers: Video downloader
 ipcMain.handle('video:checkTools', async () => {
