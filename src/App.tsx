@@ -219,6 +219,29 @@ function App() {
             })
           })
         }
+
+        // Query videos.db so the global search matches the product scope.
+        const videosRes = await api.dbQuery(
+          'videos',
+          'SELECT id, title, source, duration FROM videos WHERE title LIKE ? OR url LIKE ? OR source_url LIKE ? LIMIT 3',
+          [`%${searchQuery}%`, `%${searchQuery}%`, `%${searchQuery}%`],
+        )
+        if (videosRes?.success) {
+          videosRes.data.forEach((video: any) => {
+            results.push({
+              type: 'videos',
+              title: video.title,
+              desc: t('app.search_desc_video', {
+                source: video.source || t('app.search_video_source_unknown'),
+                duration: video.duration || t('app.search_video_duration_unknown'),
+              }),
+              action: () => {
+                setActiveScreen('videos')
+                setSearchOpen(false)
+              },
+            })
+          })
+        }
       }
 
       setSearchResults(results)
