@@ -1,0 +1,83 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 656 >>
+stream
+BT
+/F1 24 Tf 72 780 Td (D05 PDF Reader Sample - Page 1) Tj
+-72 -780 Td
+/F1 12 Tf 72 735 Td (This PDF sample is used for LifeOS D05 reader validation.) Tj
+-72 -735 Td
+/F1 12 Tf 72 715 Td (It verifies PDF import, rendering, paging, progress persistence, and deletion.) Tj
+-72 -715 Td
+/F1 12 Tf 72 695 Td (The table below gives stable visual anchors for the QA record.) Tj
+-72 -695 Td
+/F1 12 Tf 72 655 Td (Key        Value) Tj
+-72 -655 Td
+/F1 12 Tf 72 635 Td (Page       1) Tj
+-72 -635 Td
+/F1 12 Tf 72 615 Td (Module     Books) Tj
+-72 -615 Td
+/F1 12 Tf 72 595 Td (Task       D05) Tj
+-72 -595 Td
+ET
+72 575 260 80 re S
+72 625 m 332 625 l S
+170 575 m 170 655 l S
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 656 >>
+stream
+BT
+/F1 24 Tf 72 780 Td (D05 PDF Reader Sample - Page 2) Tj
+-72 -780 Td
+/F1 12 Tf 72 735 Td (This PDF sample is used for LifeOS D05 reader validation.) Tj
+-72 -735 Td
+/F1 12 Tf 72 715 Td (It verifies PDF import, rendering, paging, progress persistence, and deletion.) Tj
+-72 -715 Td
+/F1 12 Tf 72 695 Td (The table below gives stable visual anchors for the QA record.) Tj
+-72 -695 Td
+/F1 12 Tf 72 655 Td (Key        Value) Tj
+-72 -655 Td
+/F1 12 Tf 72 635 Td (Page       2) Tj
+-72 -635 Td
+/F1 12 Tf 72 615 Td (Module     Books) Tj
+-72 -615 Td
+/F1 12 Tf 72 595 Td (Task       D05) Tj
+-72 -595 Td
+ET
+72 575 260 80 re S
+72 625 m 332 625 l S
+170 575 m 170 655 l S
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000191 00000 n 
+0000000317 00000 n 
+0000001024 00000 n 
+0000001150 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1857
+%%EOF
