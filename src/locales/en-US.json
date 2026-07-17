@@ -769,6 +769,7 @@
     "updates_install_btn": "Restart & Install",
     "updates_error": "Failed to check for updates: {{error}}",
     "updates_download_failed": "Failed to download update. You can manually download the installer from GitHub Releases.",
+    "updates_manual_download": "Download manually from GitHub",
     "updates_auto_check": "Auto-check for updates",
     "video_downloader_title": "Video downloader",
     "video_downloader_desc": "Configure yt-dlp, ffmpeg, Bilibili authentication cookies, and download quality.",

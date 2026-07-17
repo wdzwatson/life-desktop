@@ -769,6 +769,7 @@
     "updates_install_btn": "重启并安装更新",
     "updates_error": "检查更新失败: {{error}}",
     "updates_download_failed": "下载更新失败，您可以前往 GitHub Releases 页面手动下载最新安装包。",
+    "updates_manual_download": "手动前往 GitHub 下载",
     "updates_auto_check": "自动检查更新",
     "video_downloader_title": "视频下载器",
     "video_downloader_desc": "配置 yt-dlp、ffmpeg、Bilibili 登录 cookies 与下载画质。",

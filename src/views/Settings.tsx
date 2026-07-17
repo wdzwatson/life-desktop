@@ -1545,7 +1545,7 @@ export const Settings: React.FC = () => {
                         onClick={handleManualDownload}
                         style={{ width: 'max-content' }}
                       >
-                        手动前往 GitHub 下载
+                        {t('settings.updates_manual_download')}
                       </button>
                     </div>
                   )}
@@ -1658,7 +1658,7 @@ export const Settings: React.FC = () => {
                           {t('settings.updates_install_btn')}
                         </button>
                         <button className="btn sm" onClick={handleManualDownload}>
-                          手动下载包
+                          {t('settings.updates_manual_download')}
                         </button>
                       </div>
                     </div>
