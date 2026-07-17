@@ -21,7 +21,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveSettings: (settings: any) => ipcRenderer.invoke('settings:save', settings),
   clearAppData: () => ipcRenderer.invoke('settings:clearAppData'),
   selectBackupDirectory: () => ipcRenderer.invoke('backup:selectDirectory'),
+  selectBackupFile: () => ipcRenderer.invoke('backup:selectFile'),
+  inspectBackup: (filePath: string) => ipcRenderer.invoke('backup:inspect', { filePath }),
   createBackup: (outputDir: string) => ipcRenderer.invoke('backup:create', { outputDir }),
+  restoreBackup: (filePath: string) => ipcRenderer.invoke('backup:restore', { filePath }),
+  restartApp: () => ipcRenderer.invoke('app:restart'),
   revealInFinder: (filePath: string) => ipcRenderer.send('fs:reveal', filePath),
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
 

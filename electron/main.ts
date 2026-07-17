@@ -4,7 +4,11 @@ import fs from 'fs'
 import Database from 'better-sqlite3'
 import { initializeUserDatabase } from './db/schema'
 import { runDbTransaction } from './db/transaction'
-import { createLifeOsBackupPackage } from './backup/service'
+import {
+  createLifeOsBackupPackage,
+  inspectLifeOsBackupPackage,
+  restoreLifeOsBackupPackage,
+} from './backup/service'
 import AdmZip from 'adm-zip'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { autoUpdater } from 'electron-updater'
@@ -711,6 +715,27 @@ ipcMain.handle('backup:selectDirectory', async () => {
   return { success: true, path: filePaths[0] }
 })
 
+ipcMain.handle('backup:selectFile', async (_, eventOptions?: { title?: string }) => {
+  const { filePaths, canceled } = await dialog.showOpenDialog(mainWindow!, {
+    title: eventOptions?.title || 'Select LifeOS backup',
+    filters: [{ name: 'LifeOS backup', extensions: ['zip'] }],
+    properties: ['openFile'],
+  })
+  if (canceled || filePaths.length === 0) return { success: false, canceled: true }
+  return { success: true, path: filePaths[0] }
+})
+
+ipcMain.handle('backup:inspect', async (_, { filePath }: { filePath: string }) => {
+  try {
+    if (!filePath || typeof filePath !== 'string') {
+      return { success: false, error: 'Backup file is required.' }
+    }
+    return { success: true, data: inspectLifeOsBackupPackage(filePath) }
+  } catch (error: any) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
 ipcMain.handle('backup:create', async (_, { outputDir }: { outputDir: string }) => {
   try {
     if (!outputDir || typeof outputDir !== 'string') {
@@ -730,6 +755,36 @@ ipcMain.handle('backup:create', async (_, { outputDir }: { outputDir: string }) 
   } catch (error: any) {
     return { success: false, error: error?.message || String(error) }
   }
+})
+
+ipcMain.handle('backup:restore', async (_, { filePath }: { filePath: string }) => {
+  try {
+    if (!filePath || typeof filePath !== 'string') {
+      return { success: false, error: 'Backup file is required.' }
+    }
+    closeUserDbs()
+    const result = restoreLifeOsBackupPackage({
+      archivePath: filePath,
+      baseDir: BASE_DIR,
+      settingsFile: SETTINGS_FILE,
+      targetUserId: activeUserId,
+    })
+    switchUserSession(activeUserId)
+    return { success: true, data: result }
+  } catch (error: any) {
+    try {
+      switchUserSession(activeUserId)
+    } catch (recoveryError) {
+      console.error('Failed to reopen the active user after restore failure:', recoveryError)
+    }
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('app:restart', async () => {
+  app.relaunch()
+  app.exit(0)
+  return { success: true }
 })
 
 ipcMain.on('fs:reveal', (_, filePath: string) => {

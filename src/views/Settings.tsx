@@ -25,6 +25,14 @@ interface BackupResult {
   fileCount: number
 }
 
+interface RestoreInspection {
+  filePath: string
+  userId: string
+  formatVersion: number
+  sourcePlatform?: string
+  fileCount: number
+}
+
 export const Settings: React.FC = () => {
   const { t, i18n } = useTranslation()
   const theme = useAppStore((state) => state.theme)
@@ -81,6 +89,10 @@ export const Settings: React.FC = () => {
   const [backupBusy, setBackupBusy] = useState(false)
   const [backupResult, setBackupResult] = useState<BackupResult | null>(null)
   const [backupError, setBackupError] = useState('')
+  const [restoreInspection, setRestoreInspection] = useState<RestoreInspection | null>(null)
+  const [restoreBusy, setRestoreBusy] = useState(false)
+  const [restoreError, setRestoreError] = useState('')
+  const [restoreSuccess, setRestoreSuccess] = useState(false)
   // Password management states
   const [hasPassword, setHasPassword] = useState(false)
   const [editPassword, setEditPassword] = useState('')
@@ -413,6 +425,66 @@ export const Settings: React.FC = () => {
     } finally {
       setBackupBusy(false)
     }
+  }
+
+  const handleSelectRestoreFile = async () => {
+    if (!api || restoreBusy) return
+    const result = await api.selectBackupFile()
+    if (!result?.success || !result.path) return
+
+    setRestoreInspection(null)
+    setRestoreSuccess(false)
+    setRestoreError('')
+    setRestoreBusy(true)
+    try {
+      const inspection = await api.inspectBackup(result.path)
+      if (inspection?.success && inspection.data?.manifest) {
+        setRestoreInspection({
+          filePath: result.path,
+          userId: inspection.data.manifest.userId,
+          formatVersion: inspection.data.manifest.formatVersion,
+          sourcePlatform: inspection.data.manifest.sourcePlatform,
+          fileCount: inspection.data.fileCount || inspection.data.manifest.files?.length || 0,
+        })
+      } else {
+        setRestoreError(inspection?.error || t('settings.restore_validation_failed'))
+      }
+    } catch (error: any) {
+      setRestoreError(error?.message || t('settings.restore_validation_failed'))
+    } finally {
+      setRestoreBusy(false)
+    }
+  }
+
+  const handleRestoreBackup = async () => {
+    if (!api || !restoreInspection || restoreBusy) return
+    const confirmed = window.confirm(
+      t('settings.restore_confirm', {
+        userId: restoreInspection.userId,
+        count: restoreInspection.fileCount,
+      }),
+    )
+    if (!confirmed) return
+
+    setRestoreBusy(true)
+    setRestoreError('')
+    setRestoreSuccess(false)
+    try {
+      const result = await api.restoreBackup(restoreInspection.filePath)
+      if (result?.success) {
+        setRestoreSuccess(true)
+      } else {
+        setRestoreError(result?.error || t('settings.restore_failed'))
+      }
+    } catch (error: any) {
+      setRestoreError(error?.message || t('settings.restore_failed'))
+    } finally {
+      setRestoreBusy(false)
+    }
+  }
+
+  const handleRestartAfterRestore = () => {
+    api?.restartApp()
   }
 
   return (
@@ -1011,6 +1083,91 @@ export const Settings: React.FC = () => {
                     }}
                   >
                     {t('settings.backup_failed')}: {backupError}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '20px' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 800, marginBottom: '4px' }}>
+                  {t('settings.restore_title')}
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', marginBottom: '12px' }}>
+                  {t('settings.restore_desc')}
+                </p>
+                <div style={{ display: 'flex', gap: '8px', maxWidth: '680px' }}>
+                  <input
+                    className="form-field"
+                    value={restoreInspection?.filePath || ''}
+                    placeholder={t('settings.restore_file_placeholder')}
+                    readOnly
+                    style={{ flexGrow: 1, backgroundColor: 'var(--bg-app)' }}
+                  />
+                  <button className="btn" onClick={handleSelectRestoreFile} type="button">
+                    <FolderOpen size={14} />
+                    {t('settings.restore_select_file')}
+                  </button>
+                  <button
+                    className="btn primary"
+                    onClick={handleRestoreBackup}
+                    disabled={!restoreInspection || restoreBusy}
+                    type="button"
+                  >
+                    <RefreshCw size={14} />
+                    {restoreBusy ? t('settings.restore_running') : t('settings.restore_btn')}
+                  </button>
+                </div>
+                {restoreInspection && (
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      padding: '10px 12px',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                      color: 'var(--text-muted)',
+                      fontSize: '12px',
+                    }}
+                  >
+                    {t('settings.restore_validated', {
+                      userId: restoreInspection.userId,
+                      version: restoreInspection.formatVersion,
+                      count: restoreInspection.fileCount,
+                      platform: restoreInspection.sourcePlatform || 'unknown',
+                    })}
+                  </div>
+                )}
+                {restoreSuccess && (
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      padding: '10px 12px',
+                      border: '1px solid rgba(34, 197, 94, 0.3)',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(34, 197, 94, 0.08)',
+                      fontSize: '12px',
+                    }}
+                  >
+                    <div style={{ color: 'var(--color-success, #16a34a)', fontWeight: 700 }}>
+                      {t('settings.restore_success')}
+                    </div>
+                    <button className="btn sm" onClick={handleRestartAfterRestore} type="button" style={{ marginTop: '8px' }}>
+                      {t('settings.restore_restart')}
+                    </button>
+                  </div>
+                )}
+                {restoreError && (
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      padding: '10px 12px',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                      color: 'var(--color-danger)',
+                      fontSize: '12px',
+                    }}
+                  >
+                    {t('settings.restore_failed')}: {restoreError}
                   </div>
                 )}
               </div>
