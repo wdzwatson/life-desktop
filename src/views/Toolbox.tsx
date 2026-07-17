@@ -249,6 +249,33 @@ export const Toolbox: React.FC = () => {
     await refreshVault()
   }
 
+  const handleMigrateVault = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!api?.migrateLegacyVault) return
+    if (setupPassword !== setupConfirmPassword) {
+      setVaultError(t('toolbox.vault_error_password_mismatch'))
+      return
+    }
+
+    setVaultBusy(true)
+    setVaultError('')
+    const res = (await api.migrateLegacyVault(setupPassword)) as VaultApiResponse<{
+      status: VaultStatus
+      migratedCount: number
+      backupPath: string
+    }>
+    setVaultBusy(false)
+    if (!res?.success) {
+      setVaultError(getVaultErrorMessage(res?.error))
+      return
+    }
+
+    setSetupPassword('')
+    setSetupConfirmPassword('')
+    showToast(t('toolbox.toast_vault_migrated', { count: res.data?.migratedCount ?? 0 }))
+    await refreshVault()
+  }
+
   const handleLockVault = async () => {
     if (!api?.lockVault) return
     await api.lockVault()
@@ -781,9 +808,57 @@ export const Toolbox: React.FC = () => {
                   <p style={{ color: 'var(--color-danger)', fontSize: '12px' }}>{vaultError}</p>
                 )}
               </div>
-            ) : vaultStatus === 'migration_required' ||
-              vaultStatus === 'failed' ||
-              vaultStatus === 'unsupported' ? (
+            ) : vaultStatus === 'migration_required' ? (
+              <form
+                onSubmit={handleMigrateVault}
+                className="card"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                  gap: '12px',
+                  textAlign: 'center',
+                }}
+              >
+                <Lock size={42} color="var(--text-muted)" />
+                <h3 style={{ fontSize: '15px', fontWeight: 800 }}>
+                  {t('toolbox.vault_migration_required_title')}
+                </h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', width: '400px' }}>
+                  {t('toolbox.vault_migration_required_desc')}
+                </p>
+                <div style={{ display: 'grid', gap: '8px', width: '320px', marginTop: '4px' }}>
+                  <input
+                    className="form-field"
+                    type="password"
+                    placeholder={t('toolbox.vault_setup_password_placeholder')}
+                    value={setupPassword}
+                    minLength={8}
+                    onChange={(e) => setSetupPassword(e.target.value)}
+                  />
+                  <input
+                    className="form-field"
+                    type="password"
+                    placeholder={t('toolbox.vault_confirm_password_placeholder')}
+                    value={setupConfirmPassword}
+                    minLength={8}
+                    onChange={(e) => setSetupConfirmPassword(e.target.value)}
+                  />
+                  <button
+                    className="btn primary"
+                    type="submit"
+                    disabled={vaultBusy || setupPassword.length < 8 || !setupConfirmPassword}
+                  >
+                    {t('toolbox.vault_btn_migrate')}
+                  </button>
+                </div>
+                {vaultError && (
+                  <p style={{ color: 'var(--color-danger)', fontSize: '12px' }}>{vaultError}</p>
+                )}
+              </form>
+            ) : vaultStatus === 'failed' || vaultStatus === 'unsupported' ? (
               <div
                 className="card"
                 style={{
@@ -798,16 +873,12 @@ export const Toolbox: React.FC = () => {
               >
                 <Lock size={42} color="var(--text-muted)" />
                 <h3 style={{ fontSize: '15px', fontWeight: 800 }}>
-                  {vaultStatus === 'migration_required'
-                    ? t('toolbox.vault_migration_required_title')
-                    : vaultStatus === 'unsupported'
+                  {vaultStatus === 'unsupported'
                       ? t('toolbox.vault_unsupported_title')
                       : t('toolbox.vault_failed_title')}
                 </h3>
                 <p style={{ fontSize: '12px', color: 'var(--text-muted)', width: '380px' }}>
-                  {vaultStatus === 'migration_required'
-                    ? t('toolbox.vault_migration_required_desc')
-                    : vaultStatus === 'unsupported'
+                  {vaultStatus === 'unsupported'
                       ? t('toolbox.vault_unsupported_desc')
                       : t('toolbox.vault_failed_desc')}
                 </p>

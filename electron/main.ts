@@ -186,8 +186,12 @@ function getUserDb(dbName: string): any {
   return db
 }
 
+function getUserDbPath(dbName: string) {
+  return path.join(BASE_DIR, 'users', activeUserId, 'database', `${dbName}.db`)
+}
+
 function getVaultService() {
-  if (!vaultService) vaultService = new VaultService(getUserDb('vault'))
+  if (!vaultService) vaultService = new VaultService(getUserDb('vault'), { dbPath: getUserDbPath('vault') })
   return vaultService
 }
 
@@ -1471,6 +1475,10 @@ ipcMain.handle('vault:setup', async (_, masterPassword: string) =>
 
 ipcMain.handle('vault:unlock', async (_, masterPassword: string) =>
   runVaultAction(() => getVaultService().unlock(masterPassword)),
+)
+
+ipcMain.handle('vault:migrateLegacy', async (_, masterPassword: string) =>
+  runVaultAction(() => getVaultService().migrateLegacy(masterPassword)),
 )
 
 ipcMain.handle('vault:lock', async () => runVaultAction(() => getVaultService().lock()))

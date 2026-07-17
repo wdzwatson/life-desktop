@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import test from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import Database from 'better-sqlite3'
@@ -10,6 +13,13 @@ function createVaultDatabase() {
   const db = new Database(':memory:')
   initializeVaultSchema(db)
   return db
+}
+
+function createVaultFileDatabase(dir) {
+  const dbPath = path.join(dir, 'vault.db')
+  const db = new Database(dbPath)
+  initializeVaultSchema(db)
+  return { db, dbPath }
 }
 
 test('vault setup unlocks, locks, and unlocks a configured vault', async () => {
@@ -155,6 +165,110 @@ test('legacy rows report migration required before setup', () => {
     assert.equal(service.getStatus(), 'migration_required')
   } finally {
     db.close()
+  }
+})
+
+test('vault migrates legacy plaintext rows into encrypted payloads with a sensitive backup', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-vault-migration-'))
+  const backupDir = path.join(dir, 'backups')
+  const { db, dbPath } = createVaultFileDatabase(dir)
+  const service = new VaultService(db, {
+    backupDir,
+    dbPath,
+    now: () => Date.UTC(2026, 6, 17, 12, 0, 0),
+  })
+  let backupDb
+  try {
+    db.prepare(
+      `
+      INSERT INTO vault (website_name, url, username, password_encrypted, notes_encrypted, iv, tag)
+      VALUES ('Legacy', 'https://example.com', 'alice', 'legacy secret', 'legacy note', 'iv_mock', 'tag_mock')
+      `,
+    ).run()
+
+    assert.equal(service.getStatus(), 'migration_required')
+    const result = await service.migrateLegacy('correct horse battery staple')
+    assert.equal(result.status, 'unlocked')
+    assert.equal(result.migratedCount, 1)
+    assert.ok(result.backupPath.startsWith(backupDir))
+    assert.equal(existsSync(result.backupPath), true)
+
+    const row = db.prepare('SELECT * FROM vault').get()
+    assert.equal(row.password_encrypted, '')
+    assert.equal(row.notes_encrypted, '')
+    assert.equal(row.iv, '')
+    assert.equal(row.tag, '')
+    assert.equal(JSON.stringify(row).includes('legacy secret'), false)
+    assert.equal(JSON.stringify(row).includes('legacy note'), false)
+
+    assert.deepEqual(service.revealCredential(row.id), {
+      password: 'legacy secret',
+      notes: 'legacy note',
+    })
+    assert.equal(service.listCredentials()[0].websiteName, 'Legacy')
+
+    backupDb = new Database(result.backupPath, { readonly: true })
+    const backupRow = backupDb.prepare('SELECT password_encrypted, notes_encrypted FROM vault').get()
+    assert.deepEqual(backupRow, {
+      password_encrypted: 'legacy secret',
+      notes_encrypted: 'legacy note',
+    })
+
+    assert.deepEqual(await service.migrateLegacy('correct horse battery staple'), {
+      status: 'unlocked',
+      migratedCount: 0,
+      backupPath: null,
+    })
+  } finally {
+    backupDb?.close()
+    service.dispose()
+    db.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('failed legacy migration rolls back encrypted writes and metadata', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-vault-migration-fail-'))
+  const backupDir = path.join(dir, 'backups')
+  const { db, dbPath } = createVaultFileDatabase(dir)
+  const service = new VaultService(db, { backupDir, dbPath })
+  try {
+    db.prepare(
+      `
+      INSERT INTO vault (website_name, password_encrypted, notes_encrypted, iv, tag)
+      VALUES ('Legacy', 'legacy secret', 'legacy note', 'iv_mock', 'tag_mock')
+      `,
+    ).run()
+    db.exec(`
+      CREATE TRIGGER fail_vault_migration_update
+      BEFORE UPDATE ON vault
+      BEGIN
+        SELECT RAISE(ABORT, 'forced migration rollback');
+      END;
+    `)
+
+    await assert.rejects(
+      () => service.migrateLegacy('correct horse battery staple'),
+      (error) => error instanceof VaultServiceError && error.code === 'STORAGE_ERROR',
+    )
+
+    assert.equal(service.getStatus(), 'migration_required')
+    assert.deepEqual(db.prepare('SELECT COUNT(*) AS count FROM vault_meta').get(), { count: 0 })
+    assert.deepEqual(
+      db
+        .prepare('SELECT password_encrypted, notes_encrypted, secret_ciphertext FROM vault')
+        .get(),
+      {
+        password_encrypted: 'legacy secret',
+        notes_encrypted: 'legacy note',
+        secret_ciphertext: null,
+      },
+    )
+    assert.equal(existsSync(backupDir), true)
+  } finally {
+    service.dispose()
+    db.close()
+    rmSync(dir, { recursive: true, force: true })
   }
 })
 

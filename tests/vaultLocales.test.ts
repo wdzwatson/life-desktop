@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const requiredVaultKeys = [
   'toast_vault_setup_complete',
+  'toast_vault_migrated',
   'toast_vault_unlocked',
   'toast_vault_locked',
   'toast_vault_incorrect_password',
@@ -17,6 +18,7 @@ const requiredVaultKeys = [
   'vault_password_placeholder',
   'vault_migration_required_title',
   'vault_migration_required_desc',
+  'vault_btn_migrate',
   'vault_failed_title',
   'vault_failed_desc',
   'vault_unsupported_title',

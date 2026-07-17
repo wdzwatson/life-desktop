@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getVaultStatus: () => ipcRenderer.invoke('vault:status'),
   setupVault: (masterPassword: string) => ipcRenderer.invoke('vault:setup', masterPassword),
   unlockVault: (masterPassword: string) => ipcRenderer.invoke('vault:unlock', masterPassword),
+  migrateLegacyVault: (masterPassword: string) =>
+    ipcRenderer.invoke('vault:migrateLegacy', masterPassword),
   lockVault: () => ipcRenderer.invoke('vault:lock'),
   listVaultCredentials: () => ipcRenderer.invoke('vault:list'),
   createVaultCredential: (input: {

@@ -1,4 +1,7 @@
 import type Database from 'better-sqlite3'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import {
   DEFAULT_VAULT_SCRYPT_PARAMS,
   VAULT_CIPHER_VERSION,
@@ -86,7 +89,15 @@ type VaultMetaRow = {
 
 type VaultServiceOptions = {
   autoLockMs?: number
+  backupDir?: string
+  dbPath?: string
   now?: () => number
+}
+
+type LegacyVaultRow = {
+  id: number
+  password_encrypted: string
+  notes_encrypted: string | null
 }
 
 function mapCryptoError(error: unknown): VaultServiceError {
@@ -103,6 +114,8 @@ export class VaultService {
   private key: Buffer | null = null
   private autoLockTimer: ReturnType<typeof setTimeout> | null = null
   private autoLockMs: number
+  private backupDir?: string
+  private dbPath?: string
   private now: () => number
   private failedUnlocks = 0
   private blockedUntil = 0
@@ -110,6 +123,8 @@ export class VaultService {
   constructor(db: Database.Database, options: VaultServiceOptions = {}) {
     this.db = db
     this.autoLockMs = options.autoLockMs ?? DEFAULT_AUTO_LOCK_MS
+    this.backupDir = options.backupDir
+    this.dbPath = options.dbPath
     this.now = options.now ?? Date.now
   }
 
@@ -170,6 +185,98 @@ export class VaultService {
       this.installKey(candidateKey)
       candidateKey = null
       return { status: this.getStatus() }
+    } catch (error) {
+      throw mapCryptoError(error)
+    } finally {
+      salt.fill(0)
+      destroyVaultKey(candidateKey)
+    }
+  }
+
+  async migrateLegacy(masterPassword: string) {
+    const status = this.getStatus()
+    if (status === 'locked' || status === 'unlocked') {
+      return { status, migratedCount: 0, backupPath: null }
+    }
+    if (status === 'not_configured') {
+      throw new VaultServiceError('VAULT_NOT_CONFIGURED', 'Vault is not configured.')
+    }
+    if (status === 'unsupported') {
+      throw new VaultServiceError('UNSUPPORTED_VERSION', 'Vault version is not supported.')
+    }
+    if (status === 'failed') {
+      throw new VaultServiceError('CORRUPT_DATA', 'Vault migration previously failed.')
+    }
+    if (masterPassword.length < 8) {
+      throw new VaultServiceError('INVALID_INPUT', 'Master password must contain at least 8 characters.')
+    }
+
+    const legacyRows = this.getLegacyRows()
+    if (legacyRows.length === 0) {
+      throw new VaultServiceError('VAULT_NOT_CONFIGURED', 'No legacy vault rows were found.')
+    }
+
+    const backupPath = await this.createLegacyBackup()
+    const salt = generateVaultSalt()
+    let candidateKey: Buffer | null = null
+    try {
+      candidateKey = await deriveVaultKey(masterPassword, salt)
+      const vaultId = generateVaultId()
+      const verifier = createVaultVerifier(candidateKey, vaultId)
+      const migrate = this.db.transaction(() => {
+        this.db
+          .prepare(
+            `
+            INSERT INTO vault_meta (
+              id, schema_version, cipher_version, kdf_name, kdf_salt,
+              kdf_n, kdf_r, kdf_p, kdf_maxmem, vault_id,
+              verifier_ciphertext, verifier_iv, verifier_tag, migration_state
+            ) VALUES (1, ?, ?, 'scrypt', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready')
+            `,
+          )
+          .run(
+            VAULT_SCHEMA_VERSION,
+            VAULT_CIPHER_VERSION,
+            salt.toString('base64'),
+            DEFAULT_VAULT_SCRYPT_PARAMS.N,
+            DEFAULT_VAULT_SCRYPT_PARAMS.r,
+            DEFAULT_VAULT_SCRYPT_PARAMS.p,
+            DEFAULT_VAULT_SCRYPT_PARAMS.maxmem,
+            vaultId,
+            verifier.ciphertext,
+            verifier.iv,
+            verifier.tag,
+          )
+
+        for (const row of legacyRows) {
+          const encrypted = encryptVaultSecret(candidateKey as Buffer, row.id, {
+            password: row.password_encrypted,
+            notes: row.notes_encrypted ?? '',
+          })
+          const verified = decryptVaultSecret(candidateKey as Buffer, row.id, encrypted)
+          if (
+            verified.password !== row.password_encrypted ||
+            verified.notes !== (row.notes_encrypted ?? '')
+          ) {
+            throw new VaultServiceError('CORRUPT_DATA', 'Migrated credential failed verification.')
+          }
+          this.db
+            .prepare(
+              `
+              UPDATE vault
+              SET secret_ciphertext = ?, secret_iv = ?, secret_tag = ?, secret_version = ?,
+                  password_encrypted = '', notes_encrypted = '', iv = '', tag = '',
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?
+              `,
+            )
+            .run(encrypted.ciphertext, encrypted.iv, encrypted.tag, encrypted.version, row.id)
+        }
+      })
+      migrate()
+      this.installKey(candidateKey)
+      candidateKey = null
+      return { status: this.getStatus(), migratedCount: legacyRows.length, backupPath }
     } catch (error) {
       throw mapCryptoError(error)
     } finally {
@@ -374,6 +481,36 @@ export class VaultService {
 
   private getMeta() {
     return this.db.prepare('SELECT * FROM vault_meta WHERE id = 1').get() as VaultMetaRow | undefined
+  }
+
+  private getLegacyRows() {
+    return this.db
+      .prepare(
+        `
+        SELECT id, password_encrypted, notes_encrypted
+        FROM vault
+        WHERE secret_ciphertext IS NULL
+          AND COALESCE(password_encrypted, '') != ''
+        ORDER BY id ASC
+        `,
+      )
+      .all() as LegacyVaultRow[]
+  }
+
+  private async createLegacyBackup() {
+    const sourcePath = this.dbPath ?? this.db.name
+    const backupDir =
+      this.backupDir ??
+      (sourcePath && sourcePath !== ':memory:'
+        ? path.join(path.dirname(sourcePath), 'vault-sensitive-backups')
+        : path.join(os.tmpdir(), 'lifeos-vault-sensitive-backups'))
+    fs.mkdirSync(backupDir, { recursive: true })
+
+    const stamp = new Date(this.now()).toISOString().replace(/[:.]/g, '-')
+    const backupPath = path.join(backupDir, `vault-legacy-plaintext-${stamp}.db`)
+    this.db.pragma('wal_checkpoint(FULL)')
+    await this.db.backup(backupPath)
+    return backupPath
   }
 
   private requireKey() {
