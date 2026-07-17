@@ -390,6 +390,9 @@ function App() {
           >
             <div
               className="command-palette"
+              role="dialog"
+              aria-modal="true"
+              aria-label={t('sidebar.search')}
               onClick={(e) => e.stopPropagation()}
               style={{
                 width: '600px',
@@ -425,6 +428,7 @@ function App() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={t('app.search_placeholder')}
+                  aria-label={t('app.search_placeholder')}
                 />
                 <span className="kbd-shortcut" style={{ margin: 0 }}>
                   Esc

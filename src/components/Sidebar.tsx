@@ -22,7 +22,9 @@ export const Sidebar: React.FC = () => {
   const setTaskTab = useAppStore((state) => state.setTaskTab)
   const userAvatar = useAppStore((state) => state.userAvatar)
   const userNickname = useAppStore((state) => state.userNickname)
+  const userId = useAppStore((state) => state.userId)
   const signOut = useAppStore((state) => state.signOut)
+  const displayNickname = userId === 'guest' ? t('sidebar.guest_profile') : userNickname
 
   const handleNavClick = (screen: string, tab?: string) => {
     setActiveScreen(screen)
@@ -109,7 +111,7 @@ export const Sidebar: React.FC = () => {
               whiteSpace: 'nowrap',
             }}
           >
-            {userNickname}
+            {displayNickname}
           </span>
         </div>
 

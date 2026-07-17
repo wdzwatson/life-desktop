@@ -31,6 +31,7 @@
     "settings": "设置",
     "search": "全局搜索",
     "pinned": "快捷固定的栏目",
+    "guest_profile": "访客模式",
     "sign_out": "退出登录"
   },
   "dashboard": {
@@ -806,7 +807,8 @@
   "topbar": {
     "manage_dir_hint": "请在设置中管理本地书籍/视频目录",
     "search_placeholder": "搜索或输入 / 指令...",
-    "switch_theme": "切换主题"
+    "switch_theme": "切换主题",
+    "switch_language": "切换语言"
   },
   "app": {
     "download_finished": "已完成视频下载: ${data.title}",

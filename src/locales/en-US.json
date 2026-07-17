@@ -31,6 +31,7 @@
     "settings": "Settings",
     "search": "Global Search",
     "pinned": "Pinned Short-cuts",
+    "guest_profile": "Guest Mode",
     "sign_out": "Sign Out"
   },
   "dashboard": {
@@ -806,7 +807,8 @@
   "topbar": {
     "manage_dir_hint": "Please manage local books/video directory in Settings",
     "search_placeholder": "Search or type / command...",
-    "switch_theme": "Switch Theme"
+    "switch_theme": "Switch Theme",
+    "switch_language": "Switch Language"
   },
   "app": {
     "download_finished": "Download finished: ${data.title}",
