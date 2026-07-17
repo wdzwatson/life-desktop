@@ -370,6 +370,7 @@
     "copy_link_tooltip": "Copy Obsidian deep link",
     "copy_link_btn": "Copy Obsidian deep link",
     "toast_book_imported": "E-book \"{{title}}\" imported successfully",
+    "toast_file_picker_unavailable": "File selection is only available in the desktop app",
     "note_title_template": "Reading Notes on \"{{title}}\"",
     "note_md_title": "# Reading Notes on \"{{title}}\"\n",
     "empty_shelf": "No books in this category. Click \"Import Book\" to add local EPUB/PDFs.",

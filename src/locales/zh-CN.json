@@ -370,6 +370,7 @@
     "copy_link_tooltip": "复制 Obsidian 深度链接",
     "copy_link_btn": "复制 Obsidian 深度双链",
     "toast_book_imported": "已成功导入电子书: {{title}}",
+    "toast_file_picker_unavailable": "文件选择功能仅支持桌面版应用",
     "note_title_template": "《{{title}}》读书笔记",
     "note_md_title": "# 《{{title}}》读书笔记\n",
     "empty_shelf": "此分类书架尚无藏书，请点击“导入书籍”添加本地电子书。",

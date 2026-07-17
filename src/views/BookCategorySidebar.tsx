@@ -8,6 +8,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { BookOpen, Inbox, Languages, Library, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { getContextMenuPosition } from './bookCategorySidebarUtils'
@@ -221,9 +222,12 @@ export function BookCategorySidebar({
     event.stopPropagation()
     originatingRowRef.current = event.currentTarget
     setMenuFocusIndex(0)
+    const rowRect = event.currentTarget.getBoundingClientRect()
+    const preferredLeft = rowRect.right + 8
+    const preferredTop = rowRect.top
     const position = getContextMenuPosition({
-      clientX: event.clientX,
-      clientY: event.clientY,
+      clientX: preferredLeft,
+      clientY: preferredTop,
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
       menuWidth: CONTEXT_MENU_WIDTH,
@@ -420,55 +424,57 @@ export function BookCategorySidebar({
         </div>
       </div>
 
-      {contextMenu && (
-        <div
-          ref={menuRef}
-          className="book-category-sidebar__context-menu"
-          role="menu"
-          style={{ left: contextMenu.left, top: contextMenu.top }}
-          onPointerDown={(event) => event.stopPropagation()}
-          onKeyDown={handleMenuKeyDown}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            tabIndex={menuFocusIndex === 0 ? 0 : -1}
-            onFocus={() => setMenuFocusIndex(0)}
-            onClick={() => startRename(contextMenu.category)}
+      {contextMenu &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="book-category-sidebar__context-menu"
+            role="menu"
+            style={{ left: contextMenu.left, top: contextMenu.top }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={handleMenuKeyDown}
           >
-            <Pencil aria-hidden="true" />
-            <span>{t('books.rename_shelf')}</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            tabIndex={menuFocusIndex === 1 ? 0 : -1}
-            onFocus={() => setMenuFocusIndex(1)}
-            onClick={() => {
-              onEditTranslations(contextMenu.category, createMenuReturnFocus())
-              closeContextMenu(false)
-            }}
-          >
-            <Languages aria-hidden="true" />
-            <span>{t('books.edit_shelf_translations')}</span>
-          </button>
-          <div className="book-category-sidebar__menu-separator" role="separator" />
-          <button
-            type="button"
-            role="menuitem"
-            className="danger"
-            tabIndex={menuFocusIndex === 2 ? 0 : -1}
-            onFocus={() => setMenuFocusIndex(2)}
-            onClick={() => {
-              onRequestDelete(contextMenu.category, createMenuReturnFocus())
-              closeContextMenu(false)
-            }}
-          >
-            <Trash2 aria-hidden="true" />
-            <span>{t('books.delete_shelf')}</span>
-          </button>
-        </div>
-      )}
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={menuFocusIndex === 0 ? 0 : -1}
+              onFocus={() => setMenuFocusIndex(0)}
+              onClick={() => startRename(contextMenu.category)}
+            >
+              <Pencil aria-hidden="true" />
+              <span>{t('books.rename_shelf')}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={menuFocusIndex === 1 ? 0 : -1}
+              onFocus={() => setMenuFocusIndex(1)}
+              onClick={() => {
+                onEditTranslations(contextMenu.category, createMenuReturnFocus())
+                closeContextMenu(false)
+              }}
+            >
+              <Languages aria-hidden="true" />
+              <span>{t('books.edit_shelf_translations')}</span>
+            </button>
+            <div className="book-category-sidebar__menu-separator" role="separator" />
+            <button
+              type="button"
+              role="menuitem"
+              className="danger"
+              tabIndex={menuFocusIndex === 2 ? 0 : -1}
+              onFocus={() => setMenuFocusIndex(2)}
+              onClick={() => {
+                onRequestDelete(contextMenu.category, createMenuReturnFocus())
+                closeContextMenu(false)
+              }}
+            >
+              <Trash2 aria-hidden="true" />
+              <span>{t('books.delete_shelf')}</span>
+            </button>
+          </div>,
+          document.body,
+        )}
     </aside>
   )
 }

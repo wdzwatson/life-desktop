@@ -414,7 +414,10 @@ export const Books: React.FC = () => {
   }
 
   const handleSelectBookFile = async () => {
-    if (!api) return
+    if (!api) {
+      showToast(t('books.toast_file_picker_unavailable'))
+      return
+    }
     const res = await api.selectBookFile()
     if (res?.success) {
       setImportFilePath(res.relativePath)
@@ -1384,7 +1387,6 @@ export const Books: React.FC = () => {
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 2000,
-    animation: 'enter 0.15s ease both',
   }
 
   const modalContentStyle: React.CSSProperties = {
@@ -1574,7 +1576,14 @@ export const Books: React.FC = () => {
           <h1 style={{ fontSize: '22px', fontWeight: 800 }}>{t('books.title')}</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{t('books.subtitle')}</p>
         </div>
-        <button className="btn primary" onClick={() => setIsImportOpen(true)}>
+        <button
+          type="button"
+          className="btn primary"
+          aria-label={t('books.import_book')}
+          onPointerDown={() => setIsImportOpen(true)}
+          onClick={() => setIsImportOpen(true)}
+          style={{ position: 'relative', zIndex: 3, pointerEvents: 'auto' }}
+        >
           <Plus size={16} />
           {t('books.import_book')}
         </button>
@@ -2954,8 +2963,8 @@ export const Books: React.FC = () => {
 
       {/* Premium Import Book Modal */}
       {isImportOpen && (
-        <div style={modalOverlayStyle}>
-          <div style={modalContentStyle}>
+        <div className="dialog-overlay" style={modalOverlayStyle}>
+          <div className="dialog-surface" style={modalContentStyle}>
             <h3 style={modalTitleStyle}>{t('books.import_book')}</h3>
 
             {/* File Selection */}
@@ -3224,8 +3233,8 @@ export const Books: React.FC = () => {
 
       {/* Premium Edit Book Modal */}
       {editingBookInfo && (
-        <div style={modalOverlayStyle}>
-          <div style={modalContentStyle}>
+        <div className="dialog-overlay" style={modalOverlayStyle}>
+          <div className="dialog-surface" style={modalContentStyle}>
             <h3 style={modalTitleStyle}>{t('books.edit_book') || '编辑书籍信息'}</h3>
 
             {/* Title */}
@@ -3321,8 +3330,8 @@ export const Books: React.FC = () => {
 
       {/* Premium Delete Book Confirm Modal */}
       {deletingBookInfo && (
-        <div style={modalOverlayStyle}>
-          <div style={modalContentStyle}>
+        <div className="dialog-overlay" style={modalOverlayStyle}>
+          <div className="dialog-surface" style={modalContentStyle}>
             <h3 style={{ ...modalTitleStyle, color: '#EF4444' }}>
               {t('books.delete_book') || '删除书籍确认'}
             </h3>

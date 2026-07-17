@@ -348,28 +348,28 @@ body.theme-dense .nav-item.active {
 }
 
 /* Reveal page-level groups without animating every control inside them. */
-.screen-transition > *:not(.screen-loading) > * {
+.screen-transition > *:not(.screen-loading) > *:not(.dialog-overlay):not(.command-palette-overlay) {
   opacity: 0;
   animation: screen-group-enter 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.screen-transition > *:not(.screen-loading) > :nth-child(1) {
+.screen-transition > *:not(.screen-loading) > :nth-child(1):not(.dialog-overlay):not(.command-palette-overlay) {
   animation-delay: 35ms;
 }
 
-.screen-transition > *:not(.screen-loading) > :nth-child(2) {
+.screen-transition > *:not(.screen-loading) > :nth-child(2):not(.dialog-overlay):not(.command-palette-overlay) {
   animation-delay: 75ms;
 }
 
-.screen-transition > *:not(.screen-loading) > :nth-child(3) {
+.screen-transition > *:not(.screen-loading) > :nth-child(3):not(.dialog-overlay):not(.command-palette-overlay) {
   animation-delay: 115ms;
 }
 
-.screen-transition > *:not(.screen-loading) > :nth-child(4) {
+.screen-transition > *:not(.screen-loading) > :nth-child(4):not(.dialog-overlay):not(.command-palette-overlay) {
   animation-delay: 155ms;
 }
 
-.screen-transition > *:not(.screen-loading) > :nth-child(5) {
+.screen-transition > *:not(.screen-loading) > :nth-child(5):not(.dialog-overlay):not(.command-palette-overlay) {
   animation-delay: 195ms;
 }
 
@@ -524,7 +524,7 @@ body.theme-dense .nav-item.active {
 
   .screen-progress,
   .screen-transition,
-  .screen-transition > *:not(.screen-loading) > * {
+  .screen-transition > *:not(.screen-loading) > *:not(.dialog-overlay):not(.command-palette-overlay) {
     animation: none;
     transition: none;
     opacity: 1;
