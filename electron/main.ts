@@ -4,6 +4,7 @@ import fs from 'fs'
 import Database from 'better-sqlite3'
 import { initializeUserDatabase } from './db/schema'
 import { runDbTransaction } from './db/transaction'
+import { createLifeOsBackupPackage } from './backup/service'
 import AdmZip from 'adm-zip'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { autoUpdater } from 'electron-updater'
@@ -698,6 +699,36 @@ ipcMain.handle('settings:clearAppData', async () => {
   } catch (err: any) {
     console.error('Failed to clear app data:', err)
     return { success: false, error: err.message }
+  }
+})
+
+ipcMain.handle('backup:selectDirectory', async () => {
+  const { filePaths, canceled } = await dialog.showOpenDialog(mainWindow!, {
+    title: 'Select backup destination',
+    properties: ['openDirectory', 'createDirectory'],
+  })
+  if (canceled || filePaths.length === 0) return { success: false, canceled: true }
+  return { success: true, path: filePaths[0] }
+})
+
+ipcMain.handle('backup:create', async (_, { outputDir }: { outputDir: string }) => {
+  try {
+    if (!outputDir || typeof outputDir !== 'string') {
+      return { success: false, error: 'Backup destination is required.' }
+    }
+    closeUserDbs()
+    const settings = getSettings()
+    const result = createLifeOsBackupPackage({
+      appVersion: app.getVersion(),
+      baseDir: BASE_DIR,
+      outputDir,
+      settingsFile: SETTINGS_FILE,
+      userId: activeUserId,
+      videoDownloadDir: settings.videoDownloadDir,
+    })
+    return { success: true, data: result }
+  } catch (error: any) {
+    return { success: false, error: error?.message || String(error) }
   }
 })
 

@@ -20,6 +20,11 @@ interface UpdateInfo {
   releaseDate?: string
 }
 
+interface BackupResult {
+  filePath: string
+  fileCount: number
+}
+
 export const Settings: React.FC = () => {
   const { t, i18n } = useTranslation()
   const theme = useAppStore((state) => state.theme)
@@ -72,6 +77,10 @@ export const Settings: React.FC = () => {
   const [editNickname, setEditNickname] = useState(userNickname)
   const [editAvatar, setEditAvatar] = useState(userAvatar)
   const [mockBackupKey, setMockBackupKey] = useState('lifeos_backup_private_secret_key_2026')
+  const [backupDir, setBackupDir] = useState('')
+  const [backupBusy, setBackupBusy] = useState(false)
+  const [backupResult, setBackupResult] = useState<BackupResult | null>(null)
+  const [backupError, setBackupError] = useState('')
   // Password management states
   const [hasPassword, setHasPassword] = useState(false)
   const [editPassword, setEditPassword] = useState('')
@@ -370,6 +379,39 @@ export const Settings: React.FC = () => {
       }
     } catch (e: any) {
       showToast(e.message || 'Error clearing data')
+    }
+  }
+
+  const handleSelectBackupDirectory = async () => {
+    if (!api) return
+    const result = await api.selectBackupDirectory()
+    if (result?.success && result.path) {
+      setBackupDir(result.path)
+      setBackupResult(null)
+      setBackupError('')
+    }
+  }
+
+  const handleCreateBackup = async () => {
+    if (!api || !backupDir || backupBusy) return
+
+    setBackupBusy(true)
+    setBackupResult(null)
+    setBackupError('')
+    try {
+      const result = await api.createBackup(backupDir)
+      if (result?.success && result.data) {
+        setBackupResult({
+          filePath: result.data.filePath,
+          fileCount: result.data.manifest?.files?.length || 0,
+        })
+      } else {
+        setBackupError(result?.error || t('settings.backup_failed'))
+      }
+    } catch (error: any) {
+      setBackupError(error?.message || t('settings.backup_failed'))
+    } finally {
+      setBackupBusy(false)
     }
   }
 
@@ -895,6 +937,82 @@ export const Settings: React.FC = () => {
                     {t('settings.security_migrate_btn')}
                   </button>
                 </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '20px' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 800, marginBottom: '4px' }}>
+                  {t('settings.backup_title')}
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', marginBottom: '12px' }}>
+                  {t('settings.backup_desc')}
+                </p>
+                <div style={{ display: 'flex', gap: '8px', maxWidth: '680px' }}>
+                  <input
+                    className="form-field"
+                    value={backupDir}
+                    placeholder={t('settings.backup_destination_placeholder')}
+                    readOnly
+                    style={{ flexGrow: 1, backgroundColor: 'var(--bg-app)' }}
+                  />
+                  <button className="btn" onClick={handleSelectBackupDirectory} type="button">
+                    <FolderOpen size={14} />
+                    {t('settings.backup_select_dir')}
+                  </button>
+                  <button
+                    className="btn primary"
+                    onClick={handleCreateBackup}
+                    disabled={!backupDir || backupBusy}
+                    type="button"
+                  >
+                    <Download size={14} />
+                    {backupBusy ? t('settings.backup_running') : t('settings.backup_create_btn')}
+                  </button>
+                </div>
+                <p style={{ color: 'var(--text-muted)', fontSize: '11.5px', marginTop: '8px' }}>
+                  {t('settings.backup_external_video_note')}
+                </p>
+                {backupResult && (
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      padding: '10px 12px',
+                      border: '1px solid rgba(34, 197, 94, 0.3)',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(34, 197, 94, 0.08)',
+                      fontSize: '12px',
+                    }}
+                  >
+                    <div style={{ color: 'var(--color-success, #16a34a)', fontWeight: 700 }}>
+                      {t('settings.backup_success', { count: backupResult.fileCount })}
+                    </div>
+                    <div style={{ color: 'var(--text-muted)', marginTop: '4px', wordBreak: 'break-all' }}>
+                      {backupResult.filePath}
+                    </div>
+                    <button
+                      className="btn sm"
+                      onClick={() => api?.revealInFinder(backupResult.filePath)}
+                      type="button"
+                      style={{ marginTop: '8px' }}
+                    >
+                      {t('settings.backup_reveal')}
+                    </button>
+                  </div>
+                )}
+                {backupError && (
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      padding: '10px 12px',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                      color: 'var(--color-danger)',
+                      fontSize: '12px',
+                    }}
+                  >
+                    {t('settings.backup_failed')}: {backupError}
+                  </div>
+                )}
               </div>
 
               <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '20px' }}>
