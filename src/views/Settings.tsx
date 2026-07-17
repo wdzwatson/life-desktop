@@ -63,6 +63,7 @@ export const Settings: React.FC = () => {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
   const [downloadPercent, setDownloadPercent] = useState(0)
   const [updateErrorMsg, setUpdateErrorMsg] = useState('')
+  const [updateIsMock, setUpdateIsMock] = useState(false)
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(true)
   const [videoSettings, setVideoSettings] = useState({
     ytDlpPath: '',
@@ -201,14 +202,16 @@ export const Settings: React.FC = () => {
     if (!api) return
     setUpdateStatus('checking')
     setUpdateErrorMsg('')
-    await api.checkForUpdates()
+    const result = await api.checkForUpdates()
+    setUpdateIsMock(result?.isMock === true)
   }
 
   const handleDownloadUpdate = async () => {
     if (!api) return
     setUpdateStatus('downloading')
     setDownloadPercent(0)
-    await api.downloadUpdate()
+    const result = await api.downloadUpdate()
+    setUpdateIsMock(result?.isMock === true)
   }
 
   const handleInstallUpdate = () => {
@@ -1433,6 +1436,17 @@ export const Settings: React.FC = () => {
                 <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', marginBottom: '16px' }}>
                   {t('settings.updates_subtitle')}
                 </p>
+                {updateIsMock && (
+                  <p
+                    style={{
+                      color: 'var(--color-warning, #b45309)',
+                      fontSize: '12px',
+                      marginBottom: '12px',
+                    }}
+                  >
+                    {t('settings.updates_dev_mock_note')}
+                  </p>
+                )}
 
                 <div
                   style={{

@@ -106,9 +106,6 @@ export const Tasks: React.FC = () => {
   // Templates
   const [templates, setTemplates] = useState<any[]>([])
 
-  // Scheduled table logs
-  const [scheduledLogs, setScheduledLogs] = useState<any[]>([])
-
   useEffect(() => {
     setTemplates([
       {
@@ -147,35 +144,22 @@ export const Tasks: React.FC = () => {
       },
     ])
 
-    setScheduledLogs([
-      {
-        id: 1,
-        name: t('tasks.log_backup_name'),
-        action: t('tasks.log_backup_action'),
-        trigger: t('tasks.log_backup_trigger'),
-        status: t('tasks.log_backup_status'),
-        nextRun: t('tasks.log_backup_next'),
-      },
-      {
-        id: 2,
-        name: t('tasks.log_scan_name'),
-        action: t('tasks.log_scan_action'),
-        trigger: t('tasks.log_scan_trigger'),
-        status: t('tasks.log_scan_status'),
-        nextRun: t('tasks.log_scan_next'),
-      },
-      {
-        id: 3,
-        name: t('tasks.log_archive_name'),
-        action: t('tasks.log_archive_action'),
-        trigger: t('tasks.log_archive_trigger'),
-        status: t('tasks.log_archive_status'),
-        nextRun: t('tasks.log_archive_next'),
-      },
-    ])
   }, [i18n.language])
 
   const api = (window as any).electronAPI
+
+  const scheduledLogs = useMemo(
+    () =>
+      rules.map((rule) => ({
+        id: rule.id,
+        name: rule.title,
+        action: t('tasks.log_rule_action'),
+        trigger: rule.cron || rule.frequency,
+        status: t('tasks.log_rule_status_active'),
+        nextRun: t('tasks.log_rule_next_calculated'),
+      })),
+    [rules, t],
+  )
 
   const calendarTasksByDate = useMemo(() => groupTasksByDueDate(tasks), [tasks])
   const calendarWeekDays = useMemo(() => getCalendarWeekDays(calendarDate), [calendarDate])
@@ -1771,7 +1755,12 @@ export const Tasks: React.FC = () => {
               overflowY: 'auto',
             }}
           >
-            <strong style={{ fontSize: '14px' }}>{t('tasks.scheduled_log_title')}</strong>
+            <div>
+              <strong style={{ fontSize: '14px' }}>{t('tasks.scheduled_log_title')}</strong>
+              <p style={{ color: 'var(--text-muted)', fontSize: '11.5px', marginTop: '4px' }}>
+                {t('tasks.scheduled_log_desc')}
+              </p>
+            </div>
             <div className="task-scheduled-log__table-wrap">
               <table className="task-scheduled-log__table">
               <thead>
@@ -1792,7 +1781,13 @@ export const Tasks: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {scheduledLogs.map((log) => (
+                {scheduledLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ padding: '16px 8px', color: 'var(--text-muted)' }}>
+                      {t('tasks.scheduled_log_empty')}
+                    </td>
+                  </tr>
+                ) : scheduledLogs.map((log) => (
                   <tr key={log.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                     <td style={{ padding: '10px 8px', fontWeight: 600 }}>{log.name}</td>
                     <td style={{ padding: '10px 8px' }}>{log.action}</td>
@@ -1813,9 +1808,13 @@ export const Tasks: React.FC = () => {
                       <button
                         type="button"
                         className="btn sm"
-                        onClick={() => showToast(t('tasks.toast_action_triggered'))}
+                        onClick={() => {
+                          const rule = rules.find((candidate) => candidate.id === log.id)
+                          if (rule) selectRule(rule)
+                          setTaskTab('recurring')
+                        }}
                       >
-                        {t('tasks.btn_run_now')}
+                        {t('tasks.btn_view_rule')}
                       </button>
                     </td>
                   </tr>
