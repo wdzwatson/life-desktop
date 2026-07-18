@@ -192,6 +192,15 @@ export function inspectLifeOsBackupPackage(archivePath: string): BackupInspectio
   return { manifest, fileCount: manifest.files.length }
 }
 
+export function writeBackupArchive(zip: Pick<AdmZip, 'writeZip'>, outputPath: string) {
+  try {
+    zip.writeZip(outputPath)
+  } catch (error) {
+    fs.rmSync(outputPath, { force: true })
+    throw error
+  }
+}
+
 export function restoreLifeOsBackupPackage(input: RestoreBackupInput): RestoreBackupResult {
   assertSafeUserId(input.targetUserId)
   const { zip, manifest } = readValidatedBackupArchive(input.archivePath)
@@ -361,7 +370,7 @@ export function createLifeOsBackupPackage(input: CreateBackupInput): CreateBacku
   }
 
   zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'))
-  zip.writeZip(outputPath)
+  writeBackupArchive(zip, outputPath)
 
   return { filePath: outputPath, manifest }
 }

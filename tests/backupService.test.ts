@@ -16,6 +16,7 @@ import {
   createLifeOsBackupPackage,
   inspectLifeOsBackupPackage,
   restoreLifeOsBackupPackage,
+  writeBackupArchive,
 } from '../electron/backup/service'
 
 function writeFixture(filePath: string, content: string) {
@@ -83,6 +84,31 @@ test('creates a manifest-backed user backup and excludes sensitive legacy vault 
       assert.equal(file.size, content.length)
       assert.equal(createHash('sha256').update(content).digest('hex'), file.sha256)
     }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('removes a partial backup archive when the destination write fails', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'lifeos-backup-write-failure-'))
+  const sourceFile = path.join(root, 'tasks.db')
+  const outputPath = path.join(root, 'lifeos-backup-guest.zip')
+
+  try {
+    writeFixture(sourceFile, 'tasks')
+    const failingZip = {
+      writeZip(targetFileName: string) {
+        writeFileSync(targetFileName, 'partial archive')
+        throw Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' })
+      },
+    }
+
+    assert.throws(
+      () => writeBackupArchive(failingZip, outputPath),
+      /ENOSPC/,
+    )
+    assert.equal(existsSync(outputPath), false)
+    assert.equal(readFileSync(sourceFile, 'utf8'), 'tasks')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
