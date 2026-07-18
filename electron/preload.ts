@@ -97,6 +97,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startAIRun: (input: unknown) => ipcRenderer.invoke('ai:runs:start', input),
   cancelAIRun: (conversationId: number, runId?: number) =>
     ipcRenderer.invoke('ai:runs:cancel', { conversationId, runId }),
+  approveAITool: (
+    runId: number,
+    toolCallId: string,
+    decision: 'approve_once' | 'approve_session' | 'reject',
+  ) => ipcRenderer.invoke('ai:runs:approveTool', { runId, toolCallId, decision }),
   onAIRunEvent: (callback: (data: unknown) => void) => {
     const subscription = (_event: unknown, data: unknown) => callback(data)
     ipcRenderer.on('ai:runs:event', subscription)

@@ -36,6 +36,7 @@ test('preload exposes structured AI methods without runtime credentials or gener
     'listAIConversationMessages',
     'startAIRun',
     'cancelAIRun',
+    'approveAITool',
     'onAIRunEvent',
   ]) {
     assert.match(preload, new RegExp(`${method}:`))
@@ -79,8 +80,8 @@ test('AI conversation IPC validates identifiers before opening the isolated data
   assert.equal(opened, 0)
 })
 
-test('AI runtime IPC is isolated from configuration and exposes only start and cancel commands', async () => {
-  assert.deepEqual(AI_RUNTIME_CHANNELS, ['ai:runs:start', 'ai:runs:cancel'])
+test('AI runtime IPC is isolated from configuration and exposes only scoped run commands', async () => {
+  assert.deepEqual(AI_RUNTIME_CHANNELS, ['ai:runs:start', 'ai:runs:cancel', 'ai:runs:approveTool'])
   assert.equal(AI_RUNTIME_CHANNELS.some((channel) => AI_CONFIG_CHANNELS.includes(channel as any)), false)
   const calls: unknown[] = []
   const handlers = createAIRuntimeHandlers({
@@ -93,6 +94,10 @@ test('AI runtime IPC is isolated from configuration and exposes only start and c
         calls.push({ conversationId, runId })
         return { cancelled: true }
       },
+      approve: (payload) => {
+        calls.push(payload)
+        return { accepted: true }
+      },
     }) as any,
   })
   const started = await handlers['ai:runs:start']({}, {
@@ -102,9 +107,15 @@ test('AI runtime IPC is isolated from configuration and exposes only start and c
     attachmentAssetIds: [],
   })
   const cancelled = await handlers['ai:runs:cancel']({}, { conversationId: 1, runId: 4 })
+  const approved = await handlers['ai:runs:approveTool']({}, {
+    runId: 4,
+    toolCallId: 'call-1',
+    decision: 'approve_once',
+  })
   assert.deepEqual(started, { success: true, data: { runId: 4 } })
   assert.deepEqual(cancelled, { success: true, data: { cancelled: true } })
-  assert.equal(calls.length, 2)
+  assert.deepEqual(approved, { success: true, data: { accepted: true } })
+  assert.equal(calls.length, 3)
 })
 
 test('AI IPC serializes invalid IDs and capabilities instead of invoking services', async () => {

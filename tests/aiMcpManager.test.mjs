@@ -8,7 +8,7 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { z } from 'zod'
 import { AIMcpConfigService } from '../electron/ai/mcpConfigService.ts'
-import { AIMcpManager, redactMcpDiagnostic } from '../electron/ai/mcpManager.ts'
+import { AIMcpManager, redactMcpDiagnostic, redactMcpToolResult } from '../electron/ai/mcpManager.ts'
 import { initializeAISchema } from '../electron/ai/schema.ts'
 import { AIServiceError } from '../electron/ai/types.ts'
 
@@ -270,4 +270,13 @@ test('connection failures redact configured secrets from persisted diagnostics',
   assert.doesNotMatch(authorizationDiagnostic, /abc\.def/)
   await context.manager.dispose()
   context.db.close()
+})
+
+test('MCP tool results redact configured credentials before leaving the manager', () => {
+  const result = redactMcpToolResult({
+    content: [{ type: 'text', text: 'Bearer visible-token and configured-value' }],
+    structuredContent: { apiKey: 'key-value', nested: 'configured-value' },
+  }, ['configured-value'])
+  assert.doesNotMatch(JSON.stringify(result), /visible-token|configured-value|key-value/)
+  assert.match(JSON.stringify(result), /REDACTED/)
 })

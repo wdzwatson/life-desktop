@@ -131,6 +131,33 @@ export function redactMcpDiagnostic(value: unknown, secrets: string[] = []) {
     .slice(-4_000)
 }
 
+function redactMcpString(value: string, secrets: string[]) {
+  let redacted = value
+  for (const secret of [...new Set(secrets)].sort((left, right) => right.length - left.length)) {
+    if (secret.length >= 3) redacted = redacted.split(secret).join('[REDACTED]')
+  }
+  return redacted
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/-]+=*/gi, '$1 [REDACTED]')
+    .replace(/\b(sk|xai)-[A-Za-z0-9_-]{8,}/gi, '[REDACTED]')
+    .replace(/([?&](?:key|token|secret|signature|auth)=)[^&#\s]+/gi, '$1[REDACTED]')
+}
+
+export function redactMcpToolResult(value: unknown, secrets: string[] = [], depth = 0): unknown {
+  if (depth > 20) return '[TRUNCATED]'
+  if (typeof value === 'string') return redactMcpString(value, secrets)
+  if (Array.isArray(value)) return value.map((item) => redactMcpToolResult(item, secrets, depth + 1))
+  if (value && typeof value === 'object') {
+    const output: Record<string, unknown> = {}
+    for (const [key, item] of Object.entries(value)) {
+      output[key] = /(?:api[_-]?key|authorization|cookie|password|secret|token|credential)/i.test(key)
+        ? '[REDACTED]'
+        : redactMcpToolResult(item, secrets, depth + 1)
+    }
+    return output
+  }
+  return value
+}
+
 function errorDetail(error: unknown, signal?: AbortSignal) {
   if (error instanceof AIServiceError) return error
   const message = error instanceof Error ? error.message : String(error)
@@ -254,11 +281,12 @@ export class AIMcpManager {
       600_000,
     )
     try {
-      return await connection.client.callTool(
+      const result = await connection.client.callTool(
         { name: toolName, arguments: args },
         undefined,
         { signal: options.signal, timeout, maxTotalTimeout: timeout },
       )
+      return redactMcpToolResult(result, connection.secrets)
     } catch (error) {
       const mapped = errorDetail(error, options.signal)
       if (mapped.detail.code === 'cancelled' || mapped.detail.code === 'timeout') throw mapped

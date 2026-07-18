@@ -20,6 +20,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { ConversationList } from './ConversationList'
 import { MessageRenderer } from './MessageRenderer'
+import { ToolApprovalDialog } from './ToolApprovalDialog'
 import {
   applyAIChatRunEvent,
   buildAIConversationMarkdown,
@@ -34,6 +35,7 @@ import {
   type AIChatMessage,
   type AIChatRunEvent,
   type AIChatRunState,
+  type AIChatToolApproval,
 } from './chatUtils'
 
 export type AIChatAgent = {
@@ -94,6 +96,8 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
   const [hasOlderMessages, setHasOlderMessages] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [toolApprovals, setToolApprovals] = useState<Record<string, AIChatToolApproval>>({})
+  const [submittingApproval, setSubmittingApproval] = useState(false)
   const activeConversationRef = useRef<number | null>(null)
   const messagesRef = useRef<AIChatMessage[]>([])
   const lastSequenceRef = useRef(new Map<string, number>())
@@ -272,12 +276,40 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
       if (event.sequence <= previousSequence) return
       lastSequenceRef.current.set(key, event.sequence)
       pendingRunEventsRef.current.push(event)
+      if (event.type === 'approval_required' && event.toolCallId && event.serverId && event.serverName && event.toolName && event.risk) {
+        setToolApprovals((current) => ({
+          ...current,
+          [`${event.runId}:${event.toolCallId}`]: {
+            conversationId: event.conversationId,
+            runId: event.runId,
+            messageId: event.messageId,
+            toolCallId: event.toolCallId as string,
+            serverId: event.serverId as number,
+            serverName: event.serverName as string,
+            toolName: event.toolName as string,
+            risk: event.risk as AIChatToolApproval['risk'],
+            argumentsSummary: event.argumentsSummary ?? '{}',
+          },
+        }))
+      }
+      if (['tool_running', 'tool_completed', 'tool_failed', 'tool_rejected'].includes(event.type) && event.toolCallId) {
+        setToolApprovals((current) => {
+          const key = `${event.runId}:${event.toolCallId}`
+          if (!current[key]) return current
+          const next = { ...current }
+          delete next[key]
+          return next
+        })
+      }
       const terminal = ['completed', 'failed', 'cancelled', 'interrupted'].includes(event.type)
       if (terminal) flushRunEvents()
       else if (runEventFlushTimerRef.current === null) {
         runEventFlushTimerRef.current = window.setTimeout(flushRunEvents, 32)
       }
       if (terminal) {
+        setToolApprovals((current) => Object.fromEntries(
+          Object.entries(current).filter(([, approval]) => approval.runId !== event.runId),
+        ))
         void loadConversations()
         if (activeConversationRef.current === event.conversationId) {
           window.setTimeout(() => void loadMessages(event.conversationId), 0)
@@ -404,6 +436,28 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
     if (!activeConversationId || !activeRun || !api?.cancelAIRun) return
     const response = await api.cancelAIRun(activeConversationId, activeRun.runId)
     if (!response?.success) setNotice(errorMessage(response, t('aiChat.chat.stop_failed')))
+  }
+
+  const activeApproval = useMemo(
+    () => Object.values(toolApprovals).find((approval) => approval.conversationId === activeConversationId) ?? null,
+    [activeConversationId, toolApprovals],
+  )
+
+  const decideToolApproval = async (decision: 'approve_once' | 'approve_session' | 'reject') => {
+    if (!activeApproval || !api?.approveAITool || submittingApproval) return
+    setSubmittingApproval(true)
+    const response = await api.approveAITool(activeApproval.runId, activeApproval.toolCallId, decision)
+    setSubmittingApproval(false)
+    if (!response?.success) {
+      setNotice(errorMessage(response, t('aiChat.tools.approval_failed')))
+      return
+    }
+    const key = `${activeApproval.runId}:${activeApproval.toolCallId}`
+    setToolApprovals((current) => {
+      const next = { ...current }
+      delete next[key]
+      return next
+    })
   }
 
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -676,6 +730,13 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
         )}
         <p className="ai-run-inspector__privacy">{t('aiChat.chat.privacy_note')}</p>
       </aside>
+      {activeApproval && (
+        <ToolApprovalDialog
+          approval={activeApproval}
+          submitting={submittingApproval}
+          onDecision={(decision) => void decideToolApproval(decision)}
+        />
+      )}
     </section>
   )
 }

@@ -3,6 +3,7 @@ import { useState, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AIChatMessage, AIChatMessagePart } from './chatUtils'
 import { renderAIMessageMarkdown } from './messageSecurity'
+import { ToolCallCard } from './ToolCallCard'
 
 type MessageRendererProps = {
   message: AIChatMessage
@@ -16,6 +17,12 @@ function isTextPart(
   return part.type === 'text' || part.type === 'markdown' || part.type === 'code'
 }
 
+function isToolCallPart(
+  part: AIChatMessagePart,
+): part is Extract<AIChatMessagePart, { type: 'tool_call' }> {
+  return part.type === 'tool_call' && typeof part.toolCallId === 'string' && typeof part.toolName === 'string'
+}
+
 function copyText(message: AIChatMessage) {
   return `${message.parts.filter(isTextPart).map((part) => part.text).join('\n')}${message.streamText ?? ''}`.trim()
 }
@@ -24,6 +31,15 @@ export function MessageRenderer({ message, onRetry, retryDisabled }: MessageRend
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const canRetry = message.role === 'assistant' && ['completed', 'failed', 'cancelled', 'interrupted'].includes(message.status)
+  const toolResults = new Map(
+    message.parts
+      .filter((part): part is Extract<AIChatMessagePart, { type: 'tool_result' }> => part.type === 'tool_result')
+      .map((part) => [part.toolCallId, part]),
+  )
+  const latestToolCallIndex = new Map<string, number>()
+  message.parts.forEach((part, index) => {
+    if (isToolCallPart(part)) latestToolCallIndex.set(part.toolCallId, index)
+  })
 
   const handleCopy = async () => {
     const text = copyText(message)
@@ -76,6 +92,11 @@ export function MessageRenderer({ message, onRetry, retryDisabled }: MessageRend
           if (part.type === 'error') {
             return <div key={index} className="ai-message__error" role="alert">{String(part.message)}</div>
           }
+          if (isToolCallPart(part)) {
+            if (latestToolCallIndex.get(part.toolCallId) !== index) return null
+            return <ToolCallCard key={`${part.toolCallId}-${index}`} call={part} result={toolResults.get(part.toolCallId)} />
+          }
+          if (part.type === 'tool_result') return null
           if (part.type === 'image' || part.type === 'video' || part.type === 'file' || part.type === 'audio') {
             const Icon = part.type === 'image' ? Image : part.type === 'video' ? Video : File
             return (

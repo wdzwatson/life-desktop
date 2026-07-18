@@ -22,6 +22,17 @@ export type AIChatMediaPart = {
 export type AIChatMessagePart =
   | { type: 'text' | 'markdown' | 'code'; text: string; language?: string }
   | { type: 'error'; code: string; message: string; retryable: boolean }
+  | {
+      type: 'tool_call'
+      toolCallId: string
+      serverId: number
+      serverName?: string
+      toolName: string
+      risk?: 'read' | 'write' | 'command' | 'external_side_effect'
+      argumentsSummary?: string
+      status: 'proposed' | 'waiting_for_approval' | 'approved' | 'running' | 'completed' | 'failed' | 'rejected' | 'cancelled'
+    }
+  | { type: 'tool_result'; toolCallId: string; summary: string; attachmentAssetId?: number }
   | AIChatMediaPart
   | Record<string, unknown>
 
@@ -40,7 +51,20 @@ export type AIChatMessage = {
 }
 
 export type AIChatRunEvent = {
-  type: 'started' | 'text_delta' | 'usage' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
+  type:
+    | 'started'
+    | 'text_delta'
+    | 'usage'
+    | 'tool_proposed'
+    | 'approval_required'
+    | 'tool_running'
+    | 'tool_completed'
+    | 'tool_failed'
+    | 'tool_rejected'
+    | 'completed'
+    | 'failed'
+    | 'cancelled'
+    | 'interrupted'
   conversationId: number
   runId: number
   messageId: number
@@ -51,6 +75,26 @@ export type AIChatRunEvent = {
   usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number }
   finishReason?: string
   error?: { code: string; message: string; retryable: boolean }
+  toolCallId?: string
+  serverId?: number
+  serverName?: string
+  toolName?: string
+  risk?: 'read' | 'write' | 'command' | 'external_side_effect'
+  argumentsSummary?: string
+  status?: Extract<AIChatMessagePart, { type: 'tool_call' }>['status']
+  summary?: string
+}
+
+export type AIChatToolApproval = {
+  conversationId: number
+  runId: number
+  messageId: number
+  toolCallId: string
+  serverId: number
+  serverName: string
+  toolName: string
+  risk: 'read' | 'write' | 'command' | 'external_side_effect'
+  argumentsSummary: string
 }
 
 export type AIChatRunState = {
@@ -153,6 +197,49 @@ export function applyAIChatRunEvent(messages: AIChatMessage[], event: AIChatRunE
   const next = messages.map((message) => {
     if (message.id !== event.messageId) return message
     found = true
+    const updateToolStatus = (
+      status: Extract<AIChatMessagePart, { type: 'tool_call' }>['status'],
+    ) => message.parts.map((part) =>
+      part.type === 'tool_call' && part.toolCallId === event.toolCallId ? { ...part, status } : part,
+    )
+    if (event.type === 'tool_proposed' && event.toolCallId && event.serverId && event.toolName) {
+      const exists = message.parts.some((part) => part.type === 'tool_call' && part.toolCallId === event.toolCallId)
+      return {
+        ...message,
+        parts: exists ? message.parts : [...message.parts, {
+          type: 'tool_call' as const,
+          toolCallId: event.toolCallId,
+          serverId: event.serverId,
+          serverName: event.serverName,
+          toolName: event.toolName,
+          risk: event.risk,
+          argumentsSummary: event.argumentsSummary,
+          status: event.status ?? 'proposed',
+        }],
+      }
+    }
+    const toolStatus = event.type === 'approval_required'
+      ? 'waiting_for_approval'
+      : event.type === 'tool_running'
+        ? 'running'
+        : event.type === 'tool_completed'
+          ? 'completed'
+          : event.type === 'tool_failed'
+            ? 'failed'
+            : event.type === 'tool_rejected'
+              ? 'rejected'
+              : undefined
+    if (toolStatus && event.toolCallId) {
+      const parts = updateToolStatus(toolStatus)
+      const summary = event.summary ?? (event.type === 'tool_failed' ? event.error?.message : undefined)
+      const hasResult = parts.some((part) => part.type === 'tool_result' && part.toolCallId === event.toolCallId)
+      return {
+        ...message,
+        parts: summary && !hasResult
+          ? [...parts, { type: 'tool_result' as const, toolCallId: event.toolCallId, summary }]
+          : parts,
+      }
+    }
     return {
       ...message,
       status: terminalStatus ?? (event.type === 'started' ? 'streaming' : message.status),
@@ -163,7 +250,7 @@ export function applyAIChatRunEvent(messages: AIChatMessage[], event: AIChatRunE
       completedAt: terminalStatus ? event.timestamp : message.completedAt,
     } as AIChatMessage
   })
-  if (found || event.type === 'usage') return next
+  if (found || event.type === 'usage' || event.type.startsWith('tool_') || event.type === 'approval_required') return next
   const placeholder: AIChatMessage = {
     id: event.messageId,
     conversationId: event.conversationId,

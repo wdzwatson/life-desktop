@@ -40,7 +40,7 @@ export const AI_CONFIG_CHANNELS = [
   'ai:mcp:delete',
 ] as const
 
-export const AI_RUNTIME_CHANNELS = ['ai:runs:start', 'ai:runs:cancel'] as const
+export const AI_RUNTIME_CHANNELS = ['ai:runs:start', 'ai:runs:cancel', 'ai:runs:approveTool'] as const
 
 export const AI_CONVERSATION_CHANNELS = [
   'ai:conversations:list',
@@ -87,7 +87,7 @@ export type AIConfigIpcRegistrar = {
 }
 
 export type AIRuntimeIpcDependencies = {
-  getRuntime: () => Pick<AIAgentRuntime, 'start' | 'cancel'>
+  getRuntime: () => Pick<AIAgentRuntime, 'start' | 'cancel' | 'approve'>
 }
 
 export type AIConversationIpcDependencies = {
@@ -362,6 +362,8 @@ export function createAIRuntimeHandlers(
           data.runId === undefined ? undefined : requireId(data.runId, 'run ID'),
         ),
       ),
+    'ai:runs:approveTool': (_event, payload) =>
+      respondWithObject(payload, (data) => dependencies.getRuntime().approve(data)),
   }
 }
 

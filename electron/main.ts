@@ -224,6 +224,8 @@ function getAIAgentRuntime() {
     agents: new AIAgentService(db),
     providers: new AIProviderService(db, credentials),
     conversations,
+    mcp: getAIMcpManager(),
+    mcpConfig: new AIMcpConfigService(db, credentials),
   }
   aiAgentRuntime = new AIAgentRuntime({
     getServices: () => services,

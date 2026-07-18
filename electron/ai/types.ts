@@ -102,7 +102,10 @@ export type AIToolCallContentBlock = {
   type: 'tool_call'
   toolCallId: string
   serverId: number
+  serverName?: string
   toolName: string
+  risk?: AIToolRisk
+  argumentsSummary?: string
   status: AIToolCallStatus
 }
 

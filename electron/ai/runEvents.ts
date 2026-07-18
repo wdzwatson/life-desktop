@@ -1,4 +1,4 @@
-import type { AIErrorDetail } from './types'
+import type { AIErrorDetail, AIToolCallStatus, AIToolRisk } from './types'
 
 export const AI_RUN_EVENT_CHANNEL = 'ai:runs:event'
 
@@ -14,6 +14,29 @@ export type AIRunEvent =
   | (AIRunEventBase & { type: 'started'; triggerMessageId: number })
   | (AIRunEventBase & { type: 'text_delta'; delta: string })
   | (AIRunEventBase & {
+      type: 'tool_proposed'
+      toolCallId: string
+      serverId: number
+      serverName: string
+      toolName: string
+      risk: AIToolRisk
+      argumentsSummary: string
+      status: AIToolCallStatus
+    })
+  | (AIRunEventBase & {
+      type: 'approval_required'
+      toolCallId: string
+      serverId: number
+      serverName: string
+      toolName: string
+      risk: AIToolRisk
+      argumentsSummary: string
+    })
+  | (AIRunEventBase & { type: 'tool_running'; toolCallId: string })
+  | (AIRunEventBase & { type: 'tool_completed'; toolCallId: string; summary: string })
+  | (AIRunEventBase & { type: 'tool_failed'; toolCallId: string; error: AIErrorDetail })
+  | (AIRunEventBase & { type: 'tool_rejected'; toolCallId: string; summary: string })
+  | (AIRunEventBase & {
       type: 'usage'
       usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number }
     })
@@ -25,6 +48,29 @@ export type AIRunEvent =
 export type AIRunEventPayload =
   | { type: 'started'; triggerMessageId: number }
   | { type: 'text_delta'; delta: string }
+  | {
+      type: 'tool_proposed'
+      toolCallId: string
+      serverId: number
+      serverName: string
+      toolName: string
+      risk: AIToolRisk
+      argumentsSummary: string
+      status: AIToolCallStatus
+    }
+  | {
+      type: 'approval_required'
+      toolCallId: string
+      serverId: number
+      serverName: string
+      toolName: string
+      risk: AIToolRisk
+      argumentsSummary: string
+    }
+  | { type: 'tool_running'; toolCallId: string }
+  | { type: 'tool_completed'; toolCallId: string; summary: string }
+  | { type: 'tool_failed'; toolCallId: string; error: AIErrorDetail }
+  | { type: 'tool_rejected'; toolCallId: string; summary: string }
   | {
       type: 'usage'
       usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number }
