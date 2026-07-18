@@ -7,6 +7,7 @@ import test from 'node:test'
 import {
   buildCookieAccessVerificationArgs,
   deriveVideoEngineStatus,
+  DEFAULT_VIDEO_METADATA_TIMEOUT_MS,
   DEFAULT_VIDEO_TOOL_CHECK_TIMEOUT_MS,
   buildResolvedDownloadArgs,
   isVideoEngineReady,
@@ -30,6 +31,7 @@ import {
 
 test('video tool checks allow slow macOS managed yt-dlp startup', () => {
   assert.ok(DEFAULT_VIDEO_TOOL_CHECK_TIMEOUT_MS >= 45000)
+  assert.ok(DEFAULT_VIDEO_METADATA_TIMEOUT_MS >= 45000)
 })
 
 test('deriveVideoEngineStatus requires both yt-dlp and ffmpeg before downloads are ready', () => {

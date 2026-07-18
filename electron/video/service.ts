@@ -12,6 +12,7 @@ import { getManagedVideoToolInstallSupport, type ManagedVideoTool } from './tool
 import type { VideoCookieConfig, VideoDiagnostic, VideoQualityPreference } from './types'
 
 export const DEFAULT_VIDEO_TOOL_CHECK_TIMEOUT_MS = 60000
+export const DEFAULT_VIDEO_METADATA_TIMEOUT_MS = 60000
 export type VideoEngineLoadState = 'idle' | 'loading' | 'ready' | 'error'
 export interface VideoToolCheckItem {
   ok: boolean
@@ -417,7 +418,7 @@ export async function parseVideoUrl(settings: Record<string, any>, url: string) 
   const full = await runProcess(
     ytDlpPath,
     buildMetadataArgs({ url, flatPlaylist: false, cookieConfig }),
-    { timeoutMs: 30000 },
+    { timeoutMs: DEFAULT_VIDEO_METADATA_TIMEOUT_MS },
   )
   if (full.code === 0) {
     return normalizeYtDlpMetadata(JSON.parse(full.stdout), { fallbackUrl: url, wasFlatPlaylist: false })
@@ -428,7 +429,7 @@ export async function parseVideoUrl(settings: Record<string, any>, url: string) 
     const flat = await runProcess(
       ytDlpPath,
       buildMetadataArgs({ url, flatPlaylist: true, playlistEnd: 100, cookieConfig }),
-      { timeoutMs: 30000 },
+      { timeoutMs: DEFAULT_VIDEO_METADATA_TIMEOUT_MS },
     )
     if (flat.code === 0) {
       const result = normalizeYtDlpMetadata(JSON.parse(flat.stdout), {
