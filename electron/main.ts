@@ -40,8 +40,14 @@ import { classifyVideoDownloadFailure } from './video/downloadState'
 import { normalizeBulkVideoTagPayload } from '../src/views/videoStateUtils'
 import { VaultService, serializeVaultError } from './vault/service'
 import { getDirectDbAccessError } from './db/accessPolicy'
-import { registerAIConfigIpc } from './ai/ipc'
+import { registerAIConfigIpc, registerAIRuntimeIpc } from './ai/ipc'
 import { createSafeStorageCredentialAdapter } from './ai/safeStorageAdapter'
+import { AIAgentRuntime } from './ai/agentRuntime'
+import { AIAgentService } from './ai/agentService'
+import { AIConversationService } from './ai/conversationService'
+import { AICredentialService } from './ai/credentialService'
+import { AIProviderService } from './ai/providerService'
+import { AI_RUN_EVENT_CHANNEL } from './ai/runEvents'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -60,6 +66,7 @@ let schedulerInterval: NodeJS.Timeout | null = null
 let videoEngineStatus: VideoEngineStatus = createInitialVideoEngineStatus()
 let videoEngineLoadPromise: Promise<VideoEngineStatus> | null = null
 let vaultService: VaultService | null = null
+let aiAgentRuntime: AIAgentRuntime | null = null
 
 // Default Paths
 const BASE_DIR = path.join(app.getPath('home'), 'LifeOS')
@@ -161,6 +168,8 @@ function saveSettings(settings: any) {
 
 // Close and clear all open databases
 function closeUserDbs() {
+  aiAgentRuntime?.dispose()
+  aiAgentRuntime = null
   vaultService?.dispose()
   vaultService = null
   for (const db of openDbs.values()) {
@@ -171,6 +180,34 @@ function closeUserDbs() {
     }
   }
   openDbs.clear()
+}
+
+function getAIAgentRuntime() {
+  if (aiAgentRuntime) return aiAgentRuntime
+  const db = getUserDb('ai')
+  const credentialPath = path.join(
+    BASE_DIR,
+    'users',
+    activeUserId,
+    'config',
+    'ai-credentials.json',
+  )
+  const credentials = new AICredentialService(
+    credentialPath,
+    createSafeStorageCredentialAdapter(),
+  )
+  const conversations = new AIConversationService(db)
+  conversations.interruptUnfinishedRuns()
+  const services = {
+    agents: new AIAgentService(db),
+    providers: new AIProviderService(db, credentials),
+    conversations,
+  }
+  aiAgentRuntime = new AIAgentRuntime({
+    getServices: () => services,
+    emit: (event) => mainWindow?.webContents.send(AI_RUN_EVENT_CHANNEL, event),
+  })
+  return aiAgentRuntime
 }
 
 // Get or open user database connection
@@ -411,6 +448,10 @@ app.on('window-all-closed', () => {
   }
 })
 
+app.on('before-quit', () => {
+  closeUserDbs()
+})
+
 app.on('activate', () => {
   if (mainWindow === null) {
     createWindow()
@@ -645,6 +686,8 @@ ipcMain.handle('user:getCurrent', async () => {
 })
 
 ipcMain.handle('user:logout', async () => {
+  aiAgentRuntime?.dispose()
+  aiAgentRuntime = null
   vaultService?.lock()
   const settings = getSettings()
   const profile = settings.userProfiles[activeUserId]
@@ -1562,6 +1605,11 @@ registerAIConfigIpc(
       path.join(BASE_DIR, 'users', activeUserId, 'config', 'ai-credentials.json'),
     getCredentialCryptoAdapter: createSafeStorageCredentialAdapter,
   },
+)
+
+registerAIRuntimeIpc(
+  { handle: (channel, handler) => ipcMain.handle(channel, handler) },
+  { getRuntime: getAIAgentRuntime },
 )
 
 // IPC Handlers: Encrypted password vault

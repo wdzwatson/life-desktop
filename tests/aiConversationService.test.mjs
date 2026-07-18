@@ -166,6 +166,35 @@ test('run transitions save usage and enforce one-way terminal states', () => {
   context.db.close()
 })
 
+test('unfinished runs and streaming messages recover as interrupted after restart', () => {
+  const context = setup()
+  const conversation = createConversation(context)
+  const assistant = context.service.createMessage({
+    conversationId: conversation.id,
+    role: 'assistant',
+    status: 'streaming',
+    parts: [{ type: 'text', text: 'Partial result' }],
+  })
+  const run = context.service.createRun({
+    conversationId: conversation.id,
+    assistantMessageId: assistant.id,
+    agentSnapshot: { version: 1 },
+    status: 'running',
+  })
+  context.advance('2026-07-18T01:05:00.000Z')
+  const result = context.service.interruptUnfinishedRuns()
+
+  assert.deepEqual(result, { interruptedRunIds: [run.id], interruptedMessageIds: [assistant.id] })
+  assert.equal(context.service.getRun(run.id).status, 'interrupted')
+  assert.equal(context.service.getMessage(assistant.id).status, 'interrupted')
+  assert.equal(context.service.getMessage(assistant.id).parts[0].text, 'Partial result')
+  assert.deepEqual(context.service.interruptUnfinishedRuns(), {
+    interruptedRunIds: [],
+    interruptedMessageIds: [],
+  })
+  context.db.close()
+})
+
 test('tool calls store redacted inputs and follow approval execution transitions', () => {
   const context = setup()
   const conversation = createConversation(context)

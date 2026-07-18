@@ -2,7 +2,12 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import test from 'node:test'
-import { AI_CONFIG_CHANNELS, createAIConfigHandlers } from '../electron/ai/ipc.ts'
+import {
+  AI_CONFIG_CHANNELS,
+  AI_RUNTIME_CHANNELS,
+  createAIConfigHandlers,
+  createAIRuntimeHandlers,
+} from '../electron/ai/ipc.ts'
 
 test('AI configuration IPC exposes only the approved channel whitelist', () => {
   assert.equal(AI_CONFIG_CHANNELS.length, 28)
@@ -24,6 +29,34 @@ test('preload exposes structured AI methods without runtime credentials or gener
     assert.match(preload, new RegExp(`${method}:`))
   }
   assert.doesNotMatch(preload, /getAIMcpRuntime|getAIProviderCredential|executeAICommand|ai:sql/)
+})
+
+test('AI runtime IPC is isolated from configuration and exposes only start and cancel commands', async () => {
+  assert.deepEqual(AI_RUNTIME_CHANNELS, ['ai:runs:start', 'ai:runs:cancel'])
+  assert.equal(AI_RUNTIME_CHANNELS.some((channel) => AI_CONFIG_CHANNELS.includes(channel as any)), false)
+  const calls: unknown[] = []
+  const handlers = createAIRuntimeHandlers({
+    getRuntime: () => ({
+      start: (payload) => {
+        calls.push(payload)
+        return { runId: 4 }
+      },
+      cancel: (conversationId, runId) => {
+        calls.push({ conversationId, runId })
+        return { cancelled: true }
+      },
+    }) as any,
+  })
+  const started = await handlers['ai:runs:start']({}, {
+    conversationId: 1,
+    agentId: 2,
+    text: 'Hello',
+    attachmentAssetIds: [],
+  })
+  const cancelled = await handlers['ai:runs:cancel']({}, { conversationId: 1, runId: 4 })
+  assert.deepEqual(started, { success: true, data: { runId: 4 } })
+  assert.deepEqual(cancelled, { success: true, data: { cancelled: true } })
+  assert.equal(calls.length, 2)
 })
 
 test('AI IPC serializes invalid IDs and capabilities instead of invoking services', async () => {

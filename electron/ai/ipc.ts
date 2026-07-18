@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import type { AIAgentRuntime } from './agentRuntime'
 import { AIAgentService } from './agentService'
 import { AICredentialService, type AICredentialCryptoAdapter } from './credentialService'
 import { AIMcpConfigService } from './mcpConfigService'
@@ -37,7 +38,10 @@ export const AI_CONFIG_CHANNELS = [
   'ai:mcp:delete',
 ] as const
 
+export const AI_RUNTIME_CHANNELS = ['ai:runs:start', 'ai:runs:cancel'] as const
+
 type AIConfigChannel = (typeof AI_CONFIG_CHANNELS)[number]
+type AIRuntimeChannel = (typeof AI_RUNTIME_CHANNELS)[number]
 type AIHandler = (_event: unknown, payload?: unknown) => unknown | Promise<unknown>
 
 type AIConfigServices = {
@@ -54,6 +58,10 @@ export type AIConfigIpcDependencies = {
 
 export type AIConfigIpcRegistrar = {
   handle: (channel: string, handler: AIHandler) => void
+}
+
+export type AIRuntimeIpcDependencies = {
+  getRuntime: () => Pick<AIAgentRuntime, 'start' | 'cancel'>
 }
 
 function serializeError(error: unknown) {
@@ -285,4 +293,27 @@ export function registerAIConfigIpc(
 ) {
   const handlers = createAIConfigHandlers(dependencies)
   for (const channel of AI_CONFIG_CHANNELS) registrar.handle(channel, handlers[channel])
+}
+
+export function createAIRuntimeHandlers(
+  dependencies: AIRuntimeIpcDependencies,
+): Record<AIRuntimeChannel, AIHandler> {
+  return {
+    'ai:runs:start': (_event, payload) => respond(() => dependencies.getRuntime().start(payload)),
+    'ai:runs:cancel': (_event, payload) =>
+      respondWithObject(payload, (data) =>
+        dependencies.getRuntime().cancel(
+          requireId(data.conversationId, 'conversation ID'),
+          data.runId === undefined ? undefined : requireId(data.runId, 'run ID'),
+        ),
+      ),
+  }
+}
+
+export function registerAIRuntimeIpc(
+  registrar: AIConfigIpcRegistrar,
+  dependencies: AIRuntimeIpcDependencies,
+) {
+  const handlers = createAIRuntimeHandlers(dependencies)
+  for (const channel of AI_RUNTIME_CHANNELS) registrar.handle(channel, handlers[channel])
 }

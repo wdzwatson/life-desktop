@@ -540,6 +540,47 @@ export class AIConversationService {
       .all(conversationId, normalizedLimit) as RunRow[]).map((row) => this.toRun(row))
   }
 
+  interruptUnfinishedRuns() {
+    const now = this.now().toISOString()
+    const rows = this.db
+      .prepare(
+        `
+        SELECT id, assistant_message_id
+        FROM ai_runs
+        WHERE status IN ('queued', 'running', 'waiting_for_tool', 'waiting_for_approval')
+        ORDER BY id
+        `,
+      )
+      .all() as Array<{ id: number; assistant_message_id: number | null }>
+    if (rows.length === 0) return { interruptedRunIds: [], interruptedMessageIds: [] }
+    const interruptedMessageIds: number[] = []
+    this.db.transaction(() => {
+      for (const row of rows) {
+        this.db
+          .prepare(
+            `
+            UPDATE ai_runs SET status = 'interrupted', current_stage = 'interrupted',
+              error_code = 'cancelled', error_message = 'The previous application session ended before this run completed.',
+              completed_at = ?, last_activity_at = ?
+            WHERE id = ?
+            `,
+          )
+          .run(now, now, row.id)
+        if (row.assistant_message_id === null) continue
+        const result = this.db
+          .prepare(
+            `
+            UPDATE ai_messages SET status = 'interrupted', completed_at = ?
+            WHERE id = ? AND status IN ('pending', 'streaming')
+            `,
+          )
+          .run(now, row.assistant_message_id)
+        if (result.changes > 0) interruptedMessageIds.push(row.assistant_message_id)
+      }
+    })()
+    return { interruptedRunIds: rows.map((row) => row.id), interruptedMessageIds }
+  }
+
   transitionRun(
     id: number,
     status: AIRunStatus,

@@ -89,6 +89,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAIMcpDependencies: (id: number) => ipcRenderer.invoke('ai:mcp:dependencies', { id }),
   deleteAIMcpServer: (id: number) => ipcRenderer.invoke('ai:mcp:delete', { id }),
 
+  // AI conversation runtime. Events contain public run state only; credentials stay in main.
+  startAIRun: (input: unknown) => ipcRenderer.invoke('ai:runs:start', input),
+  cancelAIRun: (conversationId: number, runId?: number) =>
+    ipcRenderer.invoke('ai:runs:cancel', { conversationId, runId }),
+  onAIRunEvent: (callback: (data: unknown) => void) => {
+    const subscription = (_event: unknown, data: unknown) => callback(data)
+    ipcRenderer.on('ai:runs:event', subscription)
+    return () => {
+      ipcRenderer.removeListener('ai:runs:event', subscription)
+    }
+  },
+
   // Encrypted password vault
   getVaultStatus: () => ipcRenderer.invoke('vault:status'),
   setupVault: (masterPassword: string) => ipcRenderer.invoke('vault:setup', masterPassword),

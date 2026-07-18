@@ -37,8 +37,8 @@
 | AT-11 | MCP 管理与连接诊断界面 | B | AT-08 | 已完成 |
 | AT-12 | 会话、消息与运行记录服务 | B | AT-02 | 已完成 |
 | AT-13 | OpenAI-compatible 流式适配器 | B | AT-01、AT-04 | 已完成 |
-| AT-14 | 文本 Agent 运行器与取消机制 | B | AT-05、AT-12、AT-13 | 进行中 |
-| AT-15 | 对话工作区、历史、流式与重试 UI | B | AT-08、AT-12、AT-14 | 待开始 |
+| AT-14 | 文本 Agent 运行器与取消机制 | B | AT-05、AT-12、AT-13 | 已完成 |
+| AT-15 | 对话工作区、历史、流式与重试 UI | B | AT-08、AT-12、AT-14 | 进行中 |
 | AT-16 | MCP HTTP/SSE/stdio 连接管理器 | C | AT-06 | 待开始 |
 | AT-17 | 工具调用循环、授权与工具消息 UI | C | AT-14、AT-15、AT-16 | 待开始 |
 | AT-18 | AI 媒体存储与安全资源协议 | D | AT-02 | 待开始 |
@@ -630,7 +630,7 @@
 
 ### AT-14 文本 Agent 运行器与取消机制
 
-状态：进行中
+状态：已完成
 
 目标：连接 Agent、历史、供应商和运行状态。
 
@@ -661,9 +661,23 @@
 
 建议提交：`feat: run streaming AI conversations`
 
+完成记录：
+
+- 针对性测试：`tests/aiAgentRuntime.test.ts` 与 `tests/aiIpcContract.test.ts`，11 项通过；`tests/aiConversationService.test.mjs`，10 项通过。
+- 全量回归：`npm test`，312 项主测试及包含会话恢复在内的全部数据库专项测试通过。
+- 静态检查：`npm run lint` 通过。
+- 构建检查：`npm run build` 通过。
+- 流式检查：运行器加载 Agent 快照、系统提示词和受上下文上限约束的有效历史，持续发布文本与用量事件，并将多个增量批量写入 Assistant 消息。
+- 中止检查：每次运行使用独立 `AbortController`；停止、退出、关闭数据库和切换用户均会中止底层供应商请求，保留已有文本并写入单一终态。
+- 恢复检查：应用异常结束后遗留的 queued、running、waiting 状态运行与对应流式消息会在下次运行时幂等恢复为 interrupted。
+- 事件检查：所有 Renderer 事件均携带稳定的 conversationId、runId、messageId、递增 sequence 和 timestamp，切换会话不会串流。
+- 安全检查：运行 IPC 与配置 IPC 白名单分离；Renderer 只能启动、取消和订阅公开事件，API Key、自定义认证头及工具原始参数不会跨越 preload。
+- 影响检查：全量回归通过；未启用 MCP 工具执行，工具循环仍由 AT-16、AT-17 接入。
+- 遗留风险：对话历史管理、重试与重新生成 UI 由 AT-15 完成；MCP 工具调用由 AT-16、AT-17 完成。
+
 ### AT-15 对话工作区、历史、流式与重试 UI
 
-状态：待开始
+状态：进行中
 
 目标：交付可日常使用的文本聊天体验。
 
