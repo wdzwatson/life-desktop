@@ -48,6 +48,7 @@ import {
   registerAIMcpRuntimeIpc,
   registerAIRuntimeIpc,
   registerAIImageIpc,
+  registerAIStorageIpc,
   registerAIVideoIpc,
 } from './ai/ipc'
 import { createSafeStorageCredentialAdapter } from './ai/safeStorageAdapter'
@@ -66,6 +67,9 @@ import { AIVideoAdapter } from './ai/providers/videoAdapter'
 import { AIVideoGenerationService } from './ai/videoGenerationService'
 import { AIVideoAssetService } from './ai/videoAssetService'
 import { AIServiceError } from './ai/types'
+import { AIRecoveryService } from './ai/recoveryService'
+import { AI_SCHEMA_VERSION } from './ai/schema'
+import { AIStorageService } from './ai/storageService'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -88,6 +92,7 @@ let aiAgentRuntime: AIAgentRuntime | null = null
 let aiMcpManager: AIMcpManager | null = null
 const aiImageControllers = new Set<AbortController>()
 const aiVideoControllers = new Set<AbortController>()
+let aiRecoveryController: AbortController | null = null
 
 // Default Paths
 const BASE_DIR = path.join(app.getPath('home'), 'LifeOS')
@@ -198,6 +203,8 @@ function saveSettings(settings: any) {
 
 // Close and clear all open databases
 function closeUserDbs() {
+  aiRecoveryController?.abort()
+  aiRecoveryController = null
   for (const controller of aiImageControllers) controller.abort()
   aiImageControllers.clear()
   for (const controller of aiVideoControllers) controller.abort()
@@ -245,7 +252,6 @@ function getAIAgentRuntime() {
     createSafeStorageCredentialAdapter(),
   )
   const conversations = new AIConversationService(db)
-  conversations.interruptUnfinishedRuns()
   const services = {
     agents: new AIAgentService(db),
     providers: new AIProviderService(db, credentials),
@@ -336,7 +342,7 @@ function getAIVideoAssetService() {
         await fs.promises.rm(outputPath, { force: true }).catch(() => undefined)
       }
     },
-    createPoster: async ({ filePath, providerId, providerTaskId }) => {
+    createPoster: async ({ filePath, providerId, providerTaskId, signal }) => {
       const posterPath = path.join(app.getPath('temp'), `life-ai-video-poster-${crypto.randomUUID()}.jpg`)
       try {
         const ffmpegPath = resolveVideoToolPath(getVideoToolSettings(), 'ffmpeg')
@@ -351,7 +357,10 @@ function getAIVideoAssetService() {
           '-vf',
           'scale=1280:-1',
           posterPath,
-        ], { timeoutMs: 30000 })
+        ], { timeoutMs: 30000, signal })
+        if (signal?.aborted) {
+          throw new AIServiceError({ code: 'cancelled', message: 'Video poster generation was cancelled.', retryable: false })
+        }
         if (result.code !== 0 || !fs.existsSync(posterPath)) return undefined
         const base64 = await fs.promises.readFile(posterPath, 'base64')
         return await getAIMediaService().storeBase64({
@@ -431,6 +440,49 @@ function getAIMediaService() {
   return new AIMediaService({ db: getUserDb('ai'), mediaRoot: getAIMediaRoot() })
 }
 
+function getAIStorageService() {
+  const settings = getSettings()
+  const configuredLimit = Number(settings.aiMediaMaxBytes)
+  return new AIStorageService({
+    db: getUserDb('ai'),
+    mediaRoot: getAIMediaRoot(),
+    media: getAIMediaService(),
+    conversations: new AIConversationService(getUserDb('ai')),
+    clearCredentials: () => new AICredentialService(
+      path.join(BASE_DIR, 'users', activeUserId, 'config', 'ai-credentials.json'),
+      createSafeStorageCredentialAdapter(),
+    ).clear(),
+    capacityLimitBytes: Number.isInteger(configuredLimit) && configuredLimit > 0
+      ? configuredLimit
+      : undefined,
+  })
+}
+
+function startAIRecovery() {
+  aiRecoveryController?.abort()
+  const controller = new AbortController()
+  aiRecoveryController = controller
+  const service = new AIRecoveryService({
+    db: getUserDb('ai'),
+    conversations: new AIConversationService(getUserDb('ai')),
+    resumeVideo: (assetId, signal) => getAIVideoAssetService().resume({ assetId, signal }),
+  })
+  void service.recover(controller.signal)
+    .then(async () => {
+      if (controller.signal.aborted) return
+      const settings = getSettings()
+      if (settings.aiMediaCleanupPolicy !== 'auto_unreferenced') return
+      const maxMediaBytes = Number(settings.aiMediaMaxBytes)
+      await getAIStorageService().enforceCapacity(
+        Number.isInteger(maxMediaBytes) && maxMediaBytes > 0 ? maxMediaBytes : undefined,
+      )
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      if (aiRecoveryController === controller) aiRecoveryController = null
+    })
+}
+
 function setupAIMediaProtocol() {
   protocol.handle('life-ai-asset', (request) => handleAIMediaProtocolRequest({
     request,
@@ -456,6 +508,7 @@ function switchUserSession(userId: string) {
 
   // Initialize SQLite schemas
   initializeUserDatabase(dbDir)
+  startAIRecovery()
 
   // Update settings.json lastUserId
   const settings = getSettings()
@@ -983,11 +1036,13 @@ ipcMain.handle('backup:inspect', async (_, { filePath }: { filePath: string }) =
 })
 
 ipcMain.handle('backup:create', async (_, { outputDir }: { outputDir: string }) => {
+  let databasesClosed = false
   try {
     if (!outputDir || typeof outputDir !== 'string') {
       return { success: false, error: 'Backup destination is required.' }
     }
     closeUserDbs()
+    databasesClosed = true
     const settings = getSettings()
     const result = createLifeOsBackupPackage({
       appVersion: app.getVersion(),
@@ -996,10 +1051,13 @@ ipcMain.handle('backup:create', async (_, { outputDir }: { outputDir: string }) 
       settingsFile: SETTINGS_FILE,
       userId: activeUserId,
       videoDownloadDir: settings.videoDownloadDir,
+      aiSchemaVersion: AI_SCHEMA_VERSION,
     })
     return { success: true, data: result }
   } catch (error: any) {
     return { success: false, error: error?.message || String(error) }
+  } finally {
+    if (databasesClosed) startAIRecovery()
   }
 })
 
@@ -1843,9 +1901,23 @@ registerAIVideoIpc(
   },
 )
 
+registerAIStorageIpc(
+  { handle: (channel, handler) => ipcMain.handle(channel, handler) },
+  { getService: getAIStorageService },
+)
+
 registerAIConversationIpc(
   { handle: (channel, handler) => ipcMain.handle(channel, handler) },
-  { getDb: () => getUserDb('ai'), getRuntime: getAIAgentRuntime },
+  {
+    getDb: () => getUserDb('ai'),
+    getRuntime: getAIAgentRuntime,
+    deleteConversation: async (id, deleteUnreferencedMedia) => {
+      if (!deleteUnreferencedMedia) return new AIConversationService(getUserDb('ai')).deleteConversation(id)
+      const storage = getAIStorageService()
+      const preview = await storage.previewCleanup({ scope: 'conversation', conversationId: id })
+      return storage.cleanup({ scope: 'conversation', conversationId: id, planHash: preview.planHash })
+    },
+  },
 )
 
 registerAIMcpRuntimeIpc(

@@ -8,12 +8,14 @@ import {
   AI_MCP_RUNTIME_CHANNELS,
   AI_IMAGE_CHANNELS,
   AI_VIDEO_CHANNELS,
+  AI_STORAGE_CHANNELS,
   AI_RUNTIME_CHANNELS,
   createAIConfigHandlers,
   createAIConversationHandlers,
   createAIMcpRuntimeHandlers,
   createAIRuntimeHandlers,
   createAIVideoHandlers,
+  createAIStorageHandlers,
 } from '../electron/ai/ipc.ts'
 
 test('AI configuration IPC exposes only the approved channel whitelist', () => {
@@ -43,6 +45,9 @@ test('preload exposes structured AI methods without runtime credentials or gener
     'onAIRunEvent',
     'generateAIImages',
     'generateAIVideos',
+    'getAIStorageUsage',
+    'previewAIStorageCleanup',
+    'cleanAIStorage',
     'saveAIAsset',
     'revealAIAsset',
   ]) {
@@ -74,6 +79,30 @@ test('video generation IPC validates identifiers before creating a provider serv
   assert.equal(invalid.success, false)
   assert.equal(invalid.error.code, 'invalid_input')
   assert.equal(opened, 0)
+})
+
+test('AI storage IPC exposes preview-gated cleanup and validates scope before opening storage', async () => {
+  assert.deepEqual(AI_STORAGE_CHANNELS, [
+    'ai:storage:usage',
+    'ai:storage:previewCleanup',
+    'ai:storage:cleanup',
+  ])
+  let opened = 0
+  const handlers = createAIStorageHandlers({
+    getService: () => {
+      opened += 1
+      throw new Error('should not create service')
+    },
+  })
+  const invalidScope = await handlers['ai:storage:previewCleanup']({}, { scope: 'filesystem' })
+  assert.equal(invalidScope.success, false)
+  assert.equal(invalidScope.error.code, 'invalid_input')
+  const missingPreview = await handlers['ai:storage:cleanup']({}, { scope: 'all_media' })
+  assert.equal(missingPreview.success, false)
+  assert.equal(missingPreview.error.code, 'invalid_input')
+  assert.equal(opened, 0)
+  const preload = readFileSync(path.resolve('electron/preload.ts'), 'utf8')
+  assert.doesNotMatch(preload, /deleteAIFile|cleanDirectory|listAIFilePaths|ai:storage:execute/)
 })
 
 test('MCP runtime IPC exposes connection diagnostics without a renderer tool execution channel', async () => {

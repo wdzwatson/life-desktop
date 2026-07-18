@@ -318,6 +318,7 @@ export class AIMediaService {
     originalName?: string
     timeoutMs?: number
     signal?: AbortSignal
+    preserveOnAbort?: boolean
   }) {
     const mediaType = requireMediaType(input.mediaType)
     const initialUrl = await assertSafeAIMediaUrl(input.url, this.lookup)
@@ -510,7 +511,7 @@ export class AIMediaService {
             timedOut ? 'The media download timed out.' : controller.signal.aborted ? 'The media download was cancelled.' : 'The media download failed.',
             !controller.signal.aborted,
           )
-      this.failRecord(assetId, mapped.detail)
+      if (!(input.preserveOnAbort && input.signal?.aborted)) this.failRecord(assetId, mapped.detail)
       throw mapped
     } finally {
       clearTimeout(timeout)
@@ -545,17 +546,34 @@ export class AIMediaService {
     const assetId = requireId(assetIdValue, 'media asset ID')
     const row = this.dependencies.db.prepare('SELECT local_path FROM ai_media_assets WHERE id = ?').get(assetId) as { local_path: string | null } | undefined
     if (!row) throw mediaError('not_found', 'AI media asset was not found.')
+    let sourcePath: string | undefined
+    let trashPath: string | undefined
     if (row.local_path) {
-      const filePath = await this.resolveRegisteredPath(row.local_path)
-      await fs.promises.rm(filePath, { force: true })
+      sourcePath = await this.resolveRegisteredPath(row.local_path)
+      const trashDir = path.join(this.dependencies.mediaRoot, '.trash')
+      await fs.promises.mkdir(trashDir, { recursive: true, mode: 0o700 })
+      trashPath = path.join(trashDir, `${this.createId()}.trash`)
+      await fs.promises.rename(sourcePath, trashPath)
     }
-    this.dependencies.db.prepare('DELETE FROM ai_media_assets WHERE id = ?').run(assetId)
+    try {
+      this.dependencies.db.prepare('DELETE FROM ai_media_assets WHERE id = ?').run(assetId)
+    } catch {
+      if (sourcePath && trashPath) {
+        await fs.promises.mkdir(path.dirname(sourcePath), { recursive: true, mode: 0o700 }).catch(() => undefined)
+        await fs.promises.rename(trashPath, sourcePath).catch(() => undefined)
+      }
+      throw mediaError('storage_error', 'The AI media record could not be deleted.')
+    }
+    if (trashPath) await fs.promises.rm(trashPath, { force: true }).catch(() => undefined)
     return { deleted: true, assetId }
   }
 
-  async getRegisteredFilePath(assetIdValue: unknown) {
+  async getRegisteredFilePath(assetIdValue: unknown, includeProcessing = false) {
     const assetId = requireId(assetIdValue, 'media asset ID')
-    const row = this.dependencies.db.prepare("SELECT local_path FROM ai_media_assets WHERE id = ? AND status = 'completed'").get(assetId) as { local_path: string | null } | undefined
+    const row = this.dependencies.db.prepare(`
+      SELECT local_path FROM ai_media_assets
+      WHERE id = ? AND status IN (${includeProcessing ? "'completed', 'processing'" : "'completed'"})
+    `).get(assetId) as { local_path: string | null } | undefined
     if (!row?.local_path) throw mediaError('not_found', 'Completed AI media asset was not found.')
     return this.resolveRegisteredPath(row.local_path)
   }

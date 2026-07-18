@@ -3,6 +3,7 @@ import type { AIAgentRuntime } from './agentRuntime'
 import type { AIMcpManager } from './mcpManager'
 import type { AIImageGenerationService } from './imageGenerationService'
 import type { AIVideoAssetService } from './videoAssetService'
+import type { AIStorageService } from './storageService'
 import { AIAgentService } from './agentService'
 import { AICredentialService, type AICredentialCryptoAdapter } from './credentialService'
 import { AIConversationService } from './conversationService'
@@ -45,6 +46,7 @@ export const AI_CONFIG_CHANNELS = [
 export const AI_RUNTIME_CHANNELS = ['ai:runs:start', 'ai:runs:cancel', 'ai:runs:approveTool'] as const
 export const AI_IMAGE_CHANNELS = ['ai:images:generate'] as const
 export const AI_VIDEO_CHANNELS = ['ai:videos:generate'] as const
+export const AI_STORAGE_CHANNELS = ['ai:storage:usage', 'ai:storage:previewCleanup', 'ai:storage:cleanup'] as const
 
 export const AI_CONVERSATION_CHANNELS = [
   'ai:conversations:list',
@@ -68,6 +70,7 @@ type AIConfigChannel = (typeof AI_CONFIG_CHANNELS)[number]
 type AIRuntimeChannel = (typeof AI_RUNTIME_CHANNELS)[number]
 type AIImageChannel = (typeof AI_IMAGE_CHANNELS)[number]
 type AIVideoChannel = (typeof AI_VIDEO_CHANNELS)[number]
+type AIStorageChannel = (typeof AI_STORAGE_CHANNELS)[number]
 type AIConversationChannel = (typeof AI_CONVERSATION_CHANNELS)[number]
 type AIMcpRuntimeChannel = (typeof AI_MCP_RUNTIME_CHANNELS)[number]
 type AIHandler = (_event: unknown, payload?: unknown) => unknown | Promise<unknown>
@@ -108,9 +111,14 @@ export type AIVideoIpcDependencies = {
   createAbortScope?: () => { signal: AbortSignal; dispose: () => void }
 }
 
+export type AIStorageIpcDependencies = {
+  getService: () => Pick<AIStorageService, 'getUsage' | 'previewCleanup' | 'cleanup'>
+}
+
 export type AIConversationIpcDependencies = {
   getDb: () => Database.Database
   getRuntime: () => Pick<AIAgentRuntime, 'isConversationActive'>
+  deleteConversation?: (id: number, deleteUnreferencedMedia: boolean) => unknown | Promise<unknown>
 }
 
 export type AIMcpRuntimeIpcDependencies = {
@@ -461,6 +469,51 @@ export function registerAIVideoIpc(registrar: AIConfigIpcRegistrar, dependencies
   for (const channel of AI_VIDEO_CHANNELS) registrar.handle(channel, handlers[channel])
 }
 
+function requireCleanupInput(data: Record<string, unknown>, requirePlanHash = false) {
+  const scope = data.scope
+  if (!['unreferenced', 'media_type', 'conversation', 'capacity', 'all_media', 'all_ai'].includes(String(scope))) {
+    throw new AIServiceError({ code: 'invalid_input', message: 'Invalid cleanup scope.', retryable: false })
+  }
+  const mediaType = data.mediaType
+  if (mediaType !== undefined && !['image', 'video', 'audio', 'file'].includes(String(mediaType))) {
+    throw new AIServiceError({ code: 'invalid_input', message: 'Invalid media type.', retryable: false })
+  }
+  const planHash = data.planHash
+  if (requirePlanHash && (typeof planHash !== 'string' || !/^[a-f0-9]{64}$/.test(planHash))) {
+    throw new AIServiceError({ code: 'invalid_input', message: 'Cleanup preview confirmation is required.', retryable: false })
+  }
+  return {
+    scope: scope as 'unreferenced' | 'media_type' | 'conversation' | 'capacity' | 'all_media' | 'all_ai',
+    ...(mediaType === undefined ? {} : { mediaType: mediaType as 'image' | 'video' | 'audio' | 'file' }),
+    ...(data.conversationId === undefined ? {} : { conversationId: requireId(data.conversationId, 'conversation ID') }),
+    ...(data.maxMediaBytes === undefined ? {} : { maxMediaBytes: requireId(data.maxMediaBytes, 'media capacity') }),
+    ...(typeof planHash === 'string' ? { planHash } : {}),
+  }
+}
+
+export function createAIStorageHandlers(
+  dependencies: AIStorageIpcDependencies,
+): Record<AIStorageChannel, AIHandler> {
+  return {
+    'ai:storage:usage': () => respond(() => dependencies.getService().getUsage()),
+    'ai:storage:previewCleanup': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const input = requireCleanupInput(data)
+        return dependencies.getService().previewCleanup(input)
+      }),
+    'ai:storage:cleanup': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const input = requireCleanupInput(data, true) as Parameters<AIStorageService['cleanup']>[0]
+        return dependencies.getService().cleanup(input)
+      }),
+  }
+}
+
+export function registerAIStorageIpc(registrar: AIConfigIpcRegistrar, dependencies: AIStorageIpcDependencies) {
+  const handlers = createAIStorageHandlers(dependencies)
+  for (const channel of AI_STORAGE_CHANNELS) registrar.handle(channel, handlers[channel])
+}
+
 export function createAIConversationHandlers(
   dependencies: AIConversationIpcDependencies,
 ): Record<AIConversationChannel, AIHandler> {
@@ -521,11 +574,16 @@ export function createAIConversationHandlers(
             retryable: false,
           })
         }
+        const deleteUnreferencedMedia =
+          data.deleteUnreferencedMedia === undefined
+            ? false
+            : requireBoolean(data.deleteUnreferencedMedia, 'media deletion option')
+        if (dependencies.deleteConversation) {
+          return dependencies.deleteConversation(id, deleteUnreferencedMedia)
+        }
         return services().conversations.deleteConversation(id, {
           deleteUnreferencedMedia:
-            data.deleteUnreferencedMedia === undefined
-              ? false
-              : requireBoolean(data.deleteUnreferencedMedia, 'media deletion option'),
+            deleteUnreferencedMedia,
         })
       }),
     'ai:conversations:messages': (_event, payload) =>

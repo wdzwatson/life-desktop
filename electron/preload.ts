@@ -104,6 +104,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ) => ipcRenderer.invoke('ai:runs:approveTool', { runId, toolCallId, decision }),
   generateAIImages: (input: unknown) => ipcRenderer.invoke('ai:images:generate', input),
   generateAIVideos: (input: unknown) => ipcRenderer.invoke('ai:videos:generate', input),
+  getAIStorageUsage: () => ipcRenderer.invoke('ai:storage:usage'),
+  previewAIStorageCleanup: (input: unknown) => ipcRenderer.invoke('ai:storage:previewCleanup', input),
+  cleanAIStorage: (input: unknown) => ipcRenderer.invoke('ai:storage:cleanup', input),
   onAIRunEvent: (callback: (data: unknown) => void) => {
     const subscription = (_event: unknown, data: unknown) => callback(data)
     ipcRenderer.on('ai:runs:event', subscription)

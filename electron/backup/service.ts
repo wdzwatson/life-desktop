@@ -22,6 +22,10 @@ export type BackupManifest = {
     noteFiles: boolean
     bookFiles: boolean
     defaultVideoFiles: boolean
+    aiDatabase: boolean
+    aiMediaFiles: boolean
+    aiSchemaVersion: number | null
+    aiCredentials: false
     externalVideoDirectory: string | null
     sensitiveVaultLegacyBackups: false
   }
@@ -36,6 +40,7 @@ export type CreateBackupInput = {
   settingsFile: string
   userId: string
   videoDownloadDir?: string
+  aiSchemaVersion?: number
   now?: () => Date
 }
 
@@ -165,6 +170,9 @@ function readValidatedBackupArchive(archivePath: string) {
     }
     if (file.path.includes('/vault-sensitive-backups/')) {
       throw new Error('Sensitive vault backups cannot be restored.')
+    }
+    if (path.posix.basename(file.path) === 'ai-credentials.json') {
+      throw new Error('AI credentials cannot be restored from a standard backup.')
     }
 
     const entry = zip.getEntry(file.path)
@@ -343,9 +351,8 @@ export function createLifeOsBackupPackage(input: CreateBackupInput): CreateBacku
 
   const excludedSegments = new Set(['vault-sensitive-backups'])
   for (const filePath of walkFiles(userDir, (candidate) =>
-    candidate
-      .split(path.sep)
-      .some((segment) => excludedSegments.has(segment)),
+    candidate.split(path.sep).some((segment) => excludedSegments.has(segment))
+      || path.basename(candidate) === 'ai-credentials.json',
   )) {
     addFile(filePath, path.join('users', input.userId, path.relative(userDir, filePath)))
   }
@@ -363,6 +370,12 @@ export function createLifeOsBackupPackage(input: CreateBackupInput): CreateBacku
       noteFiles: fs.existsSync(path.join(userDir, 'files', 'notes')),
       bookFiles: fs.existsSync(path.join(userDir, 'files', 'books')),
       defaultVideoFiles: fs.existsSync(defaultVideoDir),
+      aiDatabase: fs.existsSync(path.join(userDir, 'database', 'ai.db')),
+      aiMediaFiles: fs.existsSync(path.join(userDir, 'files', 'ai-media')),
+      aiSchemaVersion: fs.existsSync(path.join(userDir, 'database', 'ai.db'))
+        ? input.aiSchemaVersion ?? null
+        : null,
+      aiCredentials: false,
       externalVideoDirectory: hasExternalVideoDir ? configuredVideoDir : null,
       sensitiveVaultLegacyBackups: false,
     },

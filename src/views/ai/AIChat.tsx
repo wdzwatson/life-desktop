@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bot, Database, MessageSquare, Plug, RefreshCw, Settings2 } from 'lucide-react'
+import { Bot, Database, HardDrive, MessageSquare, Plug, RefreshCw, Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import './AIChat.css'
 import { AgentManager } from './AgentManager'
 import { ChatWorkspace, type AIChatAgent } from './ChatWorkspace'
 import { McpManager } from './McpManager'
 import { ProviderManager } from './ProviderManager'
+import { StorageManager } from './StorageManager'
 
-type AIView = 'chat' | 'providers' | 'agents' | 'mcp'
+type AIView = 'chat' | 'providers' | 'agents' | 'mcp' | 'storage'
 type ConfigCounts = { providers: number; agents: number; mcp: number }
 type LoadState = 'loading' | 'ready' | 'error'
 
@@ -57,6 +58,7 @@ export function AIChat() {
       { id: 'providers' as const, label: t('aiChat.nav_providers'), icon: Database, count: counts.providers },
       { id: 'agents' as const, label: t('aiChat.nav_agents'), icon: Bot, count: counts.agents },
       { id: 'mcp' as const, label: t('aiChat.nav_mcp'), icon: Plug, count: counts.mcp },
+      { id: 'storage' as const, label: t('aiChat.nav_storage'), icon: HardDrive },
     ],
     [counts, t],
   )
@@ -79,7 +81,7 @@ export function AIChat() {
           className="ai-chat-icon-button"
           aria-label={t('aiChat.settings')}
           title={t('aiChat.settings')}
-          onClick={() => setActiveView('providers')}
+          onClick={() => setActiveView('storage')}
         >
           <Settings2 size={17} />
         </button>
@@ -147,6 +149,8 @@ export function AIChat() {
         {loadState === 'ready' && activeView === 'mcp' && (
           <McpManager onChanged={loadConfiguration} />
         )}
+
+        {loadState === 'ready' && activeView === 'storage' && <StorageManager />}
 
         {loadState === 'ready' && activeView === 'chat' && hasProvider && (
           <ChatWorkspace agents={agents} onOpenAgents={() => setActiveView('agents')} />

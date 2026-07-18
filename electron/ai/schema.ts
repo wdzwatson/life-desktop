@@ -1,6 +1,11 @@
 import type Database from 'better-sqlite3'
 
-export const AI_SCHEMA_VERSION = 1
+export const AI_SCHEMA_VERSION = 2
+
+function hasColumn(db: Database.Database, table: string, column: string) {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>)
+    .some((item) => item.name === column)
+}
 
 function createSchemaObjects(db: Database.Database) {
   db.exec(`
@@ -136,6 +141,8 @@ function createSchemaObjects(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS ai_media_assets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       provider_id INTEGER,
+      run_id INTEGER,
+      assistant_message_id INTEGER,
       media_type TEXT NOT NULL CHECK(media_type IN ('image', 'video', 'audio', 'file')),
       mime_type TEXT NOT NULL,
       local_path TEXT,
@@ -154,7 +161,9 @@ function createSchemaObjects(db: Database.Database) {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       last_accessed_at TEXT,
-      FOREIGN KEY (provider_id) REFERENCES ai_providers(id) ON DELETE SET NULL
+      FOREIGN KEY (provider_id) REFERENCES ai_providers(id) ON DELETE SET NULL,
+      FOREIGN KEY (run_id) REFERENCES ai_runs(id) ON DELETE SET NULL,
+      FOREIGN KEY (assistant_message_id) REFERENCES ai_messages(id) ON DELETE SET NULL
     );
 
     CREATE UNIQUE INDEX IF NOT EXISTS ai_media_assets_local_path_unique
@@ -235,6 +244,18 @@ function createSchemaObjects(db: Database.Database) {
   `)
 }
 
+function migrateSchema(db: Database.Database, currentVersion: number) {
+  if (currentVersion < 2) {
+    if (!hasColumn(db, 'ai_media_assets', 'run_id')) {
+      db.exec('ALTER TABLE ai_media_assets ADD COLUMN run_id INTEGER REFERENCES ai_runs(id) ON DELETE SET NULL')
+    }
+    if (!hasColumn(db, 'ai_media_assets', 'assistant_message_id')) {
+      db.exec('ALTER TABLE ai_media_assets ADD COLUMN assistant_message_id INTEGER REFERENCES ai_messages(id) ON DELETE SET NULL')
+    }
+    db.exec('CREATE INDEX IF NOT EXISTS ai_media_assets_run_idx ON ai_media_assets(run_id) WHERE run_id IS NOT NULL')
+  }
+}
+
 export function initializeAISchema(db: Database.Database) {
   db.pragma('foreign_keys = ON')
   db.exec('BEGIN IMMEDIATE')
@@ -253,20 +274,17 @@ export function initializeAISchema(db: Database.Database) {
     if (currentVersion > AI_SCHEMA_VERSION) {
       throw new Error(`Unsupported AI schema version: ${currentVersion}`)
     }
-    if (currentVersion < 1) {
-      createSchemaObjects(db)
-      db.prepare(
-        `
-        INSERT INTO ai_schema_meta (id, schema_version, updated_at)
-        VALUES (1, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(id) DO UPDATE SET
-          schema_version = excluded.schema_version,
-          updated_at = CURRENT_TIMESTAMP
-        `,
-      ).run(AI_SCHEMA_VERSION)
-    } else {
-      createSchemaObjects(db)
-    }
+    createSchemaObjects(db)
+    migrateSchema(db, currentVersion)
+    db.prepare(
+      `
+      INSERT INTO ai_schema_meta (id, schema_version, updated_at)
+      VALUES (1, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(id) DO UPDATE SET
+        schema_version = excluded.schema_version,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+    ).run(AI_SCHEMA_VERSION)
     db.exec('COMMIT')
   } catch (error) {
     db.exec('ROLLBACK')

@@ -35,9 +35,12 @@ test('creates a manifest-backed user backup and excludes sensitive legacy vault 
     writeFixture(settingsFile, '{"language":"zh-CN"}')
     writeFixture(path.join(baseDir, 'users', 'guest', 'database', 'tasks.db'), 'tasks')
     writeFixture(path.join(baseDir, 'users', 'guest', 'database', 'books.db'), 'books')
+    writeFixture(path.join(baseDir, 'users', 'guest', 'database', 'ai.db'), 'ai database')
     writeFixture(path.join(baseDir, 'users', 'guest', 'files', 'notes', 'today.md'), '# Today')
     writeFixture(path.join(baseDir, 'users', 'guest', 'files', 'books', 'reading.epub'), 'epub')
     writeFixture(path.join(baseDir, 'users', 'guest', 'files', 'videos', 'default.mp4'), 'video')
+    writeFixture(path.join(baseDir, 'users', 'guest', 'files', 'ai-media', 'image', 'result.png'), 'ai image')
+    writeFixture(path.join(baseDir, 'users', 'guest', 'config', 'ai-credentials.json'), 'encrypted but excluded')
     writeFixture(
       path.join(baseDir, 'users', 'guest', 'database', 'vault-sensitive-backups', 'legacy.db'),
       'secret',
@@ -51,6 +54,7 @@ test('creates a manifest-backed user backup and excludes sensitive legacy vault 
       settingsFile,
       userId: 'guest',
       videoDownloadDir: externalVideoDir,
+      aiSchemaVersion: 2,
       now: () => new Date('2026-07-17T08:00:00.000Z'),
     })
 
@@ -60,14 +64,17 @@ test('creates a manifest-backed user backup and excludes sensitive legacy vault 
     assert.deepEqual(entryNames, [
       'config/settings.json',
       'manifest.json',
+      'users/guest/database/ai.db',
       'users/guest/database/books.db',
       'users/guest/database/tasks.db',
+      'users/guest/files/ai-media/image/result.png',
       'users/guest/files/books/reading.epub',
       'users/guest/files/notes/today.md',
       'users/guest/files/videos/default.mp4',
     ])
     assert.equal(entryNames.some((entry) => entry.includes('vault-sensitive-backups')), false)
     assert.equal(entryNames.some((entry) => entry.includes('external.mp4')), false)
+    assert.equal(entryNames.some((entry) => entry.includes('ai-credentials.json')), false)
 
     const manifest = JSON.parse(zip.readAsText('manifest.json'))
     assert.equal(manifest.format, 'lifeos-backup')
@@ -76,7 +83,11 @@ test('creates a manifest-backed user backup and excludes sensitive legacy vault 
     assert.equal(manifest.userId, 'guest')
     assert.equal(manifest.includes.externalVideoDirectory, externalVideoDir)
     assert.equal(manifest.includes.sensitiveVaultLegacyBackups, false)
-    assert.equal(manifest.files.length, 6)
+    assert.equal(manifest.includes.aiDatabase, true)
+    assert.equal(manifest.includes.aiMediaFiles, true)
+    assert.equal(manifest.includes.aiSchemaVersion, 2)
+    assert.equal(manifest.includes.aiCredentials, false)
+    assert.equal(manifest.files.length, 8)
 
     for (const file of manifest.files) {
       const content = zip.readFile(file.path)
@@ -109,6 +120,39 @@ test('removes a partial backup archive when the destination write fails', () => 
     )
     assert.equal(existsSync(outputPath), false)
     assert.equal(readFileSync(sourceFile, 'utf8'), 'tasks')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('standard backup validation rejects an injected AI credential file', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'lifeos-backup-ai-credential-'))
+  const baseDir = path.join(root, 'LifeOS')
+  const outputDir = path.join(root, 'exports')
+  const settingsFile = path.join(baseDir, 'config', 'settings.json')
+  try {
+    writeFixture(settingsFile, '{}')
+    const backup = createLifeOsBackupPackage({
+      appVersion: '1.0.2',
+      baseDir,
+      outputDir,
+      settingsFile,
+      userId: 'guest',
+    })
+    const injectedPath = path.join(root, 'injected.zip')
+    const zip = new AdmZip(backup.filePath)
+    const credentialPath = 'users/guest/config/ai-credentials.json'
+    const credential = Buffer.from('credential payload')
+    const manifest = JSON.parse(zip.readAsText('manifest.json'))
+    manifest.files.push({
+      path: credentialPath,
+      size: credential.length,
+      sha256: createHash('sha256').update(credential).digest('hex'),
+    })
+    zip.addFile(credentialPath, credential)
+    zip.updateFile('manifest.json', Buffer.from(JSON.stringify(manifest), 'utf8'))
+    zip.writeZip(injectedPath)
+    assert.throws(() => inspectLifeOsBackupPackage(injectedPath), /AI credentials cannot be restored/)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

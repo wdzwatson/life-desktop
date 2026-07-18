@@ -65,12 +65,55 @@ test('AI schema creates the complete isolated database with required indexes', (
     'ai_agents_default_unique',
     'ai_conversations_recent_idx',
     'ai_runs_status_idx',
+    'ai_media_assets_run_idx',
   ]) {
     assert.ok(
       db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(indexName),
       `missing ${indexName}`,
     )
   }
+  db.close()
+})
+
+test('AI schema migrates version 1 media assets with recoverable run linkage', () => {
+  const db = new Database(':memory:')
+  db.exec(`
+    CREATE TABLE ai_schema_meta (
+      id INTEGER PRIMARY KEY CHECK(id = 1),
+      schema_version INTEGER NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    INSERT INTO ai_schema_meta (id, schema_version) VALUES (1, 1);
+    CREATE TABLE ai_media_assets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider_id INTEGER,
+      media_type TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      local_path TEXT,
+      source_url_redacted TEXT,
+      provider_task_id TEXT,
+      original_name TEXT,
+      byte_size INTEGER,
+      width INTEGER,
+      height INTEGER,
+      duration_seconds REAL,
+      sha256 TEXT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      error_code TEXT,
+      error_message TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_accessed_at TEXT
+    );
+    INSERT INTO ai_media_assets (media_type, mime_type, provider_task_id, status)
+    VALUES ('video', 'video/mp4', 'legacy-task', 'polling');
+  `)
+  initializeAISchema(db)
+  const columns = db.prepare('PRAGMA table_info(ai_media_assets)').all().map((row) => row.name)
+  assert.ok(columns.includes('run_id'))
+  assert.ok(columns.includes('assistant_message_id'))
+  assert.equal(db.prepare('SELECT provider_task_id, status FROM ai_media_assets').get().provider_task_id, 'legacy-task')
+  assert.equal(db.prepare('SELECT schema_version FROM ai_schema_meta WHERE id = 1').get().schema_version, AI_SCHEMA_VERSION)
   db.close()
 })
 

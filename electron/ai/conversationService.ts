@@ -88,6 +88,8 @@ type ToolCallRow = {
 type MediaAssetRow = {
   id: number
   provider_id: number | null
+  run_id: number | null
+  assistant_message_id: number | null
   media_type: 'image' | 'video' | 'audio' | 'file'
   mime_type: string
   local_path: string | null
@@ -540,9 +542,10 @@ export class AIConversationService {
       .all(conversationId, normalizedLimit) as RunRow[]).map((row) => this.toRun(row))
   }
 
-  interruptUnfinishedRuns() {
+  interruptUnfinishedRuns(options: { excludeRunIds?: Iterable<number> } = {}) {
     const now = this.now().toISOString()
-    const rows = this.db
+    const excluded = new Set(options.excludeRunIds ?? [])
+    const rows = (this.db
       .prepare(
         `
         SELECT id, assistant_message_id
@@ -551,7 +554,8 @@ export class AIConversationService {
         ORDER BY id
         `,
       )
-      .all() as Array<{ id: number; assistant_message_id: number | null }>
+      .all() as Array<{ id: number; assistant_message_id: number | null }>)
+      .filter((row) => !excluded.has(row.id))
     if (rows.length === 0) return { interruptedRunIds: [], interruptedMessageIds: [] }
     const interruptedMessageIds: number[] = []
     this.db.transaction(() => {
@@ -997,6 +1001,8 @@ export class AIConversationService {
     return {
       id: row.id,
       providerId: row.provider_id,
+      runId: row.run_id,
+      assistantMessageId: row.assistant_message_id,
       mediaType: row.media_type,
       mimeType: row.mime_type,
       localPath: row.local_path,

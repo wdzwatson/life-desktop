@@ -72,3 +72,49 @@ test('video task service cancels active provider tasks and persists cancellation
     assert.equal(context.db.prepare('SELECT status FROM ai_media_assets WHERE id = ?').get(result.lastInsertRowid).status, 'cancelled')
   } finally { context.close() }
 })
+
+test('video task service resumes polling from a persisted provider task ID', async () => {
+  const context = setup([{ status: 'generating', progress: 80 }, { status: 'completed', url: 'https://cdn.example.test/resumed.mp4?token=temp', mimeType: 'video/mp4', durationSeconds: 5 }])
+  try {
+    const result = context.db.prepare(`
+      INSERT INTO ai_media_assets (provider_id, media_type, mime_type, provider_task_id, status)
+      VALUES (1, 'video', 'video/mp4', 'task-resume', 'polling')
+    `).run()
+    const assetId = Number(result.lastInsertRowid)
+    const resumed = await context.service.resume({
+      assetId,
+      providerId: 1,
+      taskId: 'task-resume',
+      config,
+      maxPolls: 3,
+      pollIntervalMs: 100,
+    })
+    assert.equal(resumed.assetId, assetId)
+    assert.equal(resumed.taskId, 'task-resume')
+    assert.deepEqual(
+      context.db.prepare('SELECT status, source_url_redacted, duration_seconds FROM ai_media_assets WHERE id = ?').get(assetId),
+      { status: 'downloading', source_url_redacted: 'https://cdn.example.test/resumed.mp4', duration_seconds: 5 },
+    )
+  } finally { context.close() }
+})
+
+test('pausing startup recovery preserves a persisted video task for the next session', async () => {
+  const context = setup([{ status: 'generating', progress: 80 }])
+  try {
+    const result = context.db.prepare(`
+      INSERT INTO ai_media_assets (provider_id, media_type, mime_type, provider_task_id, status)
+      VALUES (1, 'video', 'video/mp4', 'task-paused', 'polling')
+    `).run()
+    const assetId = Number(result.lastInsertRowid)
+    const controller = new AbortController()
+    controller.abort()
+    await assert.rejects(
+      () => context.service.resume({ assetId, providerId: 1, taskId: 'task-paused', config, signal: controller.signal }),
+      (error) => error instanceof AIServiceError && error.detail.code === 'cancelled',
+    )
+    assert.deepEqual(
+      context.db.prepare('SELECT status, error_code FROM ai_media_assets WHERE id = ?').get(assetId),
+      { status: 'polling', error_code: null },
+    )
+  } finally { context.close() }
+})
