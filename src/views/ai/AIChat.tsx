@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Bot, Database, MessageSquare, Plug, RefreshCw, Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import './AIChat.css'
+import { AgentManager } from './AgentManager'
 import { ProviderManager } from './ProviderManager'
 
 type AIView = 'chat' | 'providers' | 'agents' | 'mcp'
@@ -130,10 +131,14 @@ export function AIChat() {
           <ProviderManager onChanged={loadConfiguration} />
         )}
 
-        {loadState === 'ready' && activeView !== 'providers' && (activeView !== 'chat' || hasProvider) && (
+        {loadState === 'ready' && activeView === 'agents' && (
+          <AgentManager onChanged={loadConfiguration} />
+        )}
+
+        {loadState === 'ready' && activeView !== 'providers' && activeView !== 'agents' && (activeView !== 'chat' || hasProvider) && (
           <div className="ai-chat-panel-placeholder">
             <div className="ai-chat-panel-placeholder__icon" aria-hidden="true">
-              {activeView === 'agents' ? <Bot size={24} /> : activeView === 'mcp' ? <Plug size={24} /> : <MessageSquare size={24} />}
+              {activeView === 'mcp' ? <Plug size={24} /> : <MessageSquare size={24} />}
             </div>
             <h2>{t(`aiChat.panel_${activeView}_title`)}</h2>
             <p>{t(`aiChat.panel_${activeView}_desc`)}</p>
