@@ -38,6 +38,49 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbTransaction: (dbName: string, statements: Array<{ sql: string; params?: unknown[] }>) =>
     ipcRenderer.invoke('db:transaction', { dbName, statements }),
 
+  // AI configuration. Full credentials remain in the main process.
+  listAIProviders: (filters?: unknown) => ipcRenderer.invoke('ai:providers:list', filters),
+  getAIProvider: (id: number) => ipcRenderer.invoke('ai:providers:get', { id }),
+  createAIProvider: (input: unknown) => ipcRenderer.invoke('ai:providers:create', input),
+  updateAIProvider: (id: number, input: unknown) =>
+    ipcRenderer.invoke('ai:providers:update', { id, input }),
+  copyAIProvider: (id: number, name?: string) =>
+    ipcRenderer.invoke('ai:providers:copy', { id, name }),
+  setAIProviderEnabled: (id: number, enabled: boolean) =>
+    ipcRenderer.invoke('ai:providers:setEnabled', { id, enabled }),
+  setDefaultAIProvider: (id: number, capability: 'text' | 'image' | 'video') =>
+    ipcRenderer.invoke('ai:providers:setDefault', { id, capability }),
+  removeAIProviderCredential: (id: number) =>
+    ipcRenderer.invoke('ai:providers:removeCredential', { id }),
+  getAIProviderDependencies: (id: number) =>
+    ipcRenderer.invoke('ai:providers:dependencies', { id }),
+  deleteAIProvider: (id: number) => ipcRenderer.invoke('ai:providers:delete', { id }),
+
+  listAIAgents: () => ipcRenderer.invoke('ai:agents:list'),
+  getAIAgent: (id: number) => ipcRenderer.invoke('ai:agents:get', { id }),
+  createAIAgent: (input: unknown) => ipcRenderer.invoke('ai:agents:create', input),
+  updateAIAgent: (id: number, input: unknown) =>
+    ipcRenderer.invoke('ai:agents:update', { id, input }),
+  copyAIAgent: (id: number, name?: string) => ipcRenderer.invoke('ai:agents:copy', { id, name }),
+  setAIAgentEnabled: (id: number, enabled: boolean) =>
+    ipcRenderer.invoke('ai:agents:setEnabled', { id, enabled }),
+  setDefaultAIAgent: (id: number) => ipcRenderer.invoke('ai:agents:setDefault', { id }),
+  getAIAgentSnapshot: (id: number) => ipcRenderer.invoke('ai:agents:snapshot', { id }),
+  deleteAIAgent: (id: number) => ipcRenderer.invoke('ai:agents:delete', { id }),
+
+  listAIMcpServers: () => ipcRenderer.invoke('ai:mcp:list'),
+  getAIMcpServer: (id: number) => ipcRenderer.invoke('ai:mcp:get', { id }),
+  createAIMcpServer: (input: unknown) => ipcRenderer.invoke('ai:mcp:create', input),
+  updateAIMcpServer: (id: number, input: unknown) =>
+    ipcRenderer.invoke('ai:mcp:update', { id, input }),
+  copyAIMcpServer: (id: number, name?: string) => ipcRenderer.invoke('ai:mcp:copy', { id, name }),
+  setAIMcpServerEnabled: (id: number, enabled: boolean) =>
+    ipcRenderer.invoke('ai:mcp:setEnabled', { id, enabled }),
+  setAIMcpToolRisk: (id: number, toolName: string, risk: string | null) =>
+    ipcRenderer.invoke('ai:mcp:setRiskOverride', { id, toolName, risk }),
+  getAIMcpDependencies: (id: number) => ipcRenderer.invoke('ai:mcp:dependencies', { id }),
+  deleteAIMcpServer: (id: number) => ipcRenderer.invoke('ai:mcp:delete', { id }),
+
   // Encrypted password vault
   getVaultStatus: () => ipcRenderer.invoke('vault:status'),
   setupVault: (masterPassword: string) => ipcRenderer.invoke('vault:setup', masterPassword),

@@ -40,6 +40,8 @@ import { classifyVideoDownloadFailure } from './video/downloadState'
 import { normalizeBulkVideoTagPayload } from '../src/views/videoStateUtils'
 import { VaultService, serializeVaultError } from './vault/service'
 import { getDirectDbAccessError } from './db/accessPolicy'
+import { registerAIConfigIpc } from './ai/ipc'
+import { createSafeStorageCredentialAdapter } from './ai/safeStorageAdapter'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -1551,6 +1553,16 @@ ipcMain.handle('db:transaction', async (_, { dbName, statements }) => {
     return { success: false, error: err.message }
   }
 })
+
+registerAIConfigIpc(
+  { handle: (channel, handler) => ipcMain.handle(channel, handler) },
+  {
+    getDb: () => getUserDb('ai'),
+    getCredentialFilePath: () =>
+      path.join(BASE_DIR, 'users', activeUserId, 'config', 'ai-credentials.json'),
+    getCredentialCryptoAdapter: createSafeStorageCredentialAdapter,
+  },
+)
 
 // IPC Handlers: Encrypted password vault
 ipcMain.handle('vault:status', async () => runVaultAction(() => getVaultService().getStatus()))

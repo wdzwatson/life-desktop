@@ -30,7 +30,7 @@
 | AT-04 | 模型供应商配置服务与列表规则 | A | AT-02、AT-03 | 已完成 |
 | AT-05 | Agent 配置服务与依赖约束 | A | AT-02、AT-04 | 已完成 |
 | AT-06 | MCP 配置服务与风险策略 | A | AT-02、AT-03 | 已完成 |
-| AT-07 | 配置 IPC 与 preload 安全桥接 | A | AT-04、AT-05、AT-06 | 待开始 |
+| AT-07 | 配置 IPC 与 preload 安全桥接 | A | AT-04、AT-05、AT-06 | 已完成 |
 | AT-08 | 工具箱 AI 入口与独立工作区壳层 | B | AT-07 | 待开始 |
 | AT-09 | 模型供应商列表与编辑界面 | B | AT-08 | 待开始 |
 | AT-10 | Agent 管理界面 | B | AT-08、AT-09 | 待开始 |
@@ -310,7 +310,7 @@
 
 ### AT-07 配置 IPC 与 preload 安全桥接
 
-状态：待开始
+状态：已完成
 
 目标：让 Renderer 通过窄化 API 管理配置。
 
@@ -340,6 +340,15 @@
 - Renderer 能完整管理配置，但无法绕过服务规则。
 
 建议提交：`feat: expose safe AI configuration IPC`
+
+完成记录：
+
+- 针对性测试：`npx tsx --test tests/aiIpcContract.test.ts`，4 项通过。
+- 全量回归：`npm test`，276 项主测试及全部数据库专项测试通过。
+- 静态检查：`npm run lint` 通过。
+- 构建检查：`npm run build` 通过，main 与 preload 产物生成成功。
+- 影响检查：新增 28 个白名单配置 channel；未暴露凭据读取、运行时 MCP 配置、任意命令或 AI SQL 接口。
+- 遗留风险：配置连接测试将在供应商适配器和 MCP transport 完成后接入。
 
 ### AT-08 工具箱 AI 入口与独立工作区壳层
 
