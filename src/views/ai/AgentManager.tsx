@@ -30,6 +30,7 @@ export function AgentManager({ onChanged }: Props) {
   const [editing, setEditing] = useState<AgentSummary | null>(null)
   const [draft, setDraft] = useState<AgentDraft | null>(null)
   const nameRef = useRef<HTMLInputElement | null>(null)
+  const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
   const api = (window as any).electronAPI
 
   const loadData = async () => {
@@ -73,14 +74,21 @@ export function AgentManager({ onChanged }: Props) {
     return !query || agent.name.toLowerCase().includes(query) || agent.description.toLowerCase().includes(query)
   })
 
-  const openCreate = () => {
+  const closeEditor = () => {
+    setDraft(null)
+    setEditing(null)
+  }
+
+  const openCreate = (trigger: HTMLButtonElement) => {
     const defaultProvider = textProviders.find((provider) => provider.enabled)
+    drawerTriggerRef.current = trigger
     setEditing(null)
     setDraft(createAgentDraft(defaultProvider?.id, agents.length === 0))
     setError('')
   }
 
-  const openEdit = (agent: AgentSummary) => {
+  const openEdit = (agent: AgentSummary, trigger: HTMLButtonElement) => {
+    drawerTriggerRef.current = trigger
     setEditing(agent)
     setDraft(agentToDraft(agent))
     setError('')
@@ -139,13 +147,13 @@ export function AgentManager({ onChanged }: Props) {
             aria-label={t('aiChat.agents.search_label')}
           />
         </label>
-        <button className="btn primary ai-provider-add" disabled={!hasEnabledTextProvider} onClick={openCreate}>
+        <button className="btn primary ai-provider-add" disabled={!hasEnabledTextProvider} onClick={(event) => openCreate(event.currentTarget)}>
           <Plus size={15} aria-hidden="true" />
           {t('aiChat.agents.add')}
         </button>
       </div>
 
-      {error && <p className="ai-provider-error" role="alert">{error}</p>}
+      {error && !draft && <p className="ai-provider-error" role="alert">{error}</p>}
 
       <div className="ai-agent-list" aria-busy={busy}>
         {!busy && agents.length === 0 && (
@@ -153,7 +161,7 @@ export function AgentManager({ onChanged }: Props) {
             <Bot size={25} aria-hidden="true" />
             <h2>{t('aiChat.agents.empty_title')}</h2>
             <p>{t(hasEnabledTextProvider ? 'aiChat.agents.empty_desc' : 'aiChat.agents.provider_required')}</p>
-            <button className="btn primary" disabled={!hasEnabledTextProvider} onClick={openCreate}>
+            <button className="btn primary" disabled={!hasEnabledTextProvider} onClick={(event) => openCreate(event.currentTarget)}>
               {t('aiChat.agents.add_first')}
             </button>
           </div>
@@ -211,7 +219,7 @@ export function AgentManager({ onChanged }: Props) {
                 >
                   {agent.isDefault ? t('aiChat.agents.default') : t('aiChat.agents.set_default')}
                 </button>
-                <button className="ai-chat-icon-button" onClick={() => openEdit(agent)} aria-label={t('aiChat.agents.edit_name', { name: agent.name })}>
+                <button className="ai-chat-icon-button" onClick={(event) => openEdit(agent, event.currentTarget)} aria-label={t('aiChat.agents.edit_name', { name: agent.name })}>
                   <Pencil size={15} />
                 </button>
                 <button className="ai-chat-icon-button" onClick={() => void runAction(() => api.copyAIAgent(agent.id), 'aiChat.agents.copied')} aria-label={t('aiChat.agents.copy_name', { name: agent.name })}>
@@ -231,10 +239,20 @@ export function AgentManager({ onChanged }: Props) {
 
       {draft && (
         <AccessibleDialog
-          title={t(editing ? 'aiChat.agents.edit_title' : 'aiChat.agents.create_title')}
-          onClose={() => setDraft(null)}
+          title={(
+            <span className="ai-settings-drawer__title">
+              <span>{t(editing ? 'aiChat.agents.edit_title' : 'aiChat.agents.create_title')}</span>
+              <button type="button" onClick={closeEditor} aria-label={t('common.close')}>
+                <X size={16} aria-hidden="true" />
+              </button>
+            </span>
+          )}
+          onClose={closeEditor}
+          returnFocus={() => drawerTriggerRef.current?.focus()}
           initialFocusRef={nameRef}
-          contentStyle={{ width: 'min(780px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 48px)' }}
+          overlayClassName="ai-settings-drawer-overlay"
+          contentClassName="ai-settings-drawer ai-settings-drawer--agent"
+          closeOnOverlay
         >
           <div className="ai-agent-form">
             <div className="ai-provider-form__grid">
@@ -344,7 +362,7 @@ export function AgentManager({ onChanged }: Props) {
 
             {error && <p className="ai-provider-error" role="alert">{error}</p>}
             <div className="ai-provider-form__actions">
-              <button className="btn" onClick={() => setDraft(null)}><X size={14} />{t('common.cancel')}</button>
+              <button className="btn" onClick={closeEditor}><X size={14} />{t('common.cancel')}</button>
               <button className="btn primary" disabled={busy || !draft.textProviderId} onClick={() => void saveAgent()}>{t('common.save')}</button>
             </div>
           </div>

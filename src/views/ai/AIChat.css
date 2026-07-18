@@ -1921,6 +1921,10 @@
   width: min(600px, 100vw);
 }
 
+.ai-settings-drawer--agent {
+  width: min(700px, 100vw);
+}
+
 .ai-settings-drawer > h3 {
   position: sticky;
   top: 0;
@@ -1951,7 +1955,8 @@
   cursor: pointer;
 }
 
-.ai-settings-drawer .ai-provider-form {
+.ai-settings-drawer .ai-provider-form,
+.ai-settings-drawer .ai-agent-form {
   min-height: 0;
   flex: 1;
   margin: 0;

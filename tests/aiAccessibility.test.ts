@@ -11,6 +11,7 @@ const videos = readFileSync(path.resolve('src/views/ai/VideoMessage.tsx'), 'utf8
 const dialog = readFileSync(path.resolve('src/components/AccessibleDialog.tsx'), 'utf8')
 const conversationDelete = readFileSync(path.resolve('src/views/ai/ConversationDeleteDialog.tsx'), 'utf8')
 const providerManager = readFileSync(path.resolve('src/views/ai/ProviderManager.tsx'), 'utf8')
+const agentManager = readFileSync(path.resolve('src/views/ai/AgentManager.tsx'), 'utf8')
 const messageRenderer = readFileSync(path.resolve('src/views/ai/MessageRenderer.tsx'), 'utf8')
 const css = readFileSync(path.resolve('src/views/ai/AIChat.css'), 'utf8')
 const appCss = readFileSync(path.resolve('src/index.css'), 'utf8')
@@ -86,6 +87,15 @@ test('provider creation uses a full-height settings drawer with focus restoratio
   assert.match(css, /\.ai-settings-drawer\s*\{[\s\S]*height:\s*100vh[\s\S]*overflow:\s*hidden/)
   assert.match(css, /\.ai-settings-drawer--provider\s*\{[\s\S]*width:\s*min\(600px, 100vw\)/)
   assert.match(css, /\.ai-settings-drawer \.ai-provider-form__actions\s*\{[\s\S]*position:\s*sticky[\s\S]*bottom:\s*0/)
+})
+
+test('agent creation reuses the settings drawer and returns focus to its trigger', () => {
+  assert.match(agentManager, /overlayClassName="ai-settings-drawer-overlay"/)
+  assert.match(agentManager, /contentClassName="ai-settings-drawer ai-settings-drawer--agent"/)
+  assert.match(agentManager, /returnFocus=\{\(\) => drawerTriggerRef\.current\?\.focus\(\)\}/)
+  assert.match(agentManager, /closeOnOverlay/)
+  assert.match(css, /\.ai-settings-drawer--agent\s*\{[\s\S]*width:\s*min\(700px, 100vw\)/)
+  assert.match(css, /\.ai-settings-drawer \.ai-provider-form,[\s\S]*\.ai-settings-drawer \.ai-agent-form\s*\{[\s\S]*flex:\s*1/)
 })
 
 test('daily chat typography and action targets remain readable', () => {
