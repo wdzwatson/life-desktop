@@ -16,7 +16,7 @@ const providerInput = () => ({
   apiKey: 'secret-key',
   defaultHeaders: { 'X-Workspace': 'lifeos' },
   capabilities: ['text', 'streaming', 'tool_calling'],
-  models: { text: 'chat-model' },
+  models: { text: 'chat-model', textOptions: ['chat-model', 'chat-model-fast', 'chat-model'] },
   timeoutMs: 60_000,
   allowLocalNetwork: false,
   enabled: true,
@@ -30,6 +30,7 @@ test('provider validation normalizes URLs and deduplicates capabilities', () => 
   assert.equal(parsed.baseUrl, 'https://api.example.test/v1')
   assert.deepEqual(parsed.capabilities, ['text', 'streaming'])
   assert.equal(parsed.models.text, 'chat-model')
+  assert.deepEqual(parsed.models.textOptions, ['chat-model', 'chat-model-fast'])
 })
 
 test('provider validation rejects unknown fields, unsafe URLs, and missing capability models', () => {
@@ -70,12 +71,23 @@ test('provider validation rejects credentials embedded in URLs and invalid heade
   )
 })
 
+test('provider validation requires the default model to belong to the text model catalog', () => {
+  assert.throws(
+    () => parseAIProviderConfigInput({
+      ...providerInput(),
+      models: { text: 'chat-model', textOptions: ['other-model'] },
+    }),
+    /must be included/,
+  )
+})
+
 test('agent validation normalizes IDs, tools, and model parameters', () => {
   const parsed = parseAIAgentConfigInput({
     name: 'Research Agent',
     description: '',
     systemPrompt: 'Use verified sources.',
     textProviderId: 1,
+    textModel: 'chat-model-fast',
     imageProviderId: 2,
     mcpServerIds: [4, 4, 6],
     allowedTools: ['search', 'search'],
@@ -90,6 +102,7 @@ test('agent validation normalizes IDs, tools, and model parameters', () => {
   assert.deepEqual(parsed.mcpServerIds, [4, 6])
   assert.deepEqual(parsed.allowedTools, ['search'])
   assert.equal(parsed.context.maxMessages, 50)
+  assert.equal(parsed.textModel, 'chat-model-fast')
 })
 
 test('agent validation enforces tool loop and temperature limits', () => {

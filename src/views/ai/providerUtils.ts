@@ -8,7 +8,7 @@ export type ProviderSummary = {
   credentialConfigured: boolean
   headerNames: string[]
   capabilities: ProviderCapability[]
-  models: { text?: string; image?: string; video?: string }
+  models: { text?: string; textOptions?: string[]; image?: string; video?: string }
   timeoutMs: number
   allowLocalNetwork: boolean
   enabled: boolean
@@ -26,6 +26,7 @@ export type ProviderDraft = {
   replaceHeaders: boolean
   capabilities: ProviderCapability[]
   textModel: string
+  textModels: string[]
   imageModel: string
   videoModel: string
   timeoutSeconds: string
@@ -52,6 +53,7 @@ export function createProviderDraft(): ProviderDraft {
     replaceHeaders: true,
     capabilities: ['text', 'streaming'],
     textModel: '',
+    textModels: [],
     imageModel: '',
     videoModel: '',
     timeoutSeconds: '60',
@@ -70,6 +72,9 @@ export function providerToDraft(provider: ProviderSummary): ProviderDraft {
     replaceHeaders: false,
     capabilities: [...provider.capabilities],
     textModel: provider.models.text ?? '',
+    textModels: provider.models.textOptions?.length
+      ? [...provider.models.textOptions]
+      : (provider.models.text ? [provider.models.text] : []),
     imageModel: provider.models.image ?? '',
     videoModel: provider.models.video ?? '',
     timeoutSeconds: String(provider.timeoutMs / 1000),
@@ -94,6 +99,13 @@ export function parseProviderHeaders(value: string) {
 export function buildProviderPayload(draft: ProviderDraft) {
   const timeoutSeconds = Number(draft.timeoutSeconds)
   if (!Number.isFinite(timeoutSeconds)) throw new Error('Timeout must be a number.')
+  const defaultTextModel = draft.textModel.trim()
+  const textOptions = normalizeProviderTextModels(
+    draft.textModels.length > 0 ? draft.textModels : (defaultTextModel ? [defaultTextModel] : []),
+  )
+  if (draft.capabilities.includes('text') && (!defaultTextModel || !textOptions.includes(defaultTextModel))) {
+    throw new Error('Select a default text model from the available text models.')
+  }
   return {
     name: draft.name,
     protocol: draft.protocol,
@@ -102,7 +114,7 @@ export function buildProviderPayload(draft: ProviderDraft) {
     defaultHeaders: draft.replaceHeaders ? parseProviderHeaders(draft.headersJson) : {},
     capabilities: draft.capabilities,
     models: {
-      ...(draft.textModel.trim() ? { text: draft.textModel.trim() } : {}),
+      ...(defaultTextModel ? { text: defaultTextModel, textOptions } : {}),
       ...(draft.imageModel.trim() ? { image: draft.imageModel.trim() } : {}),
       ...(draft.videoModel.trim() ? { video: draft.videoModel.trim() } : {}),
     },
@@ -110,6 +122,25 @@ export function buildProviderPayload(draft: ProviderDraft) {
     allowLocalNetwork: draft.allowLocalNetwork,
     enabled: draft.enabled,
   }
+}
+
+export function normalizeProviderTextModels(models: string[]) {
+  const seen = new Set<string>()
+  return models.map((model) => model.trim()).filter((model) => {
+    if (!model || seen.has(model)) return false
+    seen.add(model)
+    return true
+  })
+}
+
+export function appendProviderTextModel(models: string[], value: string) {
+  return normalizeProviderTextModels([...models, value])
+}
+
+export function toggleProviderTextModel(models: string[], value: string) {
+  return models.includes(value)
+    ? models.filter((model) => model !== value)
+    : appendProviderTextModel(models, value)
 }
 
 export function toggleProviderCapability(

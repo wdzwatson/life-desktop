@@ -117,6 +117,29 @@ test('AI schema migrates version 1 media assets with recoverable run linkage', (
   db.close()
 })
 
+test('AI schema migrates version 2 providers into text model catalogs', () => {
+  const db = new Database(':memory:')
+  initializeAISchema(db)
+  const providerId = createProvider(db, 'Legacy provider')
+  db.prepare(
+    `
+    INSERT INTO ai_agents (
+      name, text_provider_id, model_params_json, context_json,
+      allowed_tools_json, blocked_tools_json
+    ) VALUES ('Legacy agent', ?, '{}', '{}', '[]', '[]')
+    `,
+  ).run(providerId)
+  db.exec('ALTER TABLE ai_providers DROP COLUMN text_models_json')
+  db.exec('ALTER TABLE ai_agents DROP COLUMN text_model')
+  db.prepare('UPDATE ai_schema_meta SET schema_version = 2 WHERE id = 1').run()
+
+  initializeAISchema(db)
+
+  assert.equal(db.prepare('SELECT text_models_json FROM ai_providers WHERE id = ?').get(providerId).text_models_json, '["model"]')
+  assert.equal(db.prepare('SELECT text_model FROM ai_agents WHERE name = ?').get('Legacy agent').text_model, null)
+  db.close()
+})
+
 test('AI schema initialization is idempotent and preserves existing rows', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-ai-schema-idempotent-'))
   initializeUserDatabase(dir)

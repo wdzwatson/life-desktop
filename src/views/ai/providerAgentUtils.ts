@@ -65,11 +65,12 @@ export function createProviderLinkedAgentDraft(input: {
   description: string
   systemPrompt: string
   capabilities: Array<'text' | 'image' | 'video' | string>
+  textModel: string
   enabled: boolean
   isDefault: boolean
 }): AgentDraft {
   return {
-    ...createAgentDraft(input.providerId, input.isDefault),
+    ...createAgentDraft(input.providerId, input.isDefault, input.textModel),
     name: input.name.trim(),
     description: input.description.trim(),
     systemPrompt: input.systemPrompt,

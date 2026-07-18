@@ -8,6 +8,7 @@ type AgentRow = {
   description: string
   system_prompt: string
   text_provider_id: number
+  text_model: string | null
   image_provider_id: number | null
   video_provider_id: number | null
   model_params_json: string
@@ -29,6 +30,7 @@ type ProviderDependencyRow = {
   enabled: number
   capabilities_json: string
   text_model: string | null
+  text_models_json: string
   image_model: string | null
   video_model: string | null
 }
@@ -39,6 +41,7 @@ export type AIAgentSummary = {
   description: string
   systemPrompt: string
   providers: { text: number; image?: number; video?: number }
+  textModel: string
   mcpServerIds: number[]
   allowedTools: string[]
   blockedTools: string[]
@@ -124,11 +127,11 @@ export class AIAgentService {
           .prepare(
             `
             INSERT INTO ai_agents (
-              name, description, system_prompt, text_provider_id, image_provider_id,
+              name, description, system_prompt, text_provider_id, text_model, image_provider_id,
               video_provider_id, model_params_json, context_json, allowed_tools_json,
               blocked_tools_json, tool_approval_mode, max_tool_calls, enabled,
               is_default, configuration_status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `,
           )
           .run(
@@ -136,6 +139,7 @@ export class AIAgentService {
             input.description,
             input.systemPrompt,
             input.textProviderId,
+            input.textModel ?? null,
             input.imageProviderId ?? null,
             input.videoProviderId ?? null,
             JSON.stringify({ temperature: input.temperature }),
@@ -177,7 +181,7 @@ export class AIAgentService {
             `
             UPDATE ai_agents SET
               name = ?, description = ?, system_prompt = ?, text_provider_id = ?,
-              image_provider_id = ?, video_provider_id = ?, model_params_json = ?,
+              text_model = ?, image_provider_id = ?, video_provider_id = ?, model_params_json = ?,
               context_json = ?, allowed_tools_json = ?, blocked_tools_json = ?,
               tool_approval_mode = ?, max_tool_calls = ?, enabled = ?, is_default = ?,
               configuration_status = ?, updated_at = CURRENT_TIMESTAMP
@@ -189,6 +193,7 @@ export class AIAgentService {
             input.description,
             input.systemPrompt,
             input.textProviderId,
+            input.textModel ?? null,
             input.imageProviderId ?? null,
             input.videoProviderId ?? null,
             JSON.stringify({ temperature: input.temperature }),
@@ -217,6 +222,7 @@ export class AIAgentService {
       description: agent.description,
       systemPrompt: agent.systemPrompt,
       textProviderId: agent.providers.text,
+      textModel: agent.textModel,
       imageProviderId: agent.providers.image,
       videoProviderId: agent.providers.video,
       mcpServerIds: agent.mcpServerIds,
@@ -287,7 +293,7 @@ export class AIAgentService {
       modelParams: { temperature: agent.temperature },
       context: { ...agent.context },
       providers: {
-        text: { id: text.id, name: text.name, model: text.text_model as string },
+        text: { id: text.id, name: text.name, model: agent.textModel },
         ...(image ? { image: { id: image.id, name: image.name, model: image.image_model as string } } : {}),
         ...(video ? { video: { id: video.id, name: video.name, model: video.video_model as string } } : {}),
       },
@@ -326,6 +332,7 @@ export class AIAgentService {
     const context = parseJson<AIAgentConfigInput['context']>(row.context_json, { maxMessages: 50 })
     const input = {
       textProviderId: row.text_provider_id,
+      textModel: row.text_model ?? undefined,
       imageProviderId: row.image_provider_id ?? undefined,
       videoProviderId: row.video_provider_id ?? undefined,
       mcpServerIds,
@@ -341,6 +348,7 @@ export class AIAgentService {
         ...(row.image_provider_id ? { image: row.image_provider_id } : {}),
         ...(row.video_provider_id ? { video: row.video_provider_id } : {}),
       },
+      textModel: row.text_model ?? this.getProviderDefaultTextModel(row.text_provider_id),
       mcpServerIds,
       allowedTools: parseJson<string[]>(row.allowed_tools_json, []),
       blockedTools: parseJson<string[]>(row.blocked_tools_json, []),
@@ -363,6 +371,7 @@ export class AIAgentService {
       description: agent.description,
       systemPrompt: agent.systemPrompt,
       textProviderId: agent.providers.text,
+      textModel: agent.textModel,
       imageProviderId: agent.providers.image,
       videoProviderId: agent.providers.video,
       mcpServerIds: agent.mcpServerIds,
@@ -377,19 +386,20 @@ export class AIAgentService {
     }
   }
 
-  private evaluateConfiguration(input: Pick<AIAgentConfigInput, 'textProviderId' | 'imageProviderId' | 'videoProviderId' | 'mcpServerIds'>) {
+  private evaluateConfiguration(input: Pick<AIAgentConfigInput, 'textProviderId' | 'textModel' | 'imageProviderId' | 'videoProviderId' | 'mcpServerIds'>) {
     const evaluation = this.evaluateReferences(input)
     return { status: evaluation.issues.length === 0 ? ('ready' as const) : ('incomplete' as const), issues: evaluation.issues }
   }
 
   private evaluateReferences(input: {
     textProviderId: number
+    textModel?: string
     imageProviderId?: number
     videoProviderId?: number
     mcpServerIds: number[]
   }) {
     const issues: string[] = []
-    this.checkProvider(input.textProviderId, 'text', issues)
+    this.checkProvider(input.textProviderId, 'text', issues, input.textModel)
     if (input.imageProviderId) this.checkProvider(input.imageProviderId, 'image', issues)
     if (input.videoProviderId) this.checkProvider(input.videoProviderId, 'video', issues)
     for (const serverId of input.mcpServerIds) {
@@ -400,7 +410,12 @@ export class AIAgentService {
     return { issues }
   }
 
-  private checkProvider(id: number, capability: 'text' | 'image' | 'video', issues: string[]) {
+  private checkProvider(
+    id: number,
+    capability: 'text' | 'image' | 'video',
+    issues: string[],
+    selectedTextModel?: string,
+  ) {
     const provider = this.db.prepare('SELECT * FROM ai_providers WHERE id = ?').get(id) as ProviderDependencyRow | undefined
     if (!provider) {
       issues.push(`${capability} provider ${id} does not exist.`)
@@ -410,6 +425,12 @@ export class AIAgentService {
     const model = provider[`${capability}_model`]
     if (!provider.enabled) issues.push(`${capability} provider ${provider.name} is disabled.`)
     if (!capabilities.includes(capability) || !model) issues.push(`${capability} provider ${provider.name} lacks ${capability} capability.`)
+    if (capability === 'text' && selectedTextModel) {
+      const textOptions = parseJson<string[]>(provider.text_models_json, provider.text_model ? [provider.text_model] : [])
+      if (!textOptions.includes(selectedTextModel)) {
+        issues.push(`Text model ${selectedTextModel} is not available from provider ${provider.name}.`)
+      }
+    }
   }
 
   private requireProvider(id: number, capability: 'text' | 'image' | 'video') {
@@ -417,6 +438,13 @@ export class AIAgentService {
     this.checkProvider(id, capability, issues)
     if (issues.length > 0) throw serviceError('configuration_incomplete', issues.join(' '))
     return this.db.prepare('SELECT * FROM ai_providers WHERE id = ?').get(id) as ProviderDependencyRow
+  }
+
+  private getProviderDefaultTextModel(id: number) {
+    const provider = this.db.prepare('SELECT text_model FROM ai_providers WHERE id = ?').get(id) as
+      | { text_model: string | null }
+      | undefined
+    return provider?.text_model ?? ''
   }
 
   private replaceMcpLinks(agentId: number, serverIds: number[]) {

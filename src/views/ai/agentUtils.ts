@@ -8,6 +8,7 @@ export type AgentSummary = {
   description: string
   systemPrompt: string
   providers: { text: number; image?: number; video?: number }
+  textModel: string
   mcpServerIds: number[]
   allowedTools: string[]
   blockedTools: string[]
@@ -37,6 +38,7 @@ export type AgentDraft = {
   description: string
   systemPrompt: string
   textProviderId: string
+  textModel: string
   imageProviderId: string
   videoProviderId: string
   mcpServerIds: number[]
@@ -66,12 +68,13 @@ export function getAgentProviderOptions(
     })
 }
 
-export function createAgentDraft(textProviderId?: number, isDefault = false): AgentDraft {
+export function createAgentDraft(textProviderId?: number, isDefault = false, textModel = ''): AgentDraft {
   return {
     name: '',
     description: '',
     systemPrompt: '',
     textProviderId: textProviderId ? String(textProviderId) : '',
+    textModel,
     imageProviderId: '',
     videoProviderId: '',
     mcpServerIds: [],
@@ -93,6 +96,7 @@ export function agentToDraft(agent: AgentSummary): AgentDraft {
     description: agent.description,
     systemPrompt: agent.systemPrompt,
     textProviderId: String(agent.providers.text),
+    textModel: agent.textModel ?? '',
     imageProviderId: agent.providers.image ? String(agent.providers.image) : '',
     videoProviderId: agent.providers.video ? String(agent.providers.video) : '',
     mcpServerIds: [...agent.mcpServerIds],
@@ -148,6 +152,7 @@ export function buildAgentPayload(draft: AgentDraft) {
     description: draft.description,
     systemPrompt: draft.systemPrompt,
     textProviderId,
+    ...((draft.textModel ?? '').trim() ? { textModel: draft.textModel.trim() } : {}),
     ...(draft.imageProviderId ? { imageProviderId: Number(draft.imageProviderId) } : {}),
     ...(draft.videoProviderId ? { videoProviderId: Number(draft.videoProviderId) } : {}),
     mcpServerIds: draft.mcpServerIds,

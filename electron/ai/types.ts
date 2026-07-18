@@ -10,6 +10,7 @@ export type AIProviderCapability =
 
 export type AIProviderModels = {
   text?: string
+  textOptions?: string[]
   image?: string
   video?: string
 }
@@ -43,6 +44,7 @@ export type AIAgentConfigInput = {
   description: string
   systemPrompt: string
   textProviderId: number
+  textModel?: string
   imageProviderId?: number
   videoProviderId?: number
   mcpServerIds: number[]

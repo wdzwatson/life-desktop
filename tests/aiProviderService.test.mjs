@@ -39,7 +39,7 @@ function providerInput(overrides = {}) {
     apiKey: 'secret-key',
     defaultHeaders: { 'X-Tenant': 'private-tenant' },
     capabilities: ['text', 'streaming', 'tool_calling'],
-    models: { text: 'chat-model' },
+    models: { text: 'chat-model', textOptions: ['chat-model', 'chat-model-fast'] },
     timeoutMs: 60000,
     allowLocalNetwork: false,
     enabled: true,
@@ -58,6 +58,7 @@ test('provider service stores secrets outside SQLite and returns a redacted list
   const { db, credentials, service } = setup()
   const created = service.create(providerInput())
   assert.equal(created.credentialConfigured, true)
+  assert.deepEqual(created.models.textOptions, ['chat-model', 'chat-model-fast'])
   assert.deepEqual(created.headerNames, ['X-Tenant'])
   assert.equal(JSON.stringify(created).includes('secret-key'), false)
   assert.equal(JSON.stringify(created).includes('private-tenant'), false)

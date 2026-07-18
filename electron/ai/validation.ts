@@ -171,9 +171,20 @@ function readUrl(value: unknown, path: string) {
 
 function readModels(value: unknown): AIProviderModels {
   const object = requireObject(value, 'provider.models')
-  rejectUnknownKeys(object, ['text', 'image', 'video'], 'provider.models')
+  rejectUnknownKeys(object, ['text', 'textOptions', 'image', 'video'], 'provider.models')
+  const text = readString(object.text, 'provider.models.text', { max: 200, optional: true })
+  const textOptions = object.textOptions === undefined
+    ? (text ? [text] : [])
+    : readStringArray(object.textOptions, 'provider.models.textOptions', { maxItems: 100, itemMax: 200 })
+  if (text && !textOptions.includes(text)) {
+    throw new AIValidationError([{
+      path: 'provider.models.text',
+      message: 'must be included in provider.models.textOptions',
+    }])
+  }
   return {
-    text: readString(object.text, 'provider.models.text', { max: 200, optional: true }),
+    text,
+    textOptions,
     image: readString(object.image, 'provider.models.image', { max: 200, optional: true }),
     video: readString(object.video, 'provider.models.video', { max: 200, optional: true }),
   }
@@ -222,8 +233,8 @@ export function parseAIProviderConfigInput(value: unknown): AIProviderConfigInpu
     throw new AIValidationError([{ path: 'provider.capabilities', message: 'contains an unsupported capability' }])
   }
   const models = readModels(object.models)
-  if (capabilities.includes('text') && !models.text) {
-    throw new AIValidationError([{ path: 'provider.models.text', message: 'is required for text capability' }])
+  if (capabilities.includes('text') && (!models.text || !models.textOptions?.length)) {
+    throw new AIValidationError([{ path: 'provider.models.textOptions', message: 'requires a default text model and at least one option' }])
   }
   if (capabilities.includes('image') && !models.image) {
     throw new AIValidationError([{ path: 'provider.models.image', message: 'is required for image capability' }])
@@ -254,6 +265,7 @@ export function parseAIAgentConfigInput(value: unknown): AIAgentConfigInput {
       'description',
       'systemPrompt',
       'textProviderId',
+      'textModel',
       'imageProviderId',
       'videoProviderId',
       'mcpServerIds',
@@ -286,6 +298,7 @@ export function parseAIAgentConfigInput(value: unknown): AIAgentConfigInput {
       min: 1,
       max: 2_147_483_647,
     }),
+    textModel: readString(object.textModel, 'agent.textModel', { max: 200, optional: true }),
     imageProviderId: readInteger(object.imageProviderId, 'agent.imageProviderId', {
       min: 1,
       max: 2_147_483_647,

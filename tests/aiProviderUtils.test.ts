@@ -2,11 +2,13 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   buildProviderPayload,
+  appendProviderTextModel,
   createProviderDraft,
   formatProviderLastTestedAt,
   parseProviderHeaders,
   providerToDraft,
   toggleProviderCapability,
+  toggleProviderTextModel,
 } from '../src/views/ai/providerUtils.ts'
 
 test('provider drafts build normalized API payloads', () => {
@@ -17,10 +19,12 @@ test('provider drafts build normalized API payloads', () => {
     baseUrl: 'https://api.example.test/v1',
     apiKey: ' key ',
     textModel: ' chat ',
+    textModels: [' chat ', 'chat-fast', 'chat-fast'],
     headersJson: '{"X-Tenant":"alpha"}',
   })
   assert.equal(payload.apiKey, 'key')
   assert.equal(payload.models.text, 'chat')
+  assert.deepEqual(payload.models.textOptions, ['chat', 'chat-fast'])
   assert.deepEqual(payload.defaultHeaders, { 'X-Tenant': 'alpha' })
   assert.equal(payload.timeoutMs, 60000)
 })
@@ -55,6 +59,12 @@ test('provider header parsing rejects arrays and non-string values', () => {
 test('provider capabilities toggle without duplicates', () => {
   assert.deepEqual(toggleProviderCapability(['text'], 'image'), ['text', 'image'])
   assert.deepEqual(toggleProviderCapability(['text', 'image'], 'image'), ['text'])
+})
+
+test('provider text model selection supports presets and custom model IDs', () => {
+  assert.deepEqual(toggleProviderTextModel(['chat'], 'chat-fast'), ['chat', 'chat-fast'])
+  assert.deepEqual(toggleProviderTextModel(['chat', 'chat-fast'], 'chat'), ['chat-fast'])
+  assert.deepEqual(appendProviderTextModel(['chat'], ' custom-model '), ['chat', 'custom-model'])
 })
 
 test('provider connection timestamps are localized only when valid', () => {

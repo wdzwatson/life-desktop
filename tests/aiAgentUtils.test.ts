@@ -21,7 +21,7 @@ const providers: ProviderSummary[] = [
     credentialConfigured: true,
     headerNames: [],
     capabilities: ['text'],
-    models: { text: 'chat-small' },
+    models: { text: 'chat-small', textOptions: ['chat-small'] },
     timeoutMs: 60000,
     allowLocalNetwork: false,
     enabled: true,
@@ -37,7 +37,7 @@ const providers: ProviderSummary[] = [
     credentialConfigured: true,
     headerNames: [],
     capabilities: ['text', 'image'],
-    models: { text: 'chat', image: 'imagine' },
+    models: { text: 'chat', textOptions: ['chat', 'chat-pro'], image: 'imagine' },
     timeoutMs: 60000,
     allowLocalNetwork: false,
     enabled: true,
@@ -53,6 +53,7 @@ const agent: AgentSummary = {
   description: 'Research assistant',
   systemPrompt: 'Verify sources.',
   providers: { text: 2, image: 2 },
+  textModel: 'chat-pro',
   mcpServerIds: [4],
   allowedTools: ['search.read'],
   blockedTools: ['files.delete'],
@@ -77,6 +78,7 @@ test('agent provider options prefer enabled capability defaults', () => {
 test('agent drafts round-trip providers, behavior, context, and tools', () => {
   const payload = buildAgentPayload(agentToDraft(agent))
   assert.equal(payload.textProviderId, 2)
+  assert.equal(payload.textModel, 'chat-pro')
   assert.equal(payload.imageProviderId, 2)
   assert.equal(payload.temperature, 0.2)
   assert.deepEqual(payload.context, { maxMessages: 50, maxOutputTokens: 4000 })
@@ -84,8 +86,9 @@ test('agent drafts round-trip providers, behavior, context, and tools', () => {
 })
 
 test('new agent drafts use safe approval defaults', () => {
-  const draft = createAgentDraft(2, true)
+  const draft = createAgentDraft(2, true, 'chat')
   assert.equal(draft.textProviderId, '2')
+  assert.equal(draft.textModel, 'chat')
   assert.equal(draft.toolApprovalMode, 'confirm_risky')
   assert.equal(draft.isDefault, true)
 })

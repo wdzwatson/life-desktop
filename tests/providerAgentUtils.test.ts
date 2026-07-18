@@ -38,11 +38,13 @@ test('provider-linked agent drafts inherit every supported media capability', ()
     name: 'Researcher',
     description: 'Checks evidence',
     systemPrompt: 'Verify sources.',
+    textModel: 'chat-pro',
     capabilities: ['text', 'image', 'video'],
     enabled: true,
     isDefault: true,
   })
   assert.equal(draft.textProviderId, '7')
+  assert.equal(draft.textModel, 'chat-pro')
   assert.equal(draft.imageProviderId, '7')
   assert.equal(draft.videoProviderId, '7')
   assert.equal(draft.isDefault, true)

@@ -11,13 +11,13 @@ function setup() {
   const insertProvider = db.prepare(
     `
     INSERT INTO ai_providers (
-      name, protocol, base_url, capabilities_json, text_model, image_model, video_model, enabled
-    ) VALUES (?, 'openai_compatible', 'https://api.example.test/v1', ?, ?, ?, ?, ?)
+      name, protocol, base_url, capabilities_json, text_model, text_models_json, image_model, video_model, enabled
+    ) VALUES (?, 'openai_compatible', 'https://api.example.test/v1', ?, ?, ?, ?, ?, ?)
     `,
   )
-  const textProviderId = Number(insertProvider.run('Text', '["text","tool_calling"]', 'chat', null, null, 1).lastInsertRowid)
-  const imageProviderId = Number(insertProvider.run('Image', '["image"]', null, 'image', null, 1).lastInsertRowid)
-  const disabledVideoProviderId = Number(insertProvider.run('Video', '["video"]', null, null, 'video', 0).lastInsertRowid)
+  const textProviderId = Number(insertProvider.run('Text', '["text","tool_calling"]', 'chat', '["chat","chat-fast"]', null, null, 1).lastInsertRowid)
+  const imageProviderId = Number(insertProvider.run('Image', '["image"]', null, '[]', 'image', null, 1).lastInsertRowid)
+  const disabledVideoProviderId = Number(insertProvider.run('Video', '["video"]', null, '[]', null, 'video', 0).lastInsertRowid)
   const mcpId = Number(
     db
       .prepare(
@@ -35,6 +35,7 @@ function agentInput(ids, overrides = {}) {
     description: 'General assistant',
     systemPrompt: 'Be precise.',
     textProviderId: ids.textProviderId,
+    textModel: 'chat',
     imageProviderId: ids.imageProviderId,
     mcpServerIds: [ids.mcpId],
     allowedTools: ['search'],
@@ -55,6 +56,7 @@ test('agent service creates a ready default agent with provider and MCP links', 
   assert.equal(agent.configurationStatus, 'ready')
   assert.equal(agent.isDefault, true)
   assert.deepEqual(agent.providers, { text: context.textProviderId, image: context.imageProviderId })
+  assert.equal(agent.textModel, 'chat')
   assert.deepEqual(agent.mcpServerIds, [context.mcpId])
   context.db.close()
 })
@@ -95,6 +97,14 @@ test('agent service rejects overlapping allow and block tool sets', () => {
     () => context.service.create(agentInput(context, { allowedTools: ['delete'] })),
     (error) => error instanceof AIServiceError && error.detail.code === 'invalid_input',
   )
+  context.db.close()
+})
+
+test('agent service rejects a text model outside the selected provider catalog', () => {
+  const context = setup()
+  const agent = context.service.create(agentInput(context, { textModel: 'unknown', isDefault: false }))
+  assert.equal(agent.configurationStatus, 'incomplete')
+  assert.match(agent.issues.join(' '), /not available from provider Text/i)
   context.db.close()
 })
 

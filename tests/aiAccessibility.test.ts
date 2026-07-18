@@ -128,6 +128,17 @@ test('provider creation offers a constant multi-select dropdown with custom assi
   assert.match(css, /\.ai-provider-agent-presets\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)[\s\S]*grid-auto-flow:\s*dense/)
 })
 
+test('provider and agent editors separate model catalogs from the active model choice', () => {
+  assert.match(providerManager, /className="ai-provider-model-multiselect"/)
+  assert.match(providerManager, /COMMON_TEXT_MODELS/)
+  assert.match(providerManager, /toggleProviderTextModel/)
+  assert.match(providerManager, /customTextModel/)
+  assert.match(providerManager, /default_text_model/)
+  assert.match(agentManager, /selectedTextModels\.map/)
+  assert.match(agentManager, /textModel: provider\?\.models\.text/)
+  assert.doesNotMatch(agentManager, /className="ai-agent-mcp-grid"/)
+})
+
 test('agent creation reuses the settings drawer and returns focus to its trigger', () => {
   assert.match(agentManager, /overlayClassName="ai-settings-drawer-overlay"/)
   assert.match(agentManager, /contentClassName="ai-settings-drawer ai-settings-drawer--agent"/)

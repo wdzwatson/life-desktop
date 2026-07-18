@@ -14,6 +14,7 @@ type ProviderRow = {
   default_headers_json: string
   capabilities_json: string
   text_model: string | null
+  text_models_json: string
   image_model: string | null
   video_model: string | null
   timeout_ms: number
@@ -85,6 +86,10 @@ function parseJsonArray<T>(value: string, fallback: T[] = []) {
 }
 
 function toSummary(row: ProviderRow): AIProviderSummary {
+  const textOptions = parseJsonArray<string>(row.text_models_json)
+  const normalizedTextOptions = textOptions.length > 0
+    ? textOptions
+    : (row.text_model ? [row.text_model] : [])
   return {
     id: row.id,
     name: row.name,
@@ -95,6 +100,7 @@ function toSummary(row: ProviderRow): AIProviderSummary {
     capabilities: parseJsonArray<AIProviderCapability>(row.capabilities_json),
     models: {
       text: row.text_model ?? undefined,
+      textOptions: normalizedTextOptions,
       image: row.image_model ?? undefined,
       video: row.video_model ?? undefined,
     },
@@ -167,9 +173,9 @@ export class AIProviderService {
           `
           INSERT INTO ai_providers (
             name, protocol, base_url, credential_ref, default_headers_json,
-            capabilities_json, text_model, image_model, video_model,
+            capabilities_json, text_model, text_models_json, image_model, video_model,
             timeout_ms, allow_local_network, enabled
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `,
         )
         .run(
@@ -180,6 +186,7 @@ export class AIProviderService {
           JSON.stringify(Object.keys(input.defaultHeaders).sort()),
           JSON.stringify(input.capabilities),
           input.models.text ?? null,
+          JSON.stringify(input.models.textOptions ?? []),
           input.models.image ?? null,
           input.models.video ?? null,
           input.timeoutMs,
@@ -225,7 +232,7 @@ export class AIProviderService {
             UPDATE ai_providers SET
               name = ?, protocol = ?, base_url = ?, credential_ref = ?,
               default_headers_json = ?, capabilities_json = ?,
-              text_model = ?, image_model = ?, video_model = ?, timeout_ms = ?,
+              text_model = ?, text_models_json = ?, image_model = ?, video_model = ?, timeout_ms = ?,
               allow_local_network = ?, enabled = ?,
               is_default_text = CASE WHEN ? THEN is_default_text ELSE 0 END,
               is_default_image = CASE WHEN ? THEN is_default_image ELSE 0 END,
@@ -242,6 +249,7 @@ export class AIProviderService {
             JSON.stringify(Object.keys(nextBundle.headers).sort()),
             JSON.stringify(input.capabilities),
             input.models.text ?? null,
+            JSON.stringify(input.models.textOptions ?? []),
             input.models.image ?? null,
             input.models.video ?? null,
             input.timeoutMs,

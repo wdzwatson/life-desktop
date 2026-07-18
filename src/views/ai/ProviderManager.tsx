@@ -18,11 +18,13 @@ import { AccessibleDialog } from '../../components/AccessibleDialog'
 import { useAppStore } from '../../store/useAppStore'
 import {
   PROVIDER_CAPABILITIES,
+  appendProviderTextModel,
   buildProviderPayload,
   createProviderDraft,
   formatProviderLastTestedAt,
   providerToDraft,
   toggleProviderCapability,
+  toggleProviderTextModel,
   type ProviderDraft,
   type ProviderSummary,
 } from './providerUtils'
@@ -37,6 +39,17 @@ import {
 } from './providerAgentUtils'
 
 type Props = { onChanged: () => void | Promise<void> }
+
+const COMMON_TEXT_MODELS = [
+  'gpt-4.1',
+  'gpt-4.1-mini',
+  'gpt-4o',
+  'gpt-4o-mini',
+  'o3',
+  'o4-mini',
+  'grok-3',
+  'deepseek-chat',
+] as const
 
 export function ProviderManager({ onChanged }: Props) {
   const { t, i18n } = useTranslation()
@@ -55,6 +68,7 @@ export function ProviderManager({ onChanged }: Props) {
   const [customAgentName, setCustomAgentName] = useState('')
   const [customAgentNames, setCustomAgentNames] = useState<string[]>([])
   const [agentPickerOpen, setAgentPickerOpen] = useState(false)
+  const [customTextModel, setCustomTextModel] = useState('')
   const nameRef = useRef<HTMLInputElement | null>(null)
   const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
   const agentPickerRef = useRef<HTMLDivElement | null>(null)
@@ -127,6 +141,7 @@ export function ProviderManager({ onChanged }: Props) {
     setCustomAgentName('')
     setCustomAgentNames([])
     setAgentPickerOpen(false)
+    setCustomTextModel('')
   }
 
   const openCreate = (trigger: HTMLButtonElement) => {
@@ -141,6 +156,7 @@ export function ProviderManager({ onChanged }: Props) {
     setCustomAgentName('')
     setCustomAgentNames([])
     setAgentPickerOpen(false)
+    setCustomTextModel('')
     setError('')
   }
 
@@ -152,6 +168,7 @@ export function ProviderManager({ onChanged }: Props) {
     setCustomAgentName('')
     setCustomAgentNames([])
     setAgentPickerOpen(false)
+    setCustomTextModel('')
     setError('')
   }
 
@@ -160,6 +177,23 @@ export function ProviderManager({ onChanged }: Props) {
     if (next === customAgentNames) return
     setCustomAgentNames(next)
     setCustomAgentName('')
+  }
+
+  const updateTextModels = (models: string[]) => {
+    if (!draft) return
+    setDraft({
+      ...draft,
+      textModels: models,
+      textModel: models.includes(draft.textModel) ? draft.textModel : (models[0] ?? ''),
+    })
+  }
+
+  const addCustomTextModel = () => {
+    if (!draft) return
+    const models = appendProviderTextModel(draft.textModels, customTextModel)
+    if (models.length === draft.textModels.length) return
+    updateTextModels(models)
+    setCustomTextModel('')
   }
 
   const createRequestedAgents = async (provider: ProviderSummary) => {
@@ -196,6 +230,7 @@ export function ProviderManager({ onChanged }: Props) {
         providerId: provider.id,
         ...request,
         capabilities: provider.capabilities,
+        textModel: provider.models.text,
         enabled: provider.enabled,
         isDefault: shouldSetDefault,
       })
@@ -229,6 +264,7 @@ export function ProviderManager({ onChanged }: Props) {
       setCustomAgentName('')
       setCustomAgentNames([])
       setAgentPickerOpen(false)
+      setCustomTextModel('')
       showToast(t(linkedResult.created > 0
         ? 'aiChat.providers.saved_with_agents'
         : editing
@@ -345,7 +381,9 @@ export function ProviderManager({ onChanged }: Props) {
                 {(['text', 'image', 'video'] as const).map((kind) => provider.models[kind] && (
                   <div key={kind}>
                     <span>{t(`aiChat.providers.model_${kind}`)}</span>
-                    <strong>{provider.models[kind]}</strong>
+                    <strong>{provider.models[kind]}{kind === 'text' && (provider.models.textOptions?.length ?? 0) > 1
+                      ? ` ${t('aiChat.providers.more_text_models', { count: provider.models.textOptions!.length - 1 })}`
+                      : ''}</strong>
                     {provider.defaults[kind] && <em><Check size={12} aria-hidden="true" />{t('aiChat.providers.default')}</em>}
                   </div>
                 ))}
@@ -443,8 +481,64 @@ export function ProviderManager({ onChanged }: Props) {
               ))}
             </fieldset>
 
+            {draft.capabilities.includes('text') && (
+              <div className="ai-provider-text-models">
+                <details className="ai-provider-model-multiselect">
+                  <summary>
+                    <Database size={15} aria-hidden="true" />
+                    <span>
+                      <strong>{t('aiChat.providers.text_models')}</strong>
+                      <small>{draft.textModels.length > 0
+                        ? t('aiChat.providers.text_models_selected', { count: draft.textModels.length })
+                        : t('aiChat.providers.text_models_placeholder')}</small>
+                    </span>
+                    <ChevronDown size={14} aria-hidden="true" />
+                  </summary>
+                  <div className="ai-provider-model-multiselect__menu">
+                    <div className="ai-provider-model-options">
+                      {[...new Set([...COMMON_TEXT_MODELS, ...draft.textModels])].map((model) => (
+                        <label key={model}>
+                          <input
+                            type="checkbox"
+                            checked={draft.textModels.includes(model)}
+                            onChange={() => updateTextModels(toggleProviderTextModel(draft.textModels, model))}
+                          />
+                          <span>{model}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="ai-provider-agent-custom">
+                      <input
+                        className="form-field"
+                        value={customTextModel}
+                        onChange={(event) => setCustomTextModel(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter') return
+                          event.preventDefault()
+                          addCustomTextModel()
+                        }}
+                        placeholder={t('aiChat.providers.custom_text_model_placeholder')}
+                        aria-label={t('aiChat.providers.custom_text_model_label')}
+                      />
+                      <button type="button" className="btn" disabled={!customTextModel.trim()} onClick={addCustomTextModel}>
+                        <Plus size={14} aria-hidden="true" />
+                        {t('aiChat.providers.add_text_model')}
+                      </button>
+                    </div>
+                  </div>
+                </details>
+                <label>
+                  <span>{t('aiChat.providers.default_text_model')}</span>
+                  <select className="form-field" value={draft.textModel} disabled={draft.textModels.length === 0} onChange={(event) => setDraft({ ...draft, textModel: event.target.value })}>
+                    <option value="">{t('aiChat.providers.select_default_text_model')}</option>
+                    {draft.textModels.map((model) => <option key={model} value={model}>{model}</option>)}
+                  </select>
+                </label>
+              </div>
+            )}
+
             <div className="ai-provider-form__grid">
-              {(['text', 'image', 'video'] as const).map((kind) => draft.capabilities.includes(kind) && (
+              {(['image', 'video'] as const).map((kind) => draft.capabilities.includes(kind) && (
                 <label key={kind}>
                   <span>{t(`aiChat.providers.model_${kind}`)}</span>
                   <input className="form-field" value={draft[`${kind}Model`]} onChange={(event) => setDraft({ ...draft, [`${kind}Model`]: event.target.value })} />

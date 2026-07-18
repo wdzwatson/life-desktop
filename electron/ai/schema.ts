@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 
-export const AI_SCHEMA_VERSION = 2
+export const AI_SCHEMA_VERSION = 3
 
 function hasColumn(db: Database.Database, table: string, column: string) {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>)
@@ -18,6 +18,7 @@ function createSchemaObjects(db: Database.Database) {
       default_headers_json TEXT NOT NULL DEFAULT '{}',
       capabilities_json TEXT NOT NULL DEFAULT '[]',
       text_model TEXT,
+      text_models_json TEXT NOT NULL DEFAULT '[]',
       image_model TEXT,
       video_model TEXT,
       timeout_ms INTEGER NOT NULL DEFAULT 60000 CHECK(timeout_ms BETWEEN 1000 AND 600000),
@@ -71,6 +72,7 @@ function createSchemaObjects(db: Database.Database) {
       description TEXT NOT NULL DEFAULT '',
       system_prompt TEXT NOT NULL DEFAULT '',
       text_provider_id INTEGER NOT NULL,
+      text_model TEXT,
       image_provider_id INTEGER,
       video_provider_id INTEGER,
       model_params_json TEXT NOT NULL DEFAULT '{}',
@@ -253,6 +255,22 @@ function migrateSchema(db: Database.Database, currentVersion: number) {
       db.exec('ALTER TABLE ai_media_assets ADD COLUMN assistant_message_id INTEGER REFERENCES ai_messages(id) ON DELETE SET NULL')
     }
     db.exec('CREATE INDEX IF NOT EXISTS ai_media_assets_run_idx ON ai_media_assets(run_id) WHERE run_id IS NOT NULL')
+  }
+  if (currentVersion < 3) {
+    if (!hasColumn(db, 'ai_providers', 'text_models_json')) {
+      db.exec("ALTER TABLE ai_providers ADD COLUMN text_models_json TEXT NOT NULL DEFAULT '[]'")
+    }
+    if (!hasColumn(db, 'ai_agents', 'text_model')) {
+      db.exec('ALTER TABLE ai_agents ADD COLUMN text_model TEXT')
+    }
+    const providers = db.prepare('SELECT id, text_model FROM ai_providers').all() as Array<{
+      id: number
+      text_model: string | null
+    }>
+    const updateModels = db.prepare('UPDATE ai_providers SET text_models_json = ? WHERE id = ?')
+    for (const provider of providers) {
+      updateModels.run(JSON.stringify(provider.text_model ? [provider.text_model] : []), provider.id)
+    }
   }
 }
 

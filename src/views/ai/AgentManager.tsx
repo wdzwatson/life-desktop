@@ -10,9 +10,7 @@ import {
   createAgentDraft,
   getAgentProviderNames,
   getAgentProviderOptions,
-  toggleAgentMcpServer,
   type AgentDraft,
-  type AgentMcpSummary,
   type AgentSummary,
 } from './agentUtils'
 
@@ -23,7 +21,6 @@ export function AgentManager({ onChanged }: Props) {
   const showToast = useAppStore((state) => state.showToast)
   const [agents, setAgents] = useState<AgentSummary[]>([])
   const [providers, setProviders] = useState<ProviderSummary[]>([])
-  const [mcpServers, setMcpServers] = useState<AgentMcpSummary[]>([])
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -34,20 +31,18 @@ export function AgentManager({ onChanged }: Props) {
   const api = (window as any).electronAPI
 
   const loadData = async () => {
-    if (!api?.listAIAgents || !api?.listAIProviders || !api?.listAIMcpServers) return
+    if (!api?.listAIAgents || !api?.listAIProviders) return
     setBusy(true)
     try {
-      const [agentResponse, providerResponse, mcpResponse] = await Promise.all([
+      const [agentResponse, providerResponse] = await Promise.all([
         api.listAIAgents(),
         api.listAIProviders(),
-        api.listAIMcpServers(),
       ])
-      if (!agentResponse?.success || !providerResponse?.success || !mcpResponse?.success) {
+      if (!agentResponse?.success || !providerResponse?.success) {
         throw new Error(t('aiChat.agents.load_failed'))
       }
       setAgents(agentResponse.data ?? [])
       setProviders(providerResponse.data ?? [])
-      setMcpServers(mcpResponse.data ?? [])
       setError('')
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : t('aiChat.agents.load_failed'))
@@ -69,6 +64,10 @@ export function AgentManager({ onChanged }: Props) {
   const imageProviders = getAgentProviderOptions(providers, 'image')
   const videoProviders = getAgentProviderOptions(providers, 'video')
   const hasEnabledTextProvider = textProviders.some((provider) => provider.enabled)
+  const selectedTextProvider = textProviders.find((provider) => String(provider.id) === draft?.textProviderId)
+  const selectedTextModels = selectedTextProvider?.models.textOptions?.length
+    ? selectedTextProvider.models.textOptions
+    : (selectedTextProvider?.models.text ? [selectedTextProvider.models.text] : [])
   const visibleAgents = agents.filter((agent) => {
     const query = search.trim().toLowerCase()
     return !query || agent.name.toLowerCase().includes(query) || agent.description.toLowerCase().includes(query)
@@ -83,7 +82,7 @@ export function AgentManager({ onChanged }: Props) {
     const defaultProvider = textProviders.find((provider) => provider.enabled)
     drawerTriggerRef.current = trigger
     setEditing(null)
-    setDraft(createAgentDraft(defaultProvider?.id, agents.length === 0))
+    setDraft(createAgentDraft(defaultProvider?.id, agents.length === 0, defaultProvider?.models.text ?? ''))
     setError('')
   }
 
@@ -152,6 +151,7 @@ export function AgentManager({ onChanged }: Props) {
           {t('aiChat.agents.add')}
         </button>
       </div>
+      <p className="ai-agent-manager__intro">{t('aiChat.agents.manager_intro')}</p>
 
       {error && !draft && <p className="ai-provider-error" role="alert">{error}</p>}
 
@@ -173,9 +173,6 @@ export function AgentManager({ onChanged }: Props) {
 
         {visibleAgents.map((agent) => {
           const providerNames = getAgentProviderNames(agent, providers)
-          const selectedMcpNames = agent.mcpServerIds.map(
-            (id) => mcpServers.find((server) => server.id === id)?.name ?? `#${id}`,
-          )
           return (
             <article className={`ai-agent-card ${agent.enabled ? '' : 'is-disabled'}`} key={agent.id}>
               <div className="ai-agent-card__content">
@@ -189,17 +186,14 @@ export function AgentManager({ onChanged }: Props) {
                 </div>
                 {agent.description && <p className="ai-agent-description">{agent.description}</p>}
                 <div className="ai-agent-provider-summary">
-                  <span>{t('aiChat.agents.text_provider')}<strong>{providerNames.text}</strong></span>
+                  <span>{t('aiChat.agents.text_provider')}<strong>{providerNames.text} · {agent.textModel}</strong></span>
                   {providerNames.image && <span>{t('aiChat.agents.image_provider')}<strong>{providerNames.image}</strong></span>}
                   {providerNames.video && <span>{t('aiChat.agents.video_provider')}<strong>{providerNames.video}</strong></span>}
                 </div>
                 <div className="ai-agent-meta">
-                  <span>{t(`aiChat.agents.approval_${agent.toolApprovalMode}`)}</span>
-                  <span>{t('aiChat.agents.max_calls_summary', { count: agent.maxToolCalls })}</span>
                   <span>{t('aiChat.agents.context_summary', { count: agent.context.maxMessages })}</span>
-                  <span>{t('aiChat.agents.mcp_summary', { count: selectedMcpNames.length })}</span>
+                  {agent.temperature !== undefined && <span>{t('aiChat.agents.temperature_summary', { value: agent.temperature })}</span>}
                 </div>
-                {selectedMcpNames.length > 0 && <p className="ai-agent-mcp-names">{selectedMcpNames.join(' · ')}</p>}
                 {agent.issues.length > 0 && (
                   <div className="ai-agent-issues" role="status">
                     <ShieldAlert size={15} aria-hidden="true" />
@@ -275,9 +269,23 @@ export function AgentManager({ onChanged }: Props) {
               <div className="ai-agent-provider-grid">
                 <label>
                   <span>{t('aiChat.agents.text_provider')}</span>
-                  <select className="form-field" value={draft.textProviderId} onChange={(event) => setDraft({ ...draft, textProviderId: event.target.value })}>
+                  <select className="form-field" value={draft.textProviderId} onChange={(event) => {
+                    const provider = textProviders.find((item) => String(item.id) === event.target.value)
+                    setDraft({
+                      ...draft,
+                      textProviderId: event.target.value,
+                      textModel: provider?.models.text ?? '',
+                    })
+                  }}>
                     <option value="">{t('aiChat.agents.select_provider')}</option>
                     {textProviders.map((provider) => <option key={provider.id} value={provider.id} disabled={!provider.enabled}>{provider.name} · {provider.models.text}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>{t('aiChat.agents.text_model')}</span>
+                  <select className="form-field" value={draft.textModel} disabled={!draft.textProviderId || selectedTextModels.length === 0} onChange={(event) => setDraft({ ...draft, textModel: event.target.value })}>
+                    <option value="">{t('aiChat.agents.select_text_model')}</option>
+                    {selectedTextModels.map((model) => <option key={model} value={model}>{model}</option>)}
                   </select>
                 </label>
                 <label>
@@ -301,16 +309,6 @@ export function AgentManager({ onChanged }: Props) {
               <legend>{t('aiChat.agents.behavior_section')}</legend>
               <div className="ai-agent-provider-grid">
                 <label>
-                  <span>{t('aiChat.agents.approval_mode')}</span>
-                  <select className="form-field" value={draft.toolApprovalMode} onChange={(event) => setDraft({ ...draft, toolApprovalMode: event.target.value as AgentDraft['toolApprovalMode'] })}>
-                    {(['confirm_all', 'confirm_risky', 'allow_selected', 'allow_all'] as const).map((mode) => <option key={mode} value={mode}>{t(`aiChat.agents.approval_${mode}`)}</option>)}
-                  </select>
-                </label>
-                <label>
-                  <span>{t('aiChat.agents.max_tool_calls')}</span>
-                  <input className="form-field" type="number" min="0" max="32" value={draft.maxToolCalls} onChange={(event) => setDraft({ ...draft, maxToolCalls: event.target.value })} />
-                </label>
-                <label>
                   <span>{t('aiChat.agents.temperature')}</span>
                   <input className="form-field" type="number" min="0" max="2" step="0.1" value={draft.temperature} onChange={(event) => setDraft({ ...draft, temperature: event.target.value })} />
                 </label>
@@ -323,37 +321,7 @@ export function AgentManager({ onChanged }: Props) {
                   <input className="form-field" type="number" min="1" max="1000000" value={draft.maxOutputTokens} onChange={(event) => setDraft({ ...draft, maxOutputTokens: event.target.value })} />
                 </label>
               </div>
-              {draft.toolApprovalMode === 'allow_all' && (
-                <div className="ai-agent-risk-warning"><ShieldAlert size={15} />{t('aiChat.agents.allow_all_warning')}</div>
-              )}
             </fieldset>
-
-            <fieldset className="ai-agent-fieldset">
-              <legend>{t('aiChat.agents.mcp_section')}</legend>
-              {mcpServers.length === 0 ? (
-                <p className="ai-agent-fieldset__empty">{t('aiChat.agents.no_mcp')}</p>
-              ) : (
-                <div className="ai-agent-mcp-grid">
-                  {mcpServers.map((server) => (
-                    <label key={server.id} className={!server.enabled ? 'is-disabled' : ''}>
-                      <input type="checkbox" checked={draft.mcpServerIds.includes(server.id)} onChange={() => setDraft({ ...draft, mcpServerIds: toggleAgentMcpServer(draft.mcpServerIds, server.id) })} />
-                      <span><strong>{server.name}</strong><small>{server.transport} · {t('aiChat.agents.tool_count', { count: server.toolCount })}</small></span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </fieldset>
-
-            <div className="ai-provider-form__grid">
-              <label>
-                <span>{t('aiChat.agents.allowed_tools')}</span>
-                <textarea className="form-field ai-agent-tool-list" value={draft.allowedToolsText} onChange={(event) => setDraft({ ...draft, allowedToolsText: event.target.value })} placeholder={t('aiChat.agents.tools_placeholder')} />
-              </label>
-              <label>
-                <span>{t('aiChat.agents.blocked_tools')}</span>
-                <textarea className="form-field ai-agent-tool-list" value={draft.blockedToolsText} onChange={(event) => setDraft({ ...draft, blockedToolsText: event.target.value })} placeholder={t('aiChat.agents.tools_placeholder')} />
-              </label>
-            </div>
 
             <div className="ai-provider-options">
               <label><input type="checkbox" checked={draft.enabled} disabled={editing?.isDefault} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />{t('aiChat.agents.enabled')}</label>
@@ -363,7 +331,7 @@ export function AgentManager({ onChanged }: Props) {
             {error && <p className="ai-provider-error" role="alert">{error}</p>}
             <div className="ai-provider-form__actions">
               <button className="btn" onClick={closeEditor}><X size={14} />{t('common.cancel')}</button>
-              <button className="btn primary" disabled={busy || !draft.textProviderId} onClick={() => void saveAgent()}>{t('common.save')}</button>
+              <button className="btn primary" disabled={busy || !draft.textProviderId || !draft.textModel} onClick={() => void saveAgent()}>{t('common.save')}</button>
             </div>
           </div>
         </AccessibleDialog>
