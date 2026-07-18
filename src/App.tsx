@@ -5,6 +5,7 @@ import { Statusbar } from './components/Statusbar'
 import { ViewportPortal } from './components/ViewportPortal'
 import { useAppStore } from './store/useAppStore'
 import { useTranslation } from 'react-i18next'
+import { AIChatBoundary } from './views/ai/AIChatBoundary'
 
 // Screen views
 import { AuthScreen } from './components/AuthScreen'
@@ -35,6 +36,7 @@ const Notes = lazy(() => import('./views/Notes').then(({ Notes }) => ({ default:
 const Books = lazy(() => import('./views/Books').then(({ Books }) => ({ default: Books })))
 const Videos = lazy(() => import('./views/Videos').then(({ Videos }) => ({ default: Videos })))
 const Toolbox = lazy(() => import('./views/Toolbox').then(({ Toolbox }) => ({ default: Toolbox })))
+const AIChat = lazy(() => import('./views/ai/AIChat').then(({ AIChat }) => ({ default: AIChat })))
 const Settings = lazy(() => import('./views/Settings').then(({ Settings }) => ({ default: Settings })))
 
 function App() {
@@ -316,6 +318,12 @@ function App() {
         return <Videos />
       case 'toolbox':
         return <Toolbox />
+      case 'ai':
+        return (
+          <AIChatBoundary>
+            <AIChat />
+          </AIChatBoundary>
+        )
       case 'settings':
         return <Settings />
       default:

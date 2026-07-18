@@ -1,11 +1,8 @@
-import React, { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { Lock, Eye, EyeOff, Copy, Trash2 } from 'lucide-react'
 import { copySecretWithAutoClear } from './toolboxVaultUtils'
-import { AIChatBoundary } from './ai/AIChatBoundary'
-
-const AIChat = lazy(() => import('./ai/AIChat').then(({ AIChat }) => ({ default: AIChat })))
 
 type VaultStatus =
   | 'not_configured'
@@ -42,7 +39,7 @@ export const Toolbox: React.FC = () => {
   const userId = useAppStore((state) => state.userId)
 
   // Active Tool Tab
-  const [toolTab, setToolTab] = useState<'pomodoro' | 'converter' | 'vault' | 'ai'>('pomodoro')
+  const [toolTab, setToolTab] = useState<'pomodoro' | 'converter' | 'vault'>('pomodoro')
 
   // DB States (Tasks lookup for Pomodoro)
   const [activeTasks, setActiveTasks] = useState<any[]>([])
@@ -376,7 +373,7 @@ export const Toolbox: React.FC = () => {
 
   return (
     <div
-      className={`toolbox-view ${toolTab === 'ai' ? 'is-ai' : ''}`}
+      className="toolbox-view"
       style={{
         animation: 'enter 0.15s ease both',
         height: '100%',
@@ -427,12 +424,6 @@ export const Toolbox: React.FC = () => {
           onClick={() => setToolTab('vault')}
         >
           {t('toolbox.tab_vault')}
-        </button>
-        <button
-          className={`tab ${toolTab === 'ai' ? 'active' : ''}`}
-          onClick={() => setToolTab('ai')}
-        >
-          {t('toolbox.tab_ai')}
         </button>
       </div>
 
@@ -1151,13 +1142,6 @@ export const Toolbox: React.FC = () => {
               </div>
             )}
           </div>
-        )}
-        {toolTab === 'ai' && (
-          <AIChatBoundary>
-            <Suspense fallback={<div className="ai-chat-loading-fallback">{t('aiChat.loading')}</div>}>
-              <AIChat />
-            </Suspense>
-          </AIChatBoundary>
         )}
       </div>
     </div>

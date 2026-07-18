@@ -337,11 +337,12 @@ body.theme-dense .nav-item.active {
   background-color: var(--bg-app);
 }
 
-.content-pane:has(.toolbox-view.is-ai) {
+.content-pane:has(.ai-chat-shell) {
   overflow: hidden;
 }
 
-.screen-transition:has(> .toolbox-view) {
+.screen-transition:has(> .toolbox-view),
+.screen-transition:has(> .ai-chat-shell) {
   height: 100%;
   min-height: 0;
 }
@@ -349,19 +350,6 @@ body.theme-dense .nav-item.active {
 .toolbox-view,
 .toolbox-view__body {
   min-height: 0;
-}
-
-.toolbox-view.is-ai .toolbox-view__header {
-  display: none !important;
-}
-
-.toolbox-view.is-ai .toolbox-view__body {
-  overflow: hidden;
-}
-
-.toolbox-view.is-ai .toolbox-view__tabs {
-  flex: 0 0 auto;
-  margin-bottom: 8px !important;
 }
 
 .screen-progress {

@@ -6,9 +6,9 @@ import test from 'node:test'
 const zh = JSON.parse(readFileSync(path.resolve('src/locales/zh-CN.json'), 'utf8'))
 const en = JSON.parse(readFileSync(path.resolve('src/locales/en-US.json'), 'utf8'))
 
-test('AI toolbox localization exists in Chinese and English with matching keys', () => {
-  assert.equal(zh.toolbox.tab_ai, 'AI 对话')
-  assert.equal(en.toolbox.tab_ai, 'AI Chat')
+test('AI localization exists in Chinese and English with matching keys', () => {
+  assert.equal(zh.sidebar.ai, 'AI 对话')
+  assert.equal(en.sidebar.ai, 'AI Chat')
   assert.deepEqual(Object.keys(zh.aiChat).sort(), Object.keys(en.aiChat).sort())
   assert.deepEqual(Object.keys(zh.aiChat.chat).sort(), Object.keys(en.aiChat.chat).sort())
   assert.deepEqual(Object.keys(zh.aiChat.images).sort(), Object.keys(en.aiChat.images).sort())
@@ -74,10 +74,11 @@ test('AI storage view keeps dense capacity layout, preview confirmation, and red
   assert.doesNotMatch(storage, /SECTION 0|QUESTION 0/)
 })
 
-test('Toolbox lazy-loads the isolated AI workspace without replacing existing tools', () => {
+test('Toolbox retains only utility tabs while App lazy-loads AI as a first-level screen', () => {
   const toolbox = readFileSync(path.resolve('src/views/Toolbox.tsx'), 'utf8')
-  assert.match(toolbox, /lazy\(\(\) => import\('\.\/ai\/AIChat'\)/)
-  assert.match(toolbox, /toolTab === 'ai'/)
+  const app = readFileSync(path.resolve('src/App.tsx'), 'utf8')
+  assert.match(app, /lazy\(\(\) => import\('\.\/views\/ai\/AIChat'\)/)
+  assert.doesNotMatch(toolbox, /toolTab === 'ai'|<AIChat/)
   for (const tab of ['pomodoro', 'converter', 'vault']) assert.match(toolbox, new RegExp(`toolTab === '${tab}'`))
 })
 

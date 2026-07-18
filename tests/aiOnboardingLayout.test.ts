@@ -8,6 +8,8 @@ const shell = readFileSync(path.resolve('src/views/ai/AIChat.tsx'), 'utf8')
 const css = readFileSync(path.resolve('src/views/ai/AIChat.css'), 'utf8')
 const appCss = readFileSync(path.resolve('src/index.css'), 'utf8')
 const toolbox = readFileSync(path.resolve('src/views/Toolbox.tsx'), 'utf8')
+const app = readFileSync(path.resolve('src/App.tsx'), 'utf8')
+const sidebar = readFileSync(path.resolve('src/components/Sidebar.tsx'), 'utf8')
 
 test('AI onboarding uses a wide cinematic heading and the approved AIDA structure', () => {
   assert.match(component, /ai-onboarding-hero/)
@@ -33,12 +35,13 @@ test('onboarding responds at 1180, 960, and 800 without page overflow', () => {
   assert.match(css, /@media \(max-width:\s*800px\)/)
 })
 
-test('AI toolbox mode owns the available pane height without an outer page scroll', () => {
-  assert.match(toolbox, /className=\{`toolbox-view \$\{toolTab === 'ai' \? 'is-ai' : ''\}`\}/)
-  assert.match(toolbox, /toolbox-view__header/)
-  assert.match(toolbox, /toolbox-view__body/)
-  assert.match(appCss, /\.content-pane:has\(\.toolbox-view\.is-ai\)[\s\S]*overflow:\s*hidden/)
-  assert.match(appCss, /\.screen-transition:has\(> \.toolbox-view\)[\s\S]*height:\s*100%[\s\S]*min-height:\s*0/)
+test('AI is a first-level screen that owns the available pane height', () => {
+  assert.match(app, /const AIChat = lazy\(\(\) => import\('\.\/views\/ai\/AIChat'\)/)
+  assert.match(app, /case 'ai':[\s\S]*<AIChatBoundary>[\s\S]*<AIChat \/>/)
+  assert.match(sidebar, /activeScreen === 'ai'[\s\S]*handleNavClick\('ai'\)[\s\S]*sidebar\.ai/)
+  assert.doesNotMatch(toolbox, /toolTab === 'ai'|<AIChat/)
+  assert.match(appCss, /\.content-pane:has\(\.ai-chat-shell\)[\s\S]*overflow:\s*hidden/)
+  assert.match(appCss, /\.screen-transition:has\(> \.ai-chat-shell\)[\s\S]*height:\s*100%[\s\S]*min-height:\s*0/)
 })
 
 test('saving the first provider exits onboarding into the daily chat workspace', () => {

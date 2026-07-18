@@ -9,6 +9,7 @@ import {
   BookOpen,
   Video,
   Grid,
+  MessageSquare,
   Settings,
   Calendar,
   RotateCcw,
@@ -174,6 +175,16 @@ export const Sidebar: React.FC = () => {
             <Grid size={18} />
           </span>
           <span className="nav-label">{t('sidebar.toolbox')}</span>
+        </button>
+
+        <button
+          className={`nav-item ${activeScreen === 'ai' ? 'active' : ''}`}
+          onClick={() => handleNavClick('ai')}
+        >
+          <span className="nav-icon">
+            <MessageSquare size={18} />
+          </span>
+          <span className="nav-label">{t('sidebar.ai')}</span>
         </button>
 
         {/* Pinned Links */}
