@@ -102,6 +102,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
   const [submittingApproval, setSubmittingApproval] = useState(false)
   const [imageMode, setImageMode] = useState(false)
   const [videoMode, setVideoMode] = useState(false)
+  const [runAnnouncement, setRunAnnouncement] = useState('')
   const activeConversationRef = useRef<number | null>(null)
   const messagesRef = useRef<AIChatMessage[]>([])
   const lastSequenceRef = useRef(new Map<string, number>())
@@ -130,6 +131,18 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
   useEffect(() => {
     messagesRef.current = messages
   }, [messages])
+
+  useEffect(() => {
+    const status = activeRun?.status
+    if (!status) {
+      setRunAnnouncement('')
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setRunAnnouncement(t(`aiChat.chat.announcement_${status}`))
+    }, 240)
+    return () => window.clearTimeout(timer)
+  }, [activeRun?.runId, activeRun?.status, t])
 
   useEffect(() => {
     if (selectedAgentId && readyAgents.some((agent) => agent.id === selectedAgentId)) return
@@ -674,11 +687,15 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
               onClick={exportConversation}
               disabled={!activeConversation || messages.length === 0}
             >
-              <Download size={13} />
+              <Download size={13} aria-hidden="true" />
               {t('aiChat.chat.export')}
             </button>
           </div>
         </header>
+
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {runAnnouncement}
+        </div>
 
         <div
           className="ai-message-timeline"
@@ -686,7 +703,6 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
           onScroll={(event) => {
             followOutputRef.current = shouldFollowAIChatScroll(event.currentTarget)
           }}
-          aria-live="polite"
           aria-busy={loadingMessages}
         >
           {hasOlderMessages && messages.length > 0 && (
@@ -766,7 +782,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
                 disabled={!activeAgent?.providers.image || submitting || isRunning}
                 title={activeAgent?.providers.image ? t('aiChat.images.toggle') : t('aiChat.images.provider_required')}
               >
-                <ImagePlus size={13} />
+                <ImagePlus size={13} aria-hidden="true" />
                 {t(imageMode ? 'aiChat.images.mode_active' : 'aiChat.images.mode')}
               </button>
               <button
@@ -778,14 +794,14 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
                 disabled={!activeAgent?.providers.video || submitting || isRunning}
                 title={activeAgent?.providers.video ? t('aiChat.videos.toggle') : t('aiChat.videos.provider_required')}
               >
-                <Video size={13} />
+                <Video size={13} aria-hidden="true" />
                 {t(videoMode ? 'aiChat.videos.mode_active' : 'aiChat.videos.mode')}
               </button>
               <span>{t(imageMode ? 'aiChat.images.composer_hint' : videoMode ? 'aiChat.videos.composer_hint' : 'aiChat.chat.composer_hint')}</span>
             </div>
             {isRunning ? (
               <button className="ai-chat-stop" onClick={() => void stopRun()}>
-                <Square size={13} fill="currentColor" />
+                <Square size={13} fill="currentColor" aria-hidden="true" />
                 {t('aiChat.chat.stop')}
               </button>
             ) : (
@@ -794,7 +810,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
                 onClick={() => void sendText()}
                 disabled={!draft.trim() || submitting}
               >
-                <Send size={14} />
+                <Send size={14} aria-hidden="true" />
                 {t('aiChat.chat.send')}
               </button>
             )}
@@ -849,6 +865,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
           approval={activeApproval}
           submitting={submittingApproval}
           onDecision={(decision) => void decideToolApproval(decision)}
+          returnFocus={() => textareaRef.current?.focus()}
         />
       )}
     </section>

@@ -22,13 +22,13 @@ export function VideoMessage({ video }: VideoMessageProps) {
   return (
     <figure className="ai-video-card">
       <div className="ai-video-card__frame">
-        <video src={src} poster={poster} controls preload="metadata" />
+        <video src={src} poster={poster} controls preload="metadata" aria-label={video.alt ?? video.name ?? t('aiChat.videos.generated_alt')} />
       </div>
       <figcaption>
         <span>{video.name ?? t('aiChat.videos.generated')}</span>
         {video.durationSeconds && <em>{formatDuration(video.durationSeconds)}</em>}
-        <button onClick={() => void api?.saveAIAsset?.(video.assetId)}><Download size={13} />{t('aiChat.images.save_as')}</button>
-        <button onClick={() => void api?.revealAIAsset?.(video.assetId)}><FolderOpen size={13} />{t('aiChat.images.reveal')}</button>
+        <button onClick={() => void api?.saveAIAsset?.(video.assetId)}><Download size={13} aria-hidden="true" />{t('aiChat.images.save_as')}</button>
+        <button onClick={() => void api?.revealAIAsset?.(video.assetId)}><FolderOpen size={13} aria-hidden="true" />{t('aiChat.images.reveal')}</button>
       </figcaption>
     </figure>
   )

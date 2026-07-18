@@ -43,6 +43,10 @@ type AccessibleDialogProps = {
   overlayStyle?: CSSProperties
   contentStyle?: CSSProperties
   titleStyle?: CSSProperties
+  role?: 'dialog' | 'alertdialog'
+  overlayClassName?: string
+  contentClassName?: string
+  closeOnOverlay?: boolean
 }
 
 export function AccessibleDialog({
@@ -54,6 +58,10 @@ export function AccessibleDialog({
   overlayStyle,
   contentStyle,
   titleStyle,
+  role = 'dialog',
+  overlayClassName,
+  contentClassName,
+  closeOnOverlay = false,
 }: AccessibleDialogProps) {
   const titleId = useId()
   const contentRef = useRef<HTMLDivElement | null>(null)
@@ -77,7 +85,9 @@ export function AccessibleDialog({
     focusTarget?.focus()
 
     return () => {
-      if (shouldRestoreDialogFocus(mountedContent)) latestReturnFocusRef.current?.()
+      queueMicrotask(() => {
+        if (shouldRestoreDialogFocus(mountedContent)) latestReturnFocusRef.current?.()
+      })
     }
   }, [])
 
@@ -98,11 +108,17 @@ export function AccessibleDialog({
 
   return (
     <ViewportPortal>
-      <div className="dialog-overlay" style={overlayStyle}>
+      <div
+        className={`dialog-overlay${overlayClassName ? ` ${overlayClassName}` : ''}`}
+        style={overlayStyle}
+        onMouseDown={(event) => {
+          if (closeOnOverlay && event.target === event.currentTarget) latestOnCloseRef.current()
+        }}
+      >
         <div
           ref={contentRef}
-          className="dialog-surface"
-          role="dialog"
+          className={`dialog-surface${contentClassName ? ` ${contentClassName}` : ''}`}
+          role={role}
           aria-modal="true"
           aria-labelledby={titleId}
           tabIndex={-1}

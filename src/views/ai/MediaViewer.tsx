@@ -1,5 +1,7 @@
 import { Download, FolderOpen, X } from 'lucide-react'
+import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { AccessibleDialog } from '../../components/AccessibleDialog'
 import type { AIChatMediaPart } from './chatUtils'
 
 type MediaViewerProps = {
@@ -10,22 +12,33 @@ type MediaViewerProps = {
 export function MediaViewer({ media, onClose }: MediaViewerProps) {
   const { t } = useTranslation()
   const api = (window as any).electronAPI
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const returnTargetRef = useRef(
+    typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  )
+  const title = media.name ?? t('aiChat.images.generated')
   return (
-    <div className="ai-media-viewer" role="dialog" aria-modal="true" aria-label={media.alt ?? media.name ?? t('aiChat.images.viewer')}>
-      <div className="ai-media-viewer__backdrop" onClick={onClose} />
-      <section className="ai-media-viewer__panel">
+    <AccessibleDialog
+      title={title}
+      onClose={onClose}
+      returnFocus={() => returnTargetRef.current?.focus()}
+      initialFocusRef={closeRef}
+      overlayClassName="ai-media-viewer"
+      contentClassName="ai-media-viewer__panel"
+      closeOnOverlay
+    >
         <header>
-          <span>{media.name ?? t('aiChat.images.generated')}</span>
           <div>
-            <button onClick={() => void api?.saveAIAsset?.(media.assetId)}><Download size={14} />{t('aiChat.images.save_as')}</button>
-            <button onClick={() => void api?.revealAIAsset?.(media.assetId)}><FolderOpen size={14} />{t('aiChat.images.reveal')}</button>
-            <button onClick={onClose} aria-label={t('common.close')}><X size={16} /></button>
+            <button onClick={() => void api?.saveAIAsset?.(media.assetId)}><Download size={14} aria-hidden="true" />{t('aiChat.images.save_as')}</button>
+            <button onClick={() => void api?.revealAIAsset?.(media.assetId)}><FolderOpen size={14} aria-hidden="true" />{t('aiChat.images.reveal')}</button>
+            <button ref={closeRef} onClick={onClose} aria-label={t('common.close')}><X size={16} aria-hidden="true" /></button>
           </div>
         </header>
         <div className="ai-media-viewer__canvas">
-          <img src={`life-ai-asset://asset/${media.assetId}`} alt={media.alt ?? media.name ?? ''} />
+          <img src={`life-ai-asset://asset/${media.assetId}`} alt={media.alt ?? media.name ?? t('aiChat.images.generated_alt')} />
         </div>
-      </section>
-    </div>
+    </AccessibleDialog>
   )
 }

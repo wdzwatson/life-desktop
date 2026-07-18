@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import test from 'node:test'
+
+const workspace = readFileSync(path.resolve('src/views/ai/ChatWorkspace.tsx'), 'utf8')
+const approval = readFileSync(path.resolve('src/views/ai/ToolApprovalDialog.tsx'), 'utf8')
+const viewer = readFileSync(path.resolve('src/views/ai/MediaViewer.tsx'), 'utf8')
+const images = readFileSync(path.resolve('src/views/ai/ImageMessage.tsx'), 'utf8')
+const videos = readFileSync(path.resolve('src/views/ai/VideoMessage.tsx'), 'utf8')
+const dialog = readFileSync(path.resolve('src/components/AccessibleDialog.tsx'), 'utf8')
+const css = readFileSync(path.resolve('src/views/ai/AIChat.css'), 'utf8')
+
+test('tool approval and media viewer trap focus, close with Escape, and restore focus', () => {
+  assert.match(approval, /<AccessibleDialog[\s\S]*role="alertdialog"[\s\S]*returnFocus=\{returnFocus\}[\s\S]*initialFocusRef=\{rejectRef\}/)
+  assert.match(viewer, /<AccessibleDialog[\s\S]*returnFocus=[\s\S]*initialFocusRef=\{closeRef\}/)
+  assert.match(dialog, /event\.key === 'Escape'[\s\S]*latestOnCloseRef\.current\(\)/)
+  assert.match(dialog, /getTrappedFocusIndex[\s\S]*items\[nextIndex\]\.focus\(\)/)
+  assert.match(dialog, /queueMicrotask\(\(\) =>[\s\S]*shouldRestoreDialogFocus\(mountedContent\)[\s\S]*latestReturnFocusRef\.current\?\.\(\)/)
+  assert.match(workspace, /returnFocus=\{\(\) => textareaRef\.current\?\.focus\(\)\}/)
+})
+
+test('streaming updates announce run status atomically instead of every token', () => {
+  assert.doesNotMatch(workspace, /className="ai-message-timeline"[\s\S]{0,260}aria-live=/)
+  assert.match(workspace, /role="status" aria-live="polite" aria-atomic="true"/)
+  assert.match(workspace, /setTimeout\(\(\) =>[\s\S]*announcement_\$\{status\}[\s\S]*}, 240\)/)
+  assert.match(workspace, /\[activeRun\?\.runId, activeRun\?\.status, t\]/)
+})
+
+test('generated images and videos always expose localized accessible names', () => {
+  assert.match(images, /aria-label=\{t\('aiChat\.images\.open_name'/)
+  assert.match(images, /alt=\{image\.alt \?\? image\.name \?\? t\('aiChat\.images\.generated_alt'\)\}/)
+  assert.match(viewer, /aiChat\.images\.generated_alt/)
+  assert.match(videos, /aria-label=\{video\.alt \?\? video\.name \?\? t\('aiChat\.videos\.generated_alt'\)\}/)
+})
+
+test('AI controls and run states retain visible keyboard focus and theme-derived contrast', () => {
+  assert.match(css, /\.ai-chat-shell :is\(button, a, input, select, textarea, \[tabindex\]\):focus-visible[\s\S]*outline:\s*2px solid/)
+  assert.match(css, /--ai-status-success:[\s\S]*--ai-status-warning:[\s\S]*--ai-status-danger:/)
+  assert.match(css, /dd\.is-completed[\s\S]*var\(--ai-status-success\)/)
+  assert.match(css, /dd\.is-cancelled,[\s\S]*dd\.is-interrupted[\s\S]*var\(--ai-status-warning\)/)
+})

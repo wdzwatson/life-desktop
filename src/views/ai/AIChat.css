@@ -1,4 +1,7 @@
 .ai-chat-shell {
+  --ai-status-success: color-mix(in srgb, #137a4b 82%, var(--text-main));
+  --ai-status-warning: color-mix(in srgb, #a75608 84%, var(--text-main));
+  --ai-status-danger: color-mix(in srgb, #b42335 84%, var(--text-main));
   width: 100%;
   max-width: 100%;
   height: clamp(520px, calc(100vh - 190px), 860px);
@@ -14,6 +17,11 @@
     var(--bg-surface);
   box-shadow: var(--shadow-app);
   font-family: 'Cabinet Grotesk', 'Outfit', var(--font-sans);
+}
+
+.ai-chat-shell :is(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 82%, var(--text-main));
+  outline-offset: 2px;
 }
 
 .ai-chat-header {
@@ -939,7 +947,16 @@
 }
 
 .ai-run-inspector dd.is-failed {
-  color: var(--color-danger);
+  color: var(--ai-status-danger);
+}
+
+.ai-run-inspector dd.is-completed {
+  color: var(--ai-status-success);
+}
+
+.ai-run-inspector dd.is-cancelled,
+.ai-run-inspector dd.is-interrupted {
+  color: var(--ai-status-warning);
 }
 
 .ai-run-inspector__activity,
@@ -2914,6 +2931,8 @@ button.ai-onboarding-bento__card:hover {
   display: grid;
   place-items: center;
   padding: 24px;
+  background: rgba(4, 8, 14, 0.82);
+  backdrop-filter: blur(10px);
 }
 
 .ai-media-viewer__backdrop {
@@ -2928,7 +2947,7 @@ button.ai-onboarding-bento__card:hover {
   width: min(1120px, 100%);
   height: min(820px, 92vh);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 20px;
@@ -2936,9 +2955,19 @@ button.ai-onboarding-bento__card:hover {
   box-shadow: 0 32px 120px rgba(0, 0, 0, 0.5);
 }
 
+.ai-media-viewer__panel > h3 {
+  margin: 0;
+  padding: 12px 14px 0;
+  overflow: hidden;
+  color: #fff;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ai-media-viewer__panel header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 14px;
   align-items: center;
   padding: 12px 14px;
@@ -3058,18 +3087,18 @@ button.ai-onboarding-bento__card:hover {
 .ai-tool-card__risk.is-command,
 .ai-tool-card__risk.is-external_side_effect,
 .ai-tool-card__risk.is-write {
-  color: #9a5210;
+  color: var(--ai-status-warning);
   background: rgba(245, 158, 11, 0.12);
 }
 
 .ai-tool-card.is-completed .ai-tool-card__status {
-  color: #24754d;
+  color: var(--ai-status-success);
 }
 
 .ai-tool-card.is-failed .ai-tool-card__status,
 .ai-tool-card.is-rejected .ai-tool-card__status,
 .ai-tool-card.is-cancelled .ai-tool-card__status {
-  color: #a13f48;
+  color: var(--ai-status-danger);
 }
 
 .ai-tool-card__details {
@@ -3114,6 +3143,8 @@ button.ai-onboarding-bento__card:hover {
   display: grid;
   place-items: center;
   padding: 24px;
+  background: rgba(5, 10, 18, 0.56);
+  backdrop-filter: blur(8px);
 }
 
 .ai-tool-approval__backdrop {
@@ -3135,6 +3166,12 @@ button.ai-onboarding-bento__card:hover {
   box-shadow: 0 28px 90px rgba(0, 0, 0, 0.26);
 }
 
+.ai-tool-approval__panel > h3 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 17px;
+}
+
 .ai-tool-approval__heading {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -3148,14 +3185,8 @@ button.ai-onboarding-bento__card:hover {
   display: grid;
   place-items: center;
   border-radius: 12px;
-  color: #9a5210;
+  color: var(--ai-status-warning);
   background: rgba(245, 158, 11, 0.13);
-}
-
-.ai-tool-approval__heading h2 {
-  margin: 0;
-  color: var(--text-main);
-  font-size: 17px;
 }
 
 .ai-tool-approval__heading p {

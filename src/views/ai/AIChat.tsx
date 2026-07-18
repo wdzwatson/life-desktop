@@ -108,7 +108,7 @@ export function AIChat() {
         ))}
       </nav>
 
-      <section className="ai-chat-content" aria-live="polite">
+      <section className="ai-chat-content">
         {loadState === 'loading' && (
           <div className="ai-chat-state" role="status">
             <RefreshCw className="ai-chat-state__spinner" size={22} aria-hidden="true" />

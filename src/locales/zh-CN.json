@@ -789,6 +789,11 @@
       "stop": "停止",
       "stop_failed": "无法停止当前运行",
       "generating": "正在生成回答",
+      "announcement_running": "AI 正在生成回答",
+      "announcement_completed": "AI 回答已完成",
+      "announcement_failed": "AI 回答失败",
+      "announcement_cancelled": "AI 回答已停止",
+      "announcement_interrupted": "AI 回答已中断",
       "copy": "复制",
       "copied": "已复制",
       "retry_message": "重试",
@@ -846,6 +851,8 @@
     "images": {
       "viewer": "图片查看器",
       "generated": "生成的图片",
+      "generated_alt": "AI 生成的图片",
+      "open_name": "查看图片：{{name}}",
       "save_as": "另存为",
       "reveal": "在文件管理器中显示",
       "mode": "图片",
@@ -858,6 +865,7 @@
     },
     "videos": {
       "generated": "生成的视频",
+      "generated_alt": "AI 生成的视频",
       "mode": "视频",
       "mode_active": "视频模式",
       "toggle": "切换视频生成模式",

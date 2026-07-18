@@ -789,6 +789,11 @@
       "stop": "Stop",
       "stop_failed": "Unable to stop the current run",
       "generating": "Generating a response",
+      "announcement_running": "AI is generating a response",
+      "announcement_completed": "AI response completed",
+      "announcement_failed": "AI response failed",
+      "announcement_cancelled": "AI response stopped",
+      "announcement_interrupted": "AI response interrupted",
       "copy": "Copy",
       "copied": "Copied",
       "retry_message": "Retry",
@@ -846,6 +851,8 @@
     "images": {
       "viewer": "Image viewer",
       "generated": "Generated image",
+      "generated_alt": "AI-generated image",
+      "open_name": "View image: {{name}}",
       "save_as": "Save as",
       "reveal": "Show in file manager",
       "mode": "Image",
@@ -858,6 +865,7 @@
     },
     "videos": {
       "generated": "Generated video",
+      "generated_alt": "AI-generated video",
       "mode": "Video",
       "mode_active": "Video mode",
       "toggle": "Toggle video generation mode",
