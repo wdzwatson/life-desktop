@@ -7,6 +7,7 @@ import {
   ImagePlus,
   MessageSquare,
   Send,
+  Settings2,
   Square,
   TimerReset,
   TriangleAlert,
@@ -59,6 +60,7 @@ export type AIChatAgent = {
 type ChatWorkspaceProps = {
   agents: AIChatAgent[]
   hasProvider: boolean
+  onOpenSettings: () => void
   onOpenProviders: () => void
   onOpenAgents: () => void
 }
@@ -84,7 +86,7 @@ function errorMessage(response: unknown, fallback: string) {
   return fallback
 }
 
-export function ChatWorkspace({ agents, hasProvider, onOpenProviders, onOpenAgents }: ChatWorkspaceProps) {
+export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProviders, onOpenAgents }: ChatWorkspaceProps) {
   const { t } = useTranslation()
   const api = (window as any).electronAPI
   const readyAgents = useMemo(
@@ -744,6 +746,14 @@ export function ChatWorkspace({ agents, hasProvider, onOpenProviders, onOpenAgen
             <p>{activeAgent?.description || t('aiChat.chat.start_desc')}</p>
           </div>
           <div className="ai-chat-stage__controls">
+            <button
+              className="ai-chat-stage__settings"
+              onClick={onOpenSettings}
+              aria-label={t('aiChat.settings')}
+              title={t('aiChat.settings')}
+            >
+              <Settings2 size={14} aria-hidden="true" />
+            </button>
             <label>
               <Bot size={14} aria-hidden="true" />
               <span className="sr-only">{t('aiChat.chat.select_agent')}</span>

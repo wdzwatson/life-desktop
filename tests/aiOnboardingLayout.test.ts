@@ -47,5 +47,8 @@ test('chat and configuration use separate workspace modes', () => {
   assert.match(shell, /className="ai-settings-back"[\s\S]*setMode\('chat'\)/)
   assert.match(shell, /className="ai-settings-shell"[\s\S]*className="ai-settings-nav"[\s\S]*className="ai-settings-content"/)
   assert.match(css, /\.ai-chat-shell[\s\S]*grid-template-rows:\s*auto minmax\(0, 1fr\)/)
+  assert.match(css, /\.ai-chat-shell\.is-chat\s*\{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\)/)
+  assert.doesNotMatch(shell, /className="ai-chat-heading"/)
+  assert.match(workspace, /className="ai-chat-stage__settings"[\s\S]*onClick=\{onOpenSettings\}/)
   assert.match(css, /\.ai-settings-shell[\s\S]*grid-template-columns:\s*190px minmax\(0, 1fr\)/)
 })

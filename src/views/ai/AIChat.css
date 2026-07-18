@@ -19,6 +19,19 @@
   font-family: 'Cabinet Grotesk', 'Outfit', var(--font-sans);
 }
 
+.ai-chat-shell.is-chat {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.ai-chat-shell.is-chat .ai-chat-content {
+  padding: 0;
+}
+
+.ai-chat-shell.is-chat .ai-chat-workspace {
+  border: 0;
+  border-radius: 0;
+}
+
 .ai-chat-shell :is(button, a, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid color-mix(in srgb, var(--color-accent) 82%, var(--text-main));
   outline-offset: 2px;
@@ -582,7 +595,8 @@
 }
 
 .ai-chat-stage__controls label,
-.ai-chat-stage__export {
+.ai-chat-stage__export,
+.ai-chat-stage__settings {
   height: 30px;
   display: inline-flex;
   align-items: center;
@@ -606,6 +620,14 @@
 }
 
 .ai-chat-stage__export {
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.ai-chat-stage__settings {
+  width: 30px;
+  justify-content: center;
+  padding: 0;
   color: var(--text-main);
   cursor: pointer;
 }

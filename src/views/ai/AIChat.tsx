@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Bot, Database, HardDrive, MessageSquare, Plug, RefreshCw, Settings2 } from 'lucide-react'
+import { ArrowLeft, Bot, Database, HardDrive, Plug, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import './AIChat.css'
 import { AgentManager } from './AgentManager'
@@ -77,28 +77,8 @@ export function AIChat() {
 
   return (
     <main className={`ai-chat-shell is-${mode}`} aria-label={t('aiChat.title')}>
-      <header className="ai-chat-header">
-        {mode === 'chat' ? (
-          <>
-            <div className="ai-chat-heading">
-              <span className="ai-chat-heading__icon" aria-hidden="true">
-                <MessageSquare size={18} />
-              </span>
-              <div>
-                <h1>{t('aiChat.title')}</h1>
-                <p>{t('aiChat.subtitle')}</p>
-              </div>
-            </div>
-            <button
-              className="ai-chat-icon-button"
-              aria-label={t('aiChat.settings')}
-              title={t('aiChat.settings')}
-              onClick={() => openSettings()}
-            >
-              <Settings2 size={17} />
-            </button>
-          </>
-        ) : (
+      {mode === 'settings' && (
+        <header className="ai-chat-header">
           <div className="ai-settings-heading">
             <button className="ai-settings-back" onClick={() => setMode('chat')}>
               <ArrowLeft size={16} aria-hidden="true" />
@@ -109,8 +89,8 @@ export function AIChat() {
               <p>{t('aiChat.settings_description')}</p>
             </div>
           </div>
-        )}
-      </header>
+        </header>
+      )}
 
       <section className="ai-chat-content">
         {loadState === 'loading' && (
@@ -134,6 +114,7 @@ export function AIChat() {
           <ChatWorkspace
             agents={agents}
             hasProvider={hasProvider}
+            onOpenSettings={() => openSettings()}
             onOpenProviders={() => {
               setupTransitionRef.current = true
               openSettings('providers')
