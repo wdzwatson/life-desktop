@@ -52,3 +52,10 @@ test('chat and configuration use separate workspace modes', () => {
   assert.match(workspace, /className="ai-chat-stage__settings"[\s\S]*onClick=\{onOpenSettings\}/)
   assert.match(css, /\.ai-settings-shell[\s\S]*grid-template-columns:\s*190px minmax\(0, 1fr\)/)
 })
+
+test('assistant creation lives in provider settings without a standalone Agent page', () => {
+  assert.doesNotMatch(shell, /AgentManager|nav_agents|'agents'/)
+  assert.doesNotMatch(workspace, /onOpenAgents/)
+  assert.match(workspace, /hasProvider \? 'aiChat\.chat\.configure_agent'/)
+  assert.match(workspace, /onClick=\{onOpenProviders\}/)
+})

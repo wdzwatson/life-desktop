@@ -1,19 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Bot, Database, HardDrive, Plug, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Database, HardDrive, Plug, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import './AIChat.css'
-import { AgentManager } from './AgentManager'
 import { ChatWorkspace, type AIChatAgent } from './ChatWorkspace'
 import { McpManager } from './McpManager'
 import { ProviderManager } from './ProviderManager'
 import { StorageManager } from './StorageManager'
 
 type AIMode = 'chat' | 'settings'
-type AISettingsView = 'providers' | 'agents' | 'mcp' | 'storage'
-type ConfigCounts = { providers: number; agents: number; mcp: number }
+type AISettingsView = 'providers' | 'mcp' | 'storage'
+type ConfigCounts = { providers: number; mcp: number }
 type LoadState = 'loading' | 'ready' | 'error'
 
-const EMPTY_COUNTS: ConfigCounts = { providers: 0, agents: 0, mcp: 0 }
+const EMPTY_COUNTS: ConfigCounts = { providers: 0, mcp: 0 }
 
 export function AIChat() {
   const { t } = useTranslation()
@@ -41,7 +40,6 @@ export function AIChat() {
       if (!providers?.success || !agents?.success || !mcp?.success) throw new Error('load failed')
       setCounts({
         providers: providers.data?.length ?? 0,
-        agents: agents.data?.length ?? 0,
         mcp: mcp.data?.length ?? 0,
       })
       if ((providers.data?.length ?? 0) > 0 && setupTransitionRef.current) {
@@ -62,7 +60,6 @@ export function AIChat() {
   const settingsNavigation = useMemo(
     () => [
       { id: 'providers' as const, label: t('aiChat.nav_providers'), icon: Database, count: counts.providers },
-      { id: 'agents' as const, label: t('aiChat.nav_agents'), icon: Bot, count: counts.agents },
       { id: 'mcp' as const, label: t('aiChat.nav_mcp'), icon: Plug, count: counts.mcp },
       { id: 'storage' as const, label: t('aiChat.nav_storage'), icon: HardDrive },
     ],
@@ -119,7 +116,6 @@ export function AIChat() {
               setupTransitionRef.current = true
               openSettings('providers')
             }}
-            onOpenAgents={() => openSettings('agents')}
           />
         )}
 
@@ -141,7 +137,6 @@ export function AIChat() {
             </nav>
             <section className="ai-settings-content">
               {settingsView === 'providers' && <ProviderManager onChanged={loadConfiguration} />}
-              {settingsView === 'agents' && <AgentManager onChanged={loadConfiguration} />}
               {settingsView === 'mcp' && <McpManager onChanged={loadConfiguration} />}
               {settingsView === 'storage' && <StorageManager />}
             </section>
