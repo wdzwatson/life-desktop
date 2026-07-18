@@ -21,6 +21,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConversationList } from './ConversationList'
+import { ConversationDeleteDialog } from './ConversationDeleteDialog'
 import { MessageRenderer } from './MessageRenderer'
 import { ToolApprovalDialog } from './ToolApprovalDialog'
 import {
@@ -100,6 +101,8 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
   const [notice, setNotice] = useState<string | null>(null)
   const [toolApprovals, setToolApprovals] = useState<Record<string, AIChatToolApproval>>({})
   const [submittingApproval, setSubmittingApproval] = useState(false)
+  const [deletingConversation, setDeletingConversation] = useState<AIChatConversation | null>(null)
+  const [deletingConversationBusy, setDeletingConversationBusy] = useState(false)
   const [imageMode, setImageMode] = useState(false)
   const [videoMode, setVideoMode] = useState(false)
   const [runAnnouncement, setRunAnnouncement] = useState('')
@@ -604,12 +607,17 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
     else void loadConversations()
   }
 
-  const deleteConversation = async (conversation: AIChatConversation) => {
-    if (!window.confirm(t('aiChat.chat.delete_confirm', { name: conversation.title }))) return
-    const deleteUnreferencedMedia = window.confirm(t('aiChat.chat.delete_media_confirm'))
-    const response = await api.deleteAIConversation(conversation.id, deleteUnreferencedMedia)
-    if (!response?.success) setNotice(errorMessage(response, t('aiChat.chat.delete_failed')))
-    else void loadConversations()
+  const confirmDeleteConversation = async (deleteUnreferencedMedia: boolean) => {
+    if (!deletingConversation || deletingConversationBusy) return
+    setDeletingConversationBusy(true)
+    const response = await api.deleteAIConversation(deletingConversation.id, deleteUnreferencedMedia)
+    setDeletingConversationBusy(false)
+    if (!response?.success) {
+      setNotice(errorMessage(response, t('aiChat.chat.delete_failed')))
+      return
+    }
+    setDeletingConversation(null)
+    void loadConversations()
   }
 
   const exportConversation = () => {
@@ -660,7 +668,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
         onRename={(conversation) => void renameConversation(conversation)}
         onTogglePinned={(conversation) => void togglePinned(conversation)}
         onToggleArchived={(conversation) => void toggleArchived(conversation)}
-        onDelete={(conversation) => void deleteConversation(conversation)}
+        onDelete={setDeletingConversation}
       />
 
       <section className="ai-chat-stage" aria-label={t('aiChat.chat.workspace')}>
@@ -865,6 +873,15 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
           approval={activeApproval}
           submitting={submittingApproval}
           onDecision={(decision) => void decideToolApproval(decision)}
+          returnFocus={() => textareaRef.current?.focus()}
+        />
+      )}
+      {deletingConversation && (
+        <ConversationDeleteDialog
+          conversation={deletingConversation}
+          submitting={deletingConversationBusy}
+          onCancel={() => setDeletingConversation(null)}
+          onConfirm={(deleteUnreferencedMedia) => void confirmDeleteConversation(deleteUnreferencedMedia)}
           returnFocus={() => textareaRef.current?.focus()}
         />
       )}

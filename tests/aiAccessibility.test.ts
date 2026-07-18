@@ -9,6 +9,7 @@ const viewer = readFileSync(path.resolve('src/views/ai/MediaViewer.tsx'), 'utf8'
 const images = readFileSync(path.resolve('src/views/ai/ImageMessage.tsx'), 'utf8')
 const videos = readFileSync(path.resolve('src/views/ai/VideoMessage.tsx'), 'utf8')
 const dialog = readFileSync(path.resolve('src/components/AccessibleDialog.tsx'), 'utf8')
+const conversationDelete = readFileSync(path.resolve('src/views/ai/ConversationDeleteDialog.tsx'), 'utf8')
 const css = readFileSync(path.resolve('src/views/ai/AIChat.css'), 'utf8')
 
 test('tool approval and media viewer trap focus, close with Escape, and restore focus', () => {
@@ -18,6 +19,13 @@ test('tool approval and media viewer trap focus, close with Escape, and restore 
   assert.match(dialog, /getTrappedFocusIndex[\s\S]*items\[nextIndex\]\.focus\(\)/)
   assert.match(dialog, /queueMicrotask\(\(\) =>[\s\S]*shouldRestoreDialogFocus\(mountedContent\)[\s\S]*latestReturnFocusRef\.current\?\.\(\)/)
   assert.match(workspace, /returnFocus=\{\(\) => textareaRef\.current\?\.focus\(\)\}/)
+})
+
+test('conversation deletion uses one explicit dialog and keeps cancel separate from media cleanup', () => {
+  assert.doesNotMatch(workspace, /window\.confirm\(t\('aiChat\.chat\.delete/)
+  assert.match(workspace, /<ConversationDeleteDialog[\s\S]*onCancel=[\s\S]*onConfirm=/)
+  assert.match(conversationDelete, /type="checkbox"[\s\S]*deleteMedia/)
+  assert.match(conversationDelete, /className="btn danger"[\s\S]*common\.delete/)
 })
 
 test('streaming updates announce run status atomically instead of every token', () => {
