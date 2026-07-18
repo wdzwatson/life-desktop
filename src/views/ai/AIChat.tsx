@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Database, HardDrive, Plug, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Database, HardDrive, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import './AIChat.css'
 import { ChatWorkspace, type AIChatAgent } from './ChatWorkspace'
-import { McpManager } from './McpManager'
 import { ProviderManager } from './ProviderManager'
 import { StorageManager } from './StorageManager'
 
 type AIMode = 'chat' | 'settings'
-type AISettingsView = 'providers' | 'mcp' | 'storage'
-type ConfigCounts = { providers: number; mcp: number }
+type AISettingsView = 'providers' | 'storage'
+type ConfigCounts = { providers: number }
 type LoadState = 'loading' | 'ready' | 'error'
 
-const EMPTY_COUNTS: ConfigCounts = { providers: 0, mcp: 0 }
+const EMPTY_COUNTS: ConfigCounts = { providers: 0 }
 
 export function AIChat() {
   const { t } = useTranslation()
@@ -25,22 +24,20 @@ export function AIChat() {
   const api = (window as any).electronAPI
 
   const loadConfiguration = async () => {
-    if (!api?.listAIProviders || !api?.listAIAgents || !api?.listAIMcpServers) {
+    if (!api?.listAIProviders || !api?.listAIAgents) {
       setCounts(EMPTY_COUNTS)
       setLoadState('ready')
       return
     }
     setLoadState('loading')
     try {
-      const [providers, agents, mcp] = await Promise.all([
+      const [providers, agents] = await Promise.all([
         api.listAIProviders(),
         api.listAIAgents(),
-        api.listAIMcpServers(),
       ])
-      if (!providers?.success || !agents?.success || !mcp?.success) throw new Error('load failed')
+      if (!providers?.success || !agents?.success) throw new Error('load failed')
       setCounts({
         providers: providers.data?.length ?? 0,
-        mcp: mcp.data?.length ?? 0,
       })
       if ((providers.data?.length ?? 0) > 0 && setupTransitionRef.current) {
         setupTransitionRef.current = false
@@ -60,7 +57,6 @@ export function AIChat() {
   const settingsNavigation = useMemo(
     () => [
       { id: 'providers' as const, label: t('aiChat.nav_providers'), icon: Database, count: counts.providers },
-      { id: 'mcp' as const, label: t('aiChat.nav_mcp'), icon: Plug, count: counts.mcp },
       { id: 'storage' as const, label: t('aiChat.nav_storage'), icon: HardDrive },
     ],
     [counts, t],
@@ -137,7 +133,6 @@ export function AIChat() {
             </nav>
             <section className="ai-settings-content">
               {settingsView === 'providers' && <ProviderManager onChanged={loadConfiguration} />}
-              {settingsView === 'mcp' && <McpManager onChanged={loadConfiguration} />}
               {settingsView === 'storage' && <StorageManager />}
             </section>
           </div>

@@ -677,7 +677,7 @@
     "subtitle": "连接你的模型、Agent 与 MCP 工具。",
     "settings": "AI 设置",
     "settings_title": "AI 设置",
-    "settings_description": "管理模型与助手、工具连接及本地数据。",
+    "settings_description": "管理模型、助手及本地媒体数据。",
     "settings_navigation_label": "AI 设置导航",
     "back_to_chat": "返回对话",
     "navigation_label": "AI 对话导航",

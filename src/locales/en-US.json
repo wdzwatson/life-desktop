@@ -677,7 +677,7 @@
     "subtitle": "Connect your models, agents, and MCP tools.",
     "settings": "AI settings",
     "settings_title": "AI Settings",
-    "settings_description": "Manage models and assistants, tool connections, and local data.",
+    "settings_description": "Manage models, assistants, and local media data.",
     "settings_navigation_label": "AI settings navigation",
     "back_to_chat": "Back to chat",
     "navigation_label": "AI chat navigation",
