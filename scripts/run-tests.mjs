@@ -20,6 +20,7 @@ const allTests = readdirSync(testsDir)
 const electronNodeTests = new Set([
   'tests/aiSchema.test.mjs',
   'tests/aiProviderService.test.mjs',
+  'tests/aiAgentService.test.mjs',
   'tests/dbTransaction.test.mjs',
   'tests/vaultService.test.mjs',
   'tests/videoSchema.test.mjs',
