@@ -6,6 +6,7 @@ import {
   createOptimisticRunMessages,
   getAIChatRetryText,
   getAIComposerIntent,
+  loadAllAIChatMessages,
   mergeAIChatMessages,
   reduceAIChatRunState,
   shouldFollowAIChatScroll,
@@ -108,4 +109,18 @@ test('retry text resolves the parent user message and markdown export retains ro
   const exported = buildAIConversationMarkdown('Session', [user, assistant])
   assert.match(exported, /# Session[\s\S]*## User[\s\S]*Try again[\s\S]*## Assistant/)
   assert.match(exported, /## Media manifest[\s\S]*result\.png \(image\/png, asset 9\)/)
+})
+
+test('complete export pagination loads every message before building Markdown', async () => {
+  const source = Array.from({ length: 451 }, (_, index) => message(index + 1, index % 2 ? 'assistant' : 'user', `Message ${index + 1}`))
+  const requestedBeforeIds: Array<number | undefined> = []
+  const loaded = await loadAllAIChatMessages(async ({ beforeId, limit }) => {
+    requestedBeforeIds.push(beforeId)
+    const eligible = beforeId ? source.filter((item) => item.id < beforeId) : source
+    return eligible.slice(-limit)
+  })
+
+  assert.equal(loaded.length, 451)
+  assert.deepEqual(loaded.map((item) => item.id), source.map((item) => item.id))
+  assert.deepEqual(requestedBeforeIds, [undefined, 252, 52])
 })

@@ -30,6 +30,7 @@ import {
   createOptimisticRunMessages,
   getAIChatRetryText,
   getAIComposerIntent,
+  loadAllAIChatMessages,
   mergeAIChatMessages,
   reduceAIChatRunState,
   shouldFollowAIChatScroll,
@@ -103,6 +104,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
   const [submittingApproval, setSubmittingApproval] = useState(false)
   const [deletingConversation, setDeletingConversation] = useState<AIChatConversation | null>(null)
   const [deletingConversationBusy, setDeletingConversationBusy] = useState(false)
+  const [exportingConversation, setExportingConversation] = useState(false)
   const [imageMode, setImageMode] = useState(false)
   const [videoMode, setVideoMode] = useState(false)
   const [runAnnouncement, setRunAnnouncement] = useState('')
@@ -620,14 +622,32 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
     void loadConversations()
   }
 
-  const exportConversation = () => {
-    if (!activeConversation) return
-    const markdown = buildAIConversationMarkdown(activeConversation.title, messages)
+  const exportConversation = async () => {
+    if (!activeConversation || !api?.listAIConversationMessages || exportingConversation) return
+    const conversation = activeConversation
+    setExportingConversation(true)
+    setNotice(null)
+    let completeMessages: AIChatMessage[]
+    try {
+      completeMessages = await loadAllAIChatMessages(async (options) => {
+        const response = (await api.listAIConversationMessages(conversation.id, options)) as ApiResponse<AIChatMessage[]>
+        if (!response?.success) {
+          throw new Error(errorMessage(response, t('aiChat.chat.export_failed')))
+        }
+        return response.data ?? []
+      })
+    } catch (error) {
+      setExportingConversation(false)
+      setNotice(error instanceof Error && error.message ? error.message : t('aiChat.chat.export_failed'))
+      return
+    }
+    setExportingConversation(false)
+    const markdown = buildAIConversationMarkdown(conversation.title, completeMessages)
     const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = `${activeConversation.title.replace(/[\\/:*?"<>|]/g, '').trim() || 'ai-conversation'}.md`
+    anchor.download = `${conversation.title.replace(/[\\/:*?"<>|]/g, '').trim() || 'ai-conversation'}.md`
     anchor.click()
     window.setTimeout(() => URL.revokeObjectURL(url), 0)
     setNotice(t('aiChat.chat.exported'))
@@ -692,11 +712,11 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
             </label>
             <button
               className="ai-chat-stage__export"
-              onClick={exportConversation}
-              disabled={!activeConversation || messages.length === 0}
+              onClick={() => void exportConversation()}
+              disabled={!activeConversation || messages.length === 0 || exportingConversation}
             >
               <Download size={13} aria-hidden="true" />
-              {t('aiChat.chat.export')}
+              {t(exportingConversation ? 'aiChat.chat.exporting' : 'aiChat.chat.export')}
             </button>
           </div>
         </header>

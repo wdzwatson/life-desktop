@@ -156,6 +156,29 @@ export function mergeAIChatMessages(
   return [...deduplicated.values()].sort((left, right) => left.id - right.id)
 }
 
+export async function loadAllAIChatMessages(
+  loadPage: (options: { beforeId?: number; limit: number }) => Promise<AIChatMessage[]>,
+  pageSize = 200,
+) {
+  const collected: AIChatMessage[] = []
+  let beforeId: number | undefined
+
+  while (true) {
+    const page = await loadPage({ ...(beforeId ? { beforeId } : {}), limit: pageSize })
+    if (page.length === 0) break
+    collected.unshift(...page)
+    if (page.length < pageSize) break
+
+    const nextBeforeId = page[0]?.id
+    if (!nextBeforeId || nextBeforeId === beforeId) {
+      throw new Error('AI message pagination did not advance.')
+    }
+    beforeId = nextBeforeId
+  }
+
+  return mergeAIChatMessages([], collected)
+}
+
 export function createOptimisticRunMessages(input: {
   conversationId: number
   triggerMessageId: number
