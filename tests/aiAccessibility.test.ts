@@ -12,6 +12,7 @@ const dialog = readFileSync(path.resolve('src/components/AccessibleDialog.tsx'),
 const conversationDelete = readFileSync(path.resolve('src/views/ai/ConversationDeleteDialog.tsx'), 'utf8')
 const providerManager = readFileSync(path.resolve('src/views/ai/ProviderManager.tsx'), 'utf8')
 const agentManager = readFileSync(path.resolve('src/views/ai/AgentManager.tsx'), 'utf8')
+const mcpManager = readFileSync(path.resolve('src/views/ai/McpManager.tsx'), 'utf8')
 const messageRenderer = readFileSync(path.resolve('src/views/ai/MessageRenderer.tsx'), 'utf8')
 const css = readFileSync(path.resolve('src/views/ai/AIChat.css'), 'utf8')
 const appCss = readFileSync(path.resolve('src/index.css'), 'utf8')
@@ -95,7 +96,16 @@ test('agent creation reuses the settings drawer and returns focus to its trigger
   assert.match(agentManager, /returnFocus=\{\(\) => drawerTriggerRef\.current\?\.focus\(\)\}/)
   assert.match(agentManager, /closeOnOverlay/)
   assert.match(css, /\.ai-settings-drawer--agent\s*\{[\s\S]*width:\s*min\(700px, 100vw\)/)
-  assert.match(css, /\.ai-settings-drawer \.ai-provider-form,[\s\S]*\.ai-settings-drawer \.ai-agent-form\s*\{[\s\S]*flex:\s*1/)
+  assert.match(css, /\.ai-settings-drawer \.ai-provider-form,[\s\S]*\.ai-settings-drawer \.ai-agent-form,[\s\S]*\.ai-settings-drawer \.ai-mcp-form\s*\{[\s\S]*flex:\s*1/)
+})
+
+test('MCP creation uses the shared drawer without changing transport logic', () => {
+  assert.match(mcpManager, /overlayClassName="ai-settings-drawer-overlay"/)
+  assert.match(mcpManager, /contentClassName="ai-settings-drawer ai-settings-drawer--mcp"/)
+  assert.match(mcpManager, /returnFocus=\{\(\) => drawerTriggerRef\.current\?\.focus\(\)\}/)
+  assert.match(mcpManager, /changeTransport\(event\.target\.value as McpDraft\['transport'\]\)/)
+  assert.match(css, /\.ai-settings-drawer--mcp\s*\{[\s\S]*width:\s*min\(680px, 100vw\)/)
+  assert.match(css, /\.ai-settings-drawer \.ai-agent-form,[\s\S]*\.ai-settings-drawer \.ai-mcp-form\s*\{[\s\S]*flex:\s*1/)
 })
 
 test('daily chat typography and action targets remain readable', () => {

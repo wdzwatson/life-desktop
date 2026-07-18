@@ -31,6 +31,7 @@ export function McpManager({ onChanged }: Props) {
   const [riskToolName, setRiskToolName] = useState('')
   const [riskLevel, setRiskLevel] = useState<McpToolRisk>('read')
   const nameRef = useRef<HTMLInputElement | null>(null)
+  const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
   const api = (window as any).electronAPI
 
   const loadServers = async () => {
@@ -66,14 +67,22 @@ export function McpManager({ onChanged }: Props) {
     )
   })
 
-  const openCreate = () => {
+  const closeEditor = () => {
+    setDraft(null)
+    setEditing(null)
+    setRiskToolName('')
+  }
+
+  const openCreate = (trigger: HTMLButtonElement) => {
+    drawerTriggerRef.current = trigger
     setEditing(null)
     setDraft(createMcpDraft())
     setRiskToolName('')
     setError('')
   }
 
-  const openEdit = (server: McpServerSummary) => {
+  const openEdit = (server: McpServerSummary, trigger: HTMLButtonElement) => {
+    drawerTriggerRef.current = trigger
     setEditing(server)
     setDraft(mcpToDraft(server))
     setRiskToolName('')
@@ -201,10 +210,10 @@ export function McpManager({ onChanged }: Props) {
           <option value="enabled">{t('aiChat.mcp.enabled')}</option>
           <option value="disabled">{t('aiChat.mcp.disabled')}</option>
         </select>
-        <button className="btn primary ai-provider-add" onClick={openCreate}><Plus size={15} />{t('aiChat.mcp.add')}</button>
+        <button className="btn primary ai-provider-add" onClick={(event) => openCreate(event.currentTarget)}><Plus size={15} />{t('aiChat.mcp.add')}</button>
       </div>
 
-      {error && <p className="ai-provider-error" role="alert">{error}</p>}
+      {error && !draft && <p className="ai-provider-error" role="alert">{error}</p>}
 
       <div className="ai-mcp-list" aria-busy={busy}>
         {!busy && servers.length === 0 && (
@@ -212,7 +221,7 @@ export function McpManager({ onChanged }: Props) {
             <Plug size={25} aria-hidden="true" />
             <h2>{t('aiChat.mcp.empty_title')}</h2>
             <p>{t('aiChat.mcp.empty_desc')}</p>
-            <button className="btn primary" onClick={openCreate}>{t('aiChat.mcp.add_first')}</button>
+            <button className="btn primary" onClick={(event) => openCreate(event.currentTarget)}>{t('aiChat.mcp.add_first')}</button>
           </div>
         )}
 
@@ -256,7 +265,7 @@ export function McpManager({ onChanged }: Props) {
                   <Activity size={14} />
                   {t(server.connectionStatus === 'connected' ? 'aiChat.mcp.refresh_tools' : 'aiChat.mcp.test_connection')}
                 </button>
-                <button className="ai-chat-icon-button" onClick={() => openEdit(server)} aria-label={t('aiChat.mcp.edit_name', { name: server.name })}><Pencil size={15} /></button>
+                <button className="ai-chat-icon-button" onClick={(event) => openEdit(server, event.currentTarget)} aria-label={t('aiChat.mcp.edit_name', { name: server.name })}><Pencil size={15} /></button>
                 <button className="ai-chat-icon-button" onClick={() => void runAction(() => api.copyAIMcpServer(server.id), 'aiChat.mcp.copied')} aria-label={t('aiChat.mcp.copy_name', { name: server.name })}><Copy size={15} /></button>
                 <button className="ai-chat-icon-button" onClick={() => void toggleServer(server)} aria-label={t(server.enabled ? 'aiChat.mcp.disable_name' : 'aiChat.mcp.enable_name', { name: server.name })}><Power size={15} /></button>
                 <button className="ai-chat-icon-button is-danger" onClick={() => void deleteServer(server)} aria-label={t('aiChat.mcp.delete_name', { name: server.name })}><Trash2 size={15} /></button>
@@ -267,7 +276,22 @@ export function McpManager({ onChanged }: Props) {
       </div>
 
       {draft && (
-        <AccessibleDialog title={t(editing ? 'aiChat.mcp.edit_title' : 'aiChat.mcp.create_title')} onClose={() => setDraft(null)} initialFocusRef={nameRef} contentStyle={{ width: 'min(760px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 48px)' }}>
+        <AccessibleDialog
+          title={(
+            <span className="ai-settings-drawer__title">
+              <span>{t(editing ? 'aiChat.mcp.edit_title' : 'aiChat.mcp.create_title')}</span>
+              <button type="button" onClick={closeEditor} aria-label={t('common.close')}>
+                <X size={16} aria-hidden="true" />
+              </button>
+            </span>
+          )}
+          onClose={closeEditor}
+          returnFocus={() => drawerTriggerRef.current?.focus()}
+          initialFocusRef={nameRef}
+          overlayClassName="ai-settings-drawer-overlay"
+          contentClassName="ai-settings-drawer ai-settings-drawer--mcp"
+          closeOnOverlay
+        >
           <div className="ai-mcp-form">
             <div className="ai-provider-form__grid">
               <label><span>{t('aiChat.mcp.name')}</span><input ref={nameRef} className="form-field" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
@@ -315,7 +339,7 @@ export function McpManager({ onChanged }: Props) {
 
             <div className="ai-provider-options"><label><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />{t('aiChat.mcp.enabled')}</label></div>
             {error && <p className="ai-provider-error" role="alert">{error}</p>}
-            <div className="ai-provider-form__actions"><button className="btn" onClick={() => setDraft(null)}><X size={14} />{t('common.cancel')}</button><button className="btn primary" disabled={busy} onClick={() => void saveServer()}>{t('common.save')}</button></div>
+            <div className="ai-provider-form__actions"><button className="btn" onClick={closeEditor}><X size={14} />{t('common.cancel')}</button><button className="btn primary" disabled={busy} onClick={() => void saveServer()}>{t('common.save')}</button></div>
           </div>
         </AccessibleDialog>
       )}
