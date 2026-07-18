@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bot, Database, HardDrive, MessageSquare, Plug, RefreshCw, Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import './AIChat.css'
 import { AgentManager } from './AgentManager'
+import { AIOnboarding } from './AIOnboarding'
 import { ChatWorkspace, type AIChatAgent } from './ChatWorkspace'
 import { McpManager } from './McpManager'
 import { ProviderManager } from './ProviderManager'
@@ -20,6 +21,7 @@ export function AIChat() {
   const [counts, setCounts] = useState<ConfigCounts>(EMPTY_COUNTS)
   const [agents, setAgents] = useState<AIChatAgent[]>([])
   const [loadState, setLoadState] = useState<LoadState>('loading')
+  const onboardingTransitionRef = useRef(false)
   const api = (window as any).electronAPI
 
   const loadConfiguration = async () => {
@@ -41,6 +43,10 @@ export function AIChat() {
         agents: agents.data?.length ?? 0,
         mcp: mcp.data?.length ?? 0,
       })
+      if ((providers.data?.length ?? 0) > 0 && onboardingTransitionRef.current) {
+        onboardingTransitionRef.current = false
+        setActiveView('chat')
+      }
       setAgents(agents.data ?? [])
       setLoadState('ready')
     } catch {
@@ -121,21 +127,14 @@ export function AIChat() {
         )}
 
         {loadState === 'ready' && activeView === 'chat' && !hasProvider && (
-          <div className="ai-chat-empty">
-            <div className="ai-chat-empty__ambient" aria-hidden="true" />
-            <div className="ai-chat-empty__content">
-              <h2>{t('aiChat.empty_title')}</h2>
-              <p>{t('aiChat.empty_desc')}</p>
-              <div className="ai-chat-empty__actions">
-                <button className="btn primary" onClick={() => setActiveView('providers')}>
-                  {t('aiChat.configure_provider')}
-                </button>
-                <button className="btn" onClick={() => setActiveView('agents')}>
-                  {t('aiChat.review_agents')}
-                </button>
-              </div>
-            </div>
-          </div>
+          <AIOnboarding
+            onConfigureProvider={() => {
+              onboardingTransitionRef.current = true
+              setActiveView('providers')
+            }}
+            onReviewAgents={() => setActiveView('agents')}
+            onOpenMcp={() => setActiveView('mcp')}
+          />
         )}
 
         {loadState === 'ready' && activeView === 'providers' && (
