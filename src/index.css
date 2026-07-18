@@ -325,6 +325,33 @@ body.theme-dense .nav-item.active {
   background-color: var(--bg-app);
 }
 
+.content-pane:has(.toolbox-view.is-ai) {
+  overflow: hidden;
+}
+
+.screen-transition:has(> .toolbox-view) {
+  height: 100%;
+  min-height: 0;
+}
+
+.toolbox-view,
+.toolbox-view__body {
+  min-height: 0;
+}
+
+.toolbox-view.is-ai .toolbox-view__header {
+  display: none !important;
+}
+
+.toolbox-view.is-ai .toolbox-view__body {
+  overflow: hidden;
+}
+
+.toolbox-view.is-ai .toolbox-view__tabs {
+  flex: 0 0 auto;
+  margin-bottom: 8px !important;
+}
+
 .screen-progress {
   position: absolute;
   top: 56px;

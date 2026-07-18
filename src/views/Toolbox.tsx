@@ -376,6 +376,7 @@ export const Toolbox: React.FC = () => {
 
   return (
     <div
+      className={`toolbox-view ${toolTab === 'ai' ? 'is-ai' : ''}`}
       style={{
         animation: 'enter 0.15s ease both',
         height: '100%',
@@ -385,6 +386,7 @@ export const Toolbox: React.FC = () => {
     >
       {/* Header */}
       <div
+        className="toolbox-view__header"
         style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -400,7 +402,7 @@ export const Toolbox: React.FC = () => {
 
       {/* Tabs */}
       <div
-        className="tabs"
+        className="tabs toolbox-view__tabs"
         style={{
           display: 'flex',
           gap: '4px',
@@ -434,7 +436,7 @@ export const Toolbox: React.FC = () => {
         </button>
       </div>
 
-      <div style={{ flexGrow: 1, minHeight: 0 }}>
+      <div className="toolbox-view__body" style={{ flexGrow: 1, minHeight: 0 }}>
         {/* SUB-VIEW: POMODORO TIMER */}
         {toolTab === 'pomodoro' && (
           <div
