@@ -1,0 +1,214 @@
+import assert from 'node:assert/strict'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import test from 'node:test'
+import Database from 'better-sqlite3'
+import { AI_SCHEMA_VERSION, initializeAISchema } from '../electron/ai/schema.ts'
+import { initializeUserDatabase } from '../electron/db/schema.ts'
+
+const EXPECTED_TABLES = [
+  'ai_schema_meta',
+  'ai_providers',
+  'ai_mcp_servers',
+  'ai_agents',
+  'ai_agent_mcp_links',
+  'ai_conversations',
+  'ai_messages',
+  'ai_media_assets',
+  'ai_message_parts',
+  'ai_runs',
+  'ai_tool_calls',
+]
+
+function createProvider(db, name, defaults = {}) {
+  return Number(
+    db
+      .prepare(
+        `
+        INSERT INTO ai_providers (
+          name, protocol, base_url, capabilities_json, text_model,
+          is_default_text, is_default_image, is_default_video
+        ) VALUES (?, 'openai_compatible', 'https://api.example.test/v1', '["text"]', 'model', ?, ?, ?)
+        `,
+      )
+      .run(
+        name,
+        defaults.text ? 1 : 0,
+        defaults.image ? 1 : 0,
+        defaults.video ? 1 : 0,
+      ).lastInsertRowid,
+  )
+}
+
+test('AI schema creates the complete isolated database with required indexes', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-ai-schema-'))
+  initializeUserDatabase(dir)
+
+  const db = new Database(path.join(dir, 'ai.db'))
+  db.pragma('foreign_keys = ON')
+  const tableNames = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+    .all()
+    .map((row) => row.name)
+  for (const tableName of EXPECTED_TABLES) {
+    assert.ok(tableNames.includes(tableName), `missing ${tableName}`)
+  }
+  assert.equal(
+    db.prepare('SELECT schema_version FROM ai_schema_meta WHERE id = 1').get().schema_version,
+    AI_SCHEMA_VERSION,
+  )
+  for (const indexName of [
+    'ai_providers_default_text_unique',
+    'ai_providers_default_image_unique',
+    'ai_providers_default_video_unique',
+    'ai_agents_default_unique',
+    'ai_conversations_recent_idx',
+    'ai_runs_status_idx',
+  ]) {
+    assert.ok(
+      db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(indexName),
+      `missing ${indexName}`,
+    )
+  }
+  db.close()
+})
+
+test('AI schema initialization is idempotent and preserves existing rows', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-ai-schema-idempotent-'))
+  initializeUserDatabase(dir)
+  const dbPath = path.join(dir, 'ai.db')
+  const firstDb = new Database(dbPath)
+  firstDb.pragma('foreign_keys = ON')
+  const providerId = createProvider(firstDb, 'Primary')
+  firstDb
+    .prepare(
+      `
+      INSERT INTO ai_agents (
+        name, text_provider_id, model_params_json, context_json,
+        allowed_tools_json, blocked_tools_json
+      ) VALUES ('Assistant', ?, '{}', '{}', '[]', '[]')
+      `,
+    )
+    .run(providerId)
+  firstDb.close()
+
+  initializeUserDatabase(dir)
+  initializeUserDatabase(dir)
+
+  const reopened = new Database(dbPath)
+  assert.equal(reopened.prepare('SELECT COUNT(*) AS count FROM ai_providers').get().count, 1)
+  assert.equal(reopened.prepare('SELECT COUNT(*) AS count FROM ai_agents').get().count, 1)
+  assert.equal(
+    reopened.prepare('SELECT schema_version FROM ai_schema_meta WHERE id = 1').get().schema_version,
+    AI_SCHEMA_VERSION,
+  )
+  reopened.close()
+})
+
+test('AI schema enforces default provider uniqueness, foreign keys, and state checks', () => {
+  const db = new Database(':memory:')
+  initializeAISchema(db)
+  const firstProvider = createProvider(db, 'Primary', { text: true })
+  assert.throws(() => createProvider(db, 'Second default', { text: true }), /UNIQUE constraint failed/i)
+  const secondProvider = createProvider(db, 'Secondary')
+
+  db.prepare(
+    `
+    INSERT INTO ai_agents (
+      name, text_provider_id, model_params_json, context_json,
+      allowed_tools_json, blocked_tools_json, is_default
+    ) VALUES ('Default agent', ?, '{}', '{}', '[]', '[]', 1)
+    `,
+  ).run(firstProvider)
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          `
+          INSERT INTO ai_agents (
+            name, text_provider_id, model_params_json, context_json,
+            allowed_tools_json, blocked_tools_json, is_default
+          ) VALUES ('Second default agent', ?, '{}', '{}', '[]', '[]', 1)
+          `,
+        )
+        .run(secondProvider),
+    /UNIQUE constraint failed/i,
+  )
+  assert.throws(() => db.prepare('DELETE FROM ai_providers WHERE id = ?').run(firstProvider), /FOREIGN KEY constraint failed/i)
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          "INSERT INTO ai_messages (conversation_id, role, status) VALUES (999, 'invalid', 'completed')",
+        )
+        .run(),
+    /CHECK constraint failed|FOREIGN KEY constraint failed/i,
+  )
+  db.close()
+})
+
+test('AI message parts keep stable order and cascade with their conversation', () => {
+  const db = new Database(':memory:')
+  initializeAISchema(db)
+  const providerId = createProvider(db, 'Provider')
+  const agentId = Number(
+    db
+      .prepare(
+        `
+        INSERT INTO ai_agents (
+          name, text_provider_id, model_params_json, context_json,
+          allowed_tools_json, blocked_tools_json
+        ) VALUES ('Agent', ?, '{}', '{}', '[]', '[]')
+        `,
+      )
+      .run(providerId).lastInsertRowid,
+  )
+  const conversationId = Number(
+    db
+      .prepare(
+        "INSERT INTO ai_conversations (title, agent_id, agent_snapshot_json) VALUES ('Chat', ?, '{}')",
+      )
+      .run(agentId).lastInsertRowid,
+  )
+  const messageId = Number(
+    db
+      .prepare("INSERT INTO ai_messages (conversation_id, role) VALUES (?, 'user')")
+      .run(conversationId).lastInsertRowid,
+  )
+  db.prepare(
+    "INSERT INTO ai_message_parts (message_id, position, content_type, text_content) VALUES (?, 0, 'text', 'Hello')",
+  ).run(messageId)
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          "INSERT INTO ai_message_parts (message_id, position, content_type, text_content) VALUES (?, 0, 'text', 'Duplicate')",
+        )
+        .run(messageId),
+    /UNIQUE constraint failed/i,
+  )
+  db.prepare('DELETE FROM ai_conversations WHERE id = ?').run(conversationId)
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM ai_messages').get().count, 0)
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM ai_message_parts').get().count, 0)
+  db.close()
+})
+
+test('unsupported AI schema versions fail without creating current tables', () => {
+  const db = new Database(':memory:')
+  db.exec(`
+    CREATE TABLE ai_schema_meta (
+      id INTEGER PRIMARY KEY CHECK(id = 1),
+      schema_version INTEGER NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    INSERT INTO ai_schema_meta (id, schema_version) VALUES (1, 99);
+  `)
+  assert.throws(() => initializeAISchema(db), /Unsupported AI schema version: 99/)
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'ai_providers'").get().count,
+    0,
+  )
+  assert.equal(db.prepare('SELECT schema_version FROM ai_schema_meta WHERE id = 1').get().schema_version, 99)
+  db.close()
+})

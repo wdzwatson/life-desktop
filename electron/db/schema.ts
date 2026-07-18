@@ -3,6 +3,7 @@ import path from 'path'
 import fs from 'fs'
 import { ensureVideoGroupSchema } from './videoGroupSchema'
 import { initializeVaultSchema } from '../vault/schema'
+import { initializeAISchema } from '../ai/schema'
 
 const VIDEO_STATUS_CHECK =
   "CHECK(status IN ('unclassified', 'not_downloaded', 'queued', 'downloading', 'downloaded', 'download_failed', 'invalid'))"
@@ -476,4 +477,14 @@ export function initializeUserDatabase(userDbDir: string) {
 
   initializeVaultSchema(vaultDb)
   vaultDb.close()
+
+  // 6. Initialize AI Database (ai.db)
+  const aiDbPath = path.join(userDbDir, 'ai.db')
+  const aiDb = new Database(aiDbPath)
+  try {
+    aiDb.pragma('journal_mode = WAL')
+    initializeAISchema(aiDb)
+  } finally {
+    aiDb.close()
+  }
 }
