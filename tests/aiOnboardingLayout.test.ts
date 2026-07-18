@@ -53,9 +53,11 @@ test('chat and configuration use separate workspace modes', () => {
   assert.match(css, /\.ai-settings-shell[\s\S]*grid-template-columns:\s*190px minmax\(0, 1fr\)/)
 })
 
-test('core settings keep assistant creation with providers and hide advanced Agent and MCP pages', () => {
-  assert.doesNotMatch(shell, /AgentManager|McpManager|nav_agents|nav_mcp|'agents'|'mcp'/)
-  assert.doesNotMatch(workspace, /onOpenAgents/)
+test('core settings expose Agent management while keeping MCP out of the primary workflow', () => {
+  assert.match(shell, /AgentManager/)
+  assert.match(shell, /nav_agents/)
+  assert.doesNotMatch(shell, /McpManager|nav_mcp|'mcp'/)
+  assert.match(workspace, /onOpenAgents/)
   assert.match(workspace, /hasProvider \? 'aiChat\.chat\.configure_agent'/)
-  assert.match(workspace, /onClick=\{onOpenProviders\}/)
+  assert.match(workspace, /onClick=\{hasProvider \? onOpenAgents : onOpenProviders\}/)
 })

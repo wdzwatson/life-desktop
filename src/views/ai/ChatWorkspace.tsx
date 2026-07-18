@@ -63,6 +63,7 @@ type ChatWorkspaceProps = {
   hasProvider: boolean
   onOpenSettings: () => void
   onOpenProviders: () => void
+  onOpenAgents: () => void
 }
 
 type ApiResponse<T> = { success: true; data: T } | { success: false; error?: { message?: string } }
@@ -86,7 +87,7 @@ function errorMessage(response: unknown, fallback: string) {
   return fallback
 }
 
-export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProviders }: ChatWorkspaceProps) {
+export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProviders, onOpenAgents }: ChatWorkspaceProps) {
   const { t } = useTranslation()
   const api = (window as any).electronAPI
   const readyAgents = useMemo(
@@ -815,7 +816,7 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
               <strong>{t(hasProvider ? 'aiChat.chat.setup_agent_title' : 'aiChat.chat.setup_provider_title')}</strong>
               <span>{t(hasProvider ? 'aiChat.chat.setup_agent_desc' : 'aiChat.chat.setup_provider_desc')}</span>
             </div>
-            <button className="btn primary" onClick={onOpenProviders}>
+            <button className="btn primary" onClick={hasProvider ? onOpenAgents : onOpenProviders}>
               {t(hasProvider ? 'aiChat.chat.configure_agent' : 'aiChat.chat.connect_provider')}
             </button>
           </div>
@@ -871,7 +872,7 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
               </div>
               <h2>{t(hasProvider ? 'aiChat.chat.setup_agent_title' : 'aiChat.chat.setup_provider_title')}</h2>
               <p>{t(hasProvider ? 'aiChat.chat.setup_agent_desc' : 'aiChat.chat.setup_provider_desc')}</p>
-              <button className="btn primary" onClick={onOpenProviders}>
+              <button className="btn primary" onClick={hasProvider ? onOpenAgents : onOpenProviders}>
                 {t(hasProvider ? 'aiChat.chat.configure_agent' : 'aiChat.chat.connect_provider')}
               </button>
             </div>
