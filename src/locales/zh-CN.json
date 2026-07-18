@@ -878,6 +878,10 @@
       "generate_failed": "视频生成失败",
       "generating": "正在生成、下载并处理视频"
     },
+    "media": {
+      "cancelled": "媒体生成已停止",
+      "stop_failed": "无法停止媒体生成"
+    },
     "storage": {
       "loading": "正在读取 AI 存储占用…",
       "load_failed": "无法读取 AI 存储占用",

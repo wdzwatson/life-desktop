@@ -224,6 +224,46 @@ export function createOptimisticRunMessages(input: {
   return [user, assistant]
 }
 
+export function createOptimisticMediaMessages(input: {
+  conversationId: number
+  mediaType: 'image' | 'video'
+  text: string
+  timestamp: string
+  temporaryUserId: number
+}) {
+  const user: AIChatMessage = {
+    id: input.temporaryUserId,
+    conversationId: input.conversationId,
+    role: 'user',
+    status: 'completed',
+    parentMessageId: null,
+    providerMessageId: null,
+    parts: [{ type: 'text', text: input.text }],
+    createdAt: input.timestamp,
+    startedAt: input.timestamp,
+    completedAt: input.timestamp,
+  }
+  const assistantId = input.temporaryUserId - 1
+  const assistant: AIChatMessage = {
+    id: assistantId,
+    conversationId: input.conversationId,
+    role: 'assistant',
+    status: 'streaming',
+    parentMessageId: input.temporaryUserId,
+    providerMessageId: null,
+    parts: [{
+      type: 'media_task',
+      mediaType: input.mediaType,
+      taskId: `optimistic-${Math.abs(assistantId)}`,
+      status: 'generating',
+    }],
+    createdAt: input.timestamp,
+    startedAt: input.timestamp,
+    completedAt: null,
+  }
+  return [user, assistant]
+}
+
 export function applyAIChatRunEvent(messages: AIChatMessage[], event: AIChatRunEvent) {
   const terminalStatus =
     event.type === 'completed'

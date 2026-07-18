@@ -13,14 +13,17 @@ test('AI toolbox localization exists in Chinese and English with matching keys',
   assert.deepEqual(Object.keys(zh.aiChat.chat).sort(), Object.keys(en.aiChat.chat).sort())
   assert.deepEqual(Object.keys(zh.aiChat.images).sort(), Object.keys(en.aiChat.images).sort())
   assert.deepEqual(Object.keys(zh.aiChat.videos).sort(), Object.keys(en.aiChat.videos).sort())
+  assert.deepEqual(Object.keys(zh.aiChat.media).sort(), Object.keys(en.aiChat.media).sort())
   assert.deepEqual(Object.keys(zh.aiChat.storage).sort(), Object.keys(en.aiChat.storage).sort())
 })
 
 test('AI video chat renders a visible processing state and controlled local playback card', () => {
   const workspace = readFileSync(path.resolve('src/views/ai/ChatWorkspace.tsx'), 'utf8')
+  const chatUtils = readFileSync(path.resolve('src/views/ai/chatUtils.ts'), 'utf8')
   const renderer = readFileSync(path.resolve('src/views/ai/MessageRenderer.tsx'), 'utf8')
   const video = readFileSync(path.resolve('src/views/ai/VideoMessage.tsx'), 'utf8')
-  assert.match(workspace, /type: 'media_task', mediaType: 'video'/)
+  assert.match(workspace, /createOptimisticMediaMessages/)
+  assert.match(chatUtils, /type: 'media_task',[\s\S]*mediaType: input\.mediaType/)
   assert.match(renderer, /ai-message__media-task/)
   assert.match(video, /life-ai-asset:\/\/asset\/\$\{video\.assetId\}/)
   assert.match(video, /<video[^>]+controls[^>]+preload="metadata"/)

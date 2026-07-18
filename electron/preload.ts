@@ -103,7 +103,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     decision: 'approve_once' | 'approve_session' | 'reject',
   ) => ipcRenderer.invoke('ai:runs:approveTool', { runId, toolCallId, decision }),
   generateAIImages: (input: unknown) => ipcRenderer.invoke('ai:images:generate', input),
+  cancelAIImageGeneration: (conversationId: number) =>
+    ipcRenderer.invoke('ai:images:cancel', { conversationId }),
   generateAIVideos: (input: unknown) => ipcRenderer.invoke('ai:videos:generate', input),
+  cancelAIVideoGeneration: (conversationId: number) =>
+    ipcRenderer.invoke('ai:videos:cancel', { conversationId }),
   getAIStorageUsage: () => ipcRenderer.invoke('ai:storage:usage'),
   previewAIStorageCleanup: (input: unknown) => ipcRenderer.invoke('ai:storage:previewCleanup', input),
   cleanAIStorage: (input: unknown) => ipcRenderer.invoke('ai:storage:cleanup', input),

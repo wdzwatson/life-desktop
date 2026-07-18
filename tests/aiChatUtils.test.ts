@@ -4,6 +4,7 @@ import {
   applyAIChatRunEvent,
   buildAIConversationMarkdown,
   compareAIChatMessageOrder,
+  createOptimisticMediaMessages,
   createOptimisticRunMessages,
   getAIChatRetryText,
   getAIComposerIntent,
@@ -55,6 +56,25 @@ test('temporary media messages stay at the end in user then assistant order', ()
 
   assert.deepEqual(merged.map((item) => item.id), [1, 2, -100, -101])
   assert.ok(compareAIChatMessageOrder(existing[1], optimisticUser) < 0)
+})
+
+test('image and video generation share an immediate visible media task pair', () => {
+  for (const mediaType of ['image', 'video'] as const) {
+    const optimistic = createOptimisticMediaMessages({
+      conversationId: 4,
+      mediaType,
+      text: `Create ${mediaType}`,
+      timestamp: '2026-07-18T10:00:00.000Z',
+      temporaryUserId: -200,
+    })
+    assert.equal(optimistic[0].role, 'user')
+    assert.deepEqual(optimistic[1].parts[0], {
+      type: 'media_task',
+      mediaType,
+      taskId: 'optimistic-201',
+      status: 'generating',
+    })
+  }
 })
 
 test('run events merge ten rounds without crossing message identities', () => {

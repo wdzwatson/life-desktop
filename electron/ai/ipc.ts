@@ -44,8 +44,8 @@ export const AI_CONFIG_CHANNELS = [
 ] as const
 
 export const AI_RUNTIME_CHANNELS = ['ai:runs:start', 'ai:runs:cancel', 'ai:runs:approveTool'] as const
-export const AI_IMAGE_CHANNELS = ['ai:images:generate'] as const
-export const AI_VIDEO_CHANNELS = ['ai:videos:generate'] as const
+export const AI_IMAGE_CHANNELS = ['ai:images:generate', 'ai:images:cancel'] as const
+export const AI_VIDEO_CHANNELS = ['ai:videos:generate', 'ai:videos:cancel'] as const
 export const AI_STORAGE_CHANNELS = ['ai:storage:usage', 'ai:storage:previewCleanup', 'ai:storage:cleanup'] as const
 
 export const AI_CONVERSATION_CHANNELS = [
@@ -102,13 +102,13 @@ export type AIRuntimeIpcDependencies = {
 export type AIImageIpcDependencies = {
   getService: () => Pick<AIImageGenerationService, 'generate'>
   isConversationActive?: (conversationId: number) => boolean
-  createAbortScope?: () => { signal: AbortSignal; dispose: () => void }
+  createAbortScope?: () => { signal: AbortSignal; abort: () => void; dispose: () => void }
 }
 
 export type AIVideoIpcDependencies = {
   getService: () => Pick<AIVideoAssetService, 'generate'>
   isConversationActive?: (conversationId: number) => boolean
-  createAbortScope?: () => { signal: AbortSignal; dispose: () => void }
+  createAbortScope?: () => { signal: AbortSignal; abort: () => void; dispose: () => void }
 }
 
 export type AIStorageIpcDependencies = {
@@ -404,15 +404,15 @@ export function registerAIRuntimeIpc(
 export function createAIImageHandlers(
   dependencies: AIImageIpcDependencies,
 ): Record<AIImageChannel, AIHandler> {
-  const active = new Set<number>()
+  const active = new Map<number, ReturnType<NonNullable<AIImageIpcDependencies['createAbortScope']>> | null>()
   return {
     'ai:images:generate': (_event, payload) => respondWithObject(payload, async (data) => {
       const conversationId = requireId(data.conversationId, 'conversation ID')
       if (active.has(conversationId) || dependencies.isConversationActive?.(conversationId)) {
         throw new AIServiceError({ code: 'invalid_input', message: 'This conversation already has an active AI run.', retryable: false })
       }
-      active.add(conversationId)
       const abortScope = dependencies.createAbortScope?.()
+      active.set(conversationId, abortScope ?? null)
       try {
         return await dependencies.getService().generate({
           conversationId,
@@ -427,6 +427,13 @@ export function createAIImageHandlers(
         active.delete(conversationId)
       }
     }),
+    'ai:images:cancel': (_event, payload) => respondWithObject(payload, (data) => {
+      const conversationId = requireId(data.conversationId, 'conversation ID')
+      if (!active.has(conversationId)) return { cancelled: false }
+      const abortScope = active.get(conversationId)
+      abortScope?.abort()
+      return { cancelled: Boolean(abortScope) }
+    }),
   }
 }
 
@@ -438,15 +445,15 @@ export function registerAIImageIpc(registrar: AIConfigIpcRegistrar, dependencies
 export function createAIVideoHandlers(
   dependencies: AIVideoIpcDependencies,
 ): Record<AIVideoChannel, AIHandler> {
-  const active = new Set<number>()
+  const active = new Map<number, ReturnType<NonNullable<AIVideoIpcDependencies['createAbortScope']>> | null>()
   return {
     'ai:videos:generate': (_event, payload) => respondWithObject(payload, async (data) => {
       const conversationId = requireId(data.conversationId, 'conversation ID')
       if (active.has(conversationId) || dependencies.isConversationActive?.(conversationId)) {
         throw new AIServiceError({ code: 'invalid_input', message: 'This conversation already has an active AI run.', retryable: false })
       }
-      active.add(conversationId)
       const abortScope = dependencies.createAbortScope?.()
+      active.set(conversationId, abortScope ?? null)
       try {
         return await dependencies.getService().generate({
           conversationId,
@@ -460,6 +467,13 @@ export function createAIVideoHandlers(
         abortScope?.dispose()
         active.delete(conversationId)
       }
+    }),
+    'ai:videos:cancel': (_event, payload) => respondWithObject(payload, (data) => {
+      const conversationId = requireId(data.conversationId, 'conversation ID')
+      if (!active.has(conversationId)) return { cancelled: false }
+      const abortScope = active.get(conversationId)
+      abortScope?.abort()
+      return { cancelled: Boolean(abortScope) }
     }),
   }
 }

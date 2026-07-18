@@ -878,6 +878,10 @@
       "generate_failed": "Video generation failed",
       "generating": "Generating, downloading, and processing the video"
     },
+    "media": {
+      "cancelled": "Media generation stopped",
+      "stop_failed": "Unable to stop media generation"
+    },
     "storage": {
       "loading": "Reading AI storage usage…",
       "load_failed": "Unable to read AI storage usage",

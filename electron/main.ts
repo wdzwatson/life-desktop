@@ -1883,7 +1883,11 @@ registerAIImageIpc(
     createAbortScope: () => {
       const controller = new AbortController()
       aiImageControllers.add(controller)
-      return { signal: controller.signal, dispose: () => aiImageControllers.delete(controller) }
+      return {
+        signal: controller.signal,
+        abort: () => controller.abort(),
+        dispose: () => aiImageControllers.delete(controller),
+      }
     },
   },
 )
@@ -1896,7 +1900,11 @@ registerAIVideoIpc(
     createAbortScope: () => {
       const controller = new AbortController()
       aiVideoControllers.add(controller)
-      return { signal: controller.signal, dispose: () => aiVideoControllers.delete(controller) }
+      return {
+        signal: controller.signal,
+        abort: () => controller.abort(),
+        dispose: () => aiVideoControllers.delete(controller),
+      }
     },
   },
 )

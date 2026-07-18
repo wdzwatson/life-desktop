@@ -27,6 +27,7 @@ import { ToolApprovalDialog } from './ToolApprovalDialog'
 import {
   applyAIChatRunEvent,
   buildAIConversationMarkdown,
+  createOptimisticMediaMessages,
   createOptimisticRunMessages,
   getAIChatRetryText,
   getAIComposerIntent,
@@ -107,6 +108,10 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
   const [exportingConversation, setExportingConversation] = useState(false)
   const [imageMode, setImageMode] = useState(false)
   const [videoMode, setVideoMode] = useState(false)
+  const [activeMediaGeneration, setActiveMediaGeneration] = useState<{
+    conversationId: number
+    mediaType: 'image' | 'video'
+  } | null>(null)
   const [runAnnouncement, setRunAnnouncement] = useState('')
   const activeConversationRef = useRef<number | null>(null)
   const messagesRef = useRef<AIChatMessage[]>([])
@@ -118,6 +123,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
   const timelineRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const followOutputRef = useRef(true)
+  const mediaCancellationRequestedRef = useRef(false)
 
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === activeConversationId) ?? null,
@@ -125,6 +131,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
   )
   const activeRun = activeConversationId ? runStates[activeConversationId] : undefined
   const isRunning = activeRun?.status === 'running'
+  const isMediaRunning = activeMediaGeneration !== null
   const activeAgent = readyAgents.find(
     (agent) => agent.id === (activeConversation?.agentId ?? selectedAgentId),
   )
@@ -400,7 +407,21 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
         return
       }
       setSubmitting(true)
+      setActiveMediaGeneration({ conversationId: conversation.id, mediaType: 'image' })
+      mediaCancellationRequestedRef.current = false
       setNotice(null)
+      const optimisticTime = new Date().toISOString()
+      if (activeConversationRef.current === conversation.id) {
+        setMessages((current) => mergeAIChatMessages(current, createOptimisticMediaMessages({
+          conversationId: conversation.id,
+          mediaType: 'image',
+          text,
+          timestamp: optimisticTime,
+          temporaryUserId: -Date.now(),
+        }), 'append'))
+      }
+      if (!requestedText) setDraft('')
+      followOutputRef.current = true
       const imageResponse = await api.generateAIImages({
         conversationId: conversation.id,
         agentId,
@@ -408,11 +429,16 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
         count: 1,
       })
       setSubmitting(false)
+      setActiveMediaGeneration(null)
       if (!imageResponse?.success) {
-        setNotice(errorMessage(imageResponse, t('aiChat.images.generate_failed')))
+        setNotice(mediaCancellationRequestedRef.current
+          ? t('aiChat.media.cancelled')
+          : errorMessage(imageResponse, t('aiChat.images.generate_failed')))
+        mediaCancellationRequestedRef.current = false
+        await loadMessages(conversation.id)
         return
       }
-      if (!requestedText) setDraft('')
+      mediaCancellationRequestedRef.current = false
       followOutputRef.current = true
       await loadMessages(conversation.id)
       void loadConversations()
@@ -424,36 +450,21 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
         return
       }
       setSubmitting(true)
+      setActiveMediaGeneration({ conversationId: conversation.id, mediaType: 'video' })
+      mediaCancellationRequestedRef.current = false
       setNotice(null)
       const optimisticTime = new Date().toISOString()
       const optimisticUserId = -Date.now()
-      const optimisticAssistantId = optimisticUserId - 1
-      setMessages((current) => mergeAIChatMessages(current, [
-        {
-          id: optimisticUserId,
+      if (activeConversationRef.current === conversation.id) {
+        setMessages((current) => mergeAIChatMessages(current, createOptimisticMediaMessages({
           conversationId: conversation.id,
-          role: 'user',
-          status: 'completed',
-          parentMessageId: null,
-          providerMessageId: null,
-          parts: [{ type: 'text', text }],
-          createdAt: optimisticTime,
-          startedAt: optimisticTime,
-          completedAt: optimisticTime,
-        },
-        {
-          id: optimisticAssistantId,
-          conversationId: conversation.id,
-          role: 'assistant',
-          status: 'streaming',
-          parentMessageId: optimisticUserId,
-          providerMessageId: null,
-          parts: [{ type: 'media_task', mediaType: 'video', taskId: `optimistic-${Math.abs(optimisticAssistantId)}`, status: 'generating' }],
-          createdAt: optimisticTime,
-          startedAt: optimisticTime,
-          completedAt: null,
-        },
-      ], 'append'))
+          mediaType: 'video',
+          text,
+          timestamp: optimisticTime,
+          temporaryUserId: optimisticUserId,
+        }), 'append'))
+      }
+      if (!requestedText) setDraft('')
       followOutputRef.current = true
       const videoResponse = await api.generateAIVideos({
         conversationId: conversation.id,
@@ -461,12 +472,16 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
         prompt: text,
       })
       setSubmitting(false)
+      setActiveMediaGeneration(null)
       if (!videoResponse?.success) {
-        setNotice(errorMessage(videoResponse, t('aiChat.videos.generate_failed')))
+        setNotice(mediaCancellationRequestedRef.current
+          ? t('aiChat.media.cancelled')
+          : errorMessage(videoResponse, t('aiChat.videos.generate_failed')))
+        mediaCancellationRequestedRef.current = false
         await loadMessages(conversation.id)
         return
       }
-      if (!requestedText) setDraft('')
+      mediaCancellationRequestedRef.current = false
       followOutputRef.current = true
       await loadMessages(conversation.id)
       void loadConversations()
@@ -542,6 +557,26 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
     if (!activeConversationId || !activeRun || !api?.cancelAIRun) return
     const response = await api.cancelAIRun(activeConversationId, activeRun.runId)
     if (!response?.success) setNotice(errorMessage(response, t('aiChat.chat.stop_failed')))
+  }
+
+  const stopCurrentWork = async () => {
+    if (!activeMediaGeneration) {
+      await stopRun()
+      return
+    }
+    const cancel = activeMediaGeneration.mediaType === 'image'
+      ? api?.cancelAIImageGeneration
+      : api?.cancelAIVideoGeneration
+    if (!cancel) {
+      setNotice(t('aiChat.media.stop_failed'))
+      return
+    }
+    mediaCancellationRequestedRef.current = true
+    const response = await cancel(activeMediaGeneration.conversationId)
+    if (!response?.success || !response.data?.cancelled) {
+      mediaCancellationRequestedRef.current = false
+      setNotice(errorMessage(response, t('aiChat.media.stop_failed')))
+    }
   }
 
   const activeApproval = useMemo(
@@ -827,8 +862,8 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
               </button>
               <span>{t(imageMode ? 'aiChat.images.composer_hint' : videoMode ? 'aiChat.videos.composer_hint' : 'aiChat.chat.composer_hint')}</span>
             </div>
-            {isRunning ? (
-              <button className="ai-chat-stop" onClick={() => void stopRun()}>
+            {isRunning || isMediaRunning ? (
+              <button className="ai-chat-stop" onClick={() => void stopCurrentWork()}>
                 <Square size={13} fill="currentColor" aria-hidden="true" />
                 {t('aiChat.chat.stop')}
               </button>
@@ -854,8 +889,8 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
         <dl>
           <div>
             <dt>{t('aiChat.chat.run_status')}</dt>
-            <dd className={`is-${activeRun?.status ?? 'idle'}`}>
-              {t(`aiChat.chat.run_${activeRun?.status ?? 'idle'}`)}
+            <dd className={`is-${isMediaRunning ? 'running' : activeRun?.status ?? 'idle'}`}>
+              {t(`aiChat.chat.run_${isMediaRunning ? 'running' : activeRun?.status ?? 'idle'}`)}
             </dd>
           </div>
           <div>
@@ -871,10 +906,14 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
             <dd>{activeRun?.usage.totalTokens ?? activeRun?.usage.outputTokens ?? '—'}</dd>
           </div>
         </dl>
-        {activeRun && !isTerminalRun(activeRun.status) && (
+        {(isMediaRunning || (activeRun && !isTerminalRun(activeRun.status))) && (
           <div className="ai-run-inspector__activity">
             <TimerReset size={14} aria-hidden="true" />
-            <span>{t('aiChat.chat.run_streaming')}</span>
+            <span>{t(activeMediaGeneration?.mediaType === 'image'
+              ? 'aiChat.images.generating'
+              : activeMediaGeneration?.mediaType === 'video'
+                ? 'aiChat.videos.generating'
+                : 'aiChat.chat.run_streaming')}</span>
           </div>
         )}
         {activeRun?.error && (

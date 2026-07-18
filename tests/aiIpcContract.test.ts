@@ -12,6 +12,7 @@ import {
   AI_RUNTIME_CHANNELS,
   createAIConfigHandlers,
   createAIConversationHandlers,
+  createAIImageHandlers,
   createAIMcpRuntimeHandlers,
   createAIRuntimeHandlers,
   createAIVideoHandlers,
@@ -44,7 +45,9 @@ test('preload exposes structured AI methods without runtime credentials or gener
     'approveAITool',
     'onAIRunEvent',
     'generateAIImages',
+    'cancelAIImageGeneration',
     'generateAIVideos',
+    'cancelAIVideoGeneration',
     'getAIStorageUsage',
     'previewAIStorageCleanup',
     'cleanAIStorage',
@@ -57,10 +60,48 @@ test('preload exposes structured AI methods without runtime credentials or gener
 })
 
 test('image runtime exposes only generation while media files remain behind asset IDs', () => {
-  assert.deepEqual(AI_IMAGE_CHANNELS, ['ai:images:generate'])
-  assert.deepEqual(AI_VIDEO_CHANNELS, ['ai:videos:generate'])
+  assert.deepEqual(AI_IMAGE_CHANNELS, ['ai:images:generate', 'ai:images:cancel'])
+  assert.deepEqual(AI_VIDEO_CHANNELS, ['ai:videos:generate', 'ai:videos:cancel'])
   const preload = readFileSync(path.resolve('electron/preload.ts'), 'utf8')
   assert.doesNotMatch(preload, /getAIAssetPath|readAIAssetFile|downloadRemoteAIAsset|getAIVideoUrl/)
+})
+
+test('image and video generation expose scoped cancellation by conversation', async () => {
+  for (const mediaType of ['images', 'videos'] as const) {
+    const controller = new AbortController()
+    let observedAbort = false
+    const dependencies = {
+      getService: () => ({
+        generate: async ({ signal }: { signal?: AbortSignal }) => new Promise((resolve) => {
+          signal?.addEventListener('abort', () => {
+            observedAbort = true
+            resolve({ aborted: true })
+          }, { once: true })
+        }),
+      }),
+      createAbortScope: () => ({
+        signal: controller.signal,
+        abort: () => controller.abort(),
+        dispose: () => undefined,
+      }),
+    }
+    const handlers = mediaType === 'images'
+      ? createAIImageHandlers(dependencies as any)
+      : createAIVideoHandlers(dependencies as any)
+    const generate = handlers[`ai:${mediaType}:generate`]({}, {
+      conversationId: 7,
+      agentId: 3,
+      prompt: 'A calm landscape',
+    })
+    await Promise.resolve()
+    const cancelled = await handlers[`ai:${mediaType}:cancel`]({}, { conversationId: 7 })
+    const completed = await generate
+
+    assert.equal(cancelled.success, true)
+    assert.equal(cancelled.data.cancelled, true)
+    assert.equal(completed.success, true)
+    assert.equal(observedAbort, true)
+  }
 })
 
 test('video generation IPC validates identifiers before creating a provider service', async () => {
