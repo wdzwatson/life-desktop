@@ -5,9 +5,11 @@ import test from 'node:test'
 import {
   AI_CONFIG_CHANNELS,
   AI_CONVERSATION_CHANNELS,
+  AI_MCP_RUNTIME_CHANNELS,
   AI_RUNTIME_CHANNELS,
   createAIConfigHandlers,
   createAIConversationHandlers,
+  createAIMcpRuntimeHandlers,
   createAIRuntimeHandlers,
 } from '../electron/ai/ipc.ts'
 
@@ -27,6 +29,9 @@ test('preload exposes structured AI methods without runtime credentials or gener
     'createAIProvider',
     'listAIAgents',
     'listAIMcpServers',
+    'connectAIMcpServer',
+    'disconnectAIMcpServer',
+    'refreshAIMcpTools',
     'listAIConversations',
     'listAIConversationMessages',
     'startAIRun',
@@ -35,7 +40,26 @@ test('preload exposes structured AI methods without runtime credentials or gener
   ]) {
     assert.match(preload, new RegExp(`${method}:`))
   }
-  assert.doesNotMatch(preload, /getAIMcpRuntime|getAIProviderCredential|executeAICommand|ai:sql/)
+  assert.doesNotMatch(preload, /getAIMcpRuntime|getAIProviderCredential|executeAICommand|callAIMcpTool|ai:sql/)
+})
+
+test('MCP runtime IPC exposes connection diagnostics without a renderer tool execution channel', async () => {
+  assert.deepEqual(AI_MCP_RUNTIME_CHANNELS, [
+    'ai:mcpRuntime:connect',
+    'ai:mcpRuntime:disconnect',
+    'ai:mcpRuntime:refreshTools',
+  ])
+  let opened = 0
+  const handlers = createAIMcpRuntimeHandlers({
+    getManager: () => {
+      opened += 1
+      throw new Error('should not create manager')
+    },
+  })
+  const invalid = await handlers['ai:mcpRuntime:connect']({}, { id: 0 })
+  assert.equal(invalid.success, false)
+  assert.equal(invalid.error.code, 'invalid_input')
+  assert.equal(opened, 0)
 })
 
 test('AI conversation IPC validates identifiers before opening the isolated database', async () => {

@@ -40,7 +40,12 @@ import { classifyVideoDownloadFailure } from './video/downloadState'
 import { normalizeBulkVideoTagPayload } from '../src/views/videoStateUtils'
 import { VaultService, serializeVaultError } from './vault/service'
 import { getDirectDbAccessError } from './db/accessPolicy'
-import { registerAIConfigIpc, registerAIConversationIpc, registerAIRuntimeIpc } from './ai/ipc'
+import {
+  registerAIConfigIpc,
+  registerAIConversationIpc,
+  registerAIMcpRuntimeIpc,
+  registerAIRuntimeIpc,
+} from './ai/ipc'
 import { createSafeStorageCredentialAdapter } from './ai/safeStorageAdapter'
 import { AIAgentRuntime } from './ai/agentRuntime'
 import { AIAgentService } from './ai/agentService'
@@ -48,6 +53,8 @@ import { AIConversationService } from './ai/conversationService'
 import { AICredentialService } from './ai/credentialService'
 import { AIProviderService } from './ai/providerService'
 import { AI_RUN_EVENT_CHANNEL } from './ai/runEvents'
+import { AIMcpConfigService } from './ai/mcpConfigService'
+import { AIMcpManager } from './ai/mcpManager'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -67,6 +74,7 @@ let videoEngineStatus: VideoEngineStatus = createInitialVideoEngineStatus()
 let videoEngineLoadPromise: Promise<VideoEngineStatus> | null = null
 let vaultService: VaultService | null = null
 let aiAgentRuntime: AIAgentRuntime | null = null
+let aiMcpManager: AIMcpManager | null = null
 
 // Default Paths
 const BASE_DIR = path.join(app.getPath('home'), 'LifeOS')
@@ -170,6 +178,8 @@ function saveSettings(settings: any) {
 function closeUserDbs() {
   aiAgentRuntime?.dispose()
   aiAgentRuntime = null
+  void aiMcpManager?.dispose()
+  aiMcpManager = null
   vaultService?.dispose()
   vaultService = null
   for (const db of openDbs.values()) {
@@ -180,6 +190,18 @@ function closeUserDbs() {
     }
   }
   openDbs.clear()
+}
+
+function getAIMcpManager() {
+  if (aiMcpManager) return aiMcpManager
+  const db = getUserDb('ai')
+  const credentials = new AICredentialService(
+    path.join(BASE_DIR, 'users', activeUserId, 'config', 'ai-credentials.json'),
+    createSafeStorageCredentialAdapter(),
+  )
+  const config = new AIMcpConfigService(db, credentials)
+  aiMcpManager = new AIMcpManager({ getConfigService: () => config })
+  return aiMcpManager
 }
 
 function getAIAgentRuntime() {
@@ -688,6 +710,8 @@ ipcMain.handle('user:getCurrent', async () => {
 ipcMain.handle('user:logout', async () => {
   aiAgentRuntime?.dispose()
   aiAgentRuntime = null
+  await aiMcpManager?.dispose()
+  aiMcpManager = null
   vaultService?.lock()
   const settings = getSettings()
   const profile = settings.userProfiles[activeUserId]
@@ -1604,6 +1628,10 @@ registerAIConfigIpc(
     getCredentialFilePath: () =>
       path.join(BASE_DIR, 'users', activeUserId, 'config', 'ai-credentials.json'),
     getCredentialCryptoAdapter: createSafeStorageCredentialAdapter,
+    onMcpChanged: async (id, change) => {
+      if (!aiMcpManager) return
+      await aiMcpManager.disconnect(id, { recordStatus: change !== 'deleted' })
+    },
   },
 )
 
@@ -1615,6 +1643,11 @@ registerAIRuntimeIpc(
 registerAIConversationIpc(
   { handle: (channel, handler) => ipcMain.handle(channel, handler) },
   { getDb: () => getUserDb('ai'), getRuntime: getAIAgentRuntime },
+)
+
+registerAIMcpRuntimeIpc(
+  { handle: (channel, handler) => ipcMain.handle(channel, handler) },
+  { getManager: getAIMcpManager },
 )
 
 // IPC Handlers: Encrypted password vault

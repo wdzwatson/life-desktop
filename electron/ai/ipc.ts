@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import type { AIAgentRuntime } from './agentRuntime'
+import type { AIMcpManager } from './mcpManager'
 import { AIAgentService } from './agentService'
 import { AICredentialService, type AICredentialCryptoAdapter } from './credentialService'
 import { AIConversationService } from './conversationService'
@@ -53,9 +54,16 @@ export const AI_CONVERSATION_CHANNELS = [
   'ai:conversations:runs',
 ] as const
 
+export const AI_MCP_RUNTIME_CHANNELS = [
+  'ai:mcpRuntime:connect',
+  'ai:mcpRuntime:disconnect',
+  'ai:mcpRuntime:refreshTools',
+] as const
+
 type AIConfigChannel = (typeof AI_CONFIG_CHANNELS)[number]
 type AIRuntimeChannel = (typeof AI_RUNTIME_CHANNELS)[number]
 type AIConversationChannel = (typeof AI_CONVERSATION_CHANNELS)[number]
+type AIMcpRuntimeChannel = (typeof AI_MCP_RUNTIME_CHANNELS)[number]
 type AIHandler = (_event: unknown, payload?: unknown) => unknown | Promise<unknown>
 
 type AIConfigServices = {
@@ -68,6 +76,10 @@ export type AIConfigIpcDependencies = {
   getDb: () => Database.Database
   getCredentialFilePath: () => string
   getCredentialCryptoAdapter: () => AICredentialCryptoAdapter
+  onMcpChanged?: (
+    id: number,
+    change: 'updated' | 'disabled' | 'deleted',
+  ) => void | Promise<void>
 }
 
 export type AIConfigIpcRegistrar = {
@@ -81,6 +93,10 @@ export type AIRuntimeIpcDependencies = {
 export type AIConversationIpcDependencies = {
   getDb: () => Database.Database
   getRuntime: () => Pick<AIAgentRuntime, 'isConversationActive'>
+}
+
+export type AIMcpRuntimeIpcDependencies = {
+  getManager: () => Pick<AIMcpManager, 'connect' | 'disconnect' | 'refreshTools'>
 }
 
 function serializeError(error: unknown) {
@@ -275,11 +291,13 @@ export function createAIConfigHandlers(
       respondWithObject(payload, (data) => services().mcp.get(requireId(data.id))),
     'ai:mcp:create': (_event, payload) => respond(() => services().mcp.create(payload)),
     'ai:mcp:update': (_event, payload) =>
-      respondWithObject(payload, (data) => {
+      respondWithObject(payload, async (data) => {
         const id = requireId(data.id)
-        return services().mcp.update(id, data.input, {
+        const result = services().mcp.update(id, data.input, {
           preserveCredentials: data.preserveCredentials === true,
         })
+        await dependencies.onMcpChanged?.(id, 'updated')
+        return result
       }),
     'ai:mcp:copy': (_event, payload) =>
       respondWithObject(payload, (data) => {
@@ -288,10 +306,12 @@ export function createAIConfigHandlers(
         return services().mcp.copy(id, name)
       }),
     'ai:mcp:setEnabled': (_event, payload) =>
-      respondWithObject(payload, (data) => {
+      respondWithObject(payload, async (data) => {
         const id = requireId(data.id)
         const enabled = requireBoolean(data.enabled, 'enabled')
-        return services().mcp.setEnabled(id, enabled)
+        const result = services().mcp.setEnabled(id, enabled)
+        if (!enabled) await dependencies.onMcpChanged?.(id, 'disabled')
+        return result
       }),
     'ai:mcp:setRiskOverride': (_event, payload) =>
       respondWithObject(payload, (data) => {
@@ -313,7 +333,12 @@ export function createAIConfigHandlers(
     'ai:mcp:dependencies': (_event, payload) =>
       respondWithObject(payload, (data) => services().mcp.getDependencies(requireId(data.id))),
     'ai:mcp:delete': (_event, payload) =>
-      respondWithObject(payload, (data) => services().mcp.delete(requireId(data.id))),
+      respondWithObject(payload, async (data) => {
+        const id = requireId(data.id)
+        const result = services().mcp.delete(id)
+        await dependencies.onMcpChanged?.(id, 'deleted')
+        return result
+      }),
   }
 }
 
@@ -441,4 +466,34 @@ export function registerAIConversationIpc(
 ) {
   const handlers = createAIConversationHandlers(dependencies)
   for (const channel of AI_CONVERSATION_CHANNELS) registrar.handle(channel, handlers[channel])
+}
+
+export function createAIMcpRuntimeHandlers(
+  dependencies: AIMcpRuntimeIpcDependencies,
+): Record<AIMcpRuntimeChannel, AIHandler> {
+  return {
+    'ai:mcpRuntime:connect': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const id = requireId(data.id)
+        return dependencies.getManager().connect(id, { refresh: data.refresh === true })
+      }),
+    'ai:mcpRuntime:disconnect': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const id = requireId(data.id)
+        return dependencies.getManager().disconnect(id)
+      }),
+    'ai:mcpRuntime:refreshTools': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const id = requireId(data.id)
+        return dependencies.getManager().refreshTools(id)
+      }),
+  }
+}
+
+export function registerAIMcpRuntimeIpc(
+  registrar: AIConfigIpcRegistrar,
+  dependencies: AIMcpRuntimeIpcDependencies,
+) {
+  const handlers = createAIMcpRuntimeHandlers(dependencies)
+  for (const channel of AI_MCP_RUNTIME_CHANNELS) registrar.handle(channel, handlers[channel])
 }

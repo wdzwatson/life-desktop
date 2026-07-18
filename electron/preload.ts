@@ -88,6 +88,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('ai:mcp:setRiskOverride', { id, toolName, risk }),
   getAIMcpDependencies: (id: number) => ipcRenderer.invoke('ai:mcp:dependencies', { id }),
   deleteAIMcpServer: (id: number) => ipcRenderer.invoke('ai:mcp:delete', { id }),
+  connectAIMcpServer: (id: number, refresh = false) =>
+    ipcRenderer.invoke('ai:mcpRuntime:connect', { id, refresh }),
+  disconnectAIMcpServer: (id: number) => ipcRenderer.invoke('ai:mcpRuntime:disconnect', { id }),
+  refreshAIMcpTools: (id: number) => ipcRenderer.invoke('ai:mcpRuntime:refreshTools', { id }),
 
   // AI conversation runtime. Events contain public run state only; credentials stay in main.
   startAIRun: (input: unknown) => ipcRenderer.invoke('ai:runs:start', input),

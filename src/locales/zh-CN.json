@@ -949,6 +949,8 @@
       "risk_external_side_effect": "外部副作用",
       "test_pending": "真实连接测试将在 MCP 运行时管理器接入后启用",
       "test_connection": "测试连接",
+      "refresh_tools": "刷新工具",
+      "connection_succeeded": "MCP 连接与工具发现成功",
       "edit_name": "编辑 {{name}}",
       "copy_name": "复制 {{name}}",
       "disable_name": "停用 {{name}}",

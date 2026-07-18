@@ -949,6 +949,8 @@
       "risk_external_side_effect": "External side effect",
       "test_pending": "Real connection testing becomes available with the MCP runtime manager",
       "test_connection": "Test connection",
+      "refresh_tools": "Refresh tools",
+      "connection_succeeded": "MCP connection and tool discovery succeeded",
       "edit_name": "Edit {{name}}",
       "copy_name": "Copy {{name}}",
       "disable_name": "Disable {{name}}",

@@ -147,6 +147,14 @@ export function McpManager({ onChanged }: Props) {
     )
   }
 
+  const testServer = async (server: McpServerSummary) => {
+    if (!server.enabled || !api?.connectAIMcpServer) return
+    await runAction(
+      () => api.connectAIMcpServer(server.id, true),
+      'aiChat.mcp.connection_succeeded',
+    )
+  }
+
   const setRiskOverride = async (toolName: string, risk: McpToolRisk | null) => {
     if (!editing || (!toolName.trim() && risk !== null)) return
     setBusy(true)
@@ -239,7 +247,15 @@ export function McpManager({ onChanged }: Props) {
                 )}
               </div>
               <div className="ai-mcp-card__actions">
-                <button className="btn sm" disabled title={t('aiChat.mcp.test_pending')}><Activity size={14} />{t('aiChat.mcp.test_connection')}</button>
+                <button
+                  className="btn sm"
+                  disabled={!server.enabled || busy}
+                  title={t(server.connectionStatus === 'connected' ? 'aiChat.mcp.refresh_tools' : 'aiChat.mcp.test_connection')}
+                  onClick={() => void testServer(server)}
+                >
+                  <Activity size={14} />
+                  {t(server.connectionStatus === 'connected' ? 'aiChat.mcp.refresh_tools' : 'aiChat.mcp.test_connection')}
+                </button>
                 <button className="ai-chat-icon-button" onClick={() => openEdit(server)} aria-label={t('aiChat.mcp.edit_name', { name: server.name })}><Pencil size={15} /></button>
                 <button className="ai-chat-icon-button" onClick={() => void runAction(() => api.copyAIMcpServer(server.id), 'aiChat.mcp.copied')} aria-label={t('aiChat.mcp.copy_name', { name: server.name })}><Copy size={15} /></button>
                 <button className="ai-chat-icon-button" onClick={() => void toggleServer(server)} aria-label={t(server.enabled ? 'aiChat.mcp.disable_name' : 'aiChat.mcp.enable_name', { name: server.name })}><Power size={15} /></button>

@@ -12,6 +12,7 @@ const requiredKeys = [
   'connection_connecting', 'connection_connected', 'connection_failed', 'tool_count',
   'protocol_version', 'credential_saved', 'last_connected', 'unknown_error', 'risk_read',
   'risk_write', 'risk_command', 'risk_external_side_effect', 'test_pending', 'test_connection',
+  'refresh_tools', 'connection_succeeded',
   'edit_name', 'copy_name', 'disable_name', 'enable_name', 'delete_name', 'edit_title',
   'create_title', 'name', 'transport', 'description', 'command', 'arguments',
   'arguments_placeholder', 'cwd', 'url', 'credentials_preserved', 'replace_credentials',
@@ -40,3 +41,11 @@ for (const filename of localeFiles) {
     assert.match(mcp.disable_confirm_dependencies, /{{names}}/)
   })
 }
+
+test('MCP manager activates real connection testing without exposing tool execution', () => {
+  const source = readFileSync(new URL('../src/views/ai/McpManager.tsx', import.meta.url), 'utf8')
+  assert.match(source, /connectAIMcpServer\(server\.id, true\)/)
+  assert.match(source, /server\.connectionStatus === 'connected'/)
+  assert.doesNotMatch(source, /disabled title=\{t\('aiChat\.mcp\.test_pending'\)\}/)
+  assert.doesNotMatch(source, /callAIMcpTool/)
+})

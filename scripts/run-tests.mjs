@@ -22,6 +22,7 @@ const electronNodeTests = new Set([
   'tests/aiProviderService.test.mjs',
   'tests/aiAgentService.test.mjs',
   'tests/aiMcpConfigService.test.mjs',
+  'tests/aiMcpManager.test.mjs',
   'tests/aiConversationService.test.mjs',
   'tests/aiConversationIpc.test.mjs',
   'tests/aiChatRoundTrip.test.mjs',
