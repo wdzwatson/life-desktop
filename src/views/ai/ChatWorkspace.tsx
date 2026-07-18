@@ -9,6 +9,7 @@ import {
   Square,
   TimerReset,
   TriangleAlert,
+  Video,
 } from 'lucide-react'
 import {
   useCallback,
@@ -100,6 +101,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
   const [toolApprovals, setToolApprovals] = useState<Record<string, AIChatToolApproval>>({})
   const [submittingApproval, setSubmittingApproval] = useState(false)
   const [imageMode, setImageMode] = useState(false)
+  const [videoMode, setVideoMode] = useState(false)
   const activeConversationRef = useRef<number | null>(null)
   const messagesRef = useRef<AIChatMessage[]>([])
   const lastSequenceRef = useRef(new Map<string, number>())
@@ -359,7 +361,13 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
 
   const sendText = async (requestedText?: string) => {
     const text = (requestedText ?? draft).trim()
-    if (!text || submitting || isRunning || !api?.startAIRun) return
+    if (!text || submitting || isRunning) return
+    const sendMethodAvailable = imageMode
+      ? Boolean(api?.generateAIImages)
+      : videoMode
+        ? Boolean(api?.generateAIVideos)
+        : Boolean(api?.startAIRun)
+    if (!sendMethodAvailable) return
     let conversation = activeConversation
     if (!conversation) conversation = await createConversation()
     if (!conversation) return
@@ -384,6 +392,60 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
       setSubmitting(false)
       if (!imageResponse?.success) {
         setNotice(errorMessage(imageResponse, t('aiChat.images.generate_failed')))
+        return
+      }
+      if (!requestedText) setDraft('')
+      followOutputRef.current = true
+      await loadMessages(conversation.id)
+      void loadConversations()
+      return
+    }
+    if (videoMode) {
+      if (!activeAgent?.providers.video || !api?.generateAIVideos) {
+        setNotice(t('aiChat.videos.provider_required'))
+        return
+      }
+      setSubmitting(true)
+      setNotice(null)
+      const optimisticTime = new Date().toISOString()
+      const optimisticUserId = -Date.now()
+      const optimisticAssistantId = optimisticUserId - 1
+      setMessages((current) => mergeAIChatMessages(current, [
+        {
+          id: optimisticUserId,
+          conversationId: conversation.id,
+          role: 'user',
+          status: 'completed',
+          parentMessageId: null,
+          providerMessageId: null,
+          parts: [{ type: 'text', text }],
+          createdAt: optimisticTime,
+          startedAt: optimisticTime,
+          completedAt: optimisticTime,
+        },
+        {
+          id: optimisticAssistantId,
+          conversationId: conversation.id,
+          role: 'assistant',
+          status: 'streaming',
+          parentMessageId: optimisticUserId,
+          providerMessageId: null,
+          parts: [{ type: 'media_task', mediaType: 'video', taskId: `optimistic-${Math.abs(optimisticAssistantId)}`, status: 'generating' }],
+          createdAt: optimisticTime,
+          startedAt: optimisticTime,
+          completedAt: null,
+        },
+      ], 'append'))
+      followOutputRef.current = true
+      const videoResponse = await api.generateAIVideos({
+        conversationId: conversation.id,
+        agentId,
+        prompt: text,
+      })
+      setSubmitting(false)
+      if (!videoResponse?.success) {
+        setNotice(errorMessage(videoResponse, t('aiChat.videos.generate_failed')))
+        await loadMessages(conversation.id)
         return
       }
       if (!requestedText) setDraft('')
@@ -697,14 +759,29 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
             <div className="ai-chat-composer__mode">
               <button
                 className={imageMode ? 'is-active' : ''}
-                onClick={() => setImageMode((value) => !value)}
+                onClick={() => {
+                  setImageMode((value) => !value)
+                  setVideoMode(false)
+                }}
                 disabled={!activeAgent?.providers.image || submitting || isRunning}
                 title={activeAgent?.providers.image ? t('aiChat.images.toggle') : t('aiChat.images.provider_required')}
               >
                 <ImagePlus size={13} />
                 {t(imageMode ? 'aiChat.images.mode_active' : 'aiChat.images.mode')}
               </button>
-              <span>{t(imageMode ? 'aiChat.images.composer_hint' : 'aiChat.chat.composer_hint')}</span>
+              <button
+                className={videoMode ? 'is-active' : ''}
+                onClick={() => {
+                  setVideoMode((value) => !value)
+                  setImageMode(false)
+                }}
+                disabled={!activeAgent?.providers.video || submitting || isRunning}
+                title={activeAgent?.providers.video ? t('aiChat.videos.toggle') : t('aiChat.videos.provider_required')}
+              >
+                <Video size={13} />
+                {t(videoMode ? 'aiChat.videos.mode_active' : 'aiChat.videos.mode')}
+              </button>
+              <span>{t(imageMode ? 'aiChat.images.composer_hint' : videoMode ? 'aiChat.videos.composer_hint' : 'aiChat.chat.composer_hint')}</span>
             </div>
             {isRunning ? (
               <button className="ai-chat-stop" onClick={() => void stopRun()}>

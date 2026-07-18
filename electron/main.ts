@@ -29,9 +29,11 @@ import {
   isVideoEngineReady,
   parseVideoUrl,
   probeVideoDurationSeconds,
+  resolveVideoToolPath,
   resolvePlaybackPath,
   resolveVideoDownloadDir,
   resolveVideoProtocolPath,
+  runProcess,
   startVideoDownload,
   verifyVideoCookieAccess,
   type VideoEngineStatus,
@@ -46,6 +48,7 @@ import {
   registerAIMcpRuntimeIpc,
   registerAIRuntimeIpc,
   registerAIImageIpc,
+  registerAIVideoIpc,
 } from './ai/ipc'
 import { createSafeStorageCredentialAdapter } from './ai/safeStorageAdapter'
 import { AIAgentRuntime } from './ai/agentRuntime'
@@ -59,6 +62,10 @@ import { AIMcpManager } from './ai/mcpManager'
 import { handleAIMediaProtocolRequest } from './ai/mediaProtocol'
 import { AIMediaService } from './ai/mediaService'
 import { AIImageGenerationService } from './ai/imageGenerationService'
+import { AIVideoAdapter } from './ai/providers/videoAdapter'
+import { AIVideoGenerationService } from './ai/videoGenerationService'
+import { AIVideoAssetService } from './ai/videoAssetService'
+import { AIServiceError } from './ai/types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -80,6 +87,7 @@ let vaultService: VaultService | null = null
 let aiAgentRuntime: AIAgentRuntime | null = null
 let aiMcpManager: AIMcpManager | null = null
 const aiImageControllers = new Set<AbortController>()
+const aiVideoControllers = new Set<AbortController>()
 
 // Default Paths
 const BASE_DIR = path.join(app.getPath('home'), 'LifeOS')
@@ -192,6 +200,8 @@ function saveSettings(settings: any) {
 function closeUserDbs() {
   for (const controller of aiImageControllers) controller.abort()
   aiImageControllers.clear()
+  for (const controller of aiVideoControllers) controller.abort()
+  aiVideoControllers.clear()
   aiAgentRuntime?.dispose()
   aiAgentRuntime = null
   void aiMcpManager?.dispose()
@@ -262,6 +272,100 @@ function getAIImageGenerationService() {
     providers: new AIProviderService(db, credentials),
     conversations: new AIConversationService(db),
     media: getAIMediaService(),
+  })
+}
+
+function getAIVideoAssetService() {
+  const db = getUserDb('ai')
+  const credentials = new AICredentialService(
+    path.join(BASE_DIR, 'users', activeUserId, 'config', 'ai-credentials.json'),
+    createSafeStorageCredentialAdapter(),
+  )
+  const videoTasks = new AIVideoGenerationService({
+    db,
+    createAdapter: (config) => new AIVideoAdapter(config),
+  })
+  return new AIVideoAssetService({
+    db,
+    agents: new AIAgentService(db),
+    providers: new AIProviderService(db, credentials),
+    conversations: new AIConversationService(db),
+    media: getAIMediaService(),
+    videoTasks,
+    probeDurationSeconds: (filePath) => probeVideoDurationSeconds(getVideoToolSettings(), filePath),
+    createPlayableAsset: async ({ sourceAsset, filePath, providerId, providerTaskId, signal }) => {
+      if (sourceAsset.mimeType === 'video/mp4' || sourceAsset.mimeType === 'video/webm') return undefined
+      const outputPath = path.join(app.getPath('temp'), `life-ai-video-transcode-${crypto.randomUUID()}.mp4`)
+      try {
+        const ffmpegPath = resolveVideoToolPath(getVideoToolSettings(), 'ffmpeg')
+        const result = await runProcess(ffmpegPath, [
+          '-y',
+          '-i',
+          filePath,
+          '-c:v',
+          'libx264',
+          '-pix_fmt',
+          'yuv420p',
+          '-c:a',
+          'aac',
+          '-movflags',
+          '+faststart',
+          outputPath,
+        ], { timeoutMs: 30 * 60 * 1000, signal })
+        if (signal?.aborted) {
+          throw new AIServiceError({ code: 'cancelled', message: 'Video transcoding was cancelled.', retryable: false })
+        }
+        if (result.code !== 0 || !fs.existsSync(outputPath)) {
+          throw new AIServiceError({
+            code: 'media_failed',
+            message: result.stderr.includes('ENOENT')
+              ? 'FFmpeg is required to convert this generated video.'
+              : 'The generated video could not be converted to a playable format.',
+            retryable: false,
+          })
+        }
+        return await getAIMediaService().storeLocalFile({
+          mediaType: 'video',
+          filePath: outputPath,
+          declaredMimeType: 'video/mp4',
+          providerId,
+          providerTaskId,
+          originalName: 'generated-video.mp4',
+        })
+      } finally {
+        await fs.promises.rm(outputPath, { force: true }).catch(() => undefined)
+      }
+    },
+    createPoster: async ({ filePath, providerId, providerTaskId }) => {
+      const posterPath = path.join(app.getPath('temp'), `life-ai-video-poster-${crypto.randomUUID()}.jpg`)
+      try {
+        const ffmpegPath = resolveVideoToolPath(getVideoToolSettings(), 'ffmpeg')
+        const result = await runProcess(ffmpegPath, [
+          '-y',
+          '-ss',
+          '00:00:01',
+          '-i',
+          filePath,
+          '-frames:v',
+          '1',
+          '-vf',
+          'scale=1280:-1',
+          posterPath,
+        ], { timeoutMs: 30000 })
+        if (result.code !== 0 || !fs.existsSync(posterPath)) return undefined
+        const base64 = await fs.promises.readFile(posterPath, 'base64')
+        return await getAIMediaService().storeBase64({
+          mediaType: 'image',
+          base64,
+          declaredMimeType: 'image/jpeg',
+          providerId,
+          providerTaskId,
+          originalName: 'generated-video-poster.jpg',
+        })
+      } finally {
+        await fs.promises.rm(posterPath, { force: true }).catch(() => undefined)
+      }
+    },
   })
 }
 
@@ -1722,6 +1826,19 @@ registerAIImageIpc(
       const controller = new AbortController()
       aiImageControllers.add(controller)
       return { signal: controller.signal, dispose: () => aiImageControllers.delete(controller) }
+    },
+  },
+)
+
+registerAIVideoIpc(
+  { handle: (channel, handler) => ipcMain.handle(channel, handler) },
+  {
+    getService: getAIVideoAssetService,
+    isConversationActive: (conversationId) => getAIAgentRuntime().isConversationActive(conversationId),
+    createAbortScope: () => {
+      const controller = new AbortController()
+      aiVideoControllers.add(controller)
+      return { signal: controller.signal, dispose: () => aiVideoControllers.delete(controller) }
     },
   },
 )

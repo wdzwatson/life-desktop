@@ -26,6 +26,7 @@ const electronNodeTests = new Set([
   'tests/aiMediaSecurity.test.mjs',
   'tests/aiMediaProtocol.test.mjs',
   'tests/aiVideoGeneration.test.mjs',
+  'tests/aiVideoAssetService.test.mjs',
   'tests/aiConversationService.test.mjs',
   'tests/aiConversationIpc.test.mjs',
   'tests/aiChatRoundTrip.test.mjs',

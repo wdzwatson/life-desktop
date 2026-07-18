@@ -15,6 +15,7 @@ export type AIStoredMediaAsset = {
   byteSize: number
   width?: number
   height?: number
+  durationSeconds?: number
   sha256: string
   originalName?: string
   sourceUrlRedacted?: string
@@ -49,6 +50,7 @@ const MIME_EXTENSION: Record<string, string> = {
   'image/gif': 'gif',
   'image/webp': 'webp',
   'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
   'video/webm': 'webm',
   'audio/mpeg': 'mp3',
   'audio/wav': 'wav',
@@ -200,7 +202,9 @@ function detectMime(buffer: Buffer) {
     }
     return { mimeType: 'image/jpeg' }
   }
-  if (buffer.length >= 12 && buffer.subarray(4, 8).toString('ascii') === 'ftyp') return { mimeType: 'video/mp4' }
+  if (buffer.length >= 12 && buffer.subarray(4, 8).toString('ascii') === 'ftyp') {
+    return { mimeType: buffer.subarray(8, 12).toString('ascii') === 'qt  ' ? 'video/quicktime' : 'video/mp4' }
+  }
   if (buffer.length >= 4 && buffer.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) return { mimeType: 'video/webm' }
   if (buffer.length >= 4 && buffer.subarray(0, 4).toString('ascii') === '%PDF') return { mimeType: 'application/pdf' }
   if (buffer.length >= 3 && buffer.subarray(0, 3).toString('ascii') === 'ID3') return { mimeType: 'audio/mpeg' }
@@ -269,6 +273,40 @@ export class AIMediaService {
     const decoded = parseBase64(input.base64, input.declaredMimeType)
     const recordId = this.createRecord({ ...input, mediaType, mimeType: decoded.mimeType || 'application/octet-stream' })
     return this.storeBuffer(recordId, mediaType, decoded.buffer, input.originalName)
+  }
+
+  async storeLocalFile(input: {
+    mediaType: AIMediaType
+    filePath: string
+    declaredMimeType?: string
+    providerId?: number
+    providerTaskId?: string
+    originalName?: string
+  }) {
+    const mediaType = requireMediaType(input.mediaType)
+    if (typeof input.filePath !== 'string' || !path.isAbsolute(input.filePath)) {
+      throw mediaError('invalid_input', 'Invalid local AI media file path.')
+    }
+    const recordId = this.createRecord({
+      ...input,
+      mediaType,
+      mimeType: cleanMime(input.declaredMimeType) || 'application/octet-stream',
+    })
+    const tempPath = await this.createTempPath()
+    try {
+      const stats = await fs.promises.stat(input.filePath)
+      if (!stats.isFile() || stats.size <= 0) throw mediaError('media_failed', 'The local AI media file is empty or invalid.')
+      if (stats.size > this.maxBytes[mediaType]) throw mediaError('media_failed', 'The AI media exceeds the configured size limit.')
+      await this.ensureDiskSpace(stats.size)
+      await fs.promises.copyFile(input.filePath, tempPath, fs.constants.COPYFILE_EXCL)
+      const detected = validateDetectedMedia(mediaType, detectMime(await this.readHead(tempPath)))
+      return await this.finalizeFile(recordId, mediaType, tempPath, stats.size, detected, input.originalName)
+    } catch (error) {
+      await fs.promises.rm(tempPath, { force: true }).catch(() => undefined)
+      const mapped = error instanceof AIServiceError ? error : mediaError('storage_error', 'The local AI media file could not be stored.')
+      this.failRecord(recordId, mapped.detail)
+      throw mapped
+    }
   }
 
   async downloadRemote(input: {
@@ -358,6 +396,121 @@ export class AIMediaService {
             !controller.signal.aborted,
           )
       this.failRecord(recordId, mapped.detail)
+      throw mapped
+    } finally {
+      clearTimeout(timeout)
+      input.signal?.removeEventListener('abort', onAbort)
+    }
+  }
+
+  async downloadRemoteToAsset(input: {
+    assetId: number
+    mediaType: AIMediaType
+    url: string
+    headers?: Record<string, string>
+    providerTaskId?: string
+    declaredMimeType?: string
+    durationSeconds?: number
+    originalName?: string
+    timeoutMs?: number
+    signal?: AbortSignal
+  }) {
+    const assetId = requireId(input.assetId, 'media asset ID')
+    const mediaType = requireMediaType(input.mediaType)
+    const row = this.dependencies.db.prepare('SELECT id, media_type, status FROM ai_media_assets WHERE id = ?').get(assetId) as { id: number; media_type: string; status: string } | undefined
+    if (!row) throw mediaError('not_found', 'AI media asset was not found.')
+    if (row.media_type !== mediaType) throw mediaError('invalid_input', 'The AI media asset type does not match the download.')
+    if (!['queued', 'generating', 'polling', 'downloading', 'processing'].includes(row.status)) {
+      throw mediaError('invalid_input', 'The AI media asset cannot be overwritten.')
+    }
+    const initialUrl = await assertSafeAIMediaUrl(input.url, this.lookup)
+    this.dependencies.db.prepare(`
+      UPDATE ai_media_assets
+      SET status = 'downloading',
+        source_url_redacted = ?,
+        provider_task_id = COALESCE(?, provider_task_id),
+        mime_type = COALESCE(NULLIF(?, ''), mime_type),
+        duration_seconds = COALESCE(?, duration_seconds),
+        original_name = COALESCE(?, original_name),
+        updated_at = ?
+      WHERE id = ?
+    `).run(
+      redactSourceUrl(initialUrl.toString()),
+      typeof input.providerTaskId === 'string' && input.providerTaskId.trim() ? input.providerTaskId.trim().slice(0, 1_000) : null,
+      cleanMime(input.declaredMimeType),
+      typeof input.durationSeconds === 'number' && Number.isFinite(input.durationSeconds) && input.durationSeconds >= 0 ? input.durationSeconds : null,
+      safeOriginalName(input.originalName) ?? null,
+      this.now().toISOString(),
+      assetId,
+    )
+    const tempPath = await this.createTempPath()
+    const controller = new AbortController()
+    const timeoutMs = Math.min(Math.max(input.timeoutMs ?? 120_000, 1_000), 600_000)
+    let timedOut = false
+    const timeout = setTimeout(() => { timedOut = true; controller.abort() }, timeoutMs)
+    const onAbort = () => controller.abort(input.signal?.reason)
+    input.signal?.addEventListener('abort', onAbort, { once: true })
+    if (input.signal?.aborted) controller.abort(input.signal.reason)
+    try {
+      let currentUrl = initialUrl
+      let requestHeaders = input.headers
+      let response: Response | undefined
+      for (let redirect = 0; redirect <= 5; redirect += 1) {
+        response = await this.fetchImpl(currentUrl, {
+          method: 'GET',
+          headers: requestHeaders,
+          redirect: 'manual',
+          signal: controller.signal,
+        })
+        if (![301, 302, 303, 307, 308].includes(response.status)) break
+        if (redirect === 5) throw mediaError('network_error', 'The media download exceeded the redirect limit.', true)
+        const location = response.headers.get('location')
+        void response.body?.cancel().catch(() => undefined)
+        if (!location) throw mediaError('network_error', 'The media redirect did not include a destination.', true)
+        const nextUrl = await assertSafeAIMediaUrl(new URL(location, currentUrl), this.lookup)
+        if (nextUrl.origin !== currentUrl.origin) requestHeaders = undefined
+        currentUrl = nextUrl
+      }
+      if (!response?.ok || !response.body) throw mediaError('network_error', `The media download failed with HTTP ${response?.status ?? 0}.`, true)
+      const contentLength = Number(response.headers.get('content-length'))
+      if (Number.isFinite(contentLength) && contentLength > this.maxBytes[mediaType]) {
+        throw mediaError('media_failed', 'The remote media exceeds the configured size limit.')
+      }
+      await this.ensureDiskSpace(Number.isFinite(contentLength) ? contentLength : 1024 * 1024)
+      const file = await fs.promises.open(tempPath, 'wx')
+      const reader = response.body.getReader()
+      let byteSize = 0
+      try {
+        while (true) {
+          const chunk = await reader.read()
+          if (chunk.done) break
+          byteSize += chunk.value.byteLength
+          if (byteSize > this.maxBytes[mediaType]) {
+            controller.abort()
+            throw mediaError('media_failed', 'The remote media exceeds the configured size limit.')
+          }
+          await file.write(chunk.value)
+        }
+      } finally {
+        reader.releaseLock()
+        await file.close()
+      }
+      const head = await this.readHead(tempPath)
+      const detected = validateDetectedMedia(mediaType, detectMime(head))
+      return await this.finalizeFile(assetId, mediaType, tempPath, byteSize, detected, input.originalName)
+    } catch (error) {
+      await fs.promises.rm(tempPath, { force: true }).catch(() => undefined)
+      const fileCode = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
+      const mapped = error instanceof AIServiceError
+        ? error
+        : /^(ENOSPC|EACCES|EPERM|EROFS|EDQUOT)$/.test(fileCode)
+          ? mediaError('storage_error', 'The AI media file could not be written to disk.')
+          : mediaError(
+            timedOut ? 'timeout' : controller.signal.aborted ? 'cancelled' : 'network_error',
+            timedOut ? 'The media download timed out.' : controller.signal.aborted ? 'The media download was cancelled.' : 'The media download failed.',
+            !controller.signal.aborted,
+          )
+      this.failRecord(assetId, mapped.detail)
       throw mapped
     } finally {
       clearTimeout(timeout)

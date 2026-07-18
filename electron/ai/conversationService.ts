@@ -838,9 +838,17 @@ export class AIConversationService {
       const block = part as Extract<AIMessageContentBlock, { type: 'image' | 'video' | 'audio' | 'file' }>
       const assetId = requireId(block.assetId, 'media asset ID')
       this.requireMediaAsset(assetId)
+      const posterAssetId = block.posterAssetId === undefined ? undefined : requireId(block.posterAssetId, 'poster media asset ID')
+      if (posterAssetId) this.requireMediaAsset(posterAssetId)
       return {
         textContent: null,
-        metadata: { mimeType: block.mimeType, name: block.name, alt: block.alt },
+        metadata: {
+          mimeType: block.mimeType,
+          name: block.name,
+          alt: block.alt,
+          posterAssetId,
+          durationSeconds: block.durationSeconds,
+        },
         mediaAssetId: assetId,
       }
     }
@@ -890,6 +898,8 @@ export class AIConversationService {
         mimeType: typeof metadata.mimeType === 'string' ? metadata.mimeType : 'application/octet-stream',
         ...(typeof metadata.name === 'string' ? { name: metadata.name } : {}),
         ...(typeof metadata.alt === 'string' ? { alt: metadata.alt } : {}),
+        ...(Number.isInteger(metadata.posterAssetId) && Number(metadata.posterAssetId) > 0 ? { posterAssetId: Number(metadata.posterAssetId) } : {}),
+        ...(typeof metadata.durationSeconds === 'number' && Number.isFinite(metadata.durationSeconds) ? { durationSeconds: metadata.durationSeconds } : {}),
       }
     }
     if (row.content_type === 'tool_result') {

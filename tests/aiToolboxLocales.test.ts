@@ -11,6 +11,18 @@ test('AI toolbox localization exists in Chinese and English with matching keys',
   assert.equal(en.toolbox.tab_ai, 'AI Chat')
   assert.deepEqual(Object.keys(zh.aiChat).sort(), Object.keys(en.aiChat).sort())
   assert.deepEqual(Object.keys(zh.aiChat.chat).sort(), Object.keys(en.aiChat.chat).sort())
+  assert.deepEqual(Object.keys(zh.aiChat.images).sort(), Object.keys(en.aiChat.images).sort())
+  assert.deepEqual(Object.keys(zh.aiChat.videos).sort(), Object.keys(en.aiChat.videos).sort())
+})
+
+test('AI video chat renders a visible processing state and controlled local playback card', () => {
+  const workspace = readFileSync(path.resolve('src/views/ai/ChatWorkspace.tsx'), 'utf8')
+  const renderer = readFileSync(path.resolve('src/views/ai/MessageRenderer.tsx'), 'utf8')
+  const video = readFileSync(path.resolve('src/views/ai/VideoMessage.tsx'), 'utf8')
+  assert.match(workspace, /type: 'media_task', mediaType: 'video'/)
+  assert.match(renderer, /ai-message__media-task/)
+  assert.match(video, /life-ai-asset:\/\/asset\/\$\{video\.assetId\}/)
+  assert.match(video, /<video[^>]+controls[^>]+preload="metadata"/)
 })
 
 test('Toolbox lazy-loads the isolated AI workspace without replacing existing tools', () => {

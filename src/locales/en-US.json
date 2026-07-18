@@ -819,7 +819,18 @@
       "toggle": "Toggle image generation mode",
       "composer_hint": "Describe an image and press Enter to generate",
       "provider_required": "The current Agent has no image provider",
-      "generate_failed": "Image generation failed"
+      "generate_failed": "Image generation failed",
+      "generating": "Generating and saving the image"
+    },
+    "videos": {
+      "generated": "Generated video",
+      "mode": "Video",
+      "mode_active": "Video mode",
+      "toggle": "Toggle video generation mode",
+      "composer_hint": "Describe a video and press Enter to generate",
+      "provider_required": "The current Agent has no video provider",
+      "generate_failed": "Video generation failed",
+      "generating": "Generating, downloading, and processing the video"
     },
     "providers": {
       "load_failed": "Unable to load model providers",

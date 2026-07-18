@@ -184,7 +184,7 @@ export function shouldUseBilibiliHtmlFallback(url: string, diagnostic: VideoDiag
 export function runProcess(
   command: string,
   args: string[],
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ) {
   return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
     const child = spawn(command, args, { windowsHide: true })
@@ -195,7 +195,12 @@ export function runProcess(
       if (settled) return
       settled = true
       if (timeout) clearTimeout(timeout)
+      options.signal?.removeEventListener('abort', onAbort)
       resolve(result)
+    }
+    const onAbort = () => {
+      child.kill('SIGTERM')
+      finish({ code: -1, stdout, stderr: 'Process cancelled.' })
     }
     const timeout = options.timeoutMs
       ? setTimeout(() => {
@@ -203,6 +208,8 @@ export function runProcess(
           finish({ code: -1, stdout, stderr: `Process timed out after ${options.timeoutMs}ms` })
         }, options.timeoutMs)
       : undefined
+    options.signal?.addEventListener('abort', onAbort, { once: true })
+    if (options.signal?.aborted) onAbort()
     child.stdout.on('data', (chunk) => {
       stdout += chunk.toString()
     })

@@ -6,6 +6,7 @@ import { renderAIMessageMarkdown } from './messageSecurity'
 import { ToolCallCard } from './ToolCallCard'
 import { ImageMessage } from './ImageMessage'
 import { MediaViewer } from './MediaViewer'
+import { VideoMessage } from './VideoMessage'
 
 type MessageRendererProps = {
   message: AIChatMessage
@@ -46,7 +47,11 @@ export function MessageRenderer({ message, onRetry, retryDisabled }: MessageRend
   const images = message.parts.filter((part): part is AIChatMediaPart =>
     part.type === 'image' && typeof part.assetId === 'number' && typeof part.mimeType === 'string',
   )
+  const videos = message.parts.filter((part): part is AIChatMediaPart =>
+    part.type === 'video' && typeof part.assetId === 'number' && typeof part.mimeType === 'string',
+  )
   const firstImageIndex = message.parts.findIndex((part) => part.type === 'image')
+  const firstVideoIndex = message.parts.findIndex((part) => part.type === 'video')
 
   const handleCopy = async () => {
     const text = copyText(message)
@@ -100,6 +105,20 @@ export function MessageRenderer({ message, onRetry, retryDisabled }: MessageRend
           if (part.type === 'error') {
             return <div key={index} className="ai-message__error" role="alert">{String(part.message)}</div>
           }
+          if (part.type === 'media_task') {
+            if (message.status !== 'pending' && message.status !== 'streaming') return null
+            const isVideo = part.mediaType === 'video'
+            const progress = typeof part.progress === 'number' && Number.isFinite(part.progress)
+              ? Math.min(Math.max(part.progress, 0), 100)
+              : undefined
+            return (
+              <div key={index} className="ai-message__media-task" role="status">
+                {isVideo ? <Video size={16} aria-hidden="true" /> : <Image size={16} aria-hidden="true" />}
+                <span>{t(isVideo ? 'aiChat.videos.generating' : 'aiChat.images.generating')}</span>
+                {progress !== undefined && <strong>{Math.round(progress)}%</strong>}
+              </div>
+            )
+          }
           if (isToolCallPart(part)) {
             if (latestToolCallIndex.get(part.toolCallId) !== index) return null
             return <ToolCallCard key={`${part.toolCallId}-${index}`} call={part} result={toolResults.get(part.toolCallId)} />
@@ -108,6 +127,14 @@ export function MessageRenderer({ message, onRetry, retryDisabled }: MessageRend
           if (part.type === 'image' && typeof part.assetId === 'number') {
             if (index !== firstImageIndex) return null
             return <ImageMessage key="images" images={images} onOpen={setOpenImage} />
+          }
+          if (part.type === 'video' && typeof part.assetId === 'number') {
+            if (index !== firstVideoIndex) return null
+            return (
+              <div key="videos" className="ai-video-list">
+                {videos.map((video) => <VideoMessage key={video.assetId} video={video} />)}
+              </div>
+            )
           }
           if (part.type === 'image' || part.type === 'video' || part.type === 'file' || part.type === 'audio') {
             const Icon = part.type === 'image' ? Image : part.type === 'video' ? Video : File
@@ -127,7 +154,7 @@ export function MessageRenderer({ message, onRetry, retryDisabled }: MessageRend
             dangerouslySetInnerHTML={{ __html: renderAIMessageMarkdown(message.streamText) }}
           />
         )}
-        {message.status === 'streaming' && !copyText(message) && (
+        {message.status === 'streaming' && !copyText(message) && !message.parts.some((part) => part.type === 'media_task') && (
           <span className="ai-message__thinking" aria-label={t('aiChat.chat.generating')}>
             <span />
             <span />

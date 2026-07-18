@@ -96,6 +96,8 @@ export type AIMediaContentBlock = {
   mimeType: string
   name?: string
   alt?: string
+  posterAssetId?: number
+  durationSeconds?: number
 }
 
 export type AIToolCallContentBlock = {

@@ -7,11 +7,13 @@ import {
   AI_CONVERSATION_CHANNELS,
   AI_MCP_RUNTIME_CHANNELS,
   AI_IMAGE_CHANNELS,
+  AI_VIDEO_CHANNELS,
   AI_RUNTIME_CHANNELS,
   createAIConfigHandlers,
   createAIConversationHandlers,
   createAIMcpRuntimeHandlers,
   createAIRuntimeHandlers,
+  createAIVideoHandlers,
 } from '../electron/ai/ipc.ts'
 
 test('AI configuration IPC exposes only the approved channel whitelist', () => {
@@ -40,6 +42,7 @@ test('preload exposes structured AI methods without runtime credentials or gener
     'approveAITool',
     'onAIRunEvent',
     'generateAIImages',
+    'generateAIVideos',
     'saveAIAsset',
     'revealAIAsset',
   ]) {
@@ -50,8 +53,27 @@ test('preload exposes structured AI methods without runtime credentials or gener
 
 test('image runtime exposes only generation while media files remain behind asset IDs', () => {
   assert.deepEqual(AI_IMAGE_CHANNELS, ['ai:images:generate'])
+  assert.deepEqual(AI_VIDEO_CHANNELS, ['ai:videos:generate'])
   const preload = readFileSync(path.resolve('electron/preload.ts'), 'utf8')
-  assert.doesNotMatch(preload, /getAIAssetPath|readAIAssetFile|downloadRemoteAIAsset/)
+  assert.doesNotMatch(preload, /getAIAssetPath|readAIAssetFile|downloadRemoteAIAsset|getAIVideoUrl/)
+})
+
+test('video generation IPC validates identifiers before creating a provider service', async () => {
+  let opened = 0
+  const handlers = createAIVideoHandlers({
+    getService: () => {
+      opened += 1
+      throw new Error('should not create service')
+    },
+  })
+  const invalid = await handlers['ai:videos:generate']({}, {
+    conversationId: 0,
+    agentId: 2,
+    prompt: 'A moving landscape',
+  })
+  assert.equal(invalid.success, false)
+  assert.equal(invalid.error.code, 'invalid_input')
+  assert.equal(opened, 0)
 })
 
 test('MCP runtime IPC exposes connection diagnostics without a renderer tool execution channel', async () => {

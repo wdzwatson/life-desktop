@@ -123,6 +123,49 @@ test('messages preserve ordered heterogeneous content blocks and paginate chrono
   context.db.close()
 })
 
+test('video message metadata survives conversation serialization and reload', () => {
+  const context = setup()
+  const conversation = createConversation(context)
+  const video = context.service.createMediaAssetRecord({
+    providerId: context.providerId,
+    mediaType: 'video',
+    mimeType: 'video/mp4',
+    localPath: '/tmp/generated.mp4',
+    status: 'completed',
+  })
+  const poster = context.service.createMediaAssetRecord({
+    providerId: context.providerId,
+    mediaType: 'image',
+    mimeType: 'image/jpeg',
+    localPath: '/tmp/generated-poster.jpg',
+    status: 'completed',
+  })
+  const message = context.service.createMessage({
+    conversationId: conversation.id,
+    role: 'assistant',
+    parts: [{
+      type: 'video',
+      assetId: video.id,
+      mimeType: 'video/mp4',
+      name: 'Generated video',
+      alt: 'A moving landscape',
+      posterAssetId: poster.id,
+      durationSeconds: 7.25,
+    }],
+  })
+
+  assert.deepEqual(context.service.getMessage(message.id).parts, [{
+    type: 'video',
+    assetId: video.id,
+    mimeType: 'video/mp4',
+    name: 'Generated video',
+    alt: 'A moving landscape',
+    posterAssetId: poster.id,
+    durationSeconds: 7.25,
+  }])
+  context.db.close()
+})
+
 test('message transitions cannot reopen terminal messages', () => {
   const context = setup()
   const conversation = createConversation(context)

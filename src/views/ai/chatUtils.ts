@@ -17,6 +17,8 @@ export type AIChatMediaPart = {
   mimeType: string
   name?: string
   alt?: string
+  posterAssetId?: number
+  durationSeconds?: number
 }
 
 export type AIChatMessagePart =
@@ -33,6 +35,13 @@ export type AIChatMessagePart =
       status: 'proposed' | 'waiting_for_approval' | 'approved' | 'running' | 'completed' | 'failed' | 'rejected' | 'cancelled'
     }
   | { type: 'tool_result'; toolCallId: string; summary: string; attachmentAssetId?: number }
+  | {
+      type: 'media_task'
+      mediaType: 'image' | 'video'
+      taskId: string
+      status: 'queued' | 'generating' | 'polling' | 'downloading' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
+      progress?: number
+    }
   | AIChatMediaPart
   | Record<string, unknown>
 
