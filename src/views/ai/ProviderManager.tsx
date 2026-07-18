@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bot,
   Check,
+  ChevronDown,
   Copy,
   Database,
   Pencil,
@@ -53,8 +54,11 @@ export function ProviderManager({ onChanged }: Props) {
   const [selectedPresetIds, setSelectedPresetIds] = useState<ProviderAgentPresetId[]>([])
   const [customAgentName, setCustomAgentName] = useState('')
   const [customAgentNames, setCustomAgentNames] = useState<string[]>([])
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false)
   const nameRef = useRef<HTMLInputElement | null>(null)
   const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const agentPickerRef = useRef<HTMLDivElement | null>(null)
+  const agentPickerButtonRef = useRef<HTMLButtonElement | null>(null)
   const api = (window as any).electronAPI
 
   const loadProviders = async () => {
@@ -84,6 +88,33 @@ export function ProviderManager({ onChanged }: Props) {
     return () => window.clearTimeout(timer)
   }, [search, protocol, capability, enabled])
 
+  useEffect(() => {
+    if (!agentPickerOpen) return
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!agentPickerRef.current?.contains(event.target as Node)) setAgentPickerOpen(false)
+    }
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setAgentPickerOpen(false)
+      agentPickerButtonRef.current?.focus()
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [agentPickerOpen])
+
+  const selectedAgentLabels = useMemo(() => [
+    ...selectedPresetIds.map((presetId) => {
+      const preset = PROVIDER_AGENT_PRESETS.find((item) => item.id === presetId)
+      return preset ? t(preset.nameKey) : ''
+    }).filter(Boolean),
+    ...customAgentNames,
+  ], [customAgentNames, selectedPresetIds, t])
+
   const refresh = async () => {
     await loadProviders()
     await onChanged()
@@ -95,6 +126,7 @@ export function ProviderManager({ onChanged }: Props) {
     setSelectedPresetIds([])
     setCustomAgentName('')
     setCustomAgentNames([])
+    setAgentPickerOpen(false)
   }
 
   const openCreate = (trigger: HTMLButtonElement) => {
@@ -108,6 +140,7 @@ export function ProviderManager({ onChanged }: Props) {
     )
     setCustomAgentName('')
     setCustomAgentNames([])
+    setAgentPickerOpen(false)
     setError('')
   }
 
@@ -118,6 +151,7 @@ export function ProviderManager({ onChanged }: Props) {
     setSelectedPresetIds([])
     setCustomAgentName('')
     setCustomAgentNames([])
+    setAgentPickerOpen(false)
     setError('')
   }
 
@@ -194,6 +228,7 @@ export function ProviderManager({ onChanged }: Props) {
       setSelectedPresetIds([])
       setCustomAgentName('')
       setCustomAgentNames([])
+      setAgentPickerOpen(false)
       showToast(t(linkedResult.created > 0
         ? 'aiChat.providers.saved_with_agents'
         : editing
@@ -426,66 +461,95 @@ export function ProviderManager({ onChanged }: Props) {
               <p>{t(draft.capabilities.includes('text') && draft.textModel.trim()
                 ? 'aiChat.providers.agents_section_desc'
                 : 'aiChat.providers.agents_require_text')}</p>
-              <div className="ai-provider-agent-presets">
-                {PROVIDER_AGENT_PRESETS.map((preset) => {
-                  const existingAgent = agents.find((agent) => agent.systemPrompt === preset.systemPrompt)
-                  const linkedToCurrent = Boolean(existingAgent && editing && existingAgent.providers.text === editing.id)
-                  const checked = linkedToCurrent || selectedPresetIds.includes(preset.id)
-                  return (
-                    <label key={preset.id} className={existingAgent ? 'is-existing' : ''}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={Boolean(existingAgent)}
-                        onChange={() => setSelectedPresetIds(toggleProviderAgentPreset(selectedPresetIds, preset.id))}
-                      />
-                      <span>
-                        <strong>{t(preset.nameKey)}</strong>
-                        <small>{t(linkedToCurrent
-                          ? 'aiChat.providers.agent_already_linked'
-                          : existingAgent
-                            ? 'aiChat.providers.agent_already_exists'
-                            : preset.descriptionKey)}</small>
-                      </span>
-                    </label>
-                  )
-                })}
-              </div>
-              <div className="ai-provider-agent-custom">
-                <input
-                  className="form-field"
-                  value={customAgentName}
-                  onChange={(event) => setCustomAgentName(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key !== 'Enter') return
-                    event.preventDefault()
-                    addCustomAgent()
-                  }}
-                  placeholder={t('aiChat.providers.custom_agent_placeholder')}
-                  aria-label={t('aiChat.providers.custom_agent_label')}
-                />
+              <div className="ai-provider-agent-select" ref={agentPickerRef}>
                 <button
+                  ref={agentPickerButtonRef}
                   type="button"
-                  className="btn"
-                  disabled={!customAgentName.trim() || agents.some((agent) => agent.name.trim().toLocaleLowerCase() === customAgentName.trim().toLocaleLowerCase())}
-                  onClick={addCustomAgent}
+                  className="ai-provider-agent-select__trigger"
+                  aria-expanded={agentPickerOpen}
+                  aria-controls="ai-provider-agent-options"
+                  disabled={!draft.capabilities.includes('text') || !draft.textModel.trim()}
+                  onClick={() => setAgentPickerOpen((current) => !current)}
                 >
-                  <Plus size={14} aria-hidden="true" />
-                  {t('aiChat.providers.add_custom_agent')}
+                  <Bot size={15} aria-hidden="true" />
+                  <span>
+                    <strong>{t('aiChat.providers.agent_select_label')}</strong>
+                    <small>{selectedAgentLabels.length > 0
+                      ? t('aiChat.providers.agent_selected_count', { count: selectedAgentLabels.length, names: selectedAgentLabels.join('、') })
+                      : t('aiChat.providers.agent_select_placeholder')}</small>
+                  </span>
+                  <ChevronDown size={14} aria-hidden="true" />
                 </button>
-              </div>
-              {customAgentNames.length > 0 && (
-                <div className="ai-provider-agent-chips" aria-label={t('aiChat.providers.pending_agents')}>
-                  {customAgentNames.map((name) => (
-                    <span key={name}>
-                      {name}
-                      <button type="button" onClick={() => setCustomAgentNames((current) => current.filter((item) => item !== name))} aria-label={t('aiChat.providers.remove_custom_agent', { name })}>
-                        <X size={11} aria-hidden="true" />
+
+                {agentPickerOpen && (
+                  <div id="ai-provider-agent-options" className="ai-provider-agent-select__menu">
+                    <strong className="ai-provider-agent-select__label">{t('aiChat.providers.agent_options_label')}</strong>
+                    <div className="ai-provider-agent-presets">
+                      {PROVIDER_AGENT_PRESETS.map((preset) => {
+                        const existingAgent = agents.find((agent) => agent.systemPrompt === preset.systemPrompt)
+                        const linkedToCurrent = Boolean(existingAgent && editing && existingAgent.providers.text === editing.id)
+                        const checked = linkedToCurrent || selectedPresetIds.includes(preset.id)
+                        return (
+                          <label key={preset.id} className={existingAgent ? 'is-existing' : ''}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={Boolean(existingAgent)}
+                              onChange={() => setSelectedPresetIds(toggleProviderAgentPreset(selectedPresetIds, preset.id))}
+                            />
+                            <span>
+                              <strong>{t(preset.nameKey)}</strong>
+                              <small>{t(linkedToCurrent
+                                ? 'aiChat.providers.agent_already_linked'
+                                : existingAgent
+                                  ? 'aiChat.providers.agent_already_exists'
+                                  : preset.descriptionKey)}</small>
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
+
+                    <strong className="ai-provider-agent-select__label">{t('aiChat.providers.custom_agents_label')}</strong>
+                    <div className="ai-provider-agent-custom">
+                      <input
+                        className="form-field"
+                        value={customAgentName}
+                        onChange={(event) => setCustomAgentName(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter') return
+                          event.preventDefault()
+                          addCustomAgent()
+                        }}
+                        placeholder={t('aiChat.providers.custom_agent_placeholder')}
+                        aria-label={t('aiChat.providers.custom_agent_label')}
+                      />
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={!customAgentName.trim() || agents.some((agent) => agent.name.trim().toLocaleLowerCase() === customAgentName.trim().toLocaleLowerCase())}
+                        onClick={addCustomAgent}
+                      >
+                        <Plus size={14} aria-hidden="true" />
+                        {t('aiChat.providers.add_custom_agent')}
                       </button>
-                    </span>
-                  ))}
-                </div>
-              )}
+                    </div>
+                    {customAgentNames.length > 0 && (
+                      <div className="ai-provider-agent-chips" aria-label={t('aiChat.providers.pending_agents')}>
+                        {customAgentNames.map((name) => (
+                          <span key={name}>
+                            <Check size={10} aria-hidden="true" />
+                            {name}
+                            <button type="button" onClick={() => setCustomAgentNames((current) => current.filter((item) => item !== name))} aria-label={t('aiChat.providers.remove_custom_agent', { name })}>
+                              <X size={11} aria-hidden="true" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </fieldset>
             {editing && editing.headerNames.length > 0 && !draft.replaceHeaders && (
               <div className="ai-provider-preserved-headers">

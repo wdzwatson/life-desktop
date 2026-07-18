@@ -16,6 +16,7 @@ test('provider agent presets expose four stable everyday roles', () => {
     'coding',
   ])
   assert.equal(new Set(PROVIDER_AGENT_PRESETS.map((preset) => preset.systemPrompt)).size, 4)
+  assert.equal(Object.isFrozen(PROVIDER_AGENT_PRESETS), true)
 })
 
 test('provider preset selection toggles without mutating the current selection', () => {

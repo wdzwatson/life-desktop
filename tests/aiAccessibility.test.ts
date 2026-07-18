@@ -90,12 +90,15 @@ test('provider creation uses a full-height settings drawer with focus restoratio
   assert.match(css, /\.ai-settings-drawer \.ai-provider-form__actions\s*\{[\s\S]*position:\s*sticky[\s\S]*bottom:\s*0/)
 })
 
-test('provider creation offers dense preset and custom assistant creation', () => {
+test('provider creation offers a constant multi-select dropdown with custom assistant creation', () => {
   assert.match(providerManager, /PROVIDER_AGENT_PRESETS\.map/)
   assert.match(providerManager, /className="ai-provider-agent-picker"/)
+  assert.match(providerManager, /className="ai-provider-agent-select__trigger"/)
+  assert.match(providerManager, /aria-expanded=\{agentPickerOpen\}/)
+  assert.match(providerManager, /className="ai-provider-agent-select__menu"/)
   assert.match(providerManager, /api\.createAIAgent\(buildAgentPayload\(agentDraft\)\)/)
   assert.match(providerManager, /customAgentNames\.map/)
-  assert.match(css, /\.ai-provider-agent-presets\s*\{[\s\S]*grid-template-columns:\s*repeat\(2,[\s\S]*grid-auto-flow:\s*dense/)
+  assert.match(css, /\.ai-provider-agent-presets\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)[\s\S]*grid-auto-flow:\s*dense/)
 })
 
 test('agent creation reuses the settings drawer and returns focus to its trigger', () => {

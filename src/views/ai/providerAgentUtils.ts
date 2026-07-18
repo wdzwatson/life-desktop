@@ -9,7 +9,7 @@ export type ProviderAgentPreset = {
   systemPrompt: string
 }
 
-export const PROVIDER_AGENT_PRESETS: ProviderAgentPreset[] = [
+export const PROVIDER_AGENT_PRESETS: readonly ProviderAgentPreset[] = Object.freeze([
   {
     id: 'general',
     nameKey: 'aiChat.providers.agent_general_name',
@@ -34,7 +34,7 @@ export const PROVIDER_AGENT_PRESETS: ProviderAgentPreset[] = [
     descriptionKey: 'aiChat.providers.agent_coding_desc',
     systemPrompt: 'You are a software engineering assistant. Diagnose before changing code, prefer maintainable solutions, preserve existing behavior, and verify every implementation.',
   },
-]
+])
 
 export function toggleProviderAgentPreset(
   selected: ProviderAgentPresetId[],

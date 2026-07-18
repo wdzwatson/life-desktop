@@ -66,6 +66,11 @@ const requiredKeys = [
   'agents_section',
   'agents_section_desc',
   'agents_require_text',
+  'agent_select_label',
+  'agent_select_placeholder',
+  'agent_selected_count',
+  'agent_options_label',
+  'custom_agents_label',
   'agent_general_name',
   'agent_general_desc',
   'agent_writing_name',
@@ -106,5 +111,7 @@ for (const filename of localeFiles) {
     assert.match(providers.remove_custom_agent, /{{name}}/)
     assert.match(providers.saved_with_agents, /{{count}}/)
     assert.match(providers.agents_create_failed, /{{count}}/)
+    assert.match(providers.agent_selected_count, /{{count}}/)
+    assert.match(providers.agent_selected_count, /{{names}}/)
   })
 }
