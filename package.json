@@ -9,11 +9,12 @@
   },
   "scripts": {
     "dev": "node scripts/run-with-electron-env.mjs vite",
-    "rebuild:native": "node scripts/rebuild-native.mjs",
+    "rebuild:native": "electron-builder install-app-deps && npm run verify:native",
+    "verify:native": "node scripts/verify-native-module.mjs",
     "postinstall": "npm run rebuild:native",
     "test": "node scripts/run-tests.mjs",
     "build": "tsc -b && vite build",
-    "build:app": "npm run build && electron-builder",
+    "build:app": "npm run build && npm run verify:native && electron-builder",
     "lint": "eslint .",
     "format": "prettier --write .",
     "preview": "vite preview"
@@ -34,7 +35,6 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.2.0",
     "@eslint/js": "^10.0.1",
     "@types/adm-zip": "^0.5.8",
     "@types/better-sqlite3": "^7.6.13",
