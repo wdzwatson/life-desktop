@@ -164,7 +164,9 @@ export function createAIConfigHandlers(
     'ai:providers:update': (_event, payload) =>
       respondWithObject(payload, (data) => {
         const id = requireId(data.id)
-        return services().providers.update(id, data.input)
+        return services().providers.update(id, data.input, {
+          preserveHeaders: data.preserveHeaders === true,
+        })
       }),
     'ai:providers:copy': (_event, payload) =>
       respondWithObject(payload, (data) => {

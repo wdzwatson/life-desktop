@@ -193,13 +193,13 @@ export class AIProviderService {
     }
   }
 
-  update(id: number, value: unknown) {
+  update(id: number, value: unknown, options: { preserveHeaders?: boolean } = {}) {
     const row = this.requireRow(id)
     const input = parseAIProviderConfigInput(value)
     const oldBundle = row.credential_ref ? this.readCredential(row.credential_ref) : { headers: {} }
     const nextBundle: ProviderCredentialBundle = {
       apiKey: input.apiKey ?? oldBundle.apiKey,
-      headers: input.defaultHeaders,
+      headers: options.preserveHeaders ? oldBundle.headers : input.defaultHeaders,
     }
     let createdRef: string | null = null
     let replacedOldSecret: string | null = null
@@ -239,7 +239,7 @@ export class AIProviderService {
             input.protocol,
             input.baseUrl,
             nextRef,
-            JSON.stringify(Object.keys(input.defaultHeaders).sort()),
+            JSON.stringify(Object.keys(nextBundle.headers).sort()),
             JSON.stringify(input.capabilities),
             input.models.text ?? null,
             input.models.image ?? null,

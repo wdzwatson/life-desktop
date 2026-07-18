@@ -131,6 +131,10 @@ test('provider updates preserve API keys, replace headers, and clear invalid def
     apiKey: 'secret-key',
     headers: { 'X-New': 'new-secret' },
   })
+  service.update(provider.id, providerInput({ apiKey: undefined, defaultHeaders: {} }), {
+    preserveHeaders: true,
+  })
+  assert.deepEqual(service.getCredentialBundle(provider.id).headers, { 'X-New': 'new-secret' })
   db.close()
 })
 

@@ -42,8 +42,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listAIProviders: (filters?: unknown) => ipcRenderer.invoke('ai:providers:list', filters),
   getAIProvider: (id: number) => ipcRenderer.invoke('ai:providers:get', { id }),
   createAIProvider: (input: unknown) => ipcRenderer.invoke('ai:providers:create', input),
-  updateAIProvider: (id: number, input: unknown) =>
-    ipcRenderer.invoke('ai:providers:update', { id, input }),
+  updateAIProvider: (id: number, input: unknown, options?: { preserveHeaders?: boolean }) =>
+    ipcRenderer.invoke('ai:providers:update', {
+      id,
+      input,
+      preserveHeaders: options?.preserveHeaders,
+    }),
   copyAIProvider: (id: number, name?: string) =>
     ipcRenderer.invoke('ai:providers:copy', { id, name }),
   setAIProviderEnabled: (id: number, enabled: boolean) =>
