@@ -13,6 +13,7 @@ const sidebar = readFileSync(path.resolve('src/components/Sidebar.tsx'), 'utf8')
 
 test('AI always renders the conversation workspace instead of a marketing onboarding page', () => {
   assert.doesNotMatch(shell, /AIOnboarding/)
+  assert.doesNotMatch(css, /ai-onboarding/)
   assert.match(shell, /mode === 'chat'[\s\S]*<ChatWorkspace[\s\S]*hasProvider=\{hasProvider\}/)
   assert.match(workspace, /className="ai-chat-setup-banner"/)
   assert.match(workspace, /disabled=\{submitting \|\| !chatReady\}/)
@@ -22,9 +23,8 @@ test('progressive setup keeps the conversation canvas responsive without page ov
   assert.match(css, /\.ai-chat-shell\s*\{[\s\S]*height:\s*100%[\s\S]*min-height:\s*0/)
   assert.match(css, /\.ai-chat-stage\.has-setup[\s\S]*grid-template-rows:\s*auto auto minmax\(0, 1fr\) auto auto/)
   assert.match(css, /\.ai-chat-setup-banner[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto/)
-  assert.match(css, /@media \(max-width:\s*1180px\)/)
   assert.match(css, /@media \(max-width:\s*960px\)/)
-  assert.match(css, /@media \(max-width:\s*800px\)/)
+  assert.match(css, /@media \(max-width:\s*640px\)/)
 })
 
 test('AI is a first-level screen that owns the available pane height', () => {
