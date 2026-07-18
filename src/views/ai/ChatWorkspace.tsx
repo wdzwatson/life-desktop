@@ -10,6 +10,7 @@ import {
   TimerReset,
   TriangleAlert,
   Video,
+  X,
 } from 'lucide-react'
 import {
   useCallback,
@@ -113,6 +114,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
     mediaType: 'image' | 'video'
   } | null>(null)
   const [runAnnouncement, setRunAnnouncement] = useState('')
+  const [showRunInspector, setShowRunInspector] = useState(false)
   const activeConversationRef = useRef<number | null>(null)
   const messagesRef = useRef<AIChatMessage[]>([])
   const lastSequenceRef = useRef(new Map<string, number>())
@@ -753,6 +755,15 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
               <Download size={13} aria-hidden="true" />
               {t(exportingConversation ? 'aiChat.chat.exporting' : 'aiChat.chat.export')}
             </button>
+            <button
+              className="ai-run-inspector-toggle"
+              onClick={() => setShowRunInspector((value) => !value)}
+              aria-expanded={showRunInspector}
+              aria-controls="ai-run-inspector"
+            >
+              <Gauge size={13} aria-hidden="true" />
+              {t('aiChat.chat.run_inspector_short')}
+            </button>
           </div>
         </header>
 
@@ -881,10 +892,21 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
         </div>
       </section>
 
-      <aside className="ai-run-inspector" aria-label={t('aiChat.chat.run_inspector')}>
+      <aside
+        id="ai-run-inspector"
+        className={`ai-run-inspector ${showRunInspector ? 'is-open' : ''}`}
+        aria-label={t('aiChat.chat.run_inspector')}
+      >
         <div className="ai-run-inspector__heading">
           <Gauge size={15} aria-hidden="true" />
           <h2>{t('aiChat.chat.run_inspector')}</h2>
+          <button
+            className="ai-run-inspector__close"
+            onClick={() => setShowRunInspector(false)}
+            aria-label={t('common.close')}
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
         </div>
         <dl>
           <div>

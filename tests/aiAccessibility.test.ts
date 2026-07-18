@@ -12,6 +12,7 @@ const dialog = readFileSync(path.resolve('src/components/AccessibleDialog.tsx'),
 const conversationDelete = readFileSync(path.resolve('src/views/ai/ConversationDeleteDialog.tsx'), 'utf8')
 const messageRenderer = readFileSync(path.resolve('src/views/ai/MessageRenderer.tsx'), 'utf8')
 const css = readFileSync(path.resolve('src/views/ai/AIChat.css'), 'utf8')
+const appCss = readFileSync(path.resolve('src/index.css'), 'utf8')
 
 test('tool approval and media viewer trap focus, close with Escape, and restore focus', () => {
   assert.match(approval, /<AccessibleDialog[\s\S]*role="alertdialog"[\s\S]*returnFocus=\{returnFocus\}[\s\S]*initialFocusRef=\{rejectRef\}/)
@@ -53,4 +54,19 @@ test('AI controls and run states retain visible keyboard focus and theme-derived
   assert.match(css, /--ai-status-success:[\s\S]*--ai-status-warning:[\s\S]*--ai-status-danger:/)
   assert.match(css, /dd\.is-completed[\s\S]*var\(--ai-status-success\)/)
   assert.match(css, /dd\.is-cancelled,[\s\S]*dd\.is-interrupted[\s\S]*var\(--ai-status-warning\)/)
+})
+
+test('screen-reader labels stay visually hidden and compact layouts retain the run inspector', () => {
+  assert.match(appCss, /\.sr-only\s*\{[\s\S]*position:\s*absolute[\s\S]*clip:\s*rect\(0, 0, 0, 0\)/)
+  assert.match(workspace, /className="ai-run-inspector-toggle"[\s\S]*aria-controls="ai-run-inspector"/)
+  assert.match(workspace, /id="ai-run-inspector"[\s\S]*showRunInspector \? 'is-open'/)
+  assert.match(css, /@media \(max-width: 1120px\)[\s\S]*\.ai-run-inspector-toggle[\s\S]*display:\s*inline-flex/)
+  assert.match(css, /\.ai-run-inspector\.is-open[\s\S]*position:\s*absolute[\s\S]*display:\s*flex/)
+})
+
+test('daily chat typography and action targets remain readable', () => {
+  assert.match(css, /\.ai-message__body\s*\{[\s\S]*font-size:\s*13px/)
+  assert.match(css, /\.ai-chat-composer textarea\s*\{[\s\S]*font-size:\s*13px/)
+  assert.match(css, /\.ai-conversation-item__actions button\s*\{[\s\S]*width:\s*32px[\s\S]*height:\s*32px/)
+  assert.match(css, /\.ai-chat-composer__mode button\s*\{[\s\S]*min-height:\s*32px/)
 })

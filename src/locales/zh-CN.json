@@ -813,6 +813,7 @@
       "status_cancelled": "已停止",
       "status_interrupted": "已中断",
       "run_inspector": "运行检查器",
+      "run_inspector_short": "运行",
       "run_status": "状态",
       "run_agent": "Agent",
       "run_id": "运行 ID",

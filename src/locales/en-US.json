@@ -813,6 +813,7 @@
       "status_cancelled": "Stopped",
       "status_interrupted": "Interrupted",
       "run_inspector": "Run inspector",
+      "run_inspector_short": "Run",
       "run_status": "Status",
       "run_agent": "Agent",
       "run_id": "Run ID",
