@@ -19,7 +19,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "adm-zip": "^0.5.18",
+    "adm-zip": "^0.6.0",
     "better-sqlite3": "^12.11.1",
     "dompurify": "^3.4.11",
     "electron-updater": "^6.8.9",
