@@ -64,6 +64,13 @@ test('screen-reader labels stay visually hidden and compact layouts retain the r
   assert.match(css, /\.ai-run-inspector\.is-open[\s\S]*position:\s*absolute[\s\S]*display:\s*flex/)
 })
 
+test('accessible dialogs stay fixed to the viewport and lock document scrolling', () => {
+  assert.match(dialog, /lockDocumentScroll\(\)/)
+  assert.match(dialog, /document\.body\.style\.overflow = 'hidden'/)
+  assert.match(appCss, /\.dialog-overlay\s*\{[\s\S]*position:\s*fixed[\s\S]*inset:\s*0[\s\S]*place-items:\s*center/)
+  assert.match(appCss, /\.dialog-surface\s*\{[\s\S]*max-height:\s*calc\(100vh - 48px\)[\s\S]*overflow:\s*auto/)
+})
+
 test('daily chat typography and action targets remain readable', () => {
   assert.match(css, /\.ai-message__body\s*\{[\s\S]*font-size:\s*13px/)
   assert.match(css, /\.ai-chat-composer textarea\s*\{[\s\S]*font-size:\s*13px/)

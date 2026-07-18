@@ -18,6 +18,27 @@ const focusableSelector = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
+let openDialogCount = 0
+let previousBodyOverflow = ''
+let previousBodyOverscrollBehavior = ''
+
+function lockDocumentScroll() {
+  if (openDialogCount === 0) {
+    previousBodyOverflow = document.body.style.overflow
+    previousBodyOverscrollBehavior = document.body.style.overscrollBehavior
+    document.body.style.overflow = 'hidden'
+    document.body.style.overscrollBehavior = 'contain'
+  }
+  openDialogCount += 1
+
+  return () => {
+    openDialogCount = Math.max(0, openDialogCount - 1)
+    if (openDialogCount > 0) return
+    document.body.style.overflow = previousBodyOverflow
+    document.body.style.overscrollBehavior = previousBodyOverscrollBehavior
+  }
+}
+
 function getEnabledFocusableElements(root: HTMLElement) {
   return Array.from(root.querySelectorAll<HTMLElement>(focusableSelector)).filter(
     (element) => !('disabled' in element) || !(element as HTMLButtonElement).disabled,
@@ -73,6 +94,7 @@ export function AccessibleDialog({
   latestInitialFocusRef.current = initialFocusRef
 
   useEffect(() => {
+    const unlockDocumentScroll = lockDocumentScroll()
     const mountedContent = contentRef.current
     const initialTarget = latestInitialFocusRef.current?.current
     const enabledInitialTarget =
@@ -85,6 +107,7 @@ export function AccessibleDialog({
     focusTarget?.focus()
 
     return () => {
+      unlockDocumentScroll()
       queueMicrotask(() => {
         if (shouldRestoreDialogFocus(mountedContent)) latestReturnFocusRef.current?.()
       })
