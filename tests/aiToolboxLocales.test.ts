@@ -60,17 +60,20 @@ test('AI video chat renders a visible processing state and controlled local play
   assert.match(video, /<video[^>]+controls[^>]+preload="metadata"/)
 })
 
-test('AI storage view keeps dense capacity layout, preview confirmation, and reduced-motion support', () => {
+test('AI storage view is a dense settings surface with preview confirmation', () => {
   const shell = readFileSync(path.resolve('src/views/ai/AIChat.tsx'), 'utf8')
   const storage = readFileSync(path.resolve('src/views/ai/StorageManager.tsx'), 'utf8')
   const css = readFileSync(path.resolve('src/views/ai/AIChat.css'), 'utf8')
   assert.match(shell, /nav_storage/)
   assert.match(storage, /previewAIStorageCleanup/)
   assert.match(storage, /window\.confirm/)
-  assert.match(storage, /ScrollTrigger\.create/)
-  assert.match(css, /\.ai-storage-hero h2[\s\S]*max-width:\s*64rem/)
-  assert.match(css, /\.ai-storage-bento[\s\S]*grid-template-columns:\s*repeat\(6,[\s\S]*grid-auto-flow:\s*dense/)
-  assert.match(css, /prefers-reduced-motion:[\s\S]*\.ai-storage-marquee > div[\s\S]*animation:\s*none/)
+  assert.match(storage, /className="ai-storage-summary-grid"/)
+  assert.match(storage, /className="ai-storage-settings-grid"/)
+  assert.match(storage, /className="ai-storage-impact-grid"/)
+  assert.doesNotMatch(storage, /useGSAP|ScrollTrigger|gsap|ai-storage-hero|ai-storage-marquee/)
+  assert.match(css, /\.ai-storage-summary-grid[\s\S]*grid-template-columns:\s*repeat\(4,[\s\S]*grid-auto-flow:\s*dense/)
+  assert.match(css, /\.ai-storage-settings-grid[\s\S]*grid-template-columns:\s*minmax\(220px, 0\.72fr\) minmax\(0, 1\.28fr\)/)
+  assert.match(css, /\.ai-storage-scope-grid[\s\S]*grid-auto-flow:\s*dense/)
   assert.doesNotMatch(storage, /SECTION 0|QUESTION 0/)
 })
 

@@ -1,11 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useGSAP } from '@gsap/react'
-import gsap from 'gsap'
-import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ArchiveX,
-  ChevronLeft,
-  ChevronRight,
   Database,
   Film,
   HardDrive,
@@ -16,8 +11,6 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-
-gsap.registerPlugin(useGSAP, ScrollTrigger)
 
 type StorageUsage = {
   schemaVersion: number
@@ -76,7 +69,6 @@ function responseError(response: ApiResponse<unknown> | undefined, fallback: str
 export function StorageManager() {
   const { t } = useTranslation()
   const api = (window as any).electronAPI
-  const rootRef = useRef<HTMLDivElement>(null)
   const [usage, setUsage] = useState<StorageUsage | null>(null)
   const [settings, setSettings] = useState<Record<string, unknown>>({})
   const [scope, setScope] = useState<CleanupScope>('unreferenced')
@@ -84,7 +76,6 @@ export function StorageManager() {
   const [capacityGb, setCapacityGb] = useState(5)
   const [autoCleanup, setAutoCleanup] = useState(false)
   const [plan, setPlan] = useState<CleanupPlan | null>(null)
-  const [impactIndex, setImpactIndex] = useState(0)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -114,38 +105,6 @@ export function StorageManager() {
     void load()
   }, [])
 
-  useGSAP(() => {
-    const root = rootRef.current
-    if (!root || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const cards = root.querySelectorAll('.ai-storage-bento__card')
-    gsap.fromTo(cards, { y: 28, scale: 0.96, opacity: 0.45 }, {
-      y: 0,
-      scale: 1,
-      opacity: 1,
-      stagger: 0.08,
-      ease: 'none',
-      scrollTrigger: {
-        trigger: '.ai-storage-bento',
-        scroller: root,
-        start: 'top 86%',
-        end: 'bottom 58%',
-        scrub: 0.7,
-      },
-    })
-    const aside = root.querySelector('.ai-storage-desire__aside')
-    const desire = root.querySelector('.ai-storage-desire')
-    if (aside && desire && root.scrollHeight > root.clientHeight + 120) {
-      ScrollTrigger.create({
-        trigger: desire,
-        scroller: root,
-        start: 'top top+=18',
-        end: 'bottom bottom-=18',
-        pin: aside,
-        pinSpacing: false,
-      })
-    }
-  }, { scope: rootRef, dependencies: [usage] })
-
   const typeMap = useMemo(
     () => new Map(usage?.byType.map((item) => [item.mediaType, item]) ?? []),
     [usage?.byType],
@@ -167,7 +126,6 @@ export function StorageManager() {
       return
     }
     setPlan(response.data)
-    setImpactIndex(0)
   }
 
   const clean = async () => {
@@ -218,12 +176,7 @@ export function StorageManager() {
     )
   }
 
-  const impacts = plan ? [
-    { value: String(plan.assetCount), label: t('aiChat.storage.impact_assets') },
-    { value: formatBytes(plan.bytes), label: t('aiChat.storage.impact_bytes') },
-    { value: String(plan.conversationCount), label: t('aiChat.storage.impact_conversations') },
-  ] : []
-  const marqueeItems = [
+  const mediaTypes = [
     ['image', Image],
     ['video', Film],
     ['audio', Sparkles],
@@ -231,64 +184,62 @@ export function StorageManager() {
   ] as const
 
   return (
-    <div ref={rootRef} className="ai-storage-view">
-      <section className="ai-storage-hero">
+    <div className="ai-storage-view">
+      <header className="ai-storage-summary-header">
         <div>
-          <h2>
-            {t('aiChat.storage.hero_title_before')}
-            <span
-              className="ai-storage-hero__inline-media"
-              style={usage.latestImageAssetId
-                ? { backgroundImage: `url(life-ai-asset://asset/${usage.latestImageAssetId})` }
-                : undefined}
-              aria-hidden="true"
-            />
-            {t('aiChat.storage.hero_title_after')}
-          </h2>
+          <h2>{t('aiChat.storage.overview')}</h2>
           <p>{t('aiChat.storage.hero_desc')}</p>
         </div>
-        <div className="ai-storage-hero__total">
+        <button className="btn" onClick={() => void load()} disabled={busy}>
+          <RefreshCw size={14} aria-hidden="true" />
+          {t('aiChat.storage.refresh')}
+        </button>
+      </header>
+
+      <section className="ai-storage-summary-grid" aria-label={t('aiChat.storage.overview')}>
+        <article className="ai-storage-summary-card is-total">
+          <HardDrive size={18} aria-hidden="true" />
           <span>{t('aiChat.storage.total_usage')}</span>
           <strong>{formatBytes(usage.totalBytes)}</strong>
-          <small>{t('aiChat.storage.schema_version', { version: usage.schemaVersion })}</small>
-        </div>
-      </section>
-
-      <section className="ai-storage-bento" aria-label={t('aiChat.storage.overview')}>
-        <article className="ai-storage-bento__card is-database">
+          <small>{t('aiChat.storage.schema_version', { version: usage.schemaVersion })} · {formatBytes(usage.capacityLimitBytes)}</small>
+        </article>
+        <article className="ai-storage-summary-card">
           <Database size={18} aria-hidden="true" />
           <span>{t('aiChat.storage.database')}</span>
           <strong>{formatBytes(usage.databaseBytes)}</strong>
           <small>{t('aiChat.storage.database_detail', { conversations: usage.conversationCount, messages: usage.messageCount })}</small>
         </article>
-        <article className="ai-storage-bento__card is-media">
-          <HardDrive size={18} aria-hidden="true" />
+        <article className="ai-storage-summary-card is-media">
+          <Image size={18} aria-hidden="true" />
           <span>{t('aiChat.storage.media')}</span>
           <strong>{formatBytes(usage.mediaBytes)}</strong>
           <small>{t('aiChat.storage.media_detail', { count: usage.mediaCount })}</small>
+          <div className="ai-storage-type-list" aria-label={t('aiChat.storage.type_detail')}>
+            {mediaTypes.map(([type, Icon]) => (
+              <span key={type}>
+                <Icon size={12} aria-hidden="true" />
+                {t(`aiChat.storage.type_${type}`)}
+                <strong>{formatBytes(typeMap.get(type)?.bytes ?? 0)}</strong>
+              </span>
+            ))}
+          </div>
         </article>
-        <article className="ai-storage-bento__card is-recovery">
+        <article className="ai-storage-summary-card">
           <ShieldCheck size={18} aria-hidden="true" />
           <span>{t('aiChat.storage.recovery')}</span>
           <strong>{usage.recoverableMediaCount}</strong>
-          <small>{t('aiChat.storage.recovery_detail', { active: usage.activeMediaCount })}</small>
+          <small>{t('aiChat.storage.recovery_detail', { active: usage.activeMediaCount })} · {formatBytes(usage.orphanBytes + usage.temporaryBytes)}</small>
         </article>
-        <article className="ai-storage-bento__card is-types">
-          <div className="ai-storage-marquee">
+      </section>
+
+      <section className="ai-storage-settings-grid">
+        <article className="ai-storage-settings-card is-policy">
+          <div className="ai-storage-settings-card__heading">
             <div>
-              {[...marqueeItems, ...marqueeItems].map(([type, Icon], index) => (
-                <span key={`${type}-${index}`}>
-                  <Icon size={14} aria-hidden="true" />
-                  {t(`aiChat.storage.type_${type}`)}
-                  <strong>{formatBytes(typeMap.get(type)?.bytes ?? 0)}</strong>
-                </span>
-              ))}
+              <h3>{t('aiChat.storage.capacity_policy')}</h3>
+              <p>{t('aiChat.storage.auto_cleanup')}</p>
             </div>
           </div>
-          <small>{t('aiChat.storage.type_detail')}</small>
-        </article>
-        <article className="ai-storage-bento__card is-policy">
-          <span>{t('aiChat.storage.capacity_policy')}</span>
           <div className="ai-storage-policy-row">
             <select value={capacityGb} onChange={(event) => setCapacityGb(Number(event.target.value))} aria-label={t('aiChat.storage.capacity_label')}>
               {[1, 5, 10, 20].map((value) => <option key={value} value={value}>{value} GB</option>)}
@@ -300,18 +251,15 @@ export function StorageManager() {
             <button className="btn" onClick={() => void savePolicy()} disabled={busy}>{t('aiChat.storage.save_policy')}</button>
           </div>
         </article>
-      </section>
 
-      <section className="ai-storage-desire">
-        <aside className="ai-storage-desire__aside">
-          <h3>{t('aiChat.storage.cleanup_title')}</h3>
-          <p>{t('aiChat.storage.cleanup_desc')}</p>
-          <button className="ai-chat-icon-button" onClick={() => void load()} disabled={busy} aria-label={t('aiChat.storage.refresh')}>
-            <RefreshCw size={15} />
-          </button>
-        </aside>
-        <div className="ai-storage-cleanup-stack">
-          <article className="ai-storage-cleanup-card">
+        <article className="ai-storage-settings-card is-cleanup">
+          <div className="ai-storage-settings-card__heading">
+            <div>
+              <h3>{t('aiChat.storage.cleanup_title')}</h3>
+              <p>{t('aiChat.storage.cleanup_desc')}</p>
+            </div>
+          </div>
+          <div className="ai-storage-cleanup-controls">
             <div className="ai-storage-scope-grid">
               {(['unreferenced', 'capacity', 'media_type', 'all_media', 'all_ai'] as CleanupScope[]).map((item) => (
                 <button key={item} className={scope === item ? 'is-active' : ''} onClick={() => { setScope(item); setPlan(null) }}>
@@ -321,31 +269,24 @@ export function StorageManager() {
             </div>
             {scope === 'media_type' && (
               <select value={mediaType} onChange={(event) => setMediaType(event.target.value as typeof mediaType)} aria-label={t('aiChat.storage.media_type_label')}>
-                {marqueeItems.map(([type]) => <option key={type} value={type}>{t(`aiChat.storage.type_${type}`)}</option>)}
+                {mediaTypes.map(([type]) => <option key={type} value={type}>{t(`aiChat.storage.type_${type}`)}</option>)}
               </select>
             )}
             <button className="btn primary" onClick={() => void preview()} disabled={busy}>{t('aiChat.storage.preview_cleanup')}</button>
-          </article>
+          </div>
 
-          <article className="ai-storage-cleanup-card is-impact" aria-live="polite">
+          <div className="ai-storage-impact" aria-live="polite">
             {!plan ? (
               <div className="ai-storage-impact-empty">
-                <ShieldCheck size={22} aria-hidden="true" />
+                <ShieldCheck size={18} aria-hidden="true" />
                 <p>{t('aiChat.storage.preview_empty')}</p>
               </div>
             ) : (
               <>
-                <div className="ai-storage-impact-carousel">
-                  <button onClick={() => setImpactIndex((current) => (current + impacts.length - 1) % impacts.length)} aria-label={t('aiChat.storage.previous_impact')}>
-                    <ChevronLeft size={15} />
-                  </button>
-                  <div>
-                    <strong>{impacts[impactIndex].value}</strong>
-                    <span>{impacts[impactIndex].label}</span>
-                  </div>
-                  <button onClick={() => setImpactIndex((current) => (current + 1) % impacts.length)} aria-label={t('aiChat.storage.next_impact')}>
-                    <ChevronRight size={15} />
-                  </button>
+                <div className="ai-storage-impact-grid">
+                  <span><strong>{plan.assetCount}</strong>{t('aiChat.storage.impact_assets')}</span>
+                  <span><strong>{formatBytes(plan.bytes)}</strong>{t('aiChat.storage.impact_bytes')}</span>
+                  <span><strong>{plan.conversationCount}</strong>{t('aiChat.storage.impact_conversations')}</span>
                 </div>
                 <p>{t('aiChat.storage.remaining_after', { bytes: formatBytes(plan.estimatedRemainingMediaBytes) })}</p>
                 {plan.blockedReason && <p className="ai-storage-warning">{t('aiChat.storage.active_block')}</p>}
@@ -355,8 +296,8 @@ export function StorageManager() {
                 </button>
               </>
             )}
-          </article>
-        </div>
+          </div>
+        </article>
       </section>
 
       {notice && <div className="ai-storage-notice" role="status">{notice}</div>}
