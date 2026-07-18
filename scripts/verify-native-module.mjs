@@ -110,7 +110,15 @@ export function verifyNativeModule({
   if (!expectedFormat) throw new Error(`Unsupported target platform: ${platform}`)
   if (!fs.existsSync(filePath)) throw new Error(`Native module not found: ${filePath}`)
 
-  const detected = detectNativeBinaryFormat(fs.readFileSync(filePath))
+  const handle = fs.openSync(filePath, 'r')
+  const buffer = Buffer.alloc(65536)
+  let bytesRead = 0
+  try {
+    bytesRead = fs.readSync(handle, buffer, 0, buffer.length, 0)
+  } finally {
+    fs.closeSync(handle)
+  }
+  const detected = detectNativeBinaryFormat(buffer.subarray(0, bytesRead))
   const expectedArch = normalizeArch(arch)
   const archMatches = detected.arch === expectedArch || detected.arch === 'universal'
   if (detected.format !== expectedFormat || !archMatches) {
