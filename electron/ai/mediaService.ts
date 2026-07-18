@@ -400,6 +400,25 @@ export class AIMediaService {
     return { deleted: true, assetId }
   }
 
+  async getRegisteredFilePath(assetIdValue: unknown) {
+    const assetId = requireId(assetIdValue, 'media asset ID')
+    const row = this.dependencies.db.prepare("SELECT local_path FROM ai_media_assets WHERE id = ? AND status = 'completed'").get(assetId) as { local_path: string | null } | undefined
+    if (!row?.local_path) throw mediaError('not_found', 'Completed AI media asset was not found.')
+    return this.resolveRegisteredPath(row.local_path)
+  }
+
+  async copyAssetTo(assetIdValue: unknown, destination: string) {
+    if (typeof destination !== 'string' || !path.isAbsolute(destination)) throw mediaError('invalid_input', 'Invalid AI media export path.')
+    const source = await this.getRegisteredFilePath(assetIdValue)
+    const root = path.resolve(this.dependencies.mediaRoot)
+    const relation = path.relative(root, path.resolve(destination))
+    if (!relation.startsWith('..') && !path.isAbsolute(relation)) {
+      throw mediaError('permission_denied', 'Managed AI media files cannot be overwritten through export.')
+    }
+    await fs.promises.copyFile(source, destination)
+    return { saved: true, path: destination }
+  }
+
   private createRecord(input: {
     mediaType: AIMediaType
     mimeType: string

@@ -101,6 +101,7 @@ export function setupToolRuntime(input: {
   snapshot?: Partial<AIAgentSnapshot>
   callTool?: (input: any, options: any) => unknown | Promise<unknown>
   riskOverrides?: Record<string, 'read' | 'write' | 'command' | 'external_side_effect'>
+  media?: { storeBase64: (input: any) => Promise<any>; downloadRemote: (input: any) => Promise<any> }
 }) {
   const conversations = new ToolConversationService()
   const events: AIRunEvent[] = []
@@ -134,6 +135,7 @@ export function setupToolRuntime(input: {
       mcpConfig: {
         get: () => ({ riskOverrides: input.riskOverrides ?? {} }) as any,
       },
+      ...(input.media ? { media: input.media } : {}),
     }),
     createAdapter: () => ({
       streamChat: (request) => {

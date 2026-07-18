@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import type { AIAgentRuntime } from './agentRuntime'
 import type { AIMcpManager } from './mcpManager'
+import type { AIImageGenerationService } from './imageGenerationService'
 import { AIAgentService } from './agentService'
 import { AICredentialService, type AICredentialCryptoAdapter } from './credentialService'
 import { AIConversationService } from './conversationService'
@@ -41,6 +42,7 @@ export const AI_CONFIG_CHANNELS = [
 ] as const
 
 export const AI_RUNTIME_CHANNELS = ['ai:runs:start', 'ai:runs:cancel', 'ai:runs:approveTool'] as const
+export const AI_IMAGE_CHANNELS = ['ai:images:generate'] as const
 
 export const AI_CONVERSATION_CHANNELS = [
   'ai:conversations:list',
@@ -62,6 +64,7 @@ export const AI_MCP_RUNTIME_CHANNELS = [
 
 type AIConfigChannel = (typeof AI_CONFIG_CHANNELS)[number]
 type AIRuntimeChannel = (typeof AI_RUNTIME_CHANNELS)[number]
+type AIImageChannel = (typeof AI_IMAGE_CHANNELS)[number]
 type AIConversationChannel = (typeof AI_CONVERSATION_CHANNELS)[number]
 type AIMcpRuntimeChannel = (typeof AI_MCP_RUNTIME_CHANNELS)[number]
 type AIHandler = (_event: unknown, payload?: unknown) => unknown | Promise<unknown>
@@ -88,6 +91,12 @@ export type AIConfigIpcRegistrar = {
 
 export type AIRuntimeIpcDependencies = {
   getRuntime: () => Pick<AIAgentRuntime, 'start' | 'cancel' | 'approve'>
+}
+
+export type AIImageIpcDependencies = {
+  getService: () => Pick<AIImageGenerationService, 'generate'>
+  isConversationActive?: (conversationId: number) => boolean
+  createAbortScope?: () => { signal: AbortSignal; dispose: () => void }
 }
 
 export type AIConversationIpcDependencies = {
@@ -373,6 +382,40 @@ export function registerAIRuntimeIpc(
 ) {
   const handlers = createAIRuntimeHandlers(dependencies)
   for (const channel of AI_RUNTIME_CHANNELS) registrar.handle(channel, handlers[channel])
+}
+
+export function createAIImageHandlers(
+  dependencies: AIImageIpcDependencies,
+): Record<AIImageChannel, AIHandler> {
+  const active = new Set<number>()
+  return {
+    'ai:images:generate': (_event, payload) => respondWithObject(payload, async (data) => {
+      const conversationId = requireId(data.conversationId, 'conversation ID')
+      if (active.has(conversationId) || dependencies.isConversationActive?.(conversationId)) {
+        throw new AIServiceError({ code: 'invalid_input', message: 'This conversation already has an active AI run.', retryable: false })
+      }
+      active.add(conversationId)
+      const abortScope = dependencies.createAbortScope?.()
+      try {
+        return await dependencies.getService().generate({
+          conversationId,
+          agentId: requireId(data.agentId, 'agent ID'),
+          prompt: requireString(data.prompt, 'image prompt', 100_000),
+          ...(data.count === undefined ? {} : { count: requireId(data.count, 'image count') }),
+          ...(typeof data.size === 'string' && data.size.trim() ? { size: data.size.trim().slice(0, 100) } : {}),
+          ...(abortScope ? { signal: abortScope.signal } : {}),
+        })
+      } finally {
+        abortScope?.dispose()
+        active.delete(conversationId)
+      }
+    }),
+  }
+}
+
+export function registerAIImageIpc(registrar: AIConfigIpcRegistrar, dependencies: AIImageIpcDependencies) {
+  const handlers = createAIImageHandlers(dependencies)
+  for (const channel of AI_IMAGE_CHANNELS) registrar.handle(channel, handlers[channel])
 }
 
 export function createAIConversationHandlers(

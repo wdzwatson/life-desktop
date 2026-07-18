@@ -102,6 +102,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     toolCallId: string,
     decision: 'approve_once' | 'approve_session' | 'reject',
   ) => ipcRenderer.invoke('ai:runs:approveTool', { runId, toolCallId, decision }),
+  generateAIImages: (input: unknown) => ipcRenderer.invoke('ai:images:generate', input),
   onAIRunEvent: (callback: (data: unknown) => void) => {
     const subscription = (_event: unknown, data: unknown) => callback(data)
     ipcRenderer.on('ai:runs:event', subscription)
@@ -125,6 +126,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('ai:conversations:messages', { conversationId, ...options }),
   listAIConversationRuns: (conversationId: number, limit?: number) =>
     ipcRenderer.invoke('ai:conversations:runs', { conversationId, limit }),
+  saveAIAsset: (assetId: number) => ipcRenderer.invoke('ai:media:saveAs', { assetId }),
+  revealAIAsset: (assetId: number) => ipcRenderer.invoke('ai:media:reveal', { assetId }),
 
   // Encrypted password vault
   getVaultStatus: () => ipcRenderer.invoke('vault:status'),

@@ -809,6 +809,18 @@
       "approve_once": "Allow once",
       "approval_failed": "Unable to submit tool approval"
     },
+    "images": {
+      "viewer": "Image viewer",
+      "generated": "Generated image",
+      "save_as": "Save as",
+      "reveal": "Show in file manager",
+      "mode": "Image",
+      "mode_active": "Image mode",
+      "toggle": "Toggle image generation mode",
+      "composer_hint": "Describe an image and press Enter to generate",
+      "provider_required": "The current Agent has no image provider",
+      "generate_failed": "Image generation failed"
+    },
     "providers": {
       "load_failed": "Unable to load model providers",
       "save_failed": "Unable to save the model provider",

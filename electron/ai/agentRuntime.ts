@@ -2,6 +2,7 @@ import type { AIAgentSnapshot } from './agentService'
 import type { AIConversationService } from './conversationService'
 import type { AIMcpConfigService } from './mcpConfigService'
 import type { AIMcpManager } from './mcpManager'
+import type { AIMediaService } from './mediaService'
 import type { AIProviderService } from './providerService'
 import {
   OpenAICompatibleAdapter,
@@ -57,6 +58,7 @@ export type AIAgentRuntimeServices = {
   conversations: AgentRuntimeConversationService
   mcp?: Pick<AIMcpManager, 'listTools' | 'callTool'>
   mcpConfig?: Pick<AIMcpConfigService, 'get'>
+  media?: Pick<AIMediaService, 'storeBase64' | 'downloadRemote'>
 }
 
 export type AIAgentRuntimeDependencies = {
@@ -93,6 +95,7 @@ type ActiveRun = {
   runStatus: 'running' | 'waiting_for_tool' | 'waiting_for_approval'
   mcp?: Pick<AIMcpManager, 'listTools' | 'callTool'>
   mcpConfig?: Pick<AIMcpConfigService, 'get'>
+  media?: Pick<AIMediaService, 'storeBase64' | 'downloadRemote'>
 }
 
 function runtimeError(code: AIErrorDetail['code'], message: string, retryable = false) {
@@ -258,6 +261,7 @@ export class AIAgentRuntime {
       runStatus: 'running',
       mcp: services.mcp,
       mcpConfig: services.mcpConfig,
+      media: services.media,
     }
 
     this.activeByConversation.set(input.conversationId, active)
@@ -533,9 +537,29 @@ export class AIAgentRuntime {
       )
       if (!active.mcp) throw runtimeError('mcp_unavailable', 'The MCP runtime is unavailable.', true)
       const result = normalizeAIMcpToolResult(raw)
+      const mediaAssets = []
+      for (const [index, resource] of result.resources.entries()) {
+        if (!active.media) break
+        if (resource.type === 'image' && resource.data) {
+          mediaAssets.push(await active.media.storeBase64({
+            mediaType: 'image',
+            base64: resource.data,
+            declaredMimeType: resource.mimeType,
+            originalName: resource.name ?? `tool-image-${index + 1}.png`,
+          }))
+        } else if (resource.type === 'resource' && resource.uri && resource.mimeType?.startsWith('image/')) {
+          mediaAssets.push(await active.media.downloadRemote({
+            mediaType: 'image',
+            url: resource.uri,
+            originalName: resource.name ?? `tool-image-${index + 1}.png`,
+            signal: active.controller.signal,
+          }))
+        }
+      }
       const status = result.isError ? 'failed' : 'completed'
       active.conversations.transitionToolCall(record.id, status, {
         resultSummary: result.summary,
+        ...(mediaAssets[0] ? { resultAssetId: mediaAssets[0].id } : {}),
         ...(result.isError ? { errorCode: 'tool_failed', errorMessage: result.summary } : {}),
       })
       active.toolCalls.set(call.id, { id: record.id, status })
@@ -545,6 +569,15 @@ export class AIAgentRuntime {
         toolCallId: call.id,
         summary: result.summary,
       }])
+      if (mediaAssets.length > 0) {
+        active.conversations.appendMessageParts(active.messageId, mediaAssets.map((asset, index) => ({
+          type: 'image' as const,
+          assetId: asset.id,
+          mimeType: asset.mimeType,
+          name: asset.originalName ?? `Tool image ${index + 1}`,
+          alt: `Image returned by ${binding.qualifiedName}`,
+        })))
+      }
       this.transitionRunStage(active, 'running', 'provider_request')
       if (result.isError) {
         active.publisher.publish({

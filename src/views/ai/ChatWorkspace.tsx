@@ -3,6 +3,7 @@ import {
   ChevronDown,
   Download,
   Gauge,
+  ImagePlus,
   MessageSquare,
   Send,
   Square,
@@ -98,6 +99,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
   const [notice, setNotice] = useState<string | null>(null)
   const [toolApprovals, setToolApprovals] = useState<Record<string, AIChatToolApproval>>({})
   const [submittingApproval, setSubmittingApproval] = useState(false)
+  const [imageMode, setImageMode] = useState(false)
   const activeConversationRef = useRef<number | null>(null)
   const messagesRef = useRef<AIChatMessage[]>([])
   const lastSequenceRef = useRef(new Map<string, number>())
@@ -364,6 +366,30 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
     const agentId = conversation.agentId ?? selectedAgentId
     if (!agentId) {
       setNotice(t('aiChat.chat.agent_required'))
+      return
+    }
+    if (imageMode) {
+      if (!activeAgent?.providers.image || !api?.generateAIImages) {
+        setNotice(t('aiChat.images.provider_required'))
+        return
+      }
+      setSubmitting(true)
+      setNotice(null)
+      const imageResponse = await api.generateAIImages({
+        conversationId: conversation.id,
+        agentId,
+        prompt: text,
+        count: 1,
+      })
+      setSubmitting(false)
+      if (!imageResponse?.success) {
+        setNotice(errorMessage(imageResponse, t('aiChat.images.generate_failed')))
+        return
+      }
+      if (!requestedText) setDraft('')
+      followOutputRef.current = true
+      await loadMessages(conversation.id)
+      void loadConversations()
       return
     }
     setSubmitting(true)
@@ -668,7 +694,18 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
             rows={2}
           />
           <div className="ai-chat-composer__footer">
-            <span>{t('aiChat.chat.composer_hint')}</span>
+            <div className="ai-chat-composer__mode">
+              <button
+                className={imageMode ? 'is-active' : ''}
+                onClick={() => setImageMode((value) => !value)}
+                disabled={!activeAgent?.providers.image || submitting || isRunning}
+                title={activeAgent?.providers.image ? t('aiChat.images.toggle') : t('aiChat.images.provider_required')}
+              >
+                <ImagePlus size={13} />
+                {t(imageMode ? 'aiChat.images.mode_active' : 'aiChat.images.mode')}
+              </button>
+              <span>{t(imageMode ? 'aiChat.images.composer_hint' : 'aiChat.chat.composer_hint')}</span>
+            </div>
             {isRunning ? (
               <button className="ai-chat-stop" onClick={() => void stopRun()}>
                 <Square size={13} fill="currentColor" />

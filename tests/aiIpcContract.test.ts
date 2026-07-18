@@ -6,6 +6,7 @@ import {
   AI_CONFIG_CHANNELS,
   AI_CONVERSATION_CHANNELS,
   AI_MCP_RUNTIME_CHANNELS,
+  AI_IMAGE_CHANNELS,
   AI_RUNTIME_CHANNELS,
   createAIConfigHandlers,
   createAIConversationHandlers,
@@ -38,10 +39,19 @@ test('preload exposes structured AI methods without runtime credentials or gener
     'cancelAIRun',
     'approveAITool',
     'onAIRunEvent',
+    'generateAIImages',
+    'saveAIAsset',
+    'revealAIAsset',
   ]) {
     assert.match(preload, new RegExp(`${method}:`))
   }
   assert.doesNotMatch(preload, /getAIMcpRuntime|getAIProviderCredential|executeAICommand|callAIMcpTool|ai:sql/)
+})
+
+test('image runtime exposes only generation while media files remain behind asset IDs', () => {
+  assert.deepEqual(AI_IMAGE_CHANNELS, ['ai:images:generate'])
+  const preload = readFileSync(path.resolve('electron/preload.ts'), 'utf8')
+  assert.doesNotMatch(preload, /getAIAssetPath|readAIAssetFile|downloadRemoteAIAsset/)
 })
 
 test('MCP runtime IPC exposes connection diagnostics without a renderer tool execution channel', async () => {

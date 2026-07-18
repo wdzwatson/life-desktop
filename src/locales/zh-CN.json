@@ -809,6 +809,18 @@
       "approve_once": "仅本次允许",
       "approval_failed": "无法提交工具审批"
     },
+    "images": {
+      "viewer": "图片查看器",
+      "generated": "生成的图片",
+      "save_as": "另存为",
+      "reveal": "在文件管理器中显示",
+      "mode": "图片",
+      "mode_active": "图片模式",
+      "toggle": "切换图片生成模式",
+      "composer_hint": "输入图片描述，Enter 开始生成",
+      "provider_required": "当前 Agent 尚未配置图片供应商",
+      "generate_failed": "图片生成失败"
+    },
     "providers": {
       "load_failed": "无法加载模型供应商",
       "save_failed": "无法保存模型供应商",

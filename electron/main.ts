@@ -45,6 +45,7 @@ import {
   registerAIConversationIpc,
   registerAIMcpRuntimeIpc,
   registerAIRuntimeIpc,
+  registerAIImageIpc,
 } from './ai/ipc'
 import { createSafeStorageCredentialAdapter } from './ai/safeStorageAdapter'
 import { AIAgentRuntime } from './ai/agentRuntime'
@@ -56,6 +57,8 @@ import { AI_RUN_EVENT_CHANNEL } from './ai/runEvents'
 import { AIMcpConfigService } from './ai/mcpConfigService'
 import { AIMcpManager } from './ai/mcpManager'
 import { handleAIMediaProtocolRequest } from './ai/mediaProtocol'
+import { AIMediaService } from './ai/mediaService'
+import { AIImageGenerationService } from './ai/imageGenerationService'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -76,6 +79,7 @@ let videoEngineLoadPromise: Promise<VideoEngineStatus> | null = null
 let vaultService: VaultService | null = null
 let aiAgentRuntime: AIAgentRuntime | null = null
 let aiMcpManager: AIMcpManager | null = null
+const aiImageControllers = new Set<AbortController>()
 
 // Default Paths
 const BASE_DIR = path.join(app.getPath('home'), 'LifeOS')
@@ -186,6 +190,8 @@ function saveSettings(settings: any) {
 
 // Close and clear all open databases
 function closeUserDbs() {
+  for (const controller of aiImageControllers) controller.abort()
+  aiImageControllers.clear()
   aiAgentRuntime?.dispose()
   aiAgentRuntime = null
   void aiMcpManager?.dispose()
@@ -236,12 +242,27 @@ function getAIAgentRuntime() {
     conversations,
     mcp: getAIMcpManager(),
     mcpConfig: new AIMcpConfigService(db, credentials),
+    media: getAIMediaService(),
   }
   aiAgentRuntime = new AIAgentRuntime({
     getServices: () => services,
     emit: (event) => mainWindow?.webContents.send(AI_RUN_EVENT_CHANNEL, event),
   })
   return aiAgentRuntime
+}
+
+function getAIImageGenerationService() {
+  const db = getUserDb('ai')
+  const credentials = new AICredentialService(
+    path.join(BASE_DIR, 'users', activeUserId, 'config', 'ai-credentials.json'),
+    createSafeStorageCredentialAdapter(),
+  )
+  return new AIImageGenerationService({
+    agents: new AIAgentService(db),
+    providers: new AIProviderService(db, credentials),
+    conversations: new AIConversationService(db),
+    media: getAIMediaService(),
+  })
 }
 
 // Get or open user database connection
@@ -300,6 +321,10 @@ function setupVideoProtocol() {
 
 function getAIMediaRoot() {
   return path.join(BASE_DIR, 'users', activeUserId, 'files', 'ai-media')
+}
+
+function getAIMediaService() {
+  return new AIMediaService({ db: getUserDb('ai'), mediaRoot: getAIMediaRoot() })
 }
 
 function setupAIMediaProtocol() {
@@ -520,6 +545,29 @@ ipcMain.on('window:maximize', () => {
 
 ipcMain.on('window:close', () => {
   mainWindow?.close()
+})
+
+ipcMain.handle('ai:media:saveAs', async (_event, payload: { assetId?: number }) => {
+  try {
+    const service = getAIMediaService()
+    const asset = service.getAsset(payload?.assetId)
+    const options = { defaultPath: asset.originalName || `ai-image-${asset.id}` }
+    const result = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options)
+    if (result.canceled || !result.filePath) return { success: true, data: { saved: false } }
+    return { success: true, data: await service.copyAssetTo(asset.id, result.filePath) }
+  } catch {
+    return { success: false, error: { code: 'storage_error', message: 'The AI media file could not be saved.', retryable: false } }
+  }
+})
+
+ipcMain.handle('ai:media:reveal', async (_event, payload: { assetId?: number }) => {
+  try {
+    const filePath = await getAIMediaService().getRegisteredFilePath(payload?.assetId)
+    shell.showItemInFolder(filePath)
+    return { success: true, data: { revealed: true } }
+  } catch {
+    return { success: false, error: { code: 'not_found', message: 'The AI media file could not be located.', retryable: false } }
+  }
 })
 
 // IPC Handlers: User Authentication & Switching
@@ -1663,6 +1711,19 @@ registerAIConfigIpc(
 registerAIRuntimeIpc(
   { handle: (channel, handler) => ipcMain.handle(channel, handler) },
   { getRuntime: getAIAgentRuntime },
+)
+
+registerAIImageIpc(
+  { handle: (channel, handler) => ipcMain.handle(channel, handler) },
+  {
+    getService: getAIImageGenerationService,
+    isConversationActive: (conversationId) => getAIAgentRuntime().isConversationActive(conversationId),
+    createAbortScope: () => {
+      const controller = new AbortController()
+      aiImageControllers.add(controller)
+      return { signal: controller.signal, dispose: () => aiImageControllers.delete(controller) }
+    },
+  },
 )
 
 registerAIConversationIpc(

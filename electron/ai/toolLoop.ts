@@ -26,6 +26,7 @@ export type AINormalizedToolResult = {
   isError: boolean
   resources: Array<{
     type: 'image' | 'audio' | 'resource'
+    data?: string
     mimeType?: string
     name?: string
     uri?: string
@@ -191,7 +192,11 @@ function collectToolResult(value: unknown) {
     const block = item as Record<string, unknown>
     if (block.type === 'text' && typeof block.text === 'string') text.push(block.text)
     else if (block.type === 'image') {
-      resources.push({ type: 'image', ...(typeof block.mimeType === 'string' ? { mimeType: block.mimeType } : {}) })
+      resources.push({
+        type: 'image',
+        ...(typeof block.data === 'string' ? { data: block.data } : {}),
+        ...(typeof block.mimeType === 'string' ? { mimeType: block.mimeType } : {}),
+      })
     } else if (block.type === 'audio') {
       resources.push({ type: 'audio', ...(typeof block.mimeType === 'string' ? { mimeType: block.mimeType } : {}) })
     } else if (block.type === 'resource_link') {

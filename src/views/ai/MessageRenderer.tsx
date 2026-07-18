@@ -1,9 +1,11 @@
 import { Check, Copy, File, Image, RefreshCw, Video } from 'lucide-react'
 import { useState, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { AIChatMessage, AIChatMessagePart } from './chatUtils'
+import type { AIChatMediaPart, AIChatMessage, AIChatMessagePart } from './chatUtils'
 import { renderAIMessageMarkdown } from './messageSecurity'
 import { ToolCallCard } from './ToolCallCard'
+import { ImageMessage } from './ImageMessage'
+import { MediaViewer } from './MediaViewer'
 
 type MessageRendererProps = {
   message: AIChatMessage
@@ -30,6 +32,7 @@ function copyText(message: AIChatMessage) {
 export function MessageRenderer({ message, onRetry, retryDisabled }: MessageRendererProps) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
+  const [openImage, setOpenImage] = useState<AIChatMediaPart | null>(null)
   const canRetry = message.role === 'assistant' && ['completed', 'failed', 'cancelled', 'interrupted'].includes(message.status)
   const toolResults = new Map(
     message.parts
@@ -40,6 +43,10 @@ export function MessageRenderer({ message, onRetry, retryDisabled }: MessageRend
   message.parts.forEach((part, index) => {
     if (isToolCallPart(part)) latestToolCallIndex.set(part.toolCallId, index)
   })
+  const images = message.parts.filter((part): part is AIChatMediaPart =>
+    part.type === 'image' && typeof part.assetId === 'number' && typeof part.mimeType === 'string',
+  )
+  const firstImageIndex = message.parts.findIndex((part) => part.type === 'image')
 
   const handleCopy = async () => {
     const text = copyText(message)
@@ -64,6 +71,7 @@ export function MessageRenderer({ message, onRetry, retryDisabled }: MessageRend
   }
 
   return (
+    <>
     <article className={`ai-message ai-message--${message.role} is-${message.status}`} data-message-id={message.id}>
       <header className="ai-message__header">
         <span>{t(`aiChat.chat.role_${message.role}`)}</span>
@@ -97,6 +105,10 @@ export function MessageRenderer({ message, onRetry, retryDisabled }: MessageRend
             return <ToolCallCard key={`${part.toolCallId}-${index}`} call={part} result={toolResults.get(part.toolCallId)} />
           }
           if (part.type === 'tool_result') return null
+          if (part.type === 'image' && typeof part.assetId === 'number') {
+            if (index !== firstImageIndex) return null
+            return <ImageMessage key="images" images={images} onOpen={setOpenImage} />
+          }
           if (part.type === 'image' || part.type === 'video' || part.type === 'file' || part.type === 'audio') {
             const Icon = part.type === 'image' ? Image : part.type === 'video' ? Video : File
             return (
@@ -136,5 +148,7 @@ export function MessageRenderer({ message, onRetry, retryDisabled }: MessageRend
         )}
       </footer>
     </article>
+    {openImage && <MediaViewer media={openImage} onClose={() => setOpenImage(null)} />}
+    </>
   )
 }

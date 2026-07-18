@@ -164,3 +164,30 @@ test('cancelling an active MCP call aborts it and writes one cancelled terminal 
   assert.equal(signal?.aborted, true)
   assert.equal(context.conversations.terminalRunWrites, 1)
 })
+
+test('MCP image content is stored through the media service before entering the message timeline', async () => {
+  const stored: any[] = []
+  const context = setupToolRuntime({
+    callTool: () => ({ content: [{ type: 'image', data: 'aW1hZ2U=', mimeType: 'image/png' }] }),
+    media: {
+      storeBase64: async (input) => {
+        stored.push(input)
+        return { id: 91, mimeType: 'image/png', originalName: 'tool.png' }
+      },
+      downloadRemote: async () => { throw new Error('unused') },
+    },
+    stream: async function* (request, turn) {
+      if (turn === 1) {
+        yield { type: 'tool_call', index: 0, id: 'call-image', name: request.tools?.[0].function.name, argumentsDelta: '{}' }
+        yield { type: 'done', finishReason: 'tool_calls' }
+      } else {
+        yield { type: 'text', text: 'The image is attached.' }
+        yield { type: 'done' }
+      }
+    },
+  })
+  assert.equal((await waitForTerminalRun(context.events)).type, 'completed')
+  assert.equal(stored[0].base64, 'aW1hZ2U=')
+  const assistant = context.conversations.messages.find((message) => message.role === 'assistant')
+  assert.ok(assistant.parts.some((part: any) => part.type === 'image' && part.assetId === 91))
+})
