@@ -25,6 +25,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { ConversationList } from './ConversationList'
 import { ConversationDeleteDialog } from './ConversationDeleteDialog'
+import { ConversationRenameDialog } from './ConversationRenameDialog'
 import { MessageRenderer } from './MessageRenderer'
 import { ToolApprovalDialog } from './ToolApprovalDialog'
 import {
@@ -110,6 +111,8 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
   const [submittingApproval, setSubmittingApproval] = useState(false)
   const [deletingConversation, setDeletingConversation] = useState<AIChatConversation | null>(null)
   const [deletingConversationBusy, setDeletingConversationBusy] = useState(false)
+  const [renamingConversation, setRenamingConversation] = useState<AIChatConversation | null>(null)
+  const [renamingConversationBusy, setRenamingConversationBusy] = useState(false)
   const [exportingConversation, setExportingConversation] = useState(false)
   const [imageMode, setImageMode] = useState(false)
   const [videoMode, setVideoMode] = useState(false)
@@ -129,6 +132,7 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
   const timelineRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const runInspectorToggleRef = useRef<HTMLButtonElement>(null)
+  const conversationActionTriggerRef = useRef<HTMLButtonElement | null>(null)
   const followOutputRef = useRef(true)
   const mediaCancellationRequestedRef = useRef(false)
 
@@ -650,12 +654,23 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
     await createConversation(agentId)
   }
 
-  const renameConversation = async (conversation: AIChatConversation) => {
-    const title = window.prompt(t('aiChat.chat.rename_prompt'), conversation.title)?.trim()
-    if (!title || title === conversation.title) return
-    const response = (await api.renameAIConversation(conversation.id, title)) as ApiResponse<AIChatConversation>
-    if (!response?.success) setNotice(errorMessage(response, t('aiChat.chat.rename_failed')))
-    else void loadConversations()
+  const confirmRenameConversation = async (title: string) => {
+    if (!renamingConversation || renamingConversationBusy) return
+    setRenamingConversationBusy(true)
+    const response = (await api.renameAIConversation(renamingConversation.id, title)) as ApiResponse<AIChatConversation>
+    setRenamingConversationBusy(false)
+    if (!response?.success) {
+      setNotice(errorMessage(response, t('aiChat.chat.rename_failed')))
+      return
+    }
+    setRenamingConversation(null)
+    void loadConversations()
+  }
+
+  const restoreConversationActionFocus = () => {
+    const trigger = conversationActionTriggerRef.current
+    if (trigger?.isConnected) trigger.focus()
+    else textareaRef.current?.focus()
   }
 
   const togglePinned = async (conversation: AIChatConversation) => {
@@ -732,10 +747,16 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
         onShowArchivedChange={setShowArchived}
         onSelect={(conversation) => setActiveConversationId(conversation.id)}
         onCreate={() => void createConversation()}
-        onRename={(conversation) => void renameConversation(conversation)}
+        onRename={(conversation, trigger) => {
+          conversationActionTriggerRef.current = trigger
+          setRenamingConversation(conversation)
+        }}
         onTogglePinned={(conversation) => void togglePinned(conversation)}
         onToggleArchived={(conversation) => void toggleArchived(conversation)}
-        onDelete={setDeletingConversation}
+        onDelete={(conversation, trigger) => {
+          conversationActionTriggerRef.current = trigger
+          setDeletingConversation(conversation)
+        }}
       />
 
       <section className={`ai-chat-stage ${!chatReady ? 'has-setup' : ''}`} aria-label={t('aiChat.chat.workspace')}>
@@ -1010,7 +1031,16 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
           submitting={deletingConversationBusy}
           onCancel={() => setDeletingConversation(null)}
           onConfirm={(deleteUnreferencedMedia) => void confirmDeleteConversation(deleteUnreferencedMedia)}
-          returnFocus={() => textareaRef.current?.focus()}
+          returnFocus={restoreConversationActionFocus}
+        />
+      )}
+      {renamingConversation && (
+        <ConversationRenameDialog
+          conversation={renamingConversation}
+          submitting={renamingConversationBusy}
+          onCancel={() => setRenamingConversation(null)}
+          onConfirm={(title) => void confirmRenameConversation(title)}
+          returnFocus={restoreConversationActionFocus}
         />
       )}
     </section>

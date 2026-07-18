@@ -3313,26 +3313,29 @@
   gap: 8px;
 }
 
-.ai-conversation-delete {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(5, 10, 18, 0.56);
-  backdrop-filter: blur(8px);
+.ai-conversation-dialog-overlay {
+  z-index: 2400;
+  background: color-mix(in srgb, #050a12 62%, transparent);
+  backdrop-filter: blur(7px);
 }
 
-.ai-conversation-delete__panel {
-  width: min(500px, 100%);
+.ai-conversation-dialog {
+  width: min(480px, calc(100vw - 32px));
   display: grid;
-  gap: 18px;
-  padding: 22px;
-  border: 1px solid color-mix(in srgb, var(--color-border) 78%, white 22%);
-  border-radius: 20px;
-  background: var(--color-surface);
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.26);
+  gap: 16px;
+  border-color: color-mix(in srgb, var(--color-border) 80%, white 20%);
+  border-radius: 16px;
+  box-shadow: 0 28px 90px color-mix(in srgb, #000 30%, transparent);
+}
+
+.ai-conversation-dialog > h3 {
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.ai-conversation-dialog form {
+  display: grid;
+  gap: 16px;
 }
 
 .ai-conversation-delete__heading {
@@ -3390,16 +3393,40 @@
   line-height: 1.5;
 }
 
-.ai-conversation-delete__actions {
+.ai-conversation-dialog__actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
 }
 
-.ai-conversation-delete__actions .btn.danger {
+.ai-conversation-dialog__actions .btn.danger {
   border-color: var(--color-danger);
   background: var(--color-danger);
   color: #fff;
+}
+
+.ai-conversation-rename__field {
+  display: grid;
+  gap: 7px;
+}
+
+.ai-conversation-rename__field > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.ai-conversation-rename__field > span svg {
+  color: var(--color-accent);
+}
+
+.ai-conversation-rename__field input {
+  width: 100%;
+  font-size: 13px;
+  user-select: text;
 }
 
 .is-spinning {

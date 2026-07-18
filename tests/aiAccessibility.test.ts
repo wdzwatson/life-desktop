@@ -10,6 +10,8 @@ const images = readFileSync(path.resolve('src/views/ai/ImageMessage.tsx'), 'utf8
 const videos = readFileSync(path.resolve('src/views/ai/VideoMessage.tsx'), 'utf8')
 const dialog = readFileSync(path.resolve('src/components/AccessibleDialog.tsx'), 'utf8')
 const conversationDelete = readFileSync(path.resolve('src/views/ai/ConversationDeleteDialog.tsx'), 'utf8')
+const conversationRename = readFileSync(path.resolve('src/views/ai/ConversationRenameDialog.tsx'), 'utf8')
+const conversationList = readFileSync(path.resolve('src/views/ai/ConversationList.tsx'), 'utf8')
 const providerManager = readFileSync(path.resolve('src/views/ai/ProviderManager.tsx'), 'utf8')
 const agentManager = readFileSync(path.resolve('src/views/ai/AgentManager.tsx'), 'utf8')
 const mcpManager = readFileSync(path.resolve('src/views/ai/McpManager.tsx'), 'utf8')
@@ -31,6 +33,19 @@ test('conversation deletion uses one explicit dialog and keeps cancel separate f
   assert.match(workspace, /<ConversationDeleteDialog[\s\S]*onCancel=[\s\S]*onConfirm=/)
   assert.match(conversationDelete, /type="checkbox"[\s\S]*deleteMedia/)
   assert.match(conversationDelete, /className="btn danger"[\s\S]*common\.delete/)
+  assert.match(conversationDelete, /role="alertdialog"[\s\S]*overlayClassName="ai-conversation-dialog-overlay"/)
+  assert.match(conversationDelete, /closeOnOverlay/)
+  assert.match(css, /\.ai-conversation-dialog-overlay\s*\{[\s\S]*z-index:\s*2400/)
+  assert.doesNotMatch(css, /\.ai-conversation-delete\s*\{[\s\S]*position:\s*fixed/)
+})
+
+test('conversation rename uses an in-app dialog and restores the action trigger', () => {
+  assert.doesNotMatch(workspace, /window\.prompt/)
+  assert.match(workspace, /<ConversationRenameDialog[\s\S]*returnFocus=\{restoreConversationActionFocus\}/)
+  assert.match(conversationRename, /initialFocusRef=\{inputRef\}/)
+  assert.match(conversationRename, /closeOnOverlay/)
+  assert.match(conversationList, /onRename\(conversation, event\.currentTarget\)/)
+  assert.match(conversationList, /onDelete\(conversation, event\.currentTarget\)/)
 })
 
 test('completed responses describe retry behavior as sending the prompt again', () => {

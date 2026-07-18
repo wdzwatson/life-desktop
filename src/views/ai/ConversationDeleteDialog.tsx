@@ -31,8 +31,10 @@ export function ConversationDeleteDialog({
       }}
       returnFocus={returnFocus}
       initialFocusRef={cancelRef}
-      overlayClassName="ai-conversation-delete"
-      contentClassName="ai-conversation-delete__panel"
+      role="alertdialog"
+      overlayClassName="ai-conversation-dialog-overlay"
+      contentClassName="ai-conversation-dialog ai-conversation-delete__panel"
+      closeOnOverlay
     >
       <div className="ai-conversation-delete__heading">
         <span aria-hidden="true"><Trash2 size={18} /></span>
@@ -52,7 +54,7 @@ export function ConversationDeleteDialog({
         </span>
       </label>
 
-      <div className="ai-conversation-delete__actions">
+      <div className="ai-conversation-dialog__actions">
         <button ref={cancelRef} className="btn" disabled={submitting} onClick={onCancel}>
           {t('common.cancel')}
         </button>

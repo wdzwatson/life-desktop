@@ -13,10 +13,10 @@ type ConversationListProps = {
   onShowArchivedChange: (value: boolean) => void
   onSelect: (conversation: AIChatConversation) => void
   onCreate: () => void
-  onRename: (conversation: AIChatConversation) => void
+  onRename: (conversation: AIChatConversation, trigger: HTMLButtonElement) => void
   onTogglePinned: (conversation: AIChatConversation) => void
   onToggleArchived: (conversation: AIChatConversation) => void
-  onDelete: (conversation: AIChatConversation) => void
+  onDelete: (conversation: AIChatConversation, trigger: HTMLButtonElement) => void
 }
 
 function formatActivity(value: string | null) {
@@ -115,7 +115,10 @@ export function ConversationList({
             </button>
             <div className="ai-conversation-item__actions">
               <button
-                onClick={() => onRename(conversation)}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onRename(conversation, event.currentTarget)
+                }}
                 aria-label={t('aiChat.chat.rename_name', { name: conversation.title })}
                 title={t('aiChat.chat.rename')}
               >
@@ -137,7 +140,10 @@ export function ConversationList({
               </button>
               <button
                 className="is-danger"
-                onClick={() => onDelete(conversation)}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onDelete(conversation, event.currentTarget)
+                }}
                 aria-label={t('aiChat.chat.delete_name', { name: conversation.title })}
                 title={t('common.delete')}
               >
