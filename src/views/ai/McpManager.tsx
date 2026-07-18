@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Activity, Copy, Pencil, Plug, Plus, Power, Search, ShieldAlert, ShieldCheck, Trash2, X } from 'lucide-react'
+import { Activity, Bot, Copy, Pencil, Plug, Plus, Power, Search, ShieldAlert, ShieldCheck, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
 import { useAppStore } from '../../store/useAppStore'
+import { agentToDraft, buildAgentPayload, type AgentSummary } from './agentUtils'
 import {
   buildMcpPayload,
   createMcpDraft,
@@ -10,6 +11,7 @@ import {
   getMcpCredentialNames,
   getMcpEndpointLabel,
   mcpToDraft,
+  setMcpServerLink,
   type McpDraft,
   type McpServerSummary,
   type McpToolRisk,
@@ -21,6 +23,7 @@ export function McpManager({ onChanged }: Props) {
   const { t, i18n } = useTranslation()
   const showToast = useAppStore((state) => state.showToast)
   const [servers, setServers] = useState<McpServerSummary[]>([])
+  const [agents, setAgents] = useState<AgentSummary[]>([])
   const [search, setSearch] = useState('')
   const [transport, setTransport] = useState('')
   const [enabled, setEnabled] = useState('')
@@ -30,6 +33,7 @@ export function McpManager({ onChanged }: Props) {
   const [draft, setDraft] = useState<McpDraft | null>(null)
   const [riskToolName, setRiskToolName] = useState('')
   const [riskLevel, setRiskLevel] = useState<McpToolRisk>('read')
+  const [selectedAgentIds, setSelectedAgentIds] = useState<number[]>([])
   const nameRef = useRef<HTMLInputElement | null>(null)
   const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
   const api = (window as any).electronAPI
@@ -38,9 +42,13 @@ export function McpManager({ onChanged }: Props) {
     if (!api?.listAIMcpServers) return
     setBusy(true)
     try {
-      const response = await api.listAIMcpServers()
+      const [response, agentResponse] = await Promise.all([
+        api.listAIMcpServers(),
+        api.listAIAgents?.() ?? Promise.resolve({ success: true, data: [] }),
+      ])
       if (!response?.success) throw new Error(response?.error?.message || t('aiChat.mcp.load_failed'))
       setServers(response.data ?? [])
+      setAgents(agentResponse?.success ? (agentResponse.data ?? []) : [])
       setError('')
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : t('aiChat.mcp.load_failed'))
@@ -71,6 +79,7 @@ export function McpManager({ onChanged }: Props) {
     setDraft(null)
     setEditing(null)
     setRiskToolName('')
+    setSelectedAgentIds([])
   }
 
   const openCreate = (trigger: HTMLButtonElement) => {
@@ -78,6 +87,7 @@ export function McpManager({ onChanged }: Props) {
     setEditing(null)
     setDraft(createMcpDraft())
     setRiskToolName('')
+    setSelectedAgentIds([])
     setError('')
   }
 
@@ -86,7 +96,30 @@ export function McpManager({ onChanged }: Props) {
     setEditing(server)
     setDraft(mcpToDraft(server))
     setRiskToolName('')
+    setSelectedAgentIds(agents.filter((agent) => agent.mcpServerIds.includes(server.id)).map((agent) => agent.id))
     setError('')
+  }
+
+  const syncAgentLinks = async (serverId: number) => {
+    let changed = 0
+    let failed = 0
+    for (const agent of agents) {
+      const shouldLink = selectedAgentIds.includes(agent.id)
+      const isLinked = agent.mcpServerIds.includes(serverId)
+      if (shouldLink === isLinked) continue
+      if (!api?.updateAIAgent) {
+        failed += 1
+        continue
+      }
+      const mcpServerIds = setMcpServerLink(agent.mcpServerIds, serverId, shouldLink)
+      const response = await api.updateAIAgent(
+        agent.id,
+        buildAgentPayload(agentToDraft({ ...agent, mcpServerIds })),
+      )
+      if (response?.success) changed += 1
+      else failed += 1
+    }
+    return { changed, failed }
   }
 
   const saveServer = async () => {
@@ -102,10 +135,19 @@ export function McpManager({ onChanged }: Props) {
           })
         : await api.createAIMcpServer(payload)
       if (!response?.success) throw new Error(response?.error?.message || t('aiChat.mcp.save_failed'))
+      const linkResult = await syncAgentLinks((response.data as McpServerSummary).id)
       setDraft(null)
       setEditing(null)
-      showToast(t(editing ? 'aiChat.mcp.updated' : 'aiChat.mcp.created'))
+      setSelectedAgentIds([])
+      showToast(t(linkResult.changed > 0
+        ? 'aiChat.mcp.saved_with_assistants'
+        : editing
+          ? 'aiChat.mcp.updated'
+          : 'aiChat.mcp.created', { count: linkResult.changed }))
       await refresh()
+      if (linkResult.failed > 0) {
+        setError(t('aiChat.mcp.assistant_link_failed', { count: linkResult.failed }))
+      }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : t('aiChat.mcp.save_failed'))
     } finally {
@@ -194,6 +236,21 @@ export function McpManager({ onChanged }: Props) {
 
   return (
     <div className="ai-mcp-manager">
+      <section className="ai-mcp-explainer" aria-labelledby="ai-mcp-explainer-title">
+        <div className="ai-mcp-explainer__heading">
+          <Plug size={18} aria-hidden="true" />
+          <div>
+            <h2 id="ai-mcp-explainer-title">{t('aiChat.mcp.explainer_title')}</h2>
+            <p>{t('aiChat.mcp.explainer_desc')}</p>
+          </div>
+        </div>
+        <dl>
+          <div><dt>{t('aiChat.mcp.use_case_label')}</dt><dd>{t('aiChat.mcp.use_case_desc')}</dd></div>
+          <div><dt>{t('aiChat.mcp.optional_label')}</dt><dd>{t('aiChat.mcp.optional_desc')}</dd></div>
+          <div><dt>{t('aiChat.mcp.safety_label')}</dt><dd>{t('aiChat.mcp.safety_desc')}</dd></div>
+        </dl>
+      </section>
+
       <div className="ai-mcp-toolbar">
         <label className="ai-provider-search">
           <Search size={15} aria-hidden="true" />
@@ -229,6 +286,7 @@ export function McpManager({ onChanged }: Props) {
 
         {visibleServers.map((server) => {
           const lastConnectedAt = formatMcpLastConnectedAt(server.lastConnectedAt, i18n.language)
+          const linkedAgents = agents.filter((agent) => agent.mcpServerIds.includes(server.id))
           return (
             <article className={`ai-mcp-card ${server.enabled ? '' : 'is-disabled'}`} key={server.id}>
               <div className="ai-mcp-card__content">
@@ -245,6 +303,13 @@ export function McpManager({ onChanged }: Props) {
                   {server.protocolVersion && <span>{t('aiChat.mcp.protocol_version', { version: server.protocolVersion })}</span>}
                   {server.credentialConfigured && <span className="is-secure"><ShieldCheck size={12} />{t('aiChat.mcp.credential_saved')}</span>}
                 </div>
+                {linkedAgents.length > 0 && (
+                  <div className="ai-provider-linked-agents">
+                    <Bot size={13} aria-hidden="true" />
+                    <span>{t('aiChat.mcp.linked_assistants')}</span>
+                    {linkedAgents.map((agent) => <strong key={agent.id}>{agent.name}</strong>)}
+                  </div>
+                )}
                 {lastConnectedAt && <p className="ai-provider-tested-at">{t('aiChat.mcp.last_connected', { value: lastConnectedAt })}</p>}
                 {server.lastError.message && (
                   <div className="ai-mcp-error"><ShieldAlert size={15} /><div><strong>{server.lastError.code ?? t('aiChat.mcp.unknown_error')}</strong><p>{server.lastError.message}</p></div></div>
@@ -321,6 +386,30 @@ export function McpManager({ onChanged }: Props) {
             <div className="ai-provider-form__grid">
               <label><span>{t('aiChat.mcp.timeout')}</span><input className="form-field" type="number" min="1" max="600" value={draft.timeoutSeconds} onChange={(event) => setDraft({ ...draft, timeoutSeconds: event.target.value })} /></label>
             </div>
+
+            <fieldset className="ai-mcp-agent-picker">
+              <legend>{t('aiChat.mcp.assistant_access')}</legend>
+              <p>{t('aiChat.mcp.assistant_access_desc')}</p>
+              {agents.length === 0 ? (
+                <div className="ai-agent-fieldset__empty">{t('aiChat.mcp.no_assistants')}</div>
+              ) : (
+                <div className="ai-mcp-agent-grid">
+                  {agents.map((agent) => (
+                    <label key={agent.id}>
+                      <input
+                        type="checkbox"
+                        checked={selectedAgentIds.includes(agent.id)}
+                        onChange={() => setSelectedAgentIds((current) => current.includes(agent.id)
+                          ? current.filter((id) => id !== agent.id)
+                          : [...current, agent.id].sort((left, right) => left - right))}
+                      />
+                      <Bot size={14} aria-hidden="true" />
+                      <span><strong>{agent.name}</strong><small>{agent.description}</small></span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </fieldset>
 
             {editing && (
               <fieldset className="ai-agent-fieldset">

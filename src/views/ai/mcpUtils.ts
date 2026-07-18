@@ -143,3 +143,10 @@ export function formatMcpLastConnectedAt(value: string | null, locale: string) {
   if (Number.isNaN(date.getTime())) return null
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }
+
+export function setMcpServerLink(serverIds: number[], serverId: number, linked: boolean) {
+  const next = new Set(serverIds)
+  if (linked) next.add(serverId)
+  else next.delete(serverId)
+  return [...next].sort((left, right) => left - right)
+}

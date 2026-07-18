@@ -4,6 +4,8 @@ import test from 'node:test'
 
 const localeFiles = ['zh-CN.json', 'en-US.json']
 const requiredKeys = [
+  'explainer_title', 'explainer_desc', 'use_case_label', 'use_case_desc', 'optional_label',
+  'optional_desc', 'safety_label', 'safety_desc',
   'load_failed', 'save_failed', 'action_failed', 'created', 'updated', 'deleted', 'copied',
   'enabled_toast', 'disabled_toast', 'delete_confirm', 'delete_blocked_dependencies',
   'disable_confirm_dependencies', 'search_placeholder', 'search_label',
@@ -18,7 +20,8 @@ const requiredKeys = [
   'arguments_placeholder', 'cwd', 'url', 'credentials_preserved', 'replace_credentials',
   'env_json', 'headers_json', 'stdio_warning', 'timeout', 'risk_overrides', 'tool_name',
   'save_risk', 'remove_risk_name', 'no_risk_overrides', 'risk_failed', 'risk_saved',
-  'risk_removed',
+  'risk_removed', 'assistant_access', 'assistant_access_desc', 'no_assistants', 'linked_assistants',
+  'saved_with_assistants', 'assistant_link_failed',
 ]
 
 for (const filename of localeFiles) {
@@ -39,6 +42,8 @@ for (const filename of localeFiles) {
     assert.match(mcp.credentials_preserved, /{{names}}/)
     assert.match(mcp.delete_blocked_dependencies, /{{names}}/)
     assert.match(mcp.disable_confirm_dependencies, /{{names}}/)
+    assert.match(mcp.saved_with_assistants, /{{count}}/)
+    assert.match(mcp.assistant_link_failed, /{{count}}/)
   })
 }
 
@@ -48,4 +53,12 @@ test('MCP manager activates real connection testing without exposing tool execut
   assert.match(source, /server\.connectionStatus === 'connected'/)
   assert.doesNotMatch(source, /disabled title=\{t\('aiChat\.mcp\.test_pending'\)\}/)
   assert.doesNotMatch(source, /callAIMcpTool/)
+})
+
+test('MCP manager explains optional tool access and assigns connections to assistants', () => {
+  const source = readFileSync(new URL('../src/views/ai/McpManager.tsx', import.meta.url), 'utf8')
+  assert.match(source, /className="ai-mcp-explainer"/)
+  assert.match(source, /className="ai-mcp-agent-picker"/)
+  assert.match(source, /api\.updateAIAgent/)
+  assert.match(source, /setMcpServerLink/)
 })

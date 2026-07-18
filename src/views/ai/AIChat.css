@@ -1475,8 +1475,67 @@
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 12px;
+}
+
+.ai-mcp-explainer {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.72fr) minmax(0, 1.28fr);
+  gap: 12px;
+  padding: 11px 13px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 20%, var(--color-border));
+  border-radius: var(--radius-card);
+  background:
+    radial-gradient(circle at 8% 0%, color-mix(in srgb, var(--color-accent) 10%, transparent), transparent 44%),
+    color-mix(in srgb, var(--bg-surface) 97%, var(--color-accent));
+}
+
+.ai-mcp-explainer__heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ai-mcp-explainer__heading > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--color-accent);
+}
+
+.ai-mcp-explainer h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.ai-mcp-explainer p,
+.ai-mcp-explainer dd {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.ai-mcp-explainer dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-flow: dense;
+  gap: 8px;
+  margin: 0;
+}
+
+.ai-mcp-explainer dl > div {
+  min-width: 0;
+  padding-left: 8px;
+  border-left: 1px solid var(--color-border);
+}
+
+.ai-mcp-explainer dt {
+  margin-bottom: 3px;
+  color: var(--text-main);
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .ai-mcp-toolbar {
@@ -1637,6 +1696,81 @@
   gap: 16px;
   margin-top: 16px;
   padding-right: 3px;
+}
+
+.ai-mcp-agent-picker {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+}
+
+.ai-mcp-agent-picker > legend {
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ai-mcp-agent-picker > p {
+  margin: 0 0 10px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.ai-mcp-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: dense;
+  gap: 7px;
+}
+
+.ai-mcp-agent-grid label {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--bg-panel);
+  cursor: pointer;
+}
+
+.ai-mcp-agent-grid label:has(input:checked) {
+  border-color: color-mix(in srgb, var(--color-accent) 48%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--bg-panel));
+}
+
+.ai-mcp-agent-grid input {
+  margin: 2px 0 0;
+}
+
+.ai-mcp-agent-grid svg {
+  margin-top: 1px;
+  color: var(--color-accent);
+}
+
+.ai-mcp-agent-grid span,
+.ai-mcp-agent-grid strong,
+.ai-mcp-agent-grid small {
+  display: block;
+  min-width: 0;
+}
+
+.ai-mcp-agent-grid strong {
+  font-size: 10.5px;
+}
+
+.ai-mcp-agent-grid small {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 9.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ai-mcp-form label {
@@ -3411,6 +3545,10 @@
 
   .ai-mcp-toolbar select {
     display: none;
+  }
+
+  .ai-mcp-agent-grid {
+    grid-template-columns: 1fr;
   }
 
   .ai-mcp-risk-editor {

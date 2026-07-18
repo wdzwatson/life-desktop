@@ -9,6 +9,7 @@ import {
   mcpToDraft,
   parseMcpArguments,
   parseMcpSecretMap,
+  setMcpServerLink,
   type McpServerSummary,
 } from '../src/views/ai/mcpUtils.ts'
 
@@ -89,4 +90,10 @@ test('MCP endpoint and timestamp summaries support HTTP and stdio', () => {
   }
   assert.equal(getMcpEndpointLabel(stdio), '/usr/bin/tool --safe')
   assert.deepEqual(getMcpCredentialNames(stdio), ['TOKEN'])
+})
+
+test('MCP assistant links are added and removed idempotently', () => {
+  assert.deepEqual(setMcpServerLink([7, 2], 4, true), [2, 4, 7])
+  assert.deepEqual(setMcpServerLink([2, 4, 7], 4, true), [2, 4, 7])
+  assert.deepEqual(setMcpServerLink([2, 4, 7], 4, false), [2, 7])
 })
