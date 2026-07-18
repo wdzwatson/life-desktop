@@ -3,6 +3,7 @@ import { Bot, Database, MessageSquare, Plug, RefreshCw, Settings2 } from 'lucide
 import { useTranslation } from 'react-i18next'
 import './AIChat.css'
 import { AgentManager } from './AgentManager'
+import { ChatWorkspace, type AIChatAgent } from './ChatWorkspace'
 import { McpManager } from './McpManager'
 import { ProviderManager } from './ProviderManager'
 
@@ -16,6 +17,7 @@ export function AIChat() {
   const { t } = useTranslation()
   const [activeView, setActiveView] = useState<AIView>('chat')
   const [counts, setCounts] = useState<ConfigCounts>(EMPTY_COUNTS)
+  const [agents, setAgents] = useState<AIChatAgent[]>([])
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const api = (window as any).electronAPI
 
@@ -38,6 +40,7 @@ export function AIChat() {
         agents: agents.data?.length ?? 0,
         mcp: mcp.data?.length ?? 0,
       })
+      setAgents(agents.data ?? [])
       setLoadState('ready')
     } catch {
       setLoadState('error')
@@ -72,7 +75,12 @@ export function AIChat() {
             <p>{t('aiChat.subtitle')}</p>
           </div>
         </div>
-        <button className="ai-chat-icon-button" aria-label={t('aiChat.settings')} title={t('aiChat.settings')}>
+        <button
+          className="ai-chat-icon-button"
+          aria-label={t('aiChat.settings')}
+          title={t('aiChat.settings')}
+          onClick={() => setActiveView('providers')}
+        >
           <Settings2 size={17} />
         </button>
       </header>
@@ -141,13 +149,7 @@ export function AIChat() {
         )}
 
         {loadState === 'ready' && activeView === 'chat' && hasProvider && (
-          <div className="ai-chat-panel-placeholder">
-            <div className="ai-chat-panel-placeholder__icon" aria-hidden="true">
-              <MessageSquare size={24} />
-            </div>
-            <h2>{t(`aiChat.panel_${activeView}_title`)}</h2>
-            <p>{t(`aiChat.panel_${activeView}_desc`)}</p>
-          </div>
+          <ChatWorkspace agents={agents} onOpenAgents={() => setActiveView('agents')} />
         )}
       </section>
     </main>

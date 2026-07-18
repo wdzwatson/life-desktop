@@ -100,6 +100,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('ai:runs:event', subscription)
     }
   },
+  listAIConversations: (filters?: unknown) => ipcRenderer.invoke('ai:conversations:list', filters),
+  getAIConversation: (id: number) => ipcRenderer.invoke('ai:conversations:get', { id }),
+  createAIConversation: (title: string, agentId: number) =>
+    ipcRenderer.invoke('ai:conversations:create', { title, agentId }),
+  renameAIConversation: (id: number, title: string) =>
+    ipcRenderer.invoke('ai:conversations:rename', { id, title }),
+  setAIConversationPinned: (id: number, pinned: boolean) =>
+    ipcRenderer.invoke('ai:conversations:setPinned', { id, pinned }),
+  setAIConversationArchived: (id: number, archived: boolean) =>
+    ipcRenderer.invoke('ai:conversations:setArchived', { id, archived }),
+  deleteAIConversation: (id: number, deleteUnreferencedMedia = false) =>
+    ipcRenderer.invoke('ai:conversations:delete', { id, deleteUnreferencedMedia }),
+  listAIConversationMessages: (conversationId: number, options?: { beforeId?: number; limit?: number }) =>
+    ipcRenderer.invoke('ai:conversations:messages', { conversationId, ...options }),
+  listAIConversationRuns: (conversationId: number, limit?: number) =>
+    ipcRenderer.invoke('ai:conversations:runs', { conversationId, limit }),
 
   // Encrypted password vault
   getVaultStatus: () => ipcRenderer.invoke('vault:status'),

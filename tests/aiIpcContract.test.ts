@@ -4,8 +4,10 @@ import path from 'node:path'
 import test from 'node:test'
 import {
   AI_CONFIG_CHANNELS,
+  AI_CONVERSATION_CHANNELS,
   AI_RUNTIME_CHANNELS,
   createAIConfigHandlers,
+  createAIConversationHandlers,
   createAIRuntimeHandlers,
 } from '../electron/ai/ipc.ts'
 
@@ -25,10 +27,32 @@ test('preload exposes structured AI methods without runtime credentials or gener
     'createAIProvider',
     'listAIAgents',
     'listAIMcpServers',
+    'listAIConversations',
+    'listAIConversationMessages',
+    'startAIRun',
+    'cancelAIRun',
+    'onAIRunEvent',
   ]) {
     assert.match(preload, new RegExp(`${method}:`))
   }
   assert.doesNotMatch(preload, /getAIMcpRuntime|getAIProviderCredential|executeAICommand|ai:sql/)
+})
+
+test('AI conversation IPC validates identifiers before opening the isolated database', async () => {
+  let opened = 0
+  const handlers = createAIConversationHandlers({
+    getDb: () => {
+      opened += 1
+      throw new Error('should not open database')
+    },
+    getRuntime: () => ({ isConversationActive: () => false }),
+  })
+  assert.equal(AI_CONVERSATION_CHANNELS.length, 9)
+  assert.equal(new Set(AI_CONVERSATION_CHANNELS).size, AI_CONVERSATION_CHANNELS.length)
+  const result = await handlers['ai:conversations:messages']({}, { conversationId: 0 })
+  assert.equal(result.success, false)
+  assert.equal(result.error.code, 'invalid_input')
+  assert.equal(opened, 0)
 })
 
 test('AI runtime IPC is isolated from configuration and exposes only start and cancel commands', async () => {

@@ -38,8 +38,8 @@
 | AT-12 | 会话、消息与运行记录服务 | B | AT-02 | 已完成 |
 | AT-13 | OpenAI-compatible 流式适配器 | B | AT-01、AT-04 | 已完成 |
 | AT-14 | 文本 Agent 运行器与取消机制 | B | AT-05、AT-12、AT-13 | 已完成 |
-| AT-15 | 对话工作区、历史、流式与重试 UI | B | AT-08、AT-12、AT-14 | 进行中 |
-| AT-16 | MCP HTTP/SSE/stdio 连接管理器 | C | AT-06 | 待开始 |
+| AT-15 | 对话工作区、历史、流式与重试 UI | B | AT-08、AT-12、AT-14 | 已完成 |
+| AT-16 | MCP HTTP/SSE/stdio 连接管理器 | C | AT-06 | 进行中 |
 | AT-17 | 工具调用循环、授权与工具消息 UI | C | AT-14、AT-15、AT-16 | 待开始 |
 | AT-18 | AI 媒体存储与安全资源协议 | D | AT-02 | 待开始 |
 | AT-19 | 图片生成适配与对话展示 | D | AT-15、AT-18 | 待开始 |
@@ -677,7 +677,7 @@
 
 ### AT-15 对话工作区、历史、流式与重试 UI
 
-状态：进行中
+状态：已完成
 
 目标：交付可日常使用的文本聊天体验。
 
@@ -712,9 +712,24 @@
 
 建议提交：`feat: add streaming AI chat workspace`
 
+完成记录：
+
+- 针对性测试：`tests/aiChatUtils.test.ts`、`tests/aiMessageSecurity.test.ts`、`tests/aiIpcContract.test.ts`、`tests/aiToolboxLocales.test.ts` 共 18 项通过；`tests/aiConversationIpc.test.mjs` 与 `tests/aiChatRoundTrip.test.mjs` 共 2 项通过。
+- 全量回归：`npm test`，322 项主测试及包含会话 IPC、十轮对话链路在内的全部数据库专项测试通过。
+- 静态检查：`npm run lint` 通过。
+- 构建检查：`npm run build` 通过。
+- 会话检查：支持新建、搜索、加载、重命名、置顶、归档、删除与 Markdown/媒体清单导出；删除时可选择保留或清理失去引用的媒体。
+- 对话检查：支持 Agent 选择、发送、停止、失败重试、完成后重新生成、50 条分页加载、流式增量批量合并和用户上滚后暂停自动跟随。
+- 安全检查：Markdown 经 `marked` 解析后使用严格 DOMPurify 白名单清理，禁止 script、iframe、object、embed、内联事件、style 和未知协议；外部链接交由主进程安全打开。
+- 事件检查：Renderer 按 conversationId、runId、messageId 和 sequence 去重，32ms 批量合并文本事件；切换会话时旧请求和旧增量不会覆盖当前时间线。
+- 集成检查：十轮 mock 对话完整经过 Agent 运行器、Renderer 消息归并和 `ai.db` 持久化，得到 20 条有序消息与 10 个唯一完成终态。
+- 响应式检查：在 800×600 实际页面中无横向或页面级纵向溢出，配置主操作完整可见；供应商页与原有番茄钟切换正常，控制台无错误或警告。
+- 影响检查：全量回归通过，AI 会话 IPC 与配置/运行 IPC 继续分离，未改变任务、笔记、书库、视频、凭据库和原有工具箱数据路径。
+- 遗留风险：MCP 工具消息与审批 UI 由 AT-16、AT-17 接入；图片和视频内容块当前只显示安全附件摘要，真实资源展示由 AT-18 至 AT-21 完成；引导态 GSAP 动效由 AT-23 完成。
+
 ### AT-16 MCP HTTP/SSE/stdio 连接管理器
 
-状态：待开始
+状态：进行中
 
 目标：连接真实 MCP 服务并管理生命周期。
 

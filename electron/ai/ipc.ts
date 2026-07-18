@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3'
 import type { AIAgentRuntime } from './agentRuntime'
 import { AIAgentService } from './agentService'
 import { AICredentialService, type AICredentialCryptoAdapter } from './credentialService'
+import { AIConversationService } from './conversationService'
 import { AIMcpConfigService } from './mcpConfigService'
 import { AIProviderService } from './providerService'
 import { AIServiceError } from './types'
@@ -40,8 +41,21 @@ export const AI_CONFIG_CHANNELS = [
 
 export const AI_RUNTIME_CHANNELS = ['ai:runs:start', 'ai:runs:cancel'] as const
 
+export const AI_CONVERSATION_CHANNELS = [
+  'ai:conversations:list',
+  'ai:conversations:get',
+  'ai:conversations:create',
+  'ai:conversations:rename',
+  'ai:conversations:setPinned',
+  'ai:conversations:setArchived',
+  'ai:conversations:delete',
+  'ai:conversations:messages',
+  'ai:conversations:runs',
+] as const
+
 type AIConfigChannel = (typeof AI_CONFIG_CHANNELS)[number]
 type AIRuntimeChannel = (typeof AI_RUNTIME_CHANNELS)[number]
+type AIConversationChannel = (typeof AI_CONVERSATION_CHANNELS)[number]
 type AIHandler = (_event: unknown, payload?: unknown) => unknown | Promise<unknown>
 
 type AIConfigServices = {
@@ -62,6 +76,11 @@ export type AIConfigIpcRegistrar = {
 
 export type AIRuntimeIpcDependencies = {
   getRuntime: () => Pick<AIAgentRuntime, 'start' | 'cancel'>
+}
+
+export type AIConversationIpcDependencies = {
+  getDb: () => Database.Database
+  getRuntime: () => Pick<AIAgentRuntime, 'isConversationActive'>
 }
 
 function serializeError(error: unknown) {
@@ -127,6 +146,17 @@ function requireBoolean(value: unknown, field: string) {
     })
   }
   return value
+}
+
+function requireString(value: unknown, field: string, max: number) {
+  if (typeof value !== 'string' || !value.trim() || value.trim().length > max) {
+    throw new AIServiceError({
+      code: 'invalid_input',
+      message: `Invalid ${field}.`,
+      retryable: false,
+    })
+  }
+  return value.trim()
 }
 
 function requireOptionalName(value: unknown) {
@@ -316,4 +346,99 @@ export function registerAIRuntimeIpc(
 ) {
   const handlers = createAIRuntimeHandlers(dependencies)
   for (const channel of AI_RUNTIME_CHANNELS) registrar.handle(channel, handlers[channel])
+}
+
+export function createAIConversationHandlers(
+  dependencies: AIConversationIpcDependencies,
+): Record<AIConversationChannel, AIHandler> {
+  const services = () => {
+    const db = dependencies.getDb()
+    return {
+      conversations: new AIConversationService(db),
+      agents: new AIAgentService(db),
+    }
+  }
+  return {
+    'ai:conversations:list': (_event, payload) =>
+      respond(() => {
+        dependencies.getRuntime()
+        return services().conversations.listConversations(payload === undefined ? {} : requireObject(payload))
+      }),
+    'ai:conversations:get': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const id = requireId(data.id)
+        return services().conversations.getConversation(id)
+      }),
+    'ai:conversations:create': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const agentId = requireId(data.agentId, 'agent ID')
+        const serviceSet = services()
+        const snapshot = serviceSet.agents.getSnapshot(agentId)
+        return serviceSet.conversations.createConversation({
+          title: requireString(data.title, 'conversation title', 300),
+          agentId,
+          agentSnapshot: snapshot,
+        })
+      }),
+    'ai:conversations:rename': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const id = requireId(data.id)
+        const title = requireString(data.title, 'conversation title', 300)
+        return services().conversations.renameConversation(id, title)
+      }),
+    'ai:conversations:setPinned': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const id = requireId(data.id)
+        const pinned = requireBoolean(data.pinned, 'pinned')
+        return services().conversations.setConversationPinned(id, pinned)
+      }),
+    'ai:conversations:setArchived': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const id = requireId(data.id)
+        const archived = requireBoolean(data.archived, 'archived')
+        return services().conversations.setConversationArchived(id, archived)
+      }),
+    'ai:conversations:delete': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const id = requireId(data.id)
+        if (dependencies.getRuntime().isConversationActive(id)) {
+          throw new AIServiceError({
+            code: 'invalid_input',
+            message: 'Stop the active Agent run before deleting this conversation.',
+            retryable: false,
+          })
+        }
+        return services().conversations.deleteConversation(id, {
+          deleteUnreferencedMedia:
+            data.deleteUnreferencedMedia === undefined
+              ? false
+              : requireBoolean(data.deleteUnreferencedMedia, 'media deletion option'),
+        })
+      }),
+    'ai:conversations:messages': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const conversationId = requireId(data.conversationId, 'conversation ID')
+        const options = {
+          ...(data.beforeId === undefined
+            ? {}
+            : { beforeId: requireId(data.beforeId, 'before message ID') }),
+          ...(data.limit === undefined ? {} : { limit: requireId(data.limit, 'message limit') }),
+        }
+        return services().conversations.listMessages(conversationId, options)
+      }),
+    'ai:conversations:runs': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const conversationId = requireId(data.conversationId, 'conversation ID')
+        const limit = data.limit === undefined ? 50 : requireId(data.limit, 'run limit')
+        return services().conversations.listRuns(conversationId, limit)
+      }),
+  }
+}
+
+export function registerAIConversationIpc(
+  registrar: AIConfigIpcRegistrar,
+  dependencies: AIConversationIpcDependencies,
+) {
+  const handlers = createAIConversationHandlers(dependencies)
+  for (const channel of AI_CONVERSATION_CHANNELS) registrar.handle(channel, handlers[channel])
 }

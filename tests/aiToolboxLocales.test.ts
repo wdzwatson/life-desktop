@@ -10,6 +10,7 @@ test('AI toolbox localization exists in Chinese and English with matching keys',
   assert.equal(zh.toolbox.tab_ai, 'AI 对话')
   assert.equal(en.toolbox.tab_ai, 'AI Chat')
   assert.deepEqual(Object.keys(zh.aiChat).sort(), Object.keys(en.aiChat).sort())
+  assert.deepEqual(Object.keys(zh.aiChat.chat).sort(), Object.keys(en.aiChat.chat).sort())
 })
 
 test('Toolbox lazy-loads the isolated AI workspace without replacing existing tools', () => {
@@ -23,5 +24,6 @@ test('AI workspace shell prevents page-level horizontal overflow', () => {
   const css = readFileSync(path.resolve('src/views/ai/AIChat.css'), 'utf8')
   assert.match(css, /\.ai-chat-shell[\s\S]*max-width:\s*100%/)
   assert.match(css, /\.ai-chat-shell[\s\S]*overflow:\s*hidden/)
-  assert.match(css, /font-family:\s*'Outfit'/)
+  assert.match(css, /font-family:\s*'Cabinet Grotesk',\s*'Outfit'/)
+  assert.match(css, /\.ai-chat-workspace[\s\S]*grid-auto-flow:\s*dense/)
 })

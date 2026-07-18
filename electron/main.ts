@@ -40,7 +40,7 @@ import { classifyVideoDownloadFailure } from './video/downloadState'
 import { normalizeBulkVideoTagPayload } from '../src/views/videoStateUtils'
 import { VaultService, serializeVaultError } from './vault/service'
 import { getDirectDbAccessError } from './db/accessPolicy'
-import { registerAIConfigIpc, registerAIRuntimeIpc } from './ai/ipc'
+import { registerAIConfigIpc, registerAIConversationIpc, registerAIRuntimeIpc } from './ai/ipc'
 import { createSafeStorageCredentialAdapter } from './ai/safeStorageAdapter'
 import { AIAgentRuntime } from './ai/agentRuntime'
 import { AIAgentService } from './ai/agentService'
@@ -1610,6 +1610,11 @@ registerAIConfigIpc(
 registerAIRuntimeIpc(
   { handle: (channel, handler) => ipcMain.handle(channel, handler) },
   { getRuntime: getAIAgentRuntime },
+)
+
+registerAIConversationIpc(
+  { handle: (channel, handler) => ipcMain.handle(channel, handler) },
+  { getDb: () => getUserDb('ai'), getRuntime: getAIAgentRuntime },
 )
 
 // IPC Handlers: Encrypted password vault
