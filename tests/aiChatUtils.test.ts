@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   applyAIChatRunEvent,
   buildAIConversationMarkdown,
+  compareAIChatMessageOrder,
   createOptimisticRunMessages,
   getAIChatRetryText,
   getAIComposerIntent,
@@ -43,6 +44,17 @@ test('message merging deduplicates IDs and preserves live streaming text', () =>
   const merged = mergeAIChatMessages(current, [{ ...message(2, 'assistant', ''), status: 'streaming' }])
   assert.equal(merged.length, 1)
   assert.equal(merged[0].streamText, 'Live')
+})
+
+test('temporary media messages stay at the end in user then assistant order', () => {
+  const existing = [message(1, 'user', 'Earlier'), message(2, 'assistant', 'Earlier response')]
+  const createdAt = '2026-07-18T10:00:00.000Z'
+  const optimisticUser = { ...message(-100, 'user', 'Create a video'), createdAt }
+  const optimisticAssistant = { ...message(-101, 'assistant', ''), status: 'streaming' as const, createdAt }
+  const merged = mergeAIChatMessages(existing, [optimisticUser, optimisticAssistant], 'append')
+
+  assert.deepEqual(merged.map((item) => item.id), [1, 2, -100, -101])
+  assert.ok(compareAIChatMessageOrder(existing[1], optimisticUser) < 0)
 })
 
 test('run events merge ten rounds without crossing message identities', () => {

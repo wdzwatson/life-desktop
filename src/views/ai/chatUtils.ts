@@ -124,6 +124,16 @@ function timestamp(value: string | null | undefined) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+export function compareAIChatMessageOrder(left: AIChatMessage, right: AIChatMessage) {
+  const leftTemporary = left.id < 0
+  const rightTemporary = right.id < 0
+  if (leftTemporary !== rightTemporary) return leftTemporary ? 1 : -1
+  if (!leftTemporary) return left.id - right.id
+
+  const timeDifference = timestamp(left.createdAt) - timestamp(right.createdAt)
+  return timeDifference || right.id - left.id
+}
+
 export function sortAIConversations(conversations: AIChatConversation[]) {
   return [...conversations].sort((left, right) => {
     if (left.isPinned !== right.isPinned) return left.isPinned ? -1 : 1
@@ -153,7 +163,7 @@ export function mergeAIChatMessages(
         : {}),
     })
   }
-  return [...deduplicated.values()].sort((left, right) => left.id - right.id)
+  return [...deduplicated.values()].sort(compareAIChatMessageOrder)
 }
 
 export async function loadAllAIChatMessages(
@@ -296,7 +306,7 @@ export function applyAIChatRunEvent(messages: AIChatMessage[], event: AIChatRunE
     startedAt: event.timestamp,
     completedAt: terminalStatus ? event.timestamp : null,
   }
-  return [...next, placeholder].sort((left, right) => left.id - right.id)
+  return [...next, placeholder].sort(compareAIChatMessageOrder)
 }
 
 export function reduceAIChatRunState(
