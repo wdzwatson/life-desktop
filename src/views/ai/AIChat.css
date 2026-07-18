@@ -625,7 +625,7 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-main) 6%, transparent);
 }
 
-.ai-chat-stage__controls select:focus-visible {
+.ai-chat-shell .ai-chat-stage__controls select:focus-visible {
   outline: 0;
   box-shadow: none;
 }
@@ -1064,7 +1064,7 @@
   line-height: 1.55;
 }
 
-.ai-chat-composer textarea:focus-visible {
+.ai-chat-shell .ai-chat-composer textarea:focus-visible {
   outline: 0;
   box-shadow: none;
 }
@@ -2254,7 +2254,7 @@
 .ai-provider-text-models {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(180px, 0.55fr);
-  align-items: end;
+  align-items: start;
   gap: 10px;
 }
 
@@ -2328,9 +2328,14 @@
 }
 
 .ai-provider-model-multiselect__menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
   display: grid;
   gap: 10px;
-  margin-top: 6px;
+  margin-top: 0;
   padding: 10px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
