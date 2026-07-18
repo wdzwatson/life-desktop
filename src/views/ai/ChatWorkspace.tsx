@@ -127,6 +127,7 @@ export function ChatWorkspace({ agents, hasProvider, onOpenProviders, onOpenAgen
   const messageRequestRef = useRef(0)
   const timelineRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const runInspectorToggleRef = useRef<HTMLButtonElement>(null)
   const followOutputRef = useRef(true)
   const mediaCancellationRequestedRef = useRef(false)
 
@@ -142,6 +143,11 @@ export function ChatWorkspace({ agents, hasProvider, onOpenProviders, onOpenAgen
   )
   const chatReady = hasProvider && readyAgents.length > 0
 
+  const closeRunInspector = useCallback(() => {
+    setShowRunInspector(false)
+    requestAnimationFrame(() => runInspectorToggleRef.current?.focus())
+  }, [])
+
   useEffect(() => {
     activeConversationRef.current = activeConversationId
   }, [activeConversationId])
@@ -149,6 +155,19 @@ export function ChatWorkspace({ agents, hasProvider, onOpenProviders, onOpenAgen
   useEffect(() => {
     messagesRef.current = messages
   }, [messages])
+
+  useEffect(() => {
+    if (!showRunInspector) return
+
+    const handleEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.preventDefault()
+      closeRunInspector()
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [closeRunInspector, showRunInspector])
 
   useEffect(() => {
     const status = activeRun?.status
@@ -747,6 +766,7 @@ export function ChatWorkspace({ agents, hasProvider, onOpenProviders, onOpenAgen
               {t(exportingConversation ? 'aiChat.chat.exporting' : 'aiChat.chat.export')}
             </button>
             <button
+              ref={runInspectorToggleRef}
               className="ai-run-inspector-toggle"
               onClick={() => setShowRunInspector((value) => !value)}
               aria-expanded={showRunInspector}
@@ -920,7 +940,7 @@ export function ChatWorkspace({ agents, hasProvider, onOpenProviders, onOpenAgen
           <h2>{t('aiChat.chat.run_inspector')}</h2>
           <button
             className="ai-run-inspector__close"
-            onClick={() => setShowRunInspector(false)}
+            onClick={closeRunInspector}
             aria-label={t('common.close')}
           >
             <X size={14} aria-hidden="true" />

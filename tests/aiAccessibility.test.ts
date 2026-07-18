@@ -56,12 +56,17 @@ test('AI controls and run states retain visible keyboard focus and theme-derived
   assert.match(css, /dd\.is-cancelled,[\s\S]*dd\.is-interrupted[\s\S]*var\(--ai-status-warning\)/)
 })
 
-test('screen-reader labels stay visually hidden and compact layouts retain the run inspector', () => {
+test('screen-reader labels stay visually hidden and the run inspector overlays every layout', () => {
   assert.match(appCss, /\.sr-only\s*\{[\s\S]*position:\s*absolute[\s\S]*clip:\s*rect\(0, 0, 0, 0\)/)
-  assert.match(workspace, /className="ai-run-inspector-toggle"[\s\S]*aria-controls="ai-run-inspector"/)
+  assert.match(workspace, /ref=\{runInspectorToggleRef\}[\s\S]*className="ai-run-inspector-toggle"[\s\S]*aria-controls="ai-run-inspector"/)
   assert.match(workspace, /id="ai-run-inspector"[\s\S]*showRunInspector \? 'is-open'/)
-  assert.match(css, /@media \(max-width: 1120px\)[\s\S]*\.ai-run-inspector-toggle[\s\S]*display:\s*inline-flex/)
+  assert.match(css, /\.ai-chat-workspace\s*\{[\s\S]*grid-template-columns:\s*minmax\(220px, 250px\) minmax\(0, 1fr\)/)
+  assert.match(css, /\.ai-run-inspector-toggle\s*\{[\s\S]*display:\s*inline-flex/)
+  assert.match(css, /\.ai-run-inspector\s*\{[\s\S]*display:\s*none/)
   assert.match(css, /\.ai-run-inspector\.is-open[\s\S]*position:\s*absolute[\s\S]*display:\s*flex/)
+  assert.match(css, /\.ai-run-inspector__close\s*\{[\s\S]*display:\s*grid/)
+  assert.match(workspace, /const closeRunInspector = useCallback[\s\S]*runInspectorToggleRef\.current\?\.focus\(\)/)
+  assert.match(workspace, /event\.key !== 'Escape'[\s\S]*closeRunInspector\(\)/)
 })
 
 test('accessible dialogs stay fixed to the viewport and lock document scrolling', () => {
@@ -76,4 +81,13 @@ test('daily chat typography and action targets remain readable', () => {
   assert.match(css, /\.ai-chat-composer textarea\s*\{[\s\S]*font-size:\s*13px/)
   assert.match(css, /\.ai-conversation-item__actions button\s*\{[\s\S]*width:\s*32px[\s\S]*height:\s*32px/)
   assert.match(css, /\.ai-chat-composer__mode button\s*\{[\s\S]*min-height:\s*32px/)
+})
+
+test('chat timeline uses compact document-like assistant messages without shrinking user bubbles', () => {
+  assert.match(css, /\.ai-message-timeline\s*\{[\s\S]*padding:\s*14px clamp\(14px, 3vw, 36px\) 18px/)
+  assert.match(css, /\.ai-message\s*\{[\s\S]*margin:\s*0 auto 11px/)
+  assert.match(css, /\.ai-message:not\(\.ai-message--user\) \.ai-message__body\s*\{[\s\S]*border:\s*0[\s\S]*background:\s*transparent/)
+  assert.match(css, /\.ai-message--user\s*\{[\s\S]*width:\s*min\(72%, 560px\)/)
+  assert.match(css, /\.ai-message__actions\s*\{[\s\S]*min-height:\s*22px/)
+  assert.match(css, /\.ai-chat-composer textarea\s*\{[\s\S]*min-height:\s*46px/)
 })
