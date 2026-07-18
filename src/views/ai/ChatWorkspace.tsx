@@ -1,6 +1,7 @@
 import {
   Bot,
   ChevronDown,
+  Database,
   Download,
   Gauge,
   ImagePlus,
@@ -57,6 +58,8 @@ export type AIChatAgent = {
 
 type ChatWorkspaceProps = {
   agents: AIChatAgent[]
+  hasProvider: boolean
+  onOpenProviders: () => void
   onOpenAgents: () => void
 }
 
@@ -81,7 +84,7 @@ function errorMessage(response: unknown, fallback: string) {
   return fallback
 }
 
-export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
+export function ChatWorkspace({ agents, hasProvider, onOpenProviders, onOpenAgents }: ChatWorkspaceProps) {
   const { t } = useTranslation()
   const api = (window as any).electronAPI
   const readyAgents = useMemo(
@@ -137,6 +140,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
   const activeAgent = readyAgents.find(
     (agent) => agent.id === (activeConversation?.agentId ?? selectedAgentId),
   )
+  const chatReady = hasProvider && readyAgents.length > 0
 
   useEffect(() => {
     activeConversationRef.current = activeConversationId
@@ -695,21 +699,6 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
     if (text) void sendText(text)
   }
 
-  if (readyAgents.length === 0) {
-    return (
-      <section className="ai-chat-empty ai-chat-empty--agent">
-        <div className="ai-chat-empty__ambient" aria-hidden="true" />
-        <div className="ai-chat-empty__content">
-          <h2>{t('aiChat.chat.no_agent_title')}</h2>
-          <p>{t('aiChat.chat.no_agent_desc')}</p>
-          <div className="ai-chat-empty__actions">
-            <button className="btn primary" onClick={onOpenAgents}>{t('aiChat.chat.configure_agent')}</button>
-          </div>
-        </div>
-      </section>
-    )
-  }
-
   return (
     <section className="ai-chat-workspace">
       <ConversationList
@@ -718,6 +707,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
         search={search}
         showArchived={showArchived}
         loading={loadingConversations}
+        canCreate={chatReady}
         onSearchChange={setSearch}
         onShowArchivedChange={setShowArchived}
         onSelect={(conversation) => setActiveConversationId(conversation.id)}
@@ -728,7 +718,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
         onDelete={setDeletingConversation}
       />
 
-      <section className="ai-chat-stage" aria-label={t('aiChat.chat.workspace')}>
+      <section className={`ai-chat-stage ${!chatReady ? 'has-setup' : ''}`} aria-label={t('aiChat.chat.workspace')}>
         <header className="ai-chat-stage__header">
           <div>
             <h2>{activeConversation?.title ?? t('aiChat.chat.start_title')}</h2>
@@ -740,9 +730,10 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
               <span className="sr-only">{t('aiChat.chat.select_agent')}</span>
               <select
                 value={activeAgent?.id ?? selectedAgentId ?? ''}
-                disabled={isRunning}
+                disabled={isRunning || readyAgents.length === 0}
                 onChange={(event) => void handleAgentChange(Number(event.target.value))}
               >
+                {readyAgents.length === 0 && <option value="">{t('aiChat.chat.no_agent_option')}</option>}
                 {readyAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
               </select>
               <ChevronDown size={12} aria-hidden="true" />
@@ -767,6 +758,19 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
           </div>
         </header>
 
+        {!chatReady && (
+          <div className="ai-chat-setup-banner" role="status">
+            {hasProvider ? <Bot size={16} aria-hidden="true" /> : <Database size={16} aria-hidden="true" />}
+            <div>
+              <strong>{t(hasProvider ? 'aiChat.chat.setup_agent_title' : 'aiChat.chat.setup_provider_title')}</strong>
+              <span>{t(hasProvider ? 'aiChat.chat.setup_agent_desc' : 'aiChat.chat.setup_provider_desc')}</span>
+            </div>
+            <button className="btn primary" onClick={hasProvider ? onOpenAgents : onOpenProviders}>
+              {t(hasProvider ? 'aiChat.chat.configure_agent' : 'aiChat.chat.connect_provider')}
+            </button>
+          </div>
+        )}
+
         <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
           {runAnnouncement}
         </div>
@@ -788,7 +792,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
               {t('aiChat.chat.load_older')}
             </button>
           )}
-          {!activeConversation && (
+          {!activeConversation && chatReady && (
             <div className="ai-chat-welcome">
               <div className="ai-chat-welcome__visual" aria-hidden="true">
                 <MessageSquare size={30} />
@@ -808,6 +812,18 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+          {!activeConversation && !chatReady && (
+            <div className="ai-chat-welcome ai-chat-welcome--setup">
+              <div className="ai-chat-welcome__visual" aria-hidden="true">
+                {hasProvider ? <Bot size={30} /> : <Database size={30} />}
+              </div>
+              <h2>{t(hasProvider ? 'aiChat.chat.setup_agent_title' : 'aiChat.chat.setup_provider_title')}</h2>
+              <p>{t(hasProvider ? 'aiChat.chat.setup_agent_desc' : 'aiChat.chat.setup_provider_desc')}</p>
+              <button className="btn primary" onClick={hasProvider ? onOpenAgents : onOpenProviders}>
+                {t(hasProvider ? 'aiChat.chat.configure_agent' : 'aiChat.chat.connect_provider')}
+              </button>
             </div>
           )}
           {activeConversation && messages.length === 0 && !loadingMessages && (
@@ -840,9 +856,11 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
-            placeholder={t('aiChat.chat.composer_placeholder', { agent: activeAgent?.name })}
+            placeholder={chatReady
+              ? t('aiChat.chat.composer_placeholder', { agent: activeAgent?.name })
+              : t('aiChat.chat.setup_composer_placeholder')}
             aria-label={t('aiChat.chat.composer_label')}
-            disabled={submitting}
+            disabled={submitting || !chatReady}
             rows={2}
           />
           <div className="ai-chat-composer__footer">
@@ -882,7 +900,7 @@ export function ChatWorkspace({ agents, onOpenAgents }: ChatWorkspaceProps) {
               <button
                 className="ai-chat-send"
                 onClick={() => void sendText()}
-                disabled={!draft.trim() || submitting}
+                disabled={!chatReady || !draft.trim() || submitting}
               >
                 <Send size={14} aria-hidden="true" />
                 {t('aiChat.chat.send')}

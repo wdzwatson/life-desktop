@@ -3,7 +3,6 @@ import { ArrowLeft, Bot, Database, HardDrive, MessageSquare, Plug, RefreshCw, Se
 import { useTranslation } from 'react-i18next'
 import './AIChat.css'
 import { AgentManager } from './AgentManager'
-import { AIOnboarding } from './AIOnboarding'
 import { ChatWorkspace, type AIChatAgent } from './ChatWorkspace'
 import { McpManager } from './McpManager'
 import { ProviderManager } from './ProviderManager'
@@ -23,7 +22,7 @@ export function AIChat() {
   const [counts, setCounts] = useState<ConfigCounts>(EMPTY_COUNTS)
   const [agents, setAgents] = useState<AIChatAgent[]>([])
   const [loadState, setLoadState] = useState<LoadState>('loading')
-  const onboardingTransitionRef = useRef(false)
+  const setupTransitionRef = useRef(false)
   const api = (window as any).electronAPI
 
   const loadConfiguration = async () => {
@@ -45,8 +44,8 @@ export function AIChat() {
         agents: agents.data?.length ?? 0,
         mcp: mcp.data?.length ?? 0,
       })
-      if ((providers.data?.length ?? 0) > 0 && onboardingTransitionRef.current) {
-        onboardingTransitionRef.current = false
+      if ((providers.data?.length ?? 0) > 0 && setupTransitionRef.current) {
+        setupTransitionRef.current = false
         setMode('chat')
       }
       setAgents(agents.data ?? [])
@@ -131,19 +130,16 @@ export function AIChat() {
           </div>
         )}
 
-        {loadState === 'ready' && mode === 'chat' && !hasProvider && (
-          <AIOnboarding
-            onConfigureProvider={() => {
-              onboardingTransitionRef.current = true
+        {loadState === 'ready' && mode === 'chat' && (
+          <ChatWorkspace
+            agents={agents}
+            hasProvider={hasProvider}
+            onOpenProviders={() => {
+              setupTransitionRef.current = true
               openSettings('providers')
             }}
-            onReviewAgents={() => openSettings('agents')}
-            onOpenMcp={() => openSettings('mcp')}
+            onOpenAgents={() => openSettings('agents')}
           />
-        )}
-
-        {loadState === 'ready' && mode === 'chat' && hasProvider && (
-          <ChatWorkspace agents={agents} onOpenAgents={() => openSettings('agents')} />
         )}
 
         {loadState === 'ready' && mode === 'settings' && (

@@ -8,6 +8,7 @@ type ConversationListProps = {
   search: string
   showArchived: boolean
   loading: boolean
+  canCreate: boolean
   onSearchChange: (value: string) => void
   onShowArchivedChange: (value: boolean) => void
   onSelect: (conversation: AIChatConversation) => void
@@ -36,6 +37,7 @@ export function ConversationList({
   search,
   showArchived,
   loading,
+  canCreate,
   onSearchChange,
   onShowArchivedChange,
   onSelect,
@@ -55,7 +57,12 @@ export function ConversationList({
           <h2>{t('aiChat.chat.history')}</h2>
           <p>{t('aiChat.chat.history_count', { count: conversations.length })}</p>
         </div>
-        <button className="btn primary ai-conversation-new" onClick={onCreate}>
+        <button
+          className="btn primary ai-conversation-new"
+          onClick={onCreate}
+          disabled={!canCreate}
+          title={!canCreate ? t('aiChat.chat.agent_required') : undefined}
+        >
           <Plus size={15} aria-hidden="true" />
           {t('aiChat.chat.new_conversation')}
         </button>
