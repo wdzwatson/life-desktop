@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useId, useMemo } from 'react'
+import React, { useEffect, useState, useCallback, useId, useMemo, useRef } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
@@ -83,6 +83,7 @@ export const Notes: React.FC = () => {
   const [viewMode, setViewMode] = useState<'edit' | 'split' | 'preview'>('split')
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const exportDropdownRef = useRef<HTMLDivElement | null>(null)
 
   // Notebook Modal States
   const [isNbModalOpen, setIsNbModalOpen] = useState(false)
@@ -669,6 +670,26 @@ export const Notes: React.FC = () => {
     }
   }, [noteContent, viewMode, handleDeepLinkClick])
 
+  useEffect(() => {
+    if (!isExportDropdownOpen) return
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      if (target && exportDropdownRef.current?.contains(target)) return
+      setIsExportDropdownOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsExportDropdownOpen(false)
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsidePointer, true)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer, true)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [isExportDropdownOpen])
+
   return (
     <div
       style={{
@@ -848,45 +869,36 @@ export const Notes: React.FC = () => {
                 </div>
 
                 {/* Export Button & Dropdown */}
-                <div style={{ position: 'relative' }}>
+                <div ref={exportDropdownRef} style={{ position: 'relative' }}>
                   <button
                     className="btn sm"
                     onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
                     disabled={isExporting}
+                    aria-haspopup="menu"
+                    aria-expanded={isExportDropdownOpen}
                   >
                     <Download size={12} />
                     {isExporting ? t('notes.exporting') : t('notes.export_note')}
                   </button>
                   {isExportDropdownOpen && (
-                    <>
-                      <div
-                        style={{
-                          position: 'fixed',
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          zIndex: 9,
-                        }}
-                        onClick={() => setIsExportDropdownOpen(false)}
-                      />
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: '100%',
-                          right: 0,
-                          marginTop: '4px',
-                          backgroundColor: 'var(--bg-surface)',
-                          border: '1px solid var(--color-border)',
-                          borderRadius: '6px',
-                          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-                          zIndex: 10,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          minWidth: '135px',
-                          overflow: 'hidden',
-                        }}
-                      >
+                    <div
+                      role="menu"
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        right: 0,
+                        marginTop: '4px',
+                        backgroundColor: 'var(--bg-surface)',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: '6px',
+                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                        zIndex: 10,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        minWidth: '135px',
+                        overflow: 'hidden',
+                      }}
+                    >
                         <button
                           style={{
                             padding: '8px 12px',
@@ -1002,8 +1014,7 @@ export const Notes: React.FC = () => {
                         >
                           ✏️ Plain Text (.txt)
                         </button>
-                      </div>
-                    </>
+                    </div>
                   )}
                 </div>
 

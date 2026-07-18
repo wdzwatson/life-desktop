@@ -1795,7 +1795,9 @@ export const Books: React.FC = () => {
 
       {/* FULLSCREEN E-BOOK READER MOCK DIALOG */}
       {readingBook && (
+        <ViewportPortal>
         <div
+          className="book-reader-overlay"
           style={{
             position: 'fixed',
             top: '38px',
@@ -1807,7 +1809,6 @@ export const Books: React.FC = () => {
             zIndex: 1000,
             display: 'grid',
             gridTemplateRows: '50px 1fr',
-            animation: 'enter 0.18s ease both',
           }}
         >
           {/* Reader Header */}
@@ -2964,6 +2965,7 @@ export const Books: React.FC = () => {
             )}
           </div>
         </div>
+        </ViewportPortal>
       )}
 
       {/* Premium Import Book Modal */}
