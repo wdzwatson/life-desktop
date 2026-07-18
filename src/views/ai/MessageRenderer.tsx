@@ -170,7 +170,7 @@ export function MessageRenderer({ message, onRetry, retryDisabled }: MessageRend
         {canRetry && onRetry && (
           <button onClick={() => onRetry(message)} disabled={retryDisabled}>
             <RefreshCw size={12} />
-            {t(message.status === 'completed' ? 'aiChat.chat.regenerate' : 'aiChat.chat.retry_message')}
+            {t(message.status === 'completed' ? 'aiChat.chat.send_again' : 'aiChat.chat.retry_message')}
           </button>
         )}
       </footer>

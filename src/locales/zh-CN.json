@@ -801,7 +801,7 @@
       "copy": "复制",
       "copied": "已复制",
       "retry_message": "重试",
-      "regenerate": "重新生成",
+      "send_again": "再次发送",
       "role_user": "你",
       "role_assistant": "Assistant",
       "role_tool": "工具",

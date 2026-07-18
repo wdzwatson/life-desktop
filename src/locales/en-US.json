@@ -801,7 +801,7 @@
       "copy": "Copy",
       "copied": "Copied",
       "retry_message": "Retry",
-      "regenerate": "Regenerate",
+      "send_again": "Send again",
       "role_user": "You",
       "role_assistant": "Assistant",
       "role_tool": "Tool",

@@ -10,6 +10,7 @@ const images = readFileSync(path.resolve('src/views/ai/ImageMessage.tsx'), 'utf8
 const videos = readFileSync(path.resolve('src/views/ai/VideoMessage.tsx'), 'utf8')
 const dialog = readFileSync(path.resolve('src/components/AccessibleDialog.tsx'), 'utf8')
 const conversationDelete = readFileSync(path.resolve('src/views/ai/ConversationDeleteDialog.tsx'), 'utf8')
+const messageRenderer = readFileSync(path.resolve('src/views/ai/MessageRenderer.tsx'), 'utf8')
 const css = readFileSync(path.resolve('src/views/ai/AIChat.css'), 'utf8')
 
 test('tool approval and media viewer trap focus, close with Escape, and restore focus', () => {
@@ -26,6 +27,11 @@ test('conversation deletion uses one explicit dialog and keeps cancel separate f
   assert.match(workspace, /<ConversationDeleteDialog[\s\S]*onCancel=[\s\S]*onConfirm=/)
   assert.match(conversationDelete, /type="checkbox"[\s\S]*deleteMedia/)
   assert.match(conversationDelete, /className="btn danger"[\s\S]*common\.delete/)
+})
+
+test('completed responses describe retry behavior as sending the prompt again', () => {
+  assert.match(messageRenderer, /message\.status === 'completed' \? 'aiChat\.chat\.send_again'/)
+  assert.doesNotMatch(messageRenderer, /aiChat\.chat\.regenerate/)
 })
 
 test('streaming updates announce run status atomically instead of every token', () => {
