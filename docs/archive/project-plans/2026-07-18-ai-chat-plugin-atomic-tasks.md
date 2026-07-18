@@ -24,7 +24,7 @@
 
 | 编号 | 任务 | 阶段 | 依赖 | 初始状态 |
 | --- | --- | --- | --- | --- |
-| AT-01 | AI 领域类型、状态机与运行时校验 | A | 无 | 待开始 |
+| AT-01 | AI 领域类型、状态机与运行时校验 | A | 无 | 已完成 |
 | AT-02 | `ai.db` schema 与幂等迁移 | A | AT-01 | 待开始 |
 | AT-03 | safeStorage 凭据服务 | A | AT-01 | 待开始 |
 | AT-04 | 模型供应商配置服务与列表规则 | A | AT-02、AT-03 | 待开始 |
@@ -54,7 +54,7 @@
 
 ### AT-01 AI 领域类型、状态机与运行时校验
 
-状态：待开始
+状态：已完成
 
 目标：建立不依赖 UI、数据库或供应商 SDK 的稳定领域模型。
 
@@ -86,6 +86,15 @@
 - 非法 IPC 输入在进入服务层前被拒绝。
 
 建议提交：`feat: add AI domain types and validation`
+
+完成记录：
+
+- 针对性测试：`npx tsx --test tests/aiState.test.ts tests/aiValidation.test.ts`，12 项通过。
+- 全量回归：`npm test`，AI 测试与既有测试全部通过。
+- 静态检查：`npm run lint` 通过。
+- 构建检查：`npm run build` 通过。
+- 影响检查：本任务未接入数据库、IPC 或 UI，未改变现有模块运行路径。
+- 遗留风险：无，数据库落地由 AT-02 处理。
 
 ### AT-02 `ai.db` schema 与幂等迁移
 
