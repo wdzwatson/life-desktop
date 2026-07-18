@@ -55,6 +55,7 @@ import { AIProviderService } from './ai/providerService'
 import { AI_RUN_EVENT_CHANNEL } from './ai/runEvents'
 import { AIMcpConfigService } from './ai/mcpConfigService'
 import { AIMcpManager } from './ai/mcpManager'
+import { handleAIMediaProtocolRequest } from './ai/mediaProtocol'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -84,6 +85,15 @@ const SETTINGS_FILE = path.join(CONFIG_DIR, 'settings.json')
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'life-video',
+    privileges: {
+      standard: true,
+      secure: true,
+      stream: true,
+      supportFetchAPI: true,
+    },
+  },
+  {
+    scheme: 'life-ai-asset',
     privileges: {
       standard: true,
       secure: true,
@@ -288,6 +298,18 @@ function setupVideoProtocol() {
   })
 }
 
+function getAIMediaRoot() {
+  return path.join(BASE_DIR, 'users', activeUserId, 'files', 'ai-media')
+}
+
+function setupAIMediaProtocol() {
+  protocol.handle('life-ai-asset', (request) => handleAIMediaProtocolRequest({
+    request,
+    db: getUserDb('ai'),
+    mediaRoot: getAIMediaRoot(),
+  }))
+}
+
 // Switch user and initialize
 function switchUserSession(userId: string) {
   closeUserDbs()
@@ -461,6 +483,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   setupVideoProtocol()
+  setupAIMediaProtocol()
   createWindow()
 })
 

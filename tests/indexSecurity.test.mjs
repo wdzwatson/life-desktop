@@ -22,6 +22,15 @@ test('renderer CSP allows the app video protocol for local playback', () => {
   assert.match(cspMatch[1], /media-src[^;]*life-video:/)
 })
 
+test('renderer CSP allows only the controlled AI asset protocol for generated media', () => {
+  const cspMatch = indexHtml.match(
+    /<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"/,
+  )
+  assert.ok(cspMatch, 'index.html should declare a Content-Security-Policy meta tag')
+  assert.match(cspMatch[1], /img-src[^;]*life-ai-asset:/)
+  assert.match(cspMatch[1], /media-src[^;]*life-ai-asset:/)
+})
+
 test('renderer CSP allows pdf.js to read local PDF blob URLs', () => {
   const cspMatch = indexHtml.match(
     /<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"/,
