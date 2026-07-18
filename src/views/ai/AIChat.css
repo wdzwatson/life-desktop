@@ -1898,6 +1898,82 @@
   padding-right: 3px;
 }
 
+.ai-settings-drawer-overlay {
+  place-items: stretch end;
+  overflow: hidden;
+  padding: 0;
+}
+
+.ai-settings-drawer {
+  width: min(680px, 100vw);
+  height: 100vh;
+  max-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  border-width: 0 0 0 1px;
+  border-radius: 0;
+  animation-name: ai-settings-drawer-enter;
+}
+
+.ai-settings-drawer--provider {
+  width: min(600px, 100vw);
+}
+
+.ai-settings-drawer > h3 {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex: 0 0 auto;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--bg-surface);
+}
+
+.ai-settings-drawer__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ai-settings-drawer__title > button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.ai-settings-drawer .ai-provider-form {
+  min-height: 0;
+  flex: 1;
+  margin: 0;
+  padding: 18px 20px 0;
+}
+
+.ai-settings-drawer .ai-provider-form__actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: auto -20px 0;
+  padding: 14px 20px;
+  border-top: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--bg-surface) 96%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+@keyframes ai-settings-drawer-enter {
+  from { transform: translateX(24px); }
+  to { transform: translateX(0); }
+}
+
 .ai-provider-form__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3694,6 +3770,11 @@ button.ai-onboarding-bento__card:hover {
 
   .ai-settings-content {
     padding: 10px;
+  }
+
+  .ai-settings-drawer {
+    width: 100vw;
+    border-left: 0;
   }
 
   .ai-storage-view {

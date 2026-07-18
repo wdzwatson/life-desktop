@@ -40,6 +40,7 @@ export function ProviderManager({ onChanged }: Props) {
   const [editing, setEditing] = useState<ProviderSummary | null>(null)
   const [draft, setDraft] = useState<ProviderDraft | null>(null)
   const nameRef = useRef<HTMLInputElement | null>(null)
+  const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
   const api = (window as any).electronAPI
 
   const loadProviders = async () => {
@@ -70,13 +71,20 @@ export function ProviderManager({ onChanged }: Props) {
     await onChanged()
   }
 
-  const openCreate = () => {
+  const closeEditor = () => {
+    setDraft(null)
+    setEditing(null)
+  }
+
+  const openCreate = (trigger: HTMLButtonElement) => {
+    drawerTriggerRef.current = trigger
     setEditing(null)
     setDraft(createProviderDraft())
     setError('')
   }
 
-  const openEdit = (provider: ProviderSummary) => {
+  const openEdit = (provider: ProviderSummary, trigger: HTMLButtonElement) => {
+    drawerTriggerRef.current = trigger
     setEditing(provider)
     setDraft(providerToDraft(provider))
     setError('')
@@ -156,13 +164,13 @@ export function ProviderManager({ onChanged }: Props) {
           <option value="enabled">{t('aiChat.providers.enabled')}</option>
           <option value="disabled">{t('aiChat.providers.disabled')}</option>
         </select>
-        <button className="btn primary ai-provider-add" onClick={openCreate}>
+        <button className="btn primary ai-provider-add" onClick={(event) => openCreate(event.currentTarget)}>
           <Plus size={15} aria-hidden="true" />
           {t('aiChat.providers.add')}
         </button>
       </div>
 
-      {error && <p className="ai-provider-error" role="alert">{error}</p>}
+      {error && !draft && <p className="ai-provider-error" role="alert">{error}</p>}
 
       <div className="ai-provider-list" aria-busy={busy}>
         {!busy && providers.length === 0 && (
@@ -170,7 +178,7 @@ export function ProviderManager({ onChanged }: Props) {
             <Database size={25} aria-hidden="true" />
             <h2>{t('aiChat.providers.empty_title')}</h2>
             <p>{t('aiChat.providers.empty_desc')}</p>
-            <button className="btn primary" onClick={openCreate}>{t('aiChat.providers.add_first')}</button>
+            <button className="btn primary" onClick={(event) => openCreate(event.currentTarget)}>{t('aiChat.providers.add_first')}</button>
           </div>
         )}
 
@@ -227,7 +235,7 @@ export function ProviderManager({ onChanged }: Props) {
                   </button>
                 ) : null,
               )}
-              <button className="ai-chat-icon-button" onClick={() => openEdit(provider)} aria-label={t('aiChat.providers.edit_name', { name: provider.name })}>
+              <button className="ai-chat-icon-button" onClick={(event) => openEdit(provider, event.currentTarget)} aria-label={t('aiChat.providers.edit_name', { name: provider.name })}>
                 <Pencil size={15} />
               </button>
               <button className="ai-chat-icon-button" onClick={() => void runAction(() => api.copyAIProvider(provider.id), 'aiChat.providers.copied')} aria-label={t('aiChat.providers.copy_name', { name: provider.name })}>
@@ -246,10 +254,20 @@ export function ProviderManager({ onChanged }: Props) {
 
       {draft && (
         <AccessibleDialog
-          title={t(editing ? 'aiChat.providers.edit_title' : 'aiChat.providers.create_title')}
-          onClose={() => setDraft(null)}
+          title={(
+            <span className="ai-settings-drawer__title">
+              <span>{t(editing ? 'aiChat.providers.edit_title' : 'aiChat.providers.create_title')}</span>
+              <button type="button" onClick={closeEditor} aria-label={t('common.close')}>
+                <X size={16} aria-hidden="true" />
+              </button>
+            </span>
+          )}
+          onClose={closeEditor}
+          returnFocus={() => drawerTriggerRef.current?.focus()}
           initialFocusRef={nameRef}
-          contentStyle={{ width: 'min(720px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 48px)' }}
+          overlayClassName="ai-settings-drawer-overlay"
+          contentClassName="ai-settings-drawer ai-settings-drawer--provider"
+          closeOnOverlay
         >
           <div className="ai-provider-form">
             <div className="ai-provider-form__grid">
@@ -319,7 +337,7 @@ export function ProviderManager({ onChanged }: Props) {
 
             {error && <p className="ai-provider-error" role="alert">{error}</p>}
             <div className="ai-provider-form__actions">
-              <button className="btn" onClick={() => setDraft(null)}><X size={14} />{t('common.cancel')}</button>
+              <button className="btn" onClick={closeEditor}><X size={14} />{t('common.cancel')}</button>
               <button className="btn primary" disabled={busy} onClick={() => void saveProvider()}>{t('common.save')}</button>
             </div>
           </div>

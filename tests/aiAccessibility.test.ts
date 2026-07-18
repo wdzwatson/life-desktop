@@ -10,6 +10,7 @@ const images = readFileSync(path.resolve('src/views/ai/ImageMessage.tsx'), 'utf8
 const videos = readFileSync(path.resolve('src/views/ai/VideoMessage.tsx'), 'utf8')
 const dialog = readFileSync(path.resolve('src/components/AccessibleDialog.tsx'), 'utf8')
 const conversationDelete = readFileSync(path.resolve('src/views/ai/ConversationDeleteDialog.tsx'), 'utf8')
+const providerManager = readFileSync(path.resolve('src/views/ai/ProviderManager.tsx'), 'utf8')
 const messageRenderer = readFileSync(path.resolve('src/views/ai/MessageRenderer.tsx'), 'utf8')
 const css = readFileSync(path.resolve('src/views/ai/AIChat.css'), 'utf8')
 const appCss = readFileSync(path.resolve('src/index.css'), 'utf8')
@@ -74,6 +75,17 @@ test('accessible dialogs stay fixed to the viewport and lock document scrolling'
   assert.match(dialog, /document\.body\.style\.overflow = 'hidden'/)
   assert.match(appCss, /\.dialog-overlay\s*\{[\s\S]*position:\s*fixed[\s\S]*inset:\s*0[\s\S]*place-items:\s*center/)
   assert.match(appCss, /\.dialog-surface\s*\{[\s\S]*max-height:\s*calc\(100vh - 48px\)[\s\S]*overflow:\s*auto/)
+})
+
+test('provider creation uses a full-height settings drawer with focus restoration', () => {
+  assert.match(providerManager, /overlayClassName="ai-settings-drawer-overlay"/)
+  assert.match(providerManager, /contentClassName="ai-settings-drawer ai-settings-drawer--provider"/)
+  assert.match(providerManager, /returnFocus=\{\(\) => drawerTriggerRef\.current\?\.focus\(\)\}/)
+  assert.match(providerManager, /closeOnOverlay/)
+  assert.match(css, /\.ai-settings-drawer-overlay\s*\{[\s\S]*place-items:\s*stretch end[\s\S]*padding:\s*0/)
+  assert.match(css, /\.ai-settings-drawer\s*\{[\s\S]*height:\s*100vh[\s\S]*overflow:\s*hidden/)
+  assert.match(css, /\.ai-settings-drawer--provider\s*\{[\s\S]*width:\s*min\(600px, 100vw\)/)
+  assert.match(css, /\.ai-settings-drawer \.ai-provider-form__actions\s*\{[\s\S]*position:\s*sticky[\s\S]*bottom:\s*0/)
 })
 
 test('daily chat typography and action targets remain readable', () => {
