@@ -17,6 +17,37 @@ test('AI toolbox localization exists in Chinese and English with matching keys',
   assert.deepEqual(Object.keys(zh.aiChat.storage).sort(), Object.keys(en.aiChat.storage).sort())
 })
 
+test('Toolbox and chat labels describe distinct actions and units', () => {
+  assert.deepEqual(
+    [zh.toolbox.tab_pomodoro, zh.toolbox.tab_converter, zh.toolbox.tab_vault],
+    ['番茄计时器', '单位换算', '密码库'],
+  )
+  assert.deepEqual(
+    [en.toolbox.tab_pomodoro, en.toolbox.tab_converter, en.toolbox.tab_vault],
+    ['Pomodoro Timer', 'Unit Converter', 'Password Vault'],
+  )
+  assert.equal(zh.toolbox.btn_start_focus, '开始专注')
+  assert.equal(en.toolbox.btn_start_focus, 'Start Focus')
+  assert.deepEqual(
+    [zh.toolbox.btn_5_min_break, zh.toolbox.btn_15_min_break],
+    ['5 分钟休息', '15 分钟休息'],
+  )
+  assert.deepEqual(
+    [en.toolbox.btn_5_min_break, en.toolbox.btn_15_min_break],
+    ['5 Min Break', '15 Min Break'],
+  )
+  assert.deepEqual(
+    [zh.toolbox.converter_tab_rate, zh.toolbox.converter_tab_length, zh.toolbox.converter_tab_weight],
+    ['汇率换算', '长度换算', '重量换算'],
+  )
+  assert.deepEqual(
+    [en.toolbox.converter_tab_rate, en.toolbox.converter_tab_length, en.toolbox.converter_tab_weight],
+    ['Currency', 'Length', 'Weight'],
+  )
+  assert.equal(zh.aiChat.chat.role_assistant, 'AI 助手')
+  assert.equal(en.aiChat.chat.role_assistant, 'Assistant')
+})
+
 test('AI video chat renders a visible processing state and controlled local playback card', () => {
   const workspace = readFileSync(path.resolve('src/views/ai/ChatWorkspace.tsx'), 'utf8')
   const chatUtils = readFileSync(path.resolve('src/views/ai/chatUtils.ts'), 'utf8')
