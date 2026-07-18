@@ -26,7 +26,7 @@
 | --- | --- | --- | --- | --- |
 | AT-01 | AI 领域类型、状态机与运行时校验 | A | 无 | 已完成 |
 | AT-02 | `ai.db` schema 与幂等迁移 | A | AT-01 | 已完成 |
-| AT-03 | safeStorage 凭据服务 | A | AT-01 | 待开始 |
+| AT-03 | safeStorage 凭据服务 | A | AT-01 | 已完成 |
 | AT-04 | 模型供应商配置服务与列表规则 | A | AT-02、AT-03 | 待开始 |
 | AT-05 | Agent 配置服务与依赖约束 | A | AT-02、AT-04 | 待开始 |
 | AT-06 | MCP 配置服务与风险策略 | A | AT-02、AT-03 | 待开始 |
@@ -143,7 +143,7 @@
 
 ### AT-03 safeStorage 凭据服务
 
-状态：待开始
+状态：已完成
 
 目标：安全保存模型和 MCP 凭据，不依赖密码保险箱解锁。
 
@@ -172,6 +172,15 @@
 - 没有静默明文降级。
 
 建议提交：`feat: secure AI provider credentials`
+
+完成记录：
+
+- 针对性测试：`npx tsx --test tests/aiCredentialService.test.ts`，6 项通过。
+- 全量回归：`npm test`，270 项主测试及数据库专项测试全部通过。
+- 静态检查：`npm run lint` 通过。
+- 构建检查：`npm run build` 通过，Electron safeStorage 适配器可正常打包。
+- 影响检查：凭据服务尚未接入现有页面或保险箱，不改变现有认证与保险箱行为。
+- 遗留风险：供应商与 MCP 配置尚未创建凭据引用，由 AT-04 和 AT-06 接入。
 
 ### AT-04 模型供应商配置服务与列表规则
 
