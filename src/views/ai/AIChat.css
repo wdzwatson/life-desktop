@@ -33,8 +33,9 @@
 }
 
 .ai-chat-shell :is(button, a, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--color-accent) 82%, var(--text-main));
-  outline-offset: 2px;
+  outline: 1px solid color-mix(in srgb, var(--text-main) 46%, var(--color-border));
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-main) 7%, transparent);
 }
 
 .ai-chat-header {
@@ -619,6 +620,16 @@
   font: inherit;
 }
 
+.ai-chat-stage__controls label:has(select:focus-visible) {
+  border-color: color-mix(in srgb, var(--text-main) 34%, var(--color-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-main) 6%, transparent);
+}
+
+.ai-chat-stage__controls select:focus-visible {
+  outline: 0;
+  box-shadow: none;
+}
+
 .ai-chat-stage__export {
   color: var(--text-main);
   cursor: pointer;
@@ -1034,8 +1045,8 @@
 }
 
 .ai-chat-composer:focus-within {
-  border-color: color-mix(in srgb, var(--color-accent) 48%, var(--color-border));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--text-main) 30%, var(--color-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-main) 6%, transparent);
 }
 
 .ai-chat-composer textarea {
@@ -1051,6 +1062,11 @@
   font: inherit;
   font-size: 13px;
   line-height: 1.55;
+}
+
+.ai-chat-composer textarea:focus-visible {
+  outline: 0;
+  box-shadow: none;
 }
 
 .ai-chat-composer__footer {
@@ -2876,6 +2892,12 @@
   border-radius: 8px;
   color: var(--text-muted);
   background: transparent;
+  cursor: pointer;
+}
+
+.ai-chat-composer__mode button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .ai-chat-composer__mode button.is-active {

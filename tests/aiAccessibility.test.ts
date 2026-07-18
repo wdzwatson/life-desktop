@@ -68,10 +68,22 @@ test('generated images and videos always expose localized accessible names', () 
 })
 
 test('AI controls and run states retain visible keyboard focus and theme-derived contrast', () => {
-  assert.match(css, /\.ai-chat-shell :is\(button, a, input, select, textarea, \[tabindex\]\):focus-visible[\s\S]*outline:\s*2px solid/)
+  assert.match(css, /\.ai-chat-shell :is\(button, a, input, select, textarea, \[tabindex\]\):focus-visible[\s\S]*outline:\s*1px solid/)
+  assert.match(css, /\.ai-chat-composer textarea:focus-visible[\s\S]*outline:\s*0/)
+  assert.match(css, /\.ai-chat-stage__controls select:focus-visible[\s\S]*outline:\s*0/)
   assert.match(css, /--ai-status-success:[\s\S]*--ai-status-warning:[\s\S]*--ai-status-danger:/)
   assert.match(css, /dd\.is-completed[\s\S]*var\(--ai-status-success\)/)
   assert.match(css, /dd\.is-cancelled,[\s\S]*dd\.is-interrupted[\s\S]*var\(--ai-status-warning\)/)
+})
+
+test('media mode controls explain missing providers instead of silently disabling clicks', () => {
+  assert.match(workspace, /setNotice\(t\('aiChat\.images\.provider_required_action'\)\)/)
+  assert.match(workspace, /setNotice\(t\('aiChat\.videos\.provider_required_action'\)\)/)
+  assert.match(workspace, /aria-pressed=\{imageMode\}/)
+  assert.match(workspace, /aria-pressed=\{videoMode\}/)
+  assert.doesNotMatch(workspace, /disabled=\{!activeAgent\?\.providers\.(?:image|video)/)
+  assert.match(workspace, /aiChat\.images\.composer_placeholder/)
+  assert.match(workspace, /aiChat\.videos\.composer_placeholder/)
 })
 
 test('screen-reader labels stay visually hidden and the run inspector overlays every layout', () => {

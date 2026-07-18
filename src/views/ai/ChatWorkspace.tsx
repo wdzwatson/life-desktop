@@ -906,9 +906,13 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
-            placeholder={chatReady
-              ? t('aiChat.chat.composer_placeholder', { agent: activeAgent?.name })
-              : t('aiChat.chat.setup_composer_placeholder')}
+            placeholder={!chatReady
+              ? t('aiChat.chat.setup_composer_placeholder')
+              : imageMode
+                ? t('aiChat.images.composer_placeholder')
+                : videoMode
+                  ? t('aiChat.videos.composer_placeholder')
+                  : t('aiChat.chat.composer_placeholder')}
             aria-label={t('aiChat.chat.composer_label')}
             disabled={submitting || !chatReady}
             rows={2}
@@ -918,10 +922,19 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
               <button
                 className={imageMode ? 'is-active' : ''}
                 onClick={() => {
+                  if (!activeAgent?.providers.image) {
+                    setNotice(t('aiChat.images.provider_required_action'))
+                    return
+                  }
+                  if (!api?.generateAIImages) {
+                    setNotice(t('aiChat.images.feature_unavailable'))
+                    return
+                  }
                   setImageMode((value) => !value)
                   setVideoMode(false)
                 }}
-                disabled={!activeAgent?.providers.image || submitting || isRunning}
+                disabled={submitting || isRunning}
+                aria-pressed={imageMode}
                 title={activeAgent?.providers.image ? t('aiChat.images.toggle') : t('aiChat.images.provider_required')}
               >
                 <ImagePlus size={13} aria-hidden="true" />
@@ -930,10 +943,19 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
               <button
                 className={videoMode ? 'is-active' : ''}
                 onClick={() => {
+                  if (!activeAgent?.providers.video) {
+                    setNotice(t('aiChat.videos.provider_required_action'))
+                    return
+                  }
+                  if (!api?.generateAIVideos) {
+                    setNotice(t('aiChat.videos.feature_unavailable'))
+                    return
+                  }
                   setVideoMode((value) => !value)
                   setImageMode(false)
                 }}
-                disabled={!activeAgent?.providers.video || submitting || isRunning}
+                disabled={submitting || isRunning}
+                aria-pressed={videoMode}
                 title={activeAgent?.providers.video ? t('aiChat.videos.toggle') : t('aiChat.videos.provider_required')}
               >
                 <Video size={13} aria-hidden="true" />
