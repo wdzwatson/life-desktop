@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { getManagedVideoToolInstallSupport } from './video/toolSupport'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Window controls
@@ -6,6 +7,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   maximize: () => ipcRenderer.send('window:maximize'),
   close: () => ipcRenderer.send('window:close'),
   isMac: process.platform === 'darwin',
+  platform: process.platform,
+  managedVideoToolInstallSupport: getManagedVideoToolInstallSupport(),
 
   // User Authentication & Workspace Settings
   switchUser: (userId: string) => ipcRenderer.invoke('user:switch', userId),

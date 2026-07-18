@@ -800,6 +800,7 @@
     "video_bilibili_note_rights": "会员视频只能下载当前账号有权限访问的清晰度。",
     "video_install_ytdlp": "安装内置 yt-dlp",
     "video_install_ffmpeg": "安装内置 ffmpeg",
+    "video_ffmpeg_manual_install_note": "当前系统不支持安装内置 ffmpeg。请单独安装 ffmpeg，然后在上方填写完整的可执行文件路径。",
     "video_tool_installing": "安装中...",
     "video_tool_install_success": "{{tool}} 安装完成",
     "video_tool_install_failed": "{{tool}} 安装失败: {{error}}",

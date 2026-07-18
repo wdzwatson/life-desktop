@@ -800,6 +800,7 @@
     "video_bilibili_note_rights": "Member videos can only be downloaded at qualities your current account is allowed to access.",
     "video_install_ytdlp": "Install bundled yt-dlp",
     "video_install_ffmpeg": "Install bundled ffmpeg",
+    "video_ffmpeg_manual_install_note": "Bundled ffmpeg installation is not available on this system. Install ffmpeg separately, then enter its full executable path above.",
     "video_tool_installing": "Installing...",
     "video_tool_install_success": "{{tool}} installed",
     "video_tool_install_failed": "{{tool}} install failed: {{error}}",

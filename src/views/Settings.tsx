@@ -103,6 +103,11 @@ export const Settings: React.FC = () => {
   const [editAnswer, setEditAnswer] = useState('')
 
   const api = (window as any).electronAPI
+  const isMacPlatform = api?.platform
+    ? api.platform === 'darwin'
+    : navigator.userAgent.includes('Mac')
+  const canInstallManagedFfmpeg = api?.managedVideoToolInstallSupport?.ffmpeg ?? isMacPlatform
+  const showManualFfmpegInstallNote = !canInstallManagedFfmpeg
 
   const loadCategories = async () => {
     if (api) {
@@ -1231,7 +1236,9 @@ export const Settings: React.FC = () => {
                     placeholder="yt-dlp"
                   />
                 </label>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                <label
+                  style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}
+                >
                   {t('settings.video_ffmpeg_path')}
                   <input
                     className="form-field"
@@ -1241,6 +1248,14 @@ export const Settings: React.FC = () => {
                     }
                     placeholder="ffmpeg"
                   />
+                  {showManualFfmpegInstallNote && (
+                    <span
+                      role="note"
+                      style={{ color: 'var(--text-muted)', fontSize: '11px', lineHeight: 1.45 }}
+                    >
+                      {t('settings.video_ffmpeg_manual_install_note')}
+                    </span>
+                  )}
                 </label>
               </div>
 
@@ -1347,7 +1362,7 @@ export const Settings: React.FC = () => {
                 </label>
               )}
 
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                 <button className="btn primary" onClick={handleSaveVideoSettings}>
                   {t('common.save')}
                 </button>
@@ -1374,16 +1389,18 @@ export const Settings: React.FC = () => {
                     ? t('settings.video_tool_installing')
                     : t('settings.video_install_ytdlp')}
                 </button>
-                <button
-                  className="btn"
-                  onClick={() => handleInstallVideoTool('ffmpeg')}
-                  disabled={installingVideoTool !== null}
-                >
-                  <Download size={14} />
-                  {installingVideoTool === 'ffmpeg'
-                    ? t('settings.video_tool_installing')
-                    : t('settings.video_install_ffmpeg')}
-                </button>
+                {canInstallManagedFfmpeg && (
+                  <button
+                    className="btn"
+                    onClick={() => handleInstallVideoTool('ffmpeg')}
+                    disabled={installingVideoTool !== null}
+                  >
+                    <Download size={14} />
+                    {installingVideoTool === 'ffmpeg'
+                      ? t('settings.video_tool_installing')
+                      : t('settings.video_install_ffmpeg')}
+                  </button>
+                )}
               </div>
 
               <div

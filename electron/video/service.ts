@@ -8,9 +8,9 @@ import { shouldTryBilibiliDirectDownload, startBilibiliDirectDownload } from './
 import { fetchYoutubeOEmbedMetadata, shouldPreferYoutubeOEmbedMetadata } from './youtubeOembed'
 import { buildDownloadArgs, buildMetadataArgs } from './ytDlpArgs'
 import { normalizeYtDlpError, normalizeYtDlpMetadata } from './normalize'
+import { getManagedVideoToolInstallSupport, type ManagedVideoTool } from './toolSupport'
 import type { VideoCookieConfig, VideoDiagnostic, VideoQualityPreference } from './types'
 
-type ManagedVideoTool = 'yt-dlp' | 'ffmpeg'
 export const DEFAULT_VIDEO_TOOL_CHECK_TIMEOUT_MS = 60000
 export type VideoEngineLoadState = 'idle' | 'loading' | 'ready' | 'error'
 export interface VideoToolCheckItem {
@@ -47,6 +47,12 @@ export function resolveVideoToolPath(settings: Record<string, any>, executable: 
 }
 
 function getToolDownloadPlan(tool: ManagedVideoTool) {
+  if (!getManagedVideoToolInstallSupport()[tool]) {
+    throw new Error(
+      `Managed ${tool} install is not supported on ${process.platform}/${process.arch}.`,
+    )
+  }
+
   if (tool === 'yt-dlp') {
     if (process.platform === 'darwin') {
       return {
@@ -79,7 +85,7 @@ function getToolDownloadPlan(tool: ManagedVideoTool) {
     }
   }
 
-  throw new Error(`Managed ${tool} install is not supported on ${process.platform}/${process.arch}.`)
+  throw new Error(`Managed ${tool} download plan is unavailable on ${process.platform}/${process.arch}.`)
 }
 
 async function downloadBuffer(url: string) {
