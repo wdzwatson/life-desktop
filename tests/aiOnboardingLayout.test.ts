@@ -46,7 +46,15 @@ test('AI is a first-level screen that owns the available pane height', () => {
 
 test('saving the first provider exits onboarding into the daily chat workspace', () => {
   assert.match(shell, /onboardingTransitionRef\.current = true/)
-  assert.match(shell, /providers\.data\?\.length[\s\S]*onboardingTransitionRef\.current[\s\S]*setActiveView\('chat'\)/)
-  assert.match(shell, /activeView === 'chat' && !hasProvider[\s\S]*<AIOnboarding/)
-  assert.match(shell, /activeView === 'chat' && hasProvider[\s\S]*<ChatWorkspace/)
+  assert.match(shell, /providers\.data\?\.length[\s\S]*onboardingTransitionRef\.current[\s\S]*setMode\('chat'\)/)
+  assert.match(shell, /mode === 'chat' && !hasProvider[\s\S]*<AIOnboarding/)
+  assert.match(shell, /mode === 'chat' && hasProvider[\s\S]*<ChatWorkspace/)
+})
+
+test('chat and configuration use separate workspace modes', () => {
+  assert.match(shell, /type AIMode = 'chat' \| 'settings'/)
+  assert.match(shell, /className="ai-settings-back"[\s\S]*setMode\('chat'\)/)
+  assert.match(shell, /className="ai-settings-shell"[\s\S]*className="ai-settings-nav"[\s\S]*className="ai-settings-content"/)
+  assert.match(css, /\.ai-chat-shell[\s\S]*grid-template-rows:\s*auto minmax\(0, 1fr\)/)
+  assert.match(css, /\.ai-settings-shell[\s\S]*grid-template-columns:\s*190px minmax\(0, 1fr\)/)
 })

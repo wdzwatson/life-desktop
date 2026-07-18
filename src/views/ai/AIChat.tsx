@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Bot, Database, HardDrive, MessageSquare, Plug, RefreshCw, Settings2 } from 'lucide-react'
+import { ArrowLeft, Bot, Database, HardDrive, MessageSquare, Plug, RefreshCw, Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import './AIChat.css'
 import { AgentManager } from './AgentManager'
@@ -9,7 +9,8 @@ import { McpManager } from './McpManager'
 import { ProviderManager } from './ProviderManager'
 import { StorageManager } from './StorageManager'
 
-type AIView = 'chat' | 'providers' | 'agents' | 'mcp' | 'storage'
+type AIMode = 'chat' | 'settings'
+type AISettingsView = 'providers' | 'agents' | 'mcp' | 'storage'
 type ConfigCounts = { providers: number; agents: number; mcp: number }
 type LoadState = 'loading' | 'ready' | 'error'
 
@@ -17,7 +18,8 @@ const EMPTY_COUNTS: ConfigCounts = { providers: 0, agents: 0, mcp: 0 }
 
 export function AIChat() {
   const { t } = useTranslation()
-  const [activeView, setActiveView] = useState<AIView>('chat')
+  const [mode, setMode] = useState<AIMode>('chat')
+  const [settingsView, setSettingsView] = useState<AISettingsView>('providers')
   const [counts, setCounts] = useState<ConfigCounts>(EMPTY_COUNTS)
   const [agents, setAgents] = useState<AIChatAgent[]>([])
   const [loadState, setLoadState] = useState<LoadState>('loading')
@@ -45,7 +47,7 @@ export function AIChat() {
       })
       if ((providers.data?.length ?? 0) > 0 && onboardingTransitionRef.current) {
         onboardingTransitionRef.current = false
-        setActiveView('chat')
+        setMode('chat')
       }
       setAgents(agents.data ?? [])
       setLoadState('ready')
@@ -58,9 +60,8 @@ export function AIChat() {
     void loadConfiguration()
   }, [])
 
-  const navigation = useMemo(
+  const settingsNavigation = useMemo(
     () => [
-      { id: 'chat' as const, label: t('aiChat.nav_chat'), icon: MessageSquare },
       { id: 'providers' as const, label: t('aiChat.nav_providers'), icon: Database, count: counts.providers },
       { id: 'agents' as const, label: t('aiChat.nav_agents'), icon: Bot, count: counts.agents },
       { id: 'mcp' as const, label: t('aiChat.nav_mcp'), icon: Plug, count: counts.mcp },
@@ -70,43 +71,47 @@ export function AIChat() {
   )
 
   const hasProvider = counts.providers > 0
+  const openSettings = (view: AISettingsView = 'providers') => {
+    setSettingsView(view)
+    setMode('settings')
+  }
 
   return (
-    <main className="ai-chat-shell" aria-label={t('aiChat.title')}>
+    <main className={`ai-chat-shell is-${mode}`} aria-label={t('aiChat.title')}>
       <header className="ai-chat-header">
-        <div className="ai-chat-heading">
-          <span className="ai-chat-heading__icon" aria-hidden="true">
-            <MessageSquare size={19} />
-          </span>
-          <div>
-            <h1>{t('aiChat.title')}</h1>
-            <p>{t('aiChat.subtitle')}</p>
+        {mode === 'chat' ? (
+          <>
+            <div className="ai-chat-heading">
+              <span className="ai-chat-heading__icon" aria-hidden="true">
+                <MessageSquare size={18} />
+              </span>
+              <div>
+                <h1>{t('aiChat.title')}</h1>
+                <p>{t('aiChat.subtitle')}</p>
+              </div>
+            </div>
+            <button
+              className="ai-chat-icon-button"
+              aria-label={t('aiChat.settings')}
+              title={t('aiChat.settings')}
+              onClick={() => openSettings()}
+            >
+              <Settings2 size={17} />
+            </button>
+          </>
+        ) : (
+          <div className="ai-settings-heading">
+            <button className="ai-settings-back" onClick={() => setMode('chat')}>
+              <ArrowLeft size={16} aria-hidden="true" />
+              {t('aiChat.back_to_chat')}
+            </button>
+            <div>
+              <h1>{t('aiChat.settings_title')}</h1>
+              <p>{t('aiChat.settings_description')}</p>
+            </div>
           </div>
-        </div>
-        <button
-          className="ai-chat-icon-button"
-          aria-label={t('aiChat.settings')}
-          title={t('aiChat.settings')}
-          onClick={() => setActiveView('storage')}
-        >
-          <Settings2 size={17} />
-        </button>
+        )}
       </header>
-
-      <nav className="ai-chat-nav" aria-label={t('aiChat.navigation_label')}>
-        {navigation.map(({ id, label, icon: Icon, count }) => (
-          <button
-            key={id}
-            className={`ai-chat-nav__item ${activeView === id ? 'is-active' : ''}`}
-            onClick={() => setActiveView(id)}
-            aria-current={activeView === id ? 'page' : undefined}
-          >
-            <Icon size={16} aria-hidden="true" />
-            <span>{label}</span>
-            {typeof count === 'number' && <span className="ai-chat-nav__count">{count}</span>}
-          </button>
-        ))}
-      </nav>
 
       <section className="ai-chat-content">
         {loadState === 'loading' && (
@@ -126,33 +131,44 @@ export function AIChat() {
           </div>
         )}
 
-        {loadState === 'ready' && activeView === 'chat' && !hasProvider && (
+        {loadState === 'ready' && mode === 'chat' && !hasProvider && (
           <AIOnboarding
             onConfigureProvider={() => {
               onboardingTransitionRef.current = true
-              setActiveView('providers')
+              openSettings('providers')
             }}
-            onReviewAgents={() => setActiveView('agents')}
-            onOpenMcp={() => setActiveView('mcp')}
+            onReviewAgents={() => openSettings('agents')}
+            onOpenMcp={() => openSettings('mcp')}
           />
         )}
 
-        {loadState === 'ready' && activeView === 'providers' && (
-          <ProviderManager onChanged={loadConfiguration} />
+        {loadState === 'ready' && mode === 'chat' && hasProvider && (
+          <ChatWorkspace agents={agents} onOpenAgents={() => openSettings('agents')} />
         )}
 
-        {loadState === 'ready' && activeView === 'agents' && (
-          <AgentManager onChanged={loadConfiguration} />
-        )}
-
-        {loadState === 'ready' && activeView === 'mcp' && (
-          <McpManager onChanged={loadConfiguration} />
-        )}
-
-        {loadState === 'ready' && activeView === 'storage' && <StorageManager />}
-
-        {loadState === 'ready' && activeView === 'chat' && hasProvider && (
-          <ChatWorkspace agents={agents} onOpenAgents={() => setActiveView('agents')} />
+        {loadState === 'ready' && mode === 'settings' && (
+          <div className="ai-settings-shell">
+            <nav className="ai-settings-nav" aria-label={t('aiChat.settings_navigation_label')}>
+              {settingsNavigation.map(({ id, label, icon: Icon, count }) => (
+                <button
+                  key={id}
+                  className={settingsView === id ? 'is-active' : ''}
+                  onClick={() => setSettingsView(id)}
+                  aria-current={settingsView === id ? 'page' : undefined}
+                >
+                  <Icon size={16} aria-hidden="true" />
+                  <span>{label}</span>
+                  {typeof count === 'number' && <strong>{count}</strong>}
+                </button>
+              ))}
+            </nav>
+            <section className="ai-settings-content">
+              {settingsView === 'providers' && <ProviderManager onChanged={loadConfiguration} />}
+              {settingsView === 'agents' && <AgentManager onChanged={loadConfiguration} />}
+              {settingsView === 'mcp' && <McpManager onChanged={loadConfiguration} />}
+              {settingsView === 'storage' && <StorageManager />}
+            </section>
+          </div>
         )}
       </section>
     </main>
