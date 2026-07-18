@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -16,11 +17,79 @@ function assertNonemptyFile(filePath) {
   return stat.size
 }
 
+function expandNsisArtifactName(pattern, { productName, version }) {
+  const artifactName = pattern.replace(/\$\{(productName|version|ext)\}/g, (_, key) => {
+    if (key === 'productName') return productName
+    if (key === 'version') return version
+    return 'exe'
+  })
+  if (artifactName.includes('${')) {
+    throw new Error(`Unsupported NSIS artifactName pattern: ${pattern}`)
+  }
+  if (path.basename(artifactName) !== artifactName || /[\\/]/.test(artifactName)) {
+    throw new Error(`NSIS artifactName must not contain a directory: ${pattern}`)
+  }
+  if (!/^[0-9A-Za-z._-]+$/.test(artifactName)) {
+    throw new Error(`NSIS artifactName must be safe for a GitHub Release asset: ${artifactName}`)
+  }
+  return artifactName
+}
+
+function parseYamlScalar(rawValue) {
+  const value = rawValue.trim()
+  if (value.startsWith('"') && value.endsWith('"')) return JSON.parse(value)
+  if (value.startsWith("'") && value.endsWith("'")) {
+    return value.slice(1, -1).replaceAll("''", "'")
+  }
+  return value
+}
+
+function getTopLevelYamlValue(contents, key) {
+  const line = contents.split(/\r?\n/).find((candidate) => candidate.startsWith(`${key}:`))
+  if (!line) return null
+  return parseYamlScalar(line.slice(key.length + 1))
+}
+
+function getYamlFileEntries(contents) {
+  const entries = []
+  let inFiles = false
+  let currentEntry = null
+
+  for (const line of contents.split(/\r?\n/)) {
+    if (line === 'files:') {
+      inFiles = true
+      continue
+    }
+    if (!inFiles) continue
+    if (line && !/^\s/.test(line)) break
+
+    const urlMatch = line.match(/^\s*-\s+url:\s*(.+)$/)
+    if (urlMatch) {
+      currentEntry = { url: parseYamlScalar(urlMatch[1]) }
+      entries.push(currentEntry)
+      continue
+    }
+    if (!currentEntry) continue
+
+    const propertyMatch = line.match(/^\s+(sha512|size):\s*(.+)$/)
+    if (propertyMatch) currentEntry[propertyMatch[1]] = parseYamlScalar(propertyMatch[2])
+  }
+
+  return entries
+}
+
+function computeSha512(filePath) {
+  return crypto.createHash('sha512').update(fs.readFileSync(filePath)).digest('base64')
+}
+
 export function verifyWindowsPackage({ outputDir = 'dist_electron' } = {}) {
   const packageMetadata = readPackageMetadata()
   const productName = packageMetadata.build?.productName || packageMetadata.name
   const version = packageMetadata.version
-  const installerPath = path.join(outputDir, `${productName} Setup ${version}.exe`)
+  const installerPattern =
+    packageMetadata.build?.nsis?.artifactName || '${productName} Setup ${version}.${ext}'
+  const installerName = expandNsisArtifactName(installerPattern, { productName, version })
+  const installerPath = path.join(outputDir, installerName)
   const unpackedExecutablePath = path.join(outputDir, 'win-unpacked', `${productName}.exe`)
   const nativeModulePath = path.join(
     outputDir,
@@ -52,14 +121,41 @@ export function verifyWindowsPackage({ outputDir = 'dist_electron' } = {}) {
 
   const updateMetadataPath = path.join(outputDir, 'latest.yml')
   const updateMetadata = fs.readFileSync(updateMetadataPath, 'utf8')
-  if (!new RegExp(`^version: ${version.replaceAll('.', '\\.')}$`, 'm').test(updateMetadata)) {
+  if (getTopLevelYamlValue(updateMetadata, 'version') !== version) {
     throw new Error(`Windows update metadata version does not match package version ${version}.`)
   }
-  if (!/^path: .+\.exe$/m.test(updateMetadata) || !/^sha512: \S+/m.test(updateMetadata)) {
-    throw new Error('Windows update metadata is missing its executable path or checksum.')
+
+  const metadataPath = getTopLevelYamlValue(updateMetadata, 'path')
+  if (metadataPath !== installerName) {
+    throw new Error(
+      `Windows update metadata path ${metadataPath || '<missing>'} does not match installer ${installerName}.`,
+    )
   }
 
-  return { productName, version, outputDir, files }
+  const installerFileEntry = getYamlFileEntries(updateMetadata).find(
+    (entry) => entry.url === installerName,
+  )
+  if (!installerFileEntry) {
+    throw new Error(`Windows update metadata files do not reference installer ${installerName}.`)
+  }
+
+  const actualInstallerSize = fs.statSync(installerPath).size
+  if (Number(installerFileEntry.size) !== actualInstallerSize) {
+    throw new Error(
+      `Windows update metadata size does not match installer ${installerName}: expected ${actualInstallerSize}, found ${installerFileEntry.size || '<missing>'}.`,
+    )
+  }
+
+  const actualInstallerSha512 = computeSha512(installerPath)
+  const topLevelSha512 = getTopLevelYamlValue(updateMetadata, 'sha512')
+  if (
+    installerFileEntry.sha512 !== actualInstallerSha512 ||
+    topLevelSha512 !== actualInstallerSha512
+  ) {
+    throw new Error(`Windows update metadata checksum does not match installer ${installerName}.`)
+  }
+
+  return { productName, version, outputDir, installerName, files }
 }
 
 function parseArgs(args) {
