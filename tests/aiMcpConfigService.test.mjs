@@ -79,6 +79,39 @@ test('MCP service supports stdio configuration without exposing environment valu
   db.close()
 })
 
+test('MCP edits preserve masked credentials only while the transport remains unchanged', () => {
+  const { db, service } = setup()
+  const server = service.create(httpInput())
+  const preserved = service.update(
+    server.id,
+    httpInput({
+      description: 'Updated',
+      connection: { transport: 'streamable_http', url: 'https://mcp.example.test/v2', headers: {} },
+    }),
+    { preserveCredentials: true },
+  )
+  assert.deepEqual(preserved.connection, {
+    url: 'https://mcp.example.test/v2',
+    headerNames: ['Authorization'],
+  })
+  assert.deepEqual(service.getRuntimeConnection(server.id).headers, { Authorization: 'Bearer secret' })
+
+  const changedTransport = service.update(
+    server.id,
+    {
+      name: 'Remote Tools',
+      description: 'Local replacement',
+      enabled: true,
+      timeoutMs: 30000,
+      connection: { transport: 'stdio', command: '/usr/bin/tool', args: [], env: {} },
+    },
+    { preserveCredentials: true },
+  )
+  assert.equal(changedTransport.credentialConfigured, false)
+  assert.deepEqual(service.getRuntimeConnection(server.id).env, {})
+  db.close()
+})
+
 test('MCP copy gets independent credentials and starts disabled', () => {
   const { db, credentials, service } = setup()
   const original = service.create(httpInput())

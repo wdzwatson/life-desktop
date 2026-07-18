@@ -239,7 +239,9 @@ export function createAIConfigHandlers(
     'ai:mcp:update': (_event, payload) =>
       respondWithObject(payload, (data) => {
         const id = requireId(data.id)
-        return services().mcp.update(id, data.input)
+        return services().mcp.update(id, data.input, {
+          preserveCredentials: data.preserveCredentials === true,
+        })
       }),
     'ai:mcp:copy': (_event, payload) =>
       respondWithObject(payload, (data) => {

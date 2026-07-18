@@ -133,20 +133,24 @@ export class AIMcpConfigService {
     }
   }
 
-  update(id: number, value: unknown) {
+  update(id: number, value: unknown, options: { preserveCredentials?: boolean } = {}) {
     const row = this.requireRow(id)
     const input = parseAIMcpServerInput(value)
-    const secrets = this.extractSecrets(input.connection)
     const oldSecret = row.credential_ref ? this.credentials.reveal(row.credential_ref) : null
+    const oldCredentials = oldSecret ? deserializeSecrets(oldSecret) : {}
+    const preserveCredentials = options.preserveCredentials === true && row.transport === input.connection.transport
+    const secrets = preserveCredentials ? oldCredentials : this.extractSecrets(input.connection)
     let nextRef = row.credential_ref
     let createdRef: string | null = null
     try {
       if (this.hasSecrets(secrets)) {
         const serialized = serializeSecrets(secrets)
-        if (nextRef) this.credentials.replace(nextRef, serialized)
+        if (nextRef && !preserveCredentials) this.credentials.replace(nextRef, serialized)
         else {
-          createdRef = this.credentials.create(serialized)
-          nextRef = createdRef
+          if (!nextRef) {
+            createdRef = this.credentials.create(serialized)
+            nextRef = createdRef
+          }
         }
       } else nextRef = null
 
@@ -167,7 +171,7 @@ export class AIMcpConfigService {
             input.name,
             input.description,
             input.connection.transport,
-            JSON.stringify(this.toStoredConnection(input.connection)),
+            JSON.stringify(this.toStoredConnection(input.connection, secrets)),
             nextRef,
             input.timeoutMs,
             input.enabled ? 1 : 0,
@@ -327,16 +331,19 @@ export class AIMcpConfigService {
     }
   }
 
-  private toStoredConnection(connection: AIMcpConnectionConfig): StoredHttpConnection | StoredStdioConnection {
+  private toStoredConnection(
+    connection: AIMcpConnectionConfig,
+    credentials: McpCredentialBundle = this.extractSecrets(connection),
+  ): StoredHttpConnection | StoredStdioConnection {
     if (connection.transport === 'stdio') {
       return {
         command: connection.command,
         args: connection.args,
         cwd: connection.cwd,
-        envNames: Object.keys(connection.env).sort(),
+        envNames: Object.keys(credentials.env ?? {}).sort(),
       }
     }
-    return { url: connection.url, headerNames: Object.keys(connection.headers).sort() }
+    return { url: connection.url, headerNames: Object.keys(credentials.headers ?? {}).sort() }
   }
 
   private extractSecrets(connection: AIMcpConnectionConfig): McpCredentialBundle {

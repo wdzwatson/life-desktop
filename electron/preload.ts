@@ -75,8 +75,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listAIMcpServers: () => ipcRenderer.invoke('ai:mcp:list'),
   getAIMcpServer: (id: number) => ipcRenderer.invoke('ai:mcp:get', { id }),
   createAIMcpServer: (input: unknown) => ipcRenderer.invoke('ai:mcp:create', input),
-  updateAIMcpServer: (id: number, input: unknown) =>
-    ipcRenderer.invoke('ai:mcp:update', { id, input }),
+  updateAIMcpServer: (id: number, input: unknown, options?: { preserveCredentials?: boolean }) =>
+    ipcRenderer.invoke('ai:mcp:update', {
+      id,
+      input,
+      preserveCredentials: options?.preserveCredentials,
+    }),
   copyAIMcpServer: (id: number, name?: string) => ipcRenderer.invoke('ai:mcp:copy', { id, name }),
   setAIMcpServerEnabled: (id: number, enabled: boolean) =>
     ipcRenderer.invoke('ai:mcp:setEnabled', { id, enabled }),

@@ -397,6 +397,227 @@
   font-size: 10px;
 }
 
+.ai-mcp-manager {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px;
+}
+
+.ai-mcp-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(130px, 160px) minmax(120px, 150px) auto;
+  gap: 8px;
+}
+
+.ai-mcp-toolbar .form-field {
+  width: 100%;
+}
+
+.ai-mcp-list {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 3px;
+}
+
+.ai-mcp-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, auto);
+  gap: 18px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius-card) + 2px);
+  background: color-mix(in srgb, var(--bg-surface) 96%, var(--color-accent));
+  transition: transform 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+
+.ai-mcp-card:hover {
+  transform: scale(1.003);
+  border-color: color-mix(in srgb, var(--color-accent) 28%, var(--color-border));
+}
+
+.ai-mcp-card.is-disabled {
+  opacity: 0.68;
+}
+
+.ai-mcp-card__content {
+  min-width: 0;
+}
+
+.ai-mcp-card h2 {
+  font-size: 15px;
+}
+
+.ai-mcp-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 9%, transparent);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.ai-mcp-status.is-connected {
+  background: color-mix(in srgb, var(--color-success) 10%, transparent);
+  color: var(--color-success);
+}
+
+.ai-mcp-status.is-connecting {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  color: var(--color-accent);
+}
+
+.ai-mcp-status.is-failed {
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  color: var(--color-danger);
+}
+
+.ai-mcp-endpoint {
+  margin-top: 7px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-mcp-meta,
+.ai-mcp-risk-summary,
+.ai-mcp-card__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.ai-mcp-meta {
+  margin-top: 10px;
+}
+
+.ai-mcp-meta span,
+.ai-mcp-risk-summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--text-muted) 7%, transparent);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.ai-mcp-meta .is-secure {
+  background: color-mix(in srgb, var(--color-success) 10%, transparent);
+  color: var(--color-success);
+}
+
+.ai-mcp-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--color-danger) 8%, var(--bg-surface));
+  color: var(--color-danger);
+  font-size: 10px;
+}
+
+.ai-mcp-error svg {
+  flex: 0 0 auto;
+}
+
+.ai-mcp-error p {
+  margin-top: 3px;
+}
+
+.ai-mcp-risk-summary {
+  margin-top: 10px;
+}
+
+.ai-mcp-risk-summary strong {
+  color: var(--text-main);
+}
+
+.ai-mcp-card__actions {
+  align-content: flex-start;
+  justify-content: flex-end;
+}
+
+.ai-mcp-card__actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ai-mcp-form {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+  padding-right: 3px;
+}
+
+.ai-mcp-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.ai-mcp-code-field {
+  min-height: 88px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.ai-mcp-risk-editor {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(140px, 180px) auto;
+  gap: 8px;
+}
+
+.ai-mcp-risk-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.ai-mcp-risk-list span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 7px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--text-muted) 7%, transparent);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.ai-mcp-risk-list strong {
+  color: var(--text-main);
+}
+
+.ai-mcp-risk-list button {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
 .ai-provider-toolbar {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px)) auto;
@@ -827,6 +1048,10 @@
     grid-template-columns: 1fr;
   }
 
+  .ai-mcp-card {
+    grid-template-columns: 1fr;
+  }
+
   .ai-provider-card__actions {
     justify-content: flex-start;
   }
@@ -835,8 +1060,20 @@
     justify-content: flex-start;
   }
 
+  .ai-mcp-card__actions {
+    justify-content: flex-start;
+  }
+
   .ai-agent-provider-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ai-mcp-toolbar {
+    grid-template-columns: minmax(160px, 1fr) minmax(120px, 150px) auto;
+  }
+
+  .ai-mcp-toolbar select:nth-of-type(2) {
+    display: none;
   }
 }
 
@@ -864,6 +1101,18 @@
 
   .ai-agent-provider-grid,
   .ai-agent-mcp-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-mcp-toolbar {
+    grid-template-columns: 1fr auto;
+  }
+
+  .ai-mcp-toolbar select {
+    display: none;
+  }
+
+  .ai-mcp-risk-editor {
     grid-template-columns: 1fr;
   }
 }
