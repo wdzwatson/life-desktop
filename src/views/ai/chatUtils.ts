@@ -335,6 +335,8 @@ export function applyAIChatRunEvent(messages: AIChatMessage[], event: AIChatRunE
       streamText:
         event.type === 'text_delta'
           ? `${message.streamText ?? ''}${event.delta ?? ''}`
+          : terminalStatus
+            ? undefined
           : message.streamText,
       completedAt: terminalStatus ? event.timestamp : message.completedAt,
     } as AIChatMessage

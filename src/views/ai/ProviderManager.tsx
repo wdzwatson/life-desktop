@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import {
   Check,
   Copy,
@@ -83,6 +83,12 @@ export function ProviderManager({ onChanged }: Props) {
   const closeEditor = () => {
     setDraft(null)
     setEditing(null)
+  }
+
+  const handleDrawerClose = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    closeEditor()
   }
 
   const openCreate = (trigger: HTMLButtonElement) => {
@@ -288,7 +294,7 @@ export function ProviderManager({ onChanged }: Props) {
           title={(
             <span className="ai-settings-drawer__title">
               <span>{t(editing ? 'aiChat.providers.edit_title' : 'aiChat.providers.create_title')}</span>
-              <button type="button" onClick={closeEditor} aria-label={t('common.close')}>
+              <button type="button" onMouseDown={handleDrawerClose} onClick={handleDrawerClose} aria-label={t('common.close')}>
                 <X size={16} aria-hidden="true" />
               </button>
             </span>

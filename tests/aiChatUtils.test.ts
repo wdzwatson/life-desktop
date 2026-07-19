@@ -78,7 +78,7 @@ test('image and video generation share an immediate visible media task pair', ()
   }
 })
 
-test('run events merge ten rounds without crossing message identities', () => {
+test('run events merge ten rounds without crossing message identities or retaining terminal stream text', () => {
   let messages: AIChatMessage[] = []
   let runState
   for (let round = 1; round <= 10; round += 1) {
@@ -113,7 +113,7 @@ test('run events merge ten rounds without crossing message identities', () => {
   }
   assert.equal(messages.length, 20)
   assert.deepEqual(messages.filter((item) => item.role === 'assistant').map((item) => item.streamText),
-    Array.from({ length: 10 }, (_, index) => `Answer ${index + 1}`))
+    Array.from({ length: 10 }, () => undefined))
   assert.equal(runState?.runId, 10)
 })
 

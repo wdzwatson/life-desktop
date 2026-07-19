@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { Pencil, Plus, Search, Trash2, Type, Image, Video, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
@@ -82,6 +82,17 @@ export function ModelManager({ onChanged }: Props) {
     setError('')
   }
 
+  const closeEditor = () => {
+    setDraft(null)
+    setEditing(null)
+  }
+
+  const handleDrawerClose = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    closeEditor()
+  }
+
   const save = async () => {
     if (!draft) return
     setBusy(true)
@@ -159,8 +170,8 @@ export function ModelManager({ onChanged }: Props) {
       </div>
 
       {draft && <AccessibleDialog
-        title={<span className="ai-settings-drawer__title"><span>{t(editing ? 'aiChat.models.edit_title' : 'aiChat.models.add_title')}</span><button type="button" onClick={() => setDraft(null)} aria-label={t('common.close')}><X size={16} /></button></span>}
-        onClose={() => setDraft(null)} returnFocus={() => triggerRef.current?.focus()} initialFocusRef={nameRef}
+        title={<span className="ai-settings-drawer__title"><span>{t(editing ? 'aiChat.models.edit_title' : 'aiChat.models.add_title')}</span><button type="button" onMouseDown={handleDrawerClose} onClick={handleDrawerClose} aria-label={t('common.close')}><X size={16} /></button></span>}
+        onClose={closeEditor} returnFocus={() => triggerRef.current?.focus()} initialFocusRef={nameRef}
         overlayClassName="ai-settings-drawer-overlay" contentClassName="ai-settings-drawer ai-settings-drawer--model" closeOnOverlay
       >
         <div className="ai-model-form">
@@ -172,7 +183,7 @@ export function ModelManager({ onChanged }: Props) {
             </label> })}
           </div></fieldset>
           {error && <p className="ai-provider-error" role="alert">{error}</p>}
-          <div className="ai-model-form__actions"><button className="btn" onClick={() => setDraft(null)}>{t('common.cancel')}</button><button className="btn primary" disabled={busy || !draft.name.trim() || draft.capabilities.length === 0} onClick={() => void save()}>{t('common.save')}</button></div>
+          <div className="ai-model-form__actions"><button className="btn" onClick={closeEditor}>{t('common.cancel')}</button><button className="btn primary" disabled={busy || !draft.name.trim() || draft.capabilities.length === 0} onClick={() => void save()}>{t('common.save')}</button></div>
         </div>
       </AccessibleDialog>}
     </div>
