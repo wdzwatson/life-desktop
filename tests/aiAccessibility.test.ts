@@ -132,7 +132,8 @@ test('provider actions explain themselves and editor controls retain safe close 
   assert.match(modelManager, /onClick=\{handleDrawerClose\}/)
   assert.match(css, /\.ai-settings-drawer__title > button\s*\{[\s\S]*width:\s*40px[\s\S]*height:\s*40px[\s\S]*border-radius:\s*0/)
   assert.match(css, /\.ai-settings-drawer__title > button::before\s*\{[\s\S]*inset:\s*4px[\s\S]*border-radius:\s*8px/)
-  assert.match(css, /\.ai-settings-drawer__title > button > svg\s*\{[\s\S]*pointer-events:\s*none/)
+  assert.match(css, /\.ai-settings-drawer__title > button::before\s*\{[\s\S]*pointer-events:\s*none/)
+  assert.match(css, /\.ai-settings-drawer__title > button > svg,[\s\S]*\.ai-settings-drawer__title > button > svg \*\s*\{[\s\S]*cursor:\s*pointer !important[\s\S]*pointer-events:\s*none !important/)
 })
 
 test('provider creation selects catalog models from one flat list and does not create Agents', () => {

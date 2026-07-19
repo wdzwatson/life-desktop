@@ -2209,12 +2209,15 @@
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--bg-surface);
+  pointer-events: none;
 }
 
-.ai-settings-drawer__title > button > svg {
+.ai-settings-drawer__title > button > svg,
+.ai-settings-drawer__title > button > svg * {
   position: relative;
   z-index: 1;
-  pointer-events: none;
+  cursor: pointer !important;
+  pointer-events: none !important;
 }
 
 .ai-settings-drawer .ai-provider-form,
