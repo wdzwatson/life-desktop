@@ -118,6 +118,23 @@ test('provider creation uses a full-height settings drawer with focus restoratio
   assert.match(css, /\.ai-settings-drawer \.ai-provider-form__actions\s*\{[\s\S]*position:\s*sticky[\s\S]*bottom:\s*0/)
 })
 
+test('provider actions explain themselves and editor controls retain safe close and credential cues', () => {
+  assert.match(providerManager, /title=\{t\('aiChat\.providers\.edit_name'/)
+  assert.match(providerManager, /title=\{t\('aiChat\.providers\.copy_name'/)
+  assert.match(providerManager, /title=\{t\(provider\.enabled \? 'aiChat\.providers\.disable_name'/)
+  assert.match(providerManager, /title=\{t\('aiChat\.providers\.delete_name'/)
+  assert.match(providerManager, /editing\?\.credentialConfigured \? '\*{8}'/)
+  assert.doesNotMatch(providerManager, /onMouseDown=\{handleDrawerClose\}/)
+  assert.doesNotMatch(modelManager, /onMouseDown=\{handleDrawerClose\}/)
+  assert.doesNotMatch(providerManager, /stopPropagation\(\)/)
+  assert.doesNotMatch(modelManager, /stopPropagation\(\)/)
+  assert.match(providerManager, /onClick=\{handleDrawerClose\}/)
+  assert.match(modelManager, /onClick=\{handleDrawerClose\}/)
+  assert.match(css, /\.ai-settings-drawer__title > button\s*\{[\s\S]*width:\s*40px[\s\S]*height:\s*40px[\s\S]*border-radius:\s*0/)
+  assert.match(css, /\.ai-settings-drawer__title > button::before\s*\{[\s\S]*inset:\s*4px[\s\S]*border-radius:\s*8px/)
+  assert.match(css, /\.ai-settings-drawer__title > button > svg\s*\{[\s\S]*pointer-events:\s*none/)
+})
+
 test('provider creation selects catalog models from one flat list and does not create Agents', () => {
   assert.match(providerManager, /catalogModels\.map\(\(model\)/)
   assert.doesNotMatch(providerManager, /catalogModels\.filter\(\(model\) => model\.capabilities\.includes\(kind\)\)/)
@@ -205,4 +222,14 @@ test('chat timeline uses compact document-like assistant messages without shrink
   assert.match(css, /\.ai-message--user\s*\{[\s\S]*width:\s*min\(72%, 560px\)/)
   assert.match(css, /\.ai-message__actions\s*\{[\s\S]*min-height:\s*22px/)
   assert.match(css, /\.ai-chat-composer textarea\s*\{[\s\S]*min-height:\s*46px/)
+})
+
+test('streamed Markdown is rendered as one continuous response and every selector is fully clickable', () => {
+  assert.match(messageRenderer, /function joinConsecutiveMarkdownParts/)
+  assert.match(messageRenderer, /message\.parts\[index - 1\]\?\.type === 'markdown'\) return null/)
+  assert.match(messageRenderer, /renderAIMessageMarkdown\(joinConsecutiveMarkdownParts\(message\.parts, index\)\)/)
+  assert.match(css, /\.ai-message\s*\{[\s\S]*width:\s*min\(100%, 960px\)/)
+  assert.match(css, /\.ai-message__markdown\s*\{[\s\S]*overflow-wrap:\s*break-word[\s\S]*word-break:\s*normal/)
+  assert.match(css, /\.ai-chat-stage__controls select\s*\{[\s\S]*position:\s*absolute[\s\S]*inset:\s*0[\s\S]*width:\s*100% !important[\s\S]*cursor:\s*pointer/)
+  assert.match(workspace, /className="ai-chat-stage__selector-value"/)
 })

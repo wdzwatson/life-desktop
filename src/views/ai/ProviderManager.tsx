@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Check,
   Copy,
@@ -85,11 +85,7 @@ export function ProviderManager({ onChanged }: Props) {
     setEditing(null)
   }
 
-  const handleDrawerClose = (event: MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault()
-    event.stopPropagation()
-    closeEditor()
-  }
+  const handleDrawerClose = () => closeEditor()
 
   const openCreate = (trigger: HTMLButtonElement) => {
     drawerTriggerRef.current = trigger
@@ -272,16 +268,16 @@ export function ProviderManager({ onChanged }: Props) {
             </div>
 
             <div className="ai-provider-card__actions">
-              <button className="ai-chat-icon-button" onClick={(event) => openEdit(provider, event.currentTarget)} aria-label={t('aiChat.providers.edit_name', { name: provider.name })}>
+              <button className="ai-chat-icon-button" onClick={(event) => openEdit(provider, event.currentTarget)} aria-label={t('aiChat.providers.edit_name', { name: provider.name })} title={t('aiChat.providers.edit_name', { name: provider.name })}>
                 <Pencil size={15} />
               </button>
-              <button className="ai-chat-icon-button" onClick={() => void runAction(() => api.copyAIProvider(provider.id), 'aiChat.providers.copied')} aria-label={t('aiChat.providers.copy_name', { name: provider.name })}>
+              <button className="ai-chat-icon-button" onClick={() => void runAction(() => api.copyAIProvider(provider.id), 'aiChat.providers.copied')} aria-label={t('aiChat.providers.copy_name', { name: provider.name })} title={t('aiChat.providers.copy_name', { name: provider.name })}>
                 <Copy size={15} />
               </button>
-              <button className="ai-chat-icon-button" onClick={() => void runAction(() => api.setAIProviderEnabled(provider.id, !provider.enabled), provider.enabled ? 'aiChat.providers.disabled_toast' : 'aiChat.providers.enabled_toast')} aria-label={t(provider.enabled ? 'aiChat.providers.disable_name' : 'aiChat.providers.enable_name', { name: provider.name })}>
+              <button className="ai-chat-icon-button" onClick={() => void runAction(() => api.setAIProviderEnabled(provider.id, !provider.enabled), provider.enabled ? 'aiChat.providers.disabled_toast' : 'aiChat.providers.enabled_toast')} aria-label={t(provider.enabled ? 'aiChat.providers.disable_name' : 'aiChat.providers.enable_name', { name: provider.name })} title={t(provider.enabled ? 'aiChat.providers.disable_name' : 'aiChat.providers.enable_name', { name: provider.name })}>
                 <Power size={15} />
               </button>
-              <button className="ai-chat-icon-button is-danger" onClick={() => void deleteProvider(provider)} aria-label={t('aiChat.providers.delete_name', { name: provider.name })}>
+              <button className="ai-chat-icon-button is-danger" onClick={() => void deleteProvider(provider)} aria-label={t('aiChat.providers.delete_name', { name: provider.name })} title={t('aiChat.providers.delete_name', { name: provider.name })}>
                 <Trash2 size={15} />
               </button>
             </div>
@@ -294,7 +290,7 @@ export function ProviderManager({ onChanged }: Props) {
           title={(
             <span className="ai-settings-drawer__title">
               <span>{t(editing ? 'aiChat.providers.edit_title' : 'aiChat.providers.create_title')}</span>
-              <button type="button" onMouseDown={handleDrawerClose} onClick={handleDrawerClose} aria-label={t('common.close')}>
+              <button type="button" onClick={handleDrawerClose} aria-label={t('common.close')}>
                 <X size={16} aria-hidden="true" />
               </button>
             </span>
@@ -326,7 +322,7 @@ export function ProviderManager({ onChanged }: Props) {
               </label>
               <label className="is-wide">
                 <span>{t('aiChat.providers.api_key')}</span>
-                <input className="form-field" type="password" value={draft.apiKey} onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })} placeholder={editing ? t('aiChat.providers.api_key_keep') : ''} autoComplete="off" />
+                <input className="form-field" type="password" value={draft.apiKey} onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })} placeholder={editing?.credentialConfigured ? '********' : (editing ? t('aiChat.providers.api_key_keep') : '')} autoComplete="off" />
               </label>
             </div>
             <fieldset className="ai-provider-capabilities">

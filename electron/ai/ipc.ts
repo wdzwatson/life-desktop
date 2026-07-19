@@ -58,6 +58,7 @@ export const AI_CONVERSATION_CHANNELS = [
   'ai:conversations:list',
   'ai:conversations:get',
   'ai:conversations:create',
+  'ai:conversations:setSelection',
   'ai:conversations:rename',
   'ai:conversations:setPinned',
   'ai:conversations:setArchived',
@@ -83,6 +84,8 @@ type AIStorageChannel = (typeof AI_STORAGE_CHANNELS)[number]
 type AIConversationChannel = (typeof AI_CONVERSATION_CHANNELS)[number]
 type AIMcpRuntimeChannel = (typeof AI_MCP_RUNTIME_CHANNELS)[number]
 type AIHandler = (_event: unknown, payload?: unknown) => unknown | Promise<unknown>
+
+const AI_THINKING_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 
 type AIConfigServices = {
   providers: AIProviderService
@@ -209,6 +212,17 @@ function requireString(value: unknown, field: string, max: number) {
     })
   }
   return value.trim()
+}
+
+function requireThinkingLevel(value: unknown) {
+  if (typeof value !== 'string' || !AI_THINKING_LEVELS.includes(value as typeof AI_THINKING_LEVELS[number])) {
+    throw new AIServiceError({
+      code: 'invalid_input',
+      message: 'Invalid thinking level.',
+      retryable: false,
+    })
+  }
+  return value as typeof AI_THINKING_LEVELS[number]
 }
 
 function requireOptionalName(value: unknown) {
@@ -575,14 +589,27 @@ export function createAIConversationHandlers(
     'ai:conversations:create': (_event, payload) =>
       respondWithObject(payload, (data) => {
         const agentId = requireId(data.agentId, 'agent ID')
+        const thinkingLevel = data.thinkingLevel === undefined
+          ? undefined
+          : requireThinkingLevel(data.thinkingLevel)
         const serviceSet = services()
         const snapshot = serviceSet.agents.getSnapshot(agentId)
         return serviceSet.conversations.createConversation({
           title: requireString(data.title, 'conversation title', 300),
           agentId,
-          agentSnapshot: snapshot,
+          agentSnapshot: {
+            ...snapshot,
+            ...(thinkingLevel ? { chatSelection: { agentId, thinkingLevel } } : {}),
+          },
         })
       }),
+    'ai:conversations:setSelection': (_event, payload) =>
+      respondWithObject(payload, (data) =>
+        services().conversations.setConversationSelection(
+          requireId(data.conversationId, 'conversation ID'),
+          requireId(data.agentId, 'agent ID'),
+          requireThinkingLevel(data.thinkingLevel),
+        )),
     'ai:conversations:rename': (_event, payload) =>
       respondWithObject(payload, (data) => {
         const id = requireId(data.id)

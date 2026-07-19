@@ -179,6 +179,8 @@ test('AI schema migrates version 4 media models into multi-select catalogs', () 
   assert.equal(provider.image_models_json, '["image-1"]')
   assert.equal(provider.video_models_json, '["video-1"]')
   assert.deepEqual(db.prepare('SELECT name, capabilities_json FROM ai_model_catalog ORDER BY name').all(), [
+    { name: 'gpt-image-1.5', capabilities_json: '["image"]' },
+    { name: 'gpt-image-2', capabilities_json: '["image"]' },
     { name: 'image-1', capabilities_json: '["image"]' },
     { name: 'model', capabilities_json: '["text"]' },
     { name: 'video-1', capabilities_json: '["video"]' },
@@ -207,10 +209,39 @@ test('AI schema migrates version 5 catalog rows into composite capabilities', ()
   initializeAISchema(db)
 
   assert.deepEqual(db.prepare('SELECT name, capabilities_json FROM ai_model_catalog ORDER BY name').all(), [
+    { name: 'gpt-image-1.5', capabilities_json: '["image"]' },
+    { name: 'gpt-image-2', capabilities_json: '["image"]' },
     { name: 'omni-model', capabilities_json: '["text","image"]' },
     { name: 'video-model', capabilities_json: '["video"]' },
   ])
   assert.equal(db.prepare('SELECT schema_version FROM ai_schema_meta WHERE id = 1').get().schema_version, AI_SCHEMA_VERSION)
+  db.close()
+})
+
+test('AI schema removes the obsolete GPT-5.6 record and adds current GPT image models', () => {
+  const db = new Database(':memory:')
+  initializeAISchema(db)
+  const providerId = createProvider(db, 'GPT catalog migration')
+  db.prepare(`
+    UPDATE ai_providers SET text_model = 'gpt-5.6', text_models_json = '["gpt-5.6","gpt-5.5"]' WHERE id = ?
+  `).run(providerId)
+  db.prepare(`
+    INSERT INTO ai_model_catalog (name, category, capabilities_json)
+    VALUES ('gpt-5.6', 'chatgpt', '["text"]')
+  `).run()
+  db.prepare('UPDATE ai_schema_meta SET schema_version = 9 WHERE id = 1').run()
+
+  initializeAISchema(db)
+
+  assert.equal(db.prepare("SELECT 1 FROM ai_model_catalog WHERE name = 'gpt-5.6'").get(), undefined)
+  assert.deepEqual(db.prepare('SELECT text_model, text_models_json FROM ai_providers WHERE id = ?').get(providerId), {
+    text_model: 'gpt-5.5',
+    text_models_json: '["gpt-5.5"]',
+  })
+  assert.deepEqual(db.prepare("SELECT name, category, capabilities_json FROM ai_model_catalog WHERE name LIKE 'gpt-image-%' ORDER BY name").all(), [
+    { name: 'gpt-image-1.5', category: 'chatgpt', capabilities_json: '["image"]' },
+    { name: 'gpt-image-2', category: 'chatgpt', capabilities_json: '["image"]' },
+  ])
   db.close()
 })
 

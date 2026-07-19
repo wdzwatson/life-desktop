@@ -50,6 +50,14 @@ test('conversation IPC creates snapshot-backed conversations and manages their h
   assert.equal(created.data.agentSnapshot.systemPrompt, 'Stay concise.')
 
   const conversationId = created.data.id
+  const selected = await context.handlers['ai:conversations:setSelection']({}, {
+    conversationId,
+    agentId: context.agentId,
+    thinkingLevel: 'high',
+  })
+  assert.equal(selected.success, true)
+  assert.equal(selected.data.agentId, context.agentId)
+  assert.deepEqual(selected.data.agentSnapshot.chatSelection, { agentId: context.agentId, thinkingLevel: 'high' })
   const service = new AIConversationService(context.db)
   service.createMessage({
     conversationId,

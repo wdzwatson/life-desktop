@@ -125,8 +125,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   listAIConversations: (filters?: unknown) => ipcRenderer.invoke('ai:conversations:list', filters),
   getAIConversation: (id: number) => ipcRenderer.invoke('ai:conversations:get', { id }),
-  createAIConversation: (title: string, agentId: number) =>
-    ipcRenderer.invoke('ai:conversations:create', { title, agentId }),
+  createAIConversation: (title: string, agentId: number, thinkingLevel?: string) =>
+    ipcRenderer.invoke('ai:conversations:create', { title, agentId, ...(thinkingLevel ? { thinkingLevel } : {}) }),
+  setAIConversationSelection: (conversationId: number, agentId: number, thinkingLevel: string) =>
+    ipcRenderer.invoke('ai:conversations:setSelection', { conversationId, agentId, thinkingLevel }),
   renameAIConversation: (id: number, title: string) =>
     ipcRenderer.invoke('ai:conversations:rename', { id, title }),
   setAIConversationPinned: (id: number, pinned: boolean) =>

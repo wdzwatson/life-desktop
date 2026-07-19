@@ -36,6 +36,7 @@ import {
   createAIConversationTitle,
   createOptimisticMediaMessages,
   createOptimisticRunMessages,
+  getAIChatConversationSelection,
   getAIChatRetryText,
   getAIComposerIntent,
   loadAllAIChatMessages,
@@ -190,6 +191,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
   const isMediaRunning = activeMediaGeneration !== null
   const activeModel = readyModels.find((model) => model.id === selectedAgentId)
   const selectedProviderId = activeModel?.providers.text ?? providerOptions[0]?.id ?? null
+  const selectedProvider = providerOptions.find((provider) => provider.id === selectedProviderId)
   const providerModels = providerOptions.find((provider) => provider.id === selectedProviderId)?.models ?? []
   const thinkingLevels = useMemo(() => getAIThinkingLevels(activeModel?.textModel), [activeModel?.textModel])
   const chatReady = hasProvider && readyModels.length > 0
@@ -263,8 +265,21 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
   }, [defaultAgentId, readyModels, selectedAgentId])
 
   useEffect(() => {
-    setThinkingLevel(thinkingLevels[0])
-  }, [activeModel?.id, thinkingLevels])
+    if (!thinkingLevels.includes(thinkingLevel)) setThinkingLevel(thinkingLevels[0])
+  }, [thinkingLevel, thinkingLevels])
+
+  useEffect(() => {
+    if (!activeConversation) return
+    const savedSelection = getAIChatConversationSelection(activeConversation)
+    const targetAgentId = savedSelection?.agentId ?? activeConversation.agentId
+    const savedModel = readyModels.find((model) => model.id === targetAgentId)
+    if (!savedModel) return
+    setSelectedAgentId(savedModel.id)
+    const savedThinkingLevel = savedSelection?.thinkingLevel
+    if (savedThinkingLevel && getAIThinkingLevels(savedModel.textModel).includes(savedThinkingLevel)) {
+      setThinkingLevel(savedThinkingLevel)
+    }
+  }, [activeConversation, readyModels])
 
   const loadConversations = useCallback(async () => {
     if (!api?.listAIConversations) return
@@ -575,6 +590,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
     const response = (await api.createAIConversation(
       t('aiChat.chat.untitled_timestamp', { value: timestamp }),
       agentId,
+      thinkingLevel,
     )) as ApiResponse<AIChatConversation>
     if (!response?.success) {
       setNotice(errorMessage(response, t('aiChat.chat.create_failed')))
@@ -587,6 +603,22 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
     setNotice(null)
     return response.data
   }
+
+  const persistConversationSelection = useCallback(async (
+    conversationId: number,
+    agentId: number,
+    nextThinkingLevel: AIThinkingLevel,
+  ) => {
+    if (!api?.setAIConversationSelection) return
+    const response = (await api.setAIConversationSelection(conversationId, agentId, nextThinkingLevel)) as ApiResponse<AIChatConversation>
+    if (!response?.success) {
+      setNotice(errorMessage(response, t('aiChat.chat.messages_load_failed')))
+      return
+    }
+    setConversations((current) => current.map((conversation) =>
+      conversation.id === response.data.id ? response.data : conversation,
+    ))
+  }, [api, t])
 
   const titleConversationFromPrompt = async (conversation: AIChatConversation, text: string) => {
     if (conversation.messageCount !== 0 || !api?.renameAIConversation) return conversation
@@ -824,8 +856,12 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
   const handleModelChange = (agentId: number) => {
     const nextModel = readyModels.find((model) => model.id === agentId)
     const previousModel = activeModel
+    if (!nextModel) return
+    const nextThinkingLevel = getAIThinkingLevels(nextModel.textModel)[0]
     setSelectedAgentId(agentId)
-    if (!activeConversationId || !nextModel || !previousModel || previousModel.id === nextModel.id) return
+    setThinkingLevel(nextThinkingLevel)
+    if (activeConversationId) void persistConversationSelection(activeConversationId, agentId, nextThinkingLevel)
+    if (!activeConversationId || !previousModel || previousModel.id === nextModel.id) return
     const roundActive = isRunning || isMediaRunning || submitting
     const afterMessageId = isRunning && activeRun?.messageId
       ? activeRun.messageId
@@ -875,6 +911,13 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
     const provider = providerOptions.find((item) => item.id === providerId)
     const nextModel = provider?.models.find((model) => model.isDefault) ?? provider?.models[0]
     if (nextModel) handleModelChange(nextModel.id)
+  }
+
+  const handleThinkingChange = (nextThinkingLevel: AIThinkingLevel) => {
+    setThinkingLevel(nextThinkingLevel)
+    if (activeConversationId && selectedAgentId) {
+      void persistConversationSelection(activeConversationId, selectedAgentId, nextThinkingLevel)
+    }
   }
 
   const confirmRenameConversation = async (title: string) => {
@@ -1009,6 +1052,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
                 {providerOptions.length === 0 && <option value="">{t('aiChat.chat.no_provider_option')}</option>}
                 {providerOptions.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
               </select>
+              <span className="ai-chat-stage__selector-value" aria-hidden="true">{selectedProvider?.name ?? t('aiChat.chat.no_provider_option')}</span>
               <ChevronDown size={12} aria-hidden="true" />
             </label>
             <label className="ai-chat-stage__selector ai-chat-stage__selector--model">
@@ -1023,6 +1067,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
                 {providerModels.length === 0 && <option value="">{t('aiChat.chat.no_model_option')}</option>}
                 {providerModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
               </select>
+              <span className="ai-chat-stage__selector-value" aria-hidden="true">{activeModel?.name ?? t('aiChat.chat.no_model_option')}</span>
               <ChevronDown size={12} aria-hidden="true" />
             </label>
             <label className="ai-chat-stage__selector ai-chat-stage__selector--thinking">
@@ -1031,11 +1076,12 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
               <select
                 value={thinkingLevel}
                 disabled={!activeModel || thinkingLevels.length < 2}
-                onChange={(event) => setThinkingLevel(event.target.value as AIThinkingLevel)}
+                onChange={(event) => handleThinkingChange(event.target.value as AIThinkingLevel)}
                 aria-label={t('aiChat.chat.select_thinking')}
               >
                 {thinkingLevels.map((level) => <option key={level} value={level}>{t(`aiChat.chat.thinking_${level}`)}</option>)}
               </select>
+              <span className="ai-chat-stage__selector-value" aria-hidden="true">{t(`aiChat.chat.thinking_${thinkingLevel}`)}</span>
               <ChevronDown size={12} aria-hidden="true" />
             </label>
             <button

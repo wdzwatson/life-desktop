@@ -32,6 +32,8 @@ test('model service keeps a global catalog and creates one managed chat profile 
   assert.deepEqual(models.map((model) => [model.capabilities, model.name]), [
     [['text', 'image'], 'alpha'],
     [['text'], 'beta'],
+    [['image'], 'gpt-image-1.5'],
+    [['image'], 'gpt-image-2'],
     [['image'], 'image-1'],
     [['image'], 'image-2'],
     [['video'], 'video-1'],

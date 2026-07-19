@@ -8,6 +8,7 @@ import {
   createOptimisticMediaMessages,
   createOptimisticRunMessages,
   getAIChatRetryText,
+  getAIChatConversationSelection,
   getAIComposerIntent,
   loadAllAIChatMessages,
   mergeAIChatMessages,
@@ -39,6 +40,23 @@ test('conversation ordering keeps pinned items first and then uses recent activi
     { id: 3, title: 'Recent', agentId: 1, agentSnapshot: {}, isPinned: false, isArchived: false, messageCount: 1, createdAt: '', updatedAt: '2026-07-18T02:00:00Z', lastMessageAt: null },
   ])
   assert.deepEqual(ordered.map((item) => item.id), [2, 3, 1])
+})
+
+test('conversation selection accepts only a saved model and supported thinking level', () => {
+  const conversation = {
+    id: 1,
+    title: 'Saved selection',
+    agentId: 2,
+    agentSnapshot: { chatSelection: { agentId: 4, thinkingLevel: 'high' } },
+    isPinned: false,
+    isArchived: false,
+    messageCount: 0,
+    createdAt: '',
+    updatedAt: '',
+    lastMessageAt: null,
+  }
+  assert.deepEqual(getAIChatConversationSelection(conversation), { agentId: 4, thinkingLevel: 'high' })
+  assert.equal(getAIChatConversationSelection({ ...conversation, agentSnapshot: { chatSelection: { agentId: 4, thinkingLevel: 'invalid' } } }), null)
 })
 
 test('message merging deduplicates IDs and preserves live streaming text', () => {

@@ -11,6 +11,25 @@ export type AIChatConversation = {
   lastMessageAt: string | null
 }
 
+export type AIChatConversationSelection = {
+  agentId: number
+  thinkingLevel: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+}
+
+const AI_THINKING_LEVELS = new Set<AIChatConversationSelection['thinkingLevel']>([
+  'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max',
+])
+
+export function getAIChatConversationSelection(conversation: AIChatConversation | null | undefined): AIChatConversationSelection | null {
+  const selection = conversation?.agentSnapshot?.chatSelection
+  if (!selection || typeof selection !== 'object' || Array.isArray(selection)) return null
+  const { agentId, thinkingLevel } = selection as Record<string, unknown>
+  if (!Number.isInteger(agentId) || Number(agentId) < 1 || typeof thinkingLevel !== 'string' || !AI_THINKING_LEVELS.has(thinkingLevel as AIChatConversationSelection['thinkingLevel'])) {
+    return null
+  }
+  return { agentId: Number(agentId), thinkingLevel: thinkingLevel as AIChatConversationSelection['thinkingLevel'] }
+}
+
 export type AIChatMediaPart = {
   type: 'image' | 'video' | 'audio' | 'file'
   assetId: number

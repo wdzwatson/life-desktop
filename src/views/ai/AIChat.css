@@ -611,7 +611,9 @@
 }
 
 .ai-chat-stage__selector {
+  position: relative;
   font-family: 'Geist', var(--font-sans);
+  cursor: pointer;
   transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
 }
 
@@ -623,32 +625,39 @@
 .ai-chat-stage__selector > svg:first-child {
   flex: 0 0 auto;
   color: var(--color-accent);
+  pointer-events: none;
 }
 
-.ai-chat-stage__selector--provider select {
-  width: clamp(76px, 8vw, 116px);
-}
-
-.ai-chat-stage__selector--model select {
-  width: clamp(84px, 9vw, 132px);
-}
-
-.ai-chat-stage__selector--thinking select {
-  width: clamp(68px, 7vw, 104px);
-}
+.ai-chat-stage__selector--provider { width: clamp(118px, 12vw, 164px); }
+.ai-chat-stage__selector--model { width: clamp(126px, 13vw, 184px); }
+.ai-chat-stage__selector--thinking { width: clamp(104px, 10vw, 144px); }
 
 .ai-chat-stage__controls select {
-  min-width: 0;
-  max-width: none;
-  overflow: hidden;
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  width: 100% !important;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
   border: 0;
   outline: 0;
-  appearance: none;
-  background: transparent;
+  cursor: pointer;
+}
+
+.ai-chat-stage__selector-value {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
   color: var(--text-main);
-  font: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
+  pointer-events: none;
+}
+
+.ai-chat-stage__selector > svg:last-child {
+  flex: 0 0 auto;
+  pointer-events: none;
 }
 
 .ai-chat-stage__controls label:has(select:focus-visible) {
@@ -822,7 +831,7 @@
 }
 
 .ai-message {
-  width: min(100%, 820px);
+  width: min(100%, 960px);
   margin: 0 auto 11px;
 }
 
@@ -889,7 +898,8 @@
 }
 
 .ai-message__markdown {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
   user-select: text;
 }
 
@@ -2177,16 +2187,34 @@
 }
 
 .ai-settings-drawer__title > button {
-  width: 32px;
-  height: 32px;
+  position: relative;
+  width: 40px;
+  height: 40px;
   display: grid;
   flex: 0 0 auto;
   place-items: center;
+  margin: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.ai-settings-drawer__title > button::before {
+  position: absolute;
+  inset: 4px;
+  content: '';
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--bg-surface);
-  color: var(--text-main);
-  cursor: pointer;
+}
+
+.ai-settings-drawer__title > button > svg {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
 }
 
 .ai-settings-drawer .ai-provider-form,

@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 
-export const AI_SCHEMA_VERSION = 9
+export const AI_SCHEMA_VERSION = 10
 
 function hasColumn(db: Database.Database, table: string, column: string) {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>)
@@ -455,6 +455,44 @@ function migrateSchema(db: Database.Database, currentVersion: number) {
   }
   if (currentVersion < 9 && !hasColumn(db, 'ai_providers', 'request_body_json')) {
     db.exec("ALTER TABLE ai_providers ADD COLUMN request_body_json TEXT NOT NULL DEFAULT '{}'")
+  }
+  if (currentVersion < 10) {
+    const obsoleteModel = 'gpt-5.6'
+    const providers = db.prepare(`
+      SELECT id, text_model, text_models_json FROM ai_providers
+    `).all() as Array<{ id: number; text_model: string | null; text_models_json: string }>
+    const parseModels = (value: string, fallback: string | null) => {
+      try {
+        const parsed = JSON.parse(value)
+        if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) return parsed as string[]
+      } catch {
+        // Legacy malformed lists fall back to the selected model below.
+      }
+      return fallback ? [fallback] : []
+    }
+    const updateProviderModels = db.prepare(`
+      UPDATE ai_providers SET text_model = ?, text_models_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    `)
+    for (const provider of providers) {
+      const models = parseModels(provider.text_models_json, provider.text_model)
+      const remaining = models.filter((model) => model.toLocaleLowerCase() !== obsoleteModel)
+      if (remaining.length === models.length && provider.text_model?.toLocaleLowerCase() !== obsoleteModel) continue
+      const defaultModel = provider.text_model?.toLocaleLowerCase() === obsoleteModel
+        ? (remaining[0] ?? null)
+        : provider.text_model
+      updateProviderModels.run(defaultModel, JSON.stringify(remaining), provider.id)
+    }
+    db.prepare('DELETE FROM ai_model_catalog WHERE lower(name) = ?').run(obsoleteModel)
+    const addImageModel = db.prepare(`
+      INSERT INTO ai_model_catalog (name, category, capabilities_json)
+      VALUES (?, 'chatgpt', '["image"]')
+      ON CONFLICT(name) DO UPDATE SET
+        category = excluded.category,
+        capabilities_json = excluded.capabilities_json,
+        updated_at = CURRENT_TIMESTAMP
+    `)
+    addImageModel.run('gpt-image-1.5')
+    addImageModel.run('gpt-image-2')
   }
 }
 

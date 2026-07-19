@@ -26,6 +26,16 @@ function isToolCallPart(
   return part.type === 'tool_call' && typeof part.toolCallId === 'string' && typeof part.toolName === 'string'
 }
 
+function joinConsecutiveMarkdownParts(parts: AIChatMessagePart[], startIndex: number) {
+  let text = ''
+  for (let index = startIndex; index < parts.length; index += 1) {
+    const part = parts[index]
+    if (part.type !== 'markdown') break
+    text += String(part.text)
+  }
+  return text
+}
+
 function copyText(message: AIChatMessage) {
   return `${message.parts.filter(isTextPart).map((part) => part.text).join('\n')}${message.streamText ?? ''}`.trim()
 }
@@ -86,12 +96,13 @@ export function MessageRenderer({ message, onRetry, retryDisabled }: MessageRend
         {message.parts.map((part, index) => {
           if (part.type === 'text') return <p key={index} className="ai-message__plain">{String(part.text)}</p>
           if (part.type === 'markdown') {
+            if (message.parts[index - 1]?.type === 'markdown') return null
             return (
               <div
                 key={index}
                 className="ai-message__markdown"
                 onClick={handleMarkdownClick}
-                dangerouslySetInnerHTML={{ __html: renderAIMessageMarkdown(String(part.text)) }}
+                dangerouslySetInnerHTML={{ __html: renderAIMessageMarkdown(joinConsecutiveMarkdownParts(message.parts, index)) }}
               />
             )
           }

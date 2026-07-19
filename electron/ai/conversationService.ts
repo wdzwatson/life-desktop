@@ -306,6 +306,26 @@ export class AIConversationService {
     return this.getConversation(id)
   }
 
+  setConversationSelection(
+    id: number,
+    agentId: number,
+    thinkingLevel: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max',
+  ) {
+    const conversation = this.requireConversationRow(id)
+    this.requireAgent(agentId)
+    const snapshot = parseJson<Record<string, unknown>>(conversation.agent_snapshot_json, {})
+    const nextSnapshot = {
+      ...snapshot,
+      chatSelection: { agentId, thinkingLevel },
+    }
+    this.db.prepare(`
+      UPDATE ai_conversations
+      SET agent_id = ?, agent_snapshot_json = ?, updated_at = ?
+      WHERE id = ?
+    `).run(agentId, JSON.stringify(redactForStorage(nextSnapshot)), this.now().toISOString(), id)
+    return this.getConversation(id)
+  }
+
   setConversationPinned(id: number, pinned: boolean) {
     this.requireConversationRow(id)
     if (typeof pinned !== 'boolean') throw serviceError('invalid_input', 'Invalid pinned state.')
