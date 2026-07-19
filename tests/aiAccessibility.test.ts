@@ -118,9 +118,10 @@ test('provider creation uses a full-height settings drawer with focus restoratio
   assert.match(css, /\.ai-settings-drawer \.ai-provider-form__actions\s*\{[\s\S]*position:\s*sticky[\s\S]*bottom:\s*0/)
 })
 
-test('provider creation selects catalog models by capability and does not create Agents', () => {
-  assert.match(providerManager, /catalogModels\.filter\(\(model\) => model\.capabilities\.includes\(kind\)\)/)
-  assert.match(providerManager, /type="checkbox" checked=\{selected\.includes\(model\.name\)\}/)
+test('provider creation selects catalog models from one flat list and does not create Agents', () => {
+  assert.match(providerManager, /catalogModels\.map\(\(model\)/)
+  assert.doesNotMatch(providerManager, /catalogModels\.filter\(\(model\) => model\.capabilities\.includes\(kind\)\)/)
+  assert.match(providerManager, /type="checkbox" checked=\{selected\}/)
   assert.match(providerManager, /const plural = `\$\{kind\}Models`/)
   assert.match(providerManager, /className="ai-provider-model-catalog"/)
   assert.match(providerManager, /default_model/)

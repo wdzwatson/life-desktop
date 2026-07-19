@@ -7,12 +7,14 @@ const css = readFileSync(path.resolve('src/views/ai/AIChat.css'), 'utf8')
 const modelManager = readFileSync(path.resolve('src/views/ai/ModelManager.tsx'), 'utf8')
 const providerManager = readFileSync(path.resolve('src/views/ai/ProviderManager.tsx'), 'utf8')
 
-test('provider model choices are one-level rows with readable text', () => {
+test('provider model choices are one flat list with readable text', () => {
   const optionsRule = css.match(/\.ai-provider-model-options\s*\{[\s\S]*?\n\}/)?.[0] ?? ''
   const labelRule = css.match(/\.ai-provider-model-options label\s*\{[\s\S]*?\n\}/)?.[0] ?? ''
   assert.match(optionsRule, /grid-template-columns:\s*minmax\(0, 1fr\)/)
   assert.doesNotMatch(optionsRule, /grid-auto-flow:\s*dense/)
   assert.match(labelRule, /color:\s*var\(--text-main\)/)
+  assert.match(providerManager, /catalogModels\.map\(\(model\)/)
+  assert.doesNotMatch(providerManager, /catalogModels\.filter\(\(model\) => model\.capabilities\.includes\(kind\)\)\.map/)
 })
 
 test('model catalog exposes categories without nesting model rows', () => {

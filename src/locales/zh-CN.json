@@ -1057,6 +1057,7 @@
       "more_text_models": "及其它 {{count}} 个",
       "model_image": "图片模型",
       "model_video": "视频模型",
+      "model_catalog_title": "模型",
       "model_catalog_hint": "从模型管理中已登记的模型中多选。",
       "model_catalog_empty": "此能力还没有模型，请先前往模型管理添加。",
       "request_body": "请求体（JSON）",

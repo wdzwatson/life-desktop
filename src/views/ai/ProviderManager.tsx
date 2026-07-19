@@ -27,7 +27,9 @@ import {
 
 type Props = { onChanged: () => void | Promise<void> }
 
-type CatalogModel = { id: number; name: string; capabilities: Array<'text' | 'image' | 'video'> }
+type ModelCapability = 'text' | 'image' | 'video'
+type CatalogModel = { id: number; name: string; category: string; capabilities: ModelCapability[] }
+const MODEL_CAPABILITIES: ModelCapability[] = ['text', 'image', 'video']
 
 export function ProviderManager({ onChanged }: Props) {
   const { t, i18n } = useTranslation()
@@ -97,7 +99,7 @@ export function ProviderManager({ onChanged }: Props) {
     setError('')
   }
 
-  const updateModels = (kind: 'text' | 'image' | 'video', models: string[]) => {
+  const updateModels = (kind: ModelCapability, models: string[]) => {
     if (!draft) return
     const plural = `${kind}Models` as 'textModels' | 'imageModels' | 'videoModels'
     const defaultKey = `${kind}Model` as 'textModel' | 'imageModel' | 'videoModel'
@@ -106,6 +108,27 @@ export function ProviderManager({ onChanged }: Props) {
       [plural]: models,
       [defaultKey]: models.includes(draft[defaultKey]) ? draft[defaultKey] : (models[0] ?? ''),
     })
+  }
+
+  const toggleCatalogModel = (model: CatalogModel) => {
+    if (!draft) return
+    const applicableCapabilities = model.capabilities.filter((item) => draft.capabilities.includes(item))
+    if (applicableCapabilities.length === 0) return
+    const selectedForEveryApplicableCapability = applicableCapabilities.every((kind) => {
+      const plural = `${kind}Models` as 'textModels' | 'imageModels' | 'videoModels'
+      return draft[plural].includes(model.name)
+    })
+    const nextDraft = { ...draft }
+    applicableCapabilities.forEach((kind) => {
+      const plural = `${kind}Models` as 'textModels' | 'imageModels' | 'videoModels'
+      const models = selectedForEveryApplicableCapability
+        ? draft[plural].filter((item) => item !== model.name)
+        : [...draft[plural], model.name]
+      const defaultKey = `${kind}Model` as 'textModel' | 'imageModel' | 'videoModel'
+      nextDraft[plural] = models
+      nextDraft[defaultKey] = models.includes(draft[defaultKey]) ? draft[defaultKey] : (models[0] ?? '')
+    })
+    setDraft(nextDraft)
   }
 
   const saveProvider = async () => {
@@ -322,39 +345,39 @@ export function ProviderManager({ onChanged }: Props) {
               />
             </label>
 
-            <div className="ai-provider-model-catalog">
-              {(['text', 'image', 'video'] as const).map((kind) => draft.capabilities.includes(kind) && (
-                <fieldset key={kind}>
-                  <legend>{t(`aiChat.providers.model_${kind}`)}</legend>
-                  <p>{t('aiChat.providers.model_catalog_hint')}</p>
-                  <div className="ai-provider-model-options">
-                    {catalogModels.filter((model) => model.capabilities.includes(kind)).map((model) => {
-                      const plural = `${kind}Models` as 'textModels' | 'imageModels' | 'videoModels'
-                      const selected = draft[plural]
-                      return <label key={model.id}>
-                        <input type="checkbox" checked={selected.includes(model.name)} onChange={() => updateModels(
-                          kind,
-                          selected.includes(model.name) ? selected.filter((item) => item !== model.name) : [...selected, model.name],
-                        )} />
-                        <span>{model.name}</span>
-                      </label>
-                    })}
-                    {catalogModels.filter((model) => model.capabilities.includes(kind)).length === 0 && <span className="ai-provider-model-catalog__empty">{t('aiChat.providers.model_catalog_empty')}</span>}
-                  </div>
-                  <label className="ai-provider-model-catalog__default">
-                    <span>{t('aiChat.providers.default_model')}</span>
-                    {(() => {
-                      const plural = `${kind}Models` as 'textModels' | 'imageModels' | 'videoModels'
-                      const defaultKey = `${kind}Model` as 'textModel' | 'imageModel' | 'videoModel'
-                      return <select className="form-field" value={draft[defaultKey]} disabled={draft[plural].length === 0} onChange={(event) => setDraft({ ...draft, [defaultKey]: event.target.value })}>
-                        <option value="">{t('aiChat.providers.select_default_model')}</option>
-                        {draft[plural].map((model) => <option key={model} value={model}>{model}</option>)}
-                      </select>
-                    })()}
+            <fieldset className="ai-provider-model-catalog">
+              <legend>{t('aiChat.providers.model_catalog_title')}</legend>
+              <p>{t('aiChat.providers.model_catalog_hint')}</p>
+              <div className="ai-provider-model-options" role="list">
+                {catalogModels.map((model) => {
+                  const applicableCapabilities = model.capabilities.filter((item) => draft.capabilities.includes(item))
+                  const selected = applicableCapabilities.length > 0 && applicableCapabilities.every((kind) => {
+                    const plural = `${kind}Models` as 'textModels' | 'imageModels' | 'videoModels'
+                    return draft[plural].includes(model.name)
+                  })
+                  return <label key={model.id} className="ai-provider-model-option" role="listitem">
+                    <input type="checkbox" checked={selected} disabled={applicableCapabilities.length === 0} onChange={() => toggleCatalogModel(model)} />
+                    <span className="ai-provider-model-option__name">{model.name}</span>
+                    <span className="ai-provider-model-option__category">{model.category || 'other'}</span>
+                    <span className="ai-provider-model-option__capabilities">{model.capabilities.map((kind) => t(`aiChat.providers.capability_${kind}`)).join(' · ')}</span>
                   </label>
-                </fieldset>
-              ))}
-            </div>
+                })}
+                {catalogModels.length === 0 && <span className="ai-provider-model-catalog__empty">{t('aiChat.providers.model_catalog_empty')}</span>}
+              </div>
+              <div className="ai-provider-model-defaults">
+                {MODEL_CAPABILITIES.map((kind) => draft.capabilities.includes(kind) && (() => {
+                  const plural = `${kind}Models` as 'textModels' | 'imageModels' | 'videoModels'
+                  const defaultKey = `${kind}Model` as 'textModel' | 'imageModel' | 'videoModel'
+                  return <label className="ai-provider-model-catalog__default" key={kind}>
+                    <span>{t(`aiChat.providers.model_${kind}`)} · {t('aiChat.providers.default_model')}</span>
+                    <select className="form-field" value={draft[defaultKey]} disabled={draft[plural].length === 0} onChange={(event) => setDraft({ ...draft, [defaultKey]: event.target.value })}>
+                      <option value="">{t('aiChat.providers.select_default_model')}</option>
+                      {draft[plural].map((model) => <option key={model} value={model}>{model}</option>)}
+                    </select>
+                  </label>
+                })())}
+              </div>
+            </fieldset>
 
             <div className="ai-provider-form__grid">
               <label>

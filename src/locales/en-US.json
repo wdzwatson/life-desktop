@@ -1057,6 +1057,7 @@
       "more_text_models": "and {{count}} more",
       "model_image": "Image model",
       "model_video": "Video model",
+      "model_catalog_title": "Models",
       "model_catalog_hint": "Select one or more models registered in Model Management.",
       "model_catalog_empty": "No models exist for this capability yet. Add one in Model Management first.",
       "request_body": "Request body (JSON)",
