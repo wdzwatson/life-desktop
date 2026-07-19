@@ -67,8 +67,17 @@ export type AIChatModel = {
   issues: string[]
 }
 
+export type AIChatMediaProvider = {
+  id: number
+  name: string
+  enabled: boolean
+  capabilities: string[]
+  models: { imageOptions?: string[]; image?: string; videoOptions?: string[]; video?: string }
+}
+
 type ChatWorkspaceProps = {
   models: AIChatModel[]
+  mediaProviders: AIChatMediaProvider[]
   hasProvider: boolean
   onOpenSettings: () => void
   onOpenProviders: () => void
@@ -120,7 +129,7 @@ function errorMessage(response: unknown, fallback: string) {
   return fallback
 }
 
-export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProviders, onOpenModels }: ChatWorkspaceProps) {
+export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSettings, onOpenProviders, onOpenModels }: ChatWorkspaceProps) {
   const { t, i18n } = useTranslation()
   const api = (window as any).electronAPI
   const readyModels = useMemo(
@@ -161,6 +170,10 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
   const [exportingConversation, setExportingConversation] = useState(false)
   const [imageMode, setImageMode] = useState(false)
   const [videoMode, setVideoMode] = useState(false)
+  const [selectedImageProviderId, setSelectedImageProviderId] = useState<number | null>(null)
+  const [selectedImageModel, setSelectedImageModel] = useState('')
+  const [selectedVideoProviderId, setSelectedVideoProviderId] = useState<number | null>(null)
+  const [selectedVideoModel, setSelectedVideoModel] = useState('')
   const [attachments, setAttachments] = useState<AIChatMediaPart[]>([])
   const [uploadingAttachments, setUploadingAttachments] = useState(false)
   const [activeMediaGeneration, setActiveMediaGeneration] = useState<{
@@ -200,11 +213,25 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
   const providerModels = providerOptions.find((provider) => provider.id === selectedProviderId)?.models ?? []
   const thinkingLevels = useMemo(() => getAIThinkingLevels(activeModel?.textModel), [activeModel?.textModel])
   const chatReady = hasProvider && readyModels.length > 0
+  const imageProviders = useMemo(() => mediaProviders.filter((provider) => provider.enabled && provider.capabilities.includes('image') && provider.models.image), [mediaProviders])
+  const videoProviders = useMemo(() => mediaProviders.filter((provider) => provider.enabled && provider.capabilities.includes('video') && provider.models.video), [mediaProviders])
+  const selectedImageProvider = imageProviders.find((provider) => provider.id === selectedImageProviderId) ?? imageProviders[0]
+  const selectedVideoProvider = videoProviders.find((provider) => provider.id === selectedVideoProviderId) ?? videoProviders[0]
+  const imageModels = selectedImageProvider?.models.imageOptions?.length ? selectedImageProvider.models.imageOptions : selectedImageProvider?.models.image ? [selectedImageProvider.models.image] : []
+  const videoModels = selectedVideoProvider?.models.videoOptions?.length ? selectedVideoProvider.models.videoOptions : selectedVideoProvider?.models.video ? [selectedVideoProvider.models.video] : []
 
   useEffect(() => {
-    if (!activeModel?.providers.image) setImageMode(false)
-    if (!activeModel?.providers.video) setVideoMode(false)
-  }, [activeModel])
+    if (imageMode && !selectedImageProvider) setImageMode(false)
+    if (videoMode && !selectedVideoProvider) setVideoMode(false)
+  }, [imageMode, selectedImageProvider, selectedVideoProvider, videoMode])
+  useEffect(() => {
+    if (selectedImageProvider && selectedImageProvider.id !== selectedImageProviderId) setSelectedImageProviderId(selectedImageProvider.id)
+    if (!imageModels.includes(selectedImageModel)) setSelectedImageModel(imageModels[0] ?? '')
+  }, [imageModels, selectedImageModel, selectedImageProvider, selectedImageProviderId])
+  useEffect(() => {
+    if (selectedVideoProvider && selectedVideoProvider.id !== selectedVideoProviderId) setSelectedVideoProviderId(selectedVideoProvider.id)
+    if (!videoModels.includes(selectedVideoModel)) setSelectedVideoModel(videoModels[0] ?? '')
+  }, [selectedVideoModel, selectedVideoProvider, selectedVideoProviderId, videoModels])
   const visibleModelSwitchMarkers = useMemo(
     () => modelSwitchMarkers.filter((marker) => marker.conversationId === activeConversationId && marker.ready),
     [activeConversationId, modelSwitchMarkers],
@@ -690,7 +717,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
     }
     if (imageMode) {
       if (!text) return
-      if (!activeModel?.providers.image || !api?.generateAIImages) {
+      if (!selectedImageProvider || !api?.generateAIImages) {
         setNotice(t('aiChat.images.provider_required'))
         return
       }
@@ -715,6 +742,8 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
         agentId,
         prompt: text,
         count: 1,
+        providerId: selectedImageProvider?.id,
+        model: selectedImageModel,
       })
       setSubmitting(false)
       setActiveMediaGeneration(null)
@@ -734,7 +763,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
     }
     if (videoMode) {
       if (!text) return
-      if (!activeModel?.providers.video || !api?.generateAIVideos) {
+      if (!selectedVideoProvider || !api?.generateAIVideos) {
         setNotice(t('aiChat.videos.provider_required'))
         return
       }
@@ -759,6 +788,8 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
         conversationId: conversation.id,
         agentId,
         prompt: text,
+        providerId: selectedVideoProvider?.id,
+        model: selectedVideoModel,
       })
       setSubmitting(false)
       setActiveMediaGeneration(null)
@@ -1088,30 +1119,33 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
               <Database size={14} aria-hidden="true" />
               <span className="sr-only">{t('aiChat.chat.select_provider')}</span>
               <select
-                value={selectedProviderId ?? ''}
-                disabled={providerOptions.length === 0}
-                onChange={(event) => handleProviderChange(Number(event.target.value))}
+                value={imageMode ? selectedImageProvider?.id ?? '' : videoMode ? selectedVideoProvider?.id ?? '' : selectedProviderId ?? ''}
+                disabled={imageMode ? imageProviders.length === 0 : videoMode ? videoProviders.length === 0 : providerOptions.length === 0}
+                onChange={(event) => {
+                  const providerId = Number(event.target.value)
+                  if (imageMode) setSelectedImageProviderId(providerId)
+                  else if (videoMode) setSelectedVideoProviderId(providerId)
+                  else handleProviderChange(providerId)
+                }}
                 aria-label={t('aiChat.chat.select_provider')}
               >
-                {providerOptions.length === 0 && <option value="">{t('aiChat.chat.no_provider_option')}</option>}
-                {providerOptions.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
+                {imageMode ? imageProviders.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>) : videoMode ? videoProviders.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>) : providerOptions.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
               </select>
-              <span className="ai-chat-stage__selector-value" aria-hidden="true">{selectedProvider?.name ?? t('aiChat.chat.no_provider_option')}</span>
+              <span className="ai-chat-stage__selector-value" aria-hidden="true">{imageMode ? selectedImageProvider?.name : videoMode ? selectedVideoProvider?.name : selectedProvider?.name ?? t('aiChat.chat.no_provider_option')}</span>
               <ChevronDown size={12} aria-hidden="true" />
             </label>
             <label className="ai-chat-stage__selector ai-chat-stage__selector--model">
               <Boxes size={14} aria-hidden="true" />
               <span className="sr-only">{t('aiChat.chat.select_model')}</span>
               <select
-                value={selectedAgentId ?? ''}
-                disabled={providerModels.length === 0}
-                onChange={(event) => handleModelChange(Number(event.target.value))}
+                value={imageMode ? selectedImageModel : videoMode ? selectedVideoModel : selectedAgentId ?? ''}
+                disabled={imageMode ? imageModels.length === 0 : videoMode ? videoModels.length === 0 : providerModels.length === 0}
+                onChange={(event) => imageMode ? setSelectedImageModel(event.target.value) : videoMode ? setSelectedVideoModel(event.target.value) : handleModelChange(Number(event.target.value))}
                 aria-label={t('aiChat.chat.select_model')}
               >
-                {providerModels.length === 0 && <option value="">{t('aiChat.chat.no_model_option')}</option>}
-                {providerModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
+                {imageMode ? imageModels.map((model) => <option key={model} value={model}>{model}</option>) : videoMode ? videoModels.map((model) => <option key={model} value={model}>{model}</option>) : providerModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
               </select>
-              <span className="ai-chat-stage__selector-value" aria-hidden="true">{activeModel?.name ?? t('aiChat.chat.no_model_option')}</span>
+              <span className="ai-chat-stage__selector-value" aria-hidden="true">{imageMode ? selectedImageModel : videoMode ? selectedVideoModel : activeModel?.name ?? t('aiChat.chat.no_model_option')}</span>
               <ChevronDown size={12} aria-hidden="true" />
             </label>
             <label className="ai-chat-stage__selector ai-chat-stage__selector--thinking">
@@ -1119,7 +1153,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
               <span className="sr-only">{t('aiChat.chat.select_thinking')}</span>
               <select
                 value={thinkingLevel}
-                disabled={!activeModel || thinkingLevels.length < 2}
+                disabled={imageMode || videoMode || !activeModel || thinkingLevels.length < 2}
                 onChange={(event) => handleThinkingChange(event.target.value as AIThinkingLevel)}
                 aria-label={t('aiChat.chat.select_thinking')}
               >
@@ -1319,10 +1353,10 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
                 <Paperclip size={13} aria-hidden="true" />
                 {t(uploadingAttachments ? 'aiChat.chat.uploading_attachment' : 'aiChat.chat.add_attachment')}
               </button>
-              {activeModel?.providers.image && api?.generateAIImages && <button
+              {imageProviders.length > 0 && api?.generateAIImages && <button
                 className={imageMode ? 'is-active' : ''}
                 onClick={() => {
-                  if (!activeModel?.providers.image) {
+                  if (!selectedImageProvider) {
                     setNotice(t('aiChat.images.provider_required_action'))
                     return
                   }
@@ -1335,15 +1369,15 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
                 }}
                 disabled={submitting || isRunning}
                 aria-pressed={imageMode}
-                title={activeModel?.providers.image ? t('aiChat.images.toggle') : t('aiChat.images.provider_required')}
+                title={selectedImageProvider ? t('aiChat.images.toggle') : t('aiChat.images.provider_required')}
               >
                 <ImagePlus size={13} aria-hidden="true" />
                 {t(imageMode ? 'aiChat.images.mode_active' : 'aiChat.images.mode')}
               </button>}
-              {activeModel?.providers.video && api?.generateAIVideos && <button
+              {videoProviders.length > 0 && api?.generateAIVideos && <button
                 className={videoMode ? 'is-active' : ''}
                 onClick={() => {
-                  if (!activeModel?.providers.video) {
+                  if (!selectedVideoProvider) {
                     setNotice(t('aiChat.videos.provider_required_action'))
                     return
                   }
@@ -1356,7 +1390,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
                 }}
                 disabled={submitting || isRunning}
                 aria-pressed={videoMode}
-                title={activeModel?.providers.video ? t('aiChat.videos.toggle') : t('aiChat.videos.provider_required')}
+                title={selectedVideoProvider ? t('aiChat.videos.toggle') : t('aiChat.videos.provider_required')}
               >
                 <Video size={13} aria-hidden="true" />
                 {t(videoMode ? 'aiChat.videos.mode_active' : 'aiChat.videos.mode')}

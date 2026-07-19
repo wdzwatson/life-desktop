@@ -457,6 +457,8 @@ export function createAIImageHandlers(
           prompt: requireString(data.prompt, 'image prompt', 100_000),
           ...(data.count === undefined ? {} : { count: requireId(data.count, 'image count') }),
           ...(typeof data.size === 'string' && data.size.trim() ? { size: data.size.trim().slice(0, 100) } : {}),
+          ...(data.providerId === undefined ? {} : { providerId: requireId(data.providerId, 'image provider ID') }),
+          ...(typeof data.model === 'string' && data.model.trim() ? { model: data.model.trim().slice(0, 200) } : {}),
           ...(abortScope ? { signal: abortScope.signal } : {}),
         })
       } finally {
@@ -496,6 +498,8 @@ export function createAIVideoHandlers(
           conversationId,
           agentId: requireId(data.agentId, 'agent ID'),
           prompt: requireString(data.prompt, 'video prompt', 100_000),
+          ...(data.providerId === undefined ? {} : { providerId: requireId(data.providerId, 'video provider ID') }),
+          ...(typeof data.model === 'string' && data.model.trim() ? { model: data.model.trim().slice(0, 200) } : {}),
           ...(data.durationSeconds === undefined ? {} : { durationSeconds: requireId(data.durationSeconds, 'video duration') }),
           ...(typeof data.aspectRatio === 'string' && data.aspectRatio.trim() ? { aspectRatio: data.aspectRatio.trim().slice(0, 40) } : {}),
           ...(abortScope ? { signal: abortScope.signal } : {}),

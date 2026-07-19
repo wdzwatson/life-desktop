@@ -26,13 +26,14 @@ export class AIImageGenerationService {
     this.createAdapter = dependencies.createAdapter ?? ((config) => new AIImageAdapter(config))
   }
 
-  async generate(input: { conversationId: number; agentId: number; prompt: string; count?: number; size?: string; signal?: AbortSignal }) {
+  async generate(input: { conversationId: number; agentId: number; prompt: string; count?: number; size?: string; providerId?: number; model?: string; signal?: AbortSignal }) {
     const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : ''
     if (!prompt) throw new AIServiceError({ code: 'invalid_input', message: 'An image prompt is required.', retryable: false })
     this.dependencies.conversations.getConversation(input.conversationId)
     const snapshot = this.dependencies.agents.getSnapshot(input.agentId)
-    if (!snapshot.providers.image) throw new AIServiceError({ code: 'configuration_incomplete', message: 'This Agent does not have an image provider.', retryable: false })
-    const provider = this.dependencies.providers.get(snapshot.providers.image.id)
+    const providerId = input.providerId ?? snapshot.providers.image?.id
+    if (!providerId) throw new AIServiceError({ code: 'configuration_incomplete', message: 'No image provider is selected.', retryable: false })
+    const provider = this.dependencies.providers.get(providerId)
     if (!provider.enabled || !provider.capabilities.includes('image') || !provider.models.image) {
       throw new AIServiceError({ code: 'configuration_incomplete', message: 'The Agent image provider is not ready.', retryable: false })
     }
@@ -64,7 +65,7 @@ export class AIImageGenerationService {
         baseUrl: provider.baseUrl,
         apiKey: credentials.apiKey,
         headers: credentials.headers,
-        model: snapshot.providers.image.model,
+        model: input.model?.trim() || provider.models.image || snapshot.providers.image?.model || '',
         timeoutMs: provider.timeoutMs,
       })
       const generated = await adapter.generate({ prompt, count: input.count, size: input.size, signal: input.signal })

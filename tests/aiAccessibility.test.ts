@@ -77,9 +77,9 @@ test('AI controls and run states retain visible keyboard focus and theme-derived
   assert.match(css, /dd\.is-cancelled,[\s\S]*dd\.is-interrupted[\s\S]*var\(--ai-status-warning\)/)
 })
 
-test('media mode controls render only for models with the matching capability', () => {
-  assert.match(workspace, /activeModel\?\.providers\.image && api\?\.generateAIImages && <button/)
-  assert.match(workspace, /activeModel\?\.providers\.video && api\?\.generateAIVideos && <button/)
+test('media mode controls render only for configured matching providers', () => {
+  assert.match(workspace, /imageProviders\.length > 0 && api\?\.generateAIImages && <button/)
+  assert.match(workspace, /videoProviders\.length > 0 && api\?\.generateAIVideos && <button/)
   assert.match(workspace, /aria-pressed=\{imageMode\}/)
   assert.match(workspace, /aria-pressed=\{videoMode\}/)
   assert.doesNotMatch(workspace, /disabled=\{!activeAgent\?\.providers\.(?:image|video)/)
@@ -179,8 +179,8 @@ test('model switching adds a deferred timeline divider after the active round', 
   assert.match(workspace, /type ModelSwitchMarker = \{[\s\S]*fromProvider:[\s\S]*toProvider:[\s\S]*ready: boolean/)
   assert.match(workspace, /const roundActive = isRunning \|\| isMediaRunning \|\| submitting/)
   assert.match(workspace, /ready: !roundActive/)
-  assert.match(workspace, /disabled=\{providerOptions\.length === 0\}/)
-  assert.match(workspace, /disabled=\{providerModels\.length === 0\}/)
+  assert.match(workspace, /disabled=\{imageMode \? imageProviders\.length === 0/)
+  assert.match(workspace, /disabled=\{imageMode \? imageModels\.length === 0/)
   assert.match(workspace, /marker\.conversationId === activeConversationId && !marker\.ready \? \{ \.\.\.marker, ready: true \}/)
   assert.match(workspace, /className="ai-model-switch-divider" role="separator"/)
   assert.match(css, /\.ai-model-switch-divider\s*\{[\s\S]*grid-template-columns:[\s\S]*color:/)

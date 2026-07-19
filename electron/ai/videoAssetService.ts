@@ -49,14 +49,17 @@ export class AIVideoAssetService {
     prompt: string
     durationSeconds?: number
     aspectRatio?: string
+    providerId?: number
+    model?: string
     signal?: AbortSignal
   }) {
     const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : ''
     if (!prompt) throw new AIServiceError({ code: 'invalid_input', message: 'A video prompt is required.', retryable: false })
     this.dependencies.conversations.getConversation(input.conversationId)
     const snapshot = this.dependencies.agents.getSnapshot(input.agentId)
-    if (!snapshot.providers.video) throw new AIServiceError({ code: 'configuration_incomplete', message: 'This Agent does not have a video provider.', retryable: false })
-    const provider = this.dependencies.providers.get(snapshot.providers.video.id)
+    const providerId = input.providerId ?? snapshot.providers.video?.id
+    if (!providerId) throw new AIServiceError({ code: 'configuration_incomplete', message: 'No video provider is selected.', retryable: false })
+    const provider = this.dependencies.providers.get(providerId)
     if (!provider.enabled || !provider.capabilities.includes('video') || !provider.models.video) {
       throw new AIServiceError({ code: 'configuration_incomplete', message: 'The Agent video provider is not ready.', retryable: false })
     }
@@ -88,7 +91,7 @@ export class AIVideoAssetService {
         baseUrl: provider.baseUrl,
         apiKey: credentials.apiKey,
         headers: credentials.headers,
-        model: snapshot.providers.video.model,
+        model: input.model?.trim() || provider.models.video || snapshot.providers.video?.model || '',
         timeoutMs: provider.timeoutMs,
       }
       const task = await this.dependencies.videoTasks.run({

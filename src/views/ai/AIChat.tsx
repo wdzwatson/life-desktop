@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Boxes, Database, HardDrive, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import './AIChat.css'
-import { ChatWorkspace, type AIChatModel } from './ChatWorkspace'
+import { ChatWorkspace, type AIChatMediaProvider, type AIChatModel } from './ChatWorkspace'
 import { ModelManager } from './ModelManager'
 import { ProviderManager } from './ProviderManager'
 import { StorageManager } from './StorageManager'
@@ -20,6 +20,7 @@ export function AIChat() {
   const [settingsView, setSettingsView] = useState<AISettingsView>('providers')
   const [counts, setCounts] = useState<ConfigCounts>(EMPTY_COUNTS)
   const [models, setModels] = useState<AIChatModel[]>([])
+  const [mediaProviders, setMediaProviders] = useState<AIChatMediaProvider[]>([])
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const setupTransitionRef = useRef(false)
   const api = (window as any).electronAPI
@@ -62,6 +63,13 @@ export function AIChat() {
         isDefault: model.isDefault,
         configurationStatus: model.enabled ? 'ready' : 'incomplete',
         issues: [],
+      })))
+      setMediaProviders((providers.data ?? []).map((provider: any) => ({
+        id: provider.id,
+        name: provider.name,
+        enabled: provider.enabled,
+        capabilities: provider.capabilities ?? [],
+        models: provider.models ?? {},
       })))
       setLoadState('ready')
     } catch {
@@ -126,6 +134,7 @@ export function AIChat() {
         {loadState === 'ready' && mode === 'chat' && (
           <ChatWorkspace
             models={models}
+            mediaProviders={mediaProviders}
             hasProvider={hasProvider}
             onOpenSettings={() => openSettings()}
             onOpenProviders={() => {
