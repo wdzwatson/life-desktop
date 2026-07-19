@@ -16,7 +16,7 @@ test('AI always renders the conversation workspace instead of a marketing onboar
   assert.doesNotMatch(css, /ai-onboarding/)
   assert.match(shell, /mode === 'chat'[\s\S]*<ChatWorkspace[\s\S]*hasProvider=\{hasProvider\}/)
   assert.match(workspace, /className="ai-chat-setup-banner"/)
-  assert.match(workspace, /disabled=\{submitting \|\| !chatReady\}/)
+  assert.match(workspace, /disabled=\{submitting \|\| uploadingAttachments \|\| !chatReady\}/)
 })
 
 test('progressive setup keeps the conversation canvas responsive without page overflow', () => {

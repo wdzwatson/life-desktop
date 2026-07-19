@@ -1,9 +1,13 @@
 import { AIServiceError, type AIErrorCode } from '../types'
 import { parseAISseStream } from './streamParser'
 
+export type OpenAICompatibleContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
 export type OpenAICompatibleMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool'
-  content: string | null
+  content: string | OpenAICompatibleContentPart[] | null
   name?: string
   tool_call_id?: string
   tool_calls?: Array<{

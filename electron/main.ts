@@ -728,6 +728,42 @@ ipcMain.handle('ai:media:reveal', async (_event, payload: { assetId?: number }) 
   }
 })
 
+ipcMain.handle('ai:attachments:select', async () => {
+  try {
+    const options = {
+      properties: ['openFile', 'multiSelections'] as Array<'openFile' | 'multiSelections'>,
+    }
+    const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
+    if (result.canceled) return { success: true, data: [] }
+    const mimeByExtension: Record<string, string> = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
+      '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown', '.json': 'application/json',
+    }
+    const assets = await Promise.all(result.filePaths.map(async (filePath) => {
+      const extension = path.extname(filePath).toLowerCase()
+      const mediaType = ['.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(extension) ? 'image' : 'file'
+      const asset = await getAIMediaService().storeLocalFile({
+        mediaType,
+        filePath,
+        declaredMimeType: mimeByExtension[extension],
+        originalName: path.basename(filePath),
+      })
+      return {
+        id: asset.id,
+        mediaType: asset.mediaType,
+        mimeType: asset.mimeType,
+        byteSize: asset.byteSize,
+        originalName: asset.originalName,
+        url: asset.url,
+      }
+    }))
+    return { success: true, data: assets }
+  } catch (error) {
+    const detail = error instanceof AIServiceError ? error.detail : { code: 'storage_error', message: 'The attachment could not be added.', retryable: false }
+    return { success: false, error: detail }
+  }
+})
+
 // IPC Handlers: User Authentication & Switching
 ipcMain.handle('user:switch', async (_, userId: string) => {
   const settings = getSettings()

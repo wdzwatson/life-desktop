@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import test from 'node:test'
 import { AIAgentRuntime } from '../electron/ai/agentRuntime.ts'
 import type { OpenAICompatibleDelta, OpenAICompatibleRequest } from '../electron/ai/providers/openAiCompatible.ts'
@@ -113,6 +116,7 @@ function snapshot() {
 
 function setup(
   streamChat: (request: OpenAICompatibleRequest) => AsyncIterable<OpenAICompatibleDelta>,
+  options: { capabilities?: string[]; media?: Record<string, unknown> } = {},
 ) {
   const conversations = new FakeConversationService()
   const events: AIRunEvent[] = []
@@ -128,7 +132,7 @@ function setup(
           baseUrl: 'https://api.test/v1',
           credentialConfigured: true,
           headerNames: ['x-tenant'],
-          capabilities: ['text', 'streaming'],
+          capabilities: options.capabilities ?? ['text', 'streaming'],
           models: { text: 'chat-model' },
           timeoutMs: 5_000,
           allowLocalNetwork: false,
@@ -143,6 +147,7 @@ function setup(
         getCredentialBundle: () => ({ apiKey: 'main-process-only', headers: { 'x-tenant': 'local' } }),
       },
       conversations,
+      ...(options.media ? { media: options.media } : {}),
     }) as any,
     createAdapter: () => ({
       streamChat: (request) => {
@@ -206,6 +211,46 @@ test('Agent runtime streams text, persists deltas in a batch, and records usage'
   ])
   assert.equal(context.getRequest()?.signal?.aborted, false)
   assert.equal(started.runId, 100)
+})
+
+test('runtime persists file attachments and sends vision images as OpenAI-compatible content parts', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'life-ai-attachment-'))
+  const imagePath = path.join(directory, 'image.png')
+  fs.writeFileSync(imagePath, Buffer.from([137, 80, 78, 71]))
+  try {
+    const context = setup(async function* () {
+      yield { type: 'done', finishReason: 'stop' }
+    }, {
+      capabilities: ['text', 'streaming', 'vision'],
+      media: {
+        getAsset: (assetId: number) => assetId === 31
+          ? { id: 31, mediaType: 'file', mimeType: 'application/pdf', byteSize: 120, originalName: 'brief.pdf', status: 'completed' }
+          : { id: 32, mediaType: 'image', mimeType: 'image/png', byteSize: 4, originalName: 'image.png', status: 'completed' },
+        getRegisteredFilePathSync: () => imagePath,
+      },
+    })
+    context.runtime.start({
+      conversationId: 1,
+      agentId: 7,
+      text: 'Review these files',
+      attachmentAssetIds: [31, 32],
+    })
+    await waitForTerminal(context.events)
+    assert.deepEqual(context.conversations.messages[0].parts, [
+      { type: 'text', text: 'Review these files' },
+      { type: 'file', assetId: 31, mimeType: 'application/pdf', name: 'brief.pdf' },
+      { type: 'image', assetId: 32, mimeType: 'image/png', name: 'image.png' },
+    ])
+    const content = context.getRequest()?.messages.at(-1)?.content
+    assert.ok(Array.isArray(content))
+    assert.deepEqual(content?.slice(0, 2), [
+      { type: 'text', text: 'Review these files' },
+      { type: 'text', text: '[Attachment: brief.pdf; type: application/pdf; size: 120 bytes]' },
+    ])
+    assert.match((content?.[2] as { image_url: { url: string } }).image_url.url, /^data:image\/png;base64,/)
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 test('cancel aborts the provider signal, preserves partial text, and writes one terminal state', async () => {

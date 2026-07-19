@@ -77,9 +77,9 @@ test('AI controls and run states retain visible keyboard focus and theme-derived
   assert.match(css, /dd\.is-cancelled,[\s\S]*dd\.is-interrupted[\s\S]*var\(--ai-status-warning\)/)
 })
 
-test('media mode controls explain missing providers instead of silently disabling clicks', () => {
-  assert.match(workspace, /setNotice\(t\('aiChat\.images\.provider_required_action'\)\)/)
-  assert.match(workspace, /setNotice\(t\('aiChat\.videos\.provider_required_action'\)\)/)
+test('media mode controls render only for models with the matching capability', () => {
+  assert.match(workspace, /activeModel\?\.providers\.image && api\?\.generateAIImages && <button/)
+  assert.match(workspace, /activeModel\?\.providers\.video && api\?\.generateAIVideos && <button/)
   assert.match(workspace, /aria-pressed=\{imageMode\}/)
   assert.match(workspace, /aria-pressed=\{videoMode\}/)
   assert.doesNotMatch(workspace, /disabled=\{!activeAgent\?\.providers\.(?:image|video)/)

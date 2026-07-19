@@ -39,6 +39,9 @@ export function AIChat() {
       ])
       if (!providers?.success || !catalogResponse?.success || !runtimeResponse?.success) throw new Error('load failed')
       const textModels = (runtimeResponse.data ?? []).filter((model: any) => model.agentId && model.providers) as any[]
+      const providerById = new Map<number, { capabilities?: string[] }>(
+        (providers.data ?? []).map((provider: any) => [provider.id, provider]),
+      )
       setCounts({
         providers: providers.data?.length ?? 0,
         models: catalogResponse.data?.length ?? 0,
@@ -54,6 +57,7 @@ export function AIChat() {
         providerName: model.providerName,
         textModel: model.model,
         providers: model.providers,
+        supportsVision: providerById.get(model.providers.text)?.capabilities?.includes('vision') ?? false,
         enabled: model.enabled,
         isDefault: model.isDefault,
         configurationStatus: model.enabled ? 'ready' : 'incomplete',

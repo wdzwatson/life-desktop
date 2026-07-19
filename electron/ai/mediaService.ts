@@ -214,6 +214,7 @@ function detectMime(buffer: Buffer) {
 }
 
 function validateDetectedMedia(mediaType: AIMediaType, detected: ReturnType<typeof detectMime>) {
+  if (!detected && mediaType === 'file') return { mimeType: 'application/octet-stream' }
   if (!detected) throw mediaError('media_failed', 'The downloaded file type could not be verified.')
   if (mediaType !== 'file' && !detected.mimeType.startsWith(`${mediaType}/`)) {
     throw mediaError('media_failed', `The downloaded file is not valid ${mediaType} content.`)
@@ -578,6 +579,31 @@ export class AIMediaService {
     return this.resolveRegisteredPath(row.local_path)
   }
 
+  getRegisteredFilePathSync(assetIdValue: unknown, includeProcessing = false) {
+    const assetId = requireId(assetIdValue, 'media asset ID')
+    const row = this.dependencies.db.prepare(`
+      SELECT local_path FROM ai_media_assets
+      WHERE id = ? AND status IN (${includeProcessing ? "'completed', 'processing'" : "'completed'"})
+    `).get(assetId) as { local_path: string | null } | undefined
+    if (!row?.local_path) throw mediaError('not_found', 'Completed AI media asset was not found.')
+    if (path.isAbsolute(row.local_path) || row.local_path.includes('\0')) {
+      throw mediaError('permission_denied', 'The AI media path is invalid.')
+    }
+    const root = path.resolve(this.dependencies.mediaRoot)
+    const resolved = path.resolve(root, row.local_path)
+    const relation = path.relative(root, resolved)
+    if (!relation || relation.startsWith('..') || path.isAbsolute(relation)) {
+      throw mediaError('permission_denied', 'The AI media path escapes its storage directory.')
+    }
+    const realRoot = fs.realpathSync(root)
+    const realFile = fs.realpathSync(resolved)
+    const realRelation = path.relative(realRoot, realFile)
+    if (!realRelation || realRelation.startsWith('..') || path.isAbsolute(realRelation)) {
+      throw mediaError('permission_denied', 'The AI media file resolves outside its storage directory.')
+    }
+    return realFile
+  }
+
   async copyAssetTo(assetIdValue: unknown, destination: string) {
     if (typeof destination !== 'string' || !path.isAbsolute(destination)) throw mediaError('invalid_input', 'Invalid AI media export path.')
     const source = await this.getRegisteredFilePath(assetIdValue)
@@ -655,6 +681,7 @@ export class AIMediaService {
     originalName?: string,
   ): Promise<AIStoredMediaAsset> {
     const extension = MIME_EXTENSION[detected.mimeType]
+      ?? (mediaType === 'file' ? path.extname(originalName ?? '').replace(/^\./, '').replace(/[^a-z0-9]/gi, '').slice(0, 16) || 'bin' : undefined)
     if (!extension) throw mediaError('media_failed', 'The verified media type is not supported.')
     const date = this.now()
     const relativePath = path.join(mediaType, String(date.getUTCFullYear()), String(date.getUTCMonth() + 1).padStart(2, '0'), `${this.createId()}.${extension}`)

@@ -6,6 +6,7 @@ import {
   Gauge,
   ImagePlus,
   MessageSquare,
+  Paperclip,
   Send,
   Settings2,
   Square,
@@ -45,6 +46,7 @@ import {
   shouldFollowAIChatScroll,
   sortAIConversations,
   type AIChatConversation,
+  type AIChatMediaPart,
   type AIChatMessage,
   type AIChatRunEvent,
   type AIChatRunState,
@@ -58,6 +60,7 @@ export type AIChatModel = {
   providerName: string
   textModel: string
   providers: { text: number; image?: number; video?: number }
+  supportsVision: boolean
   enabled: boolean
   isDefault: boolean
   configurationStatus: 'ready' | 'incomplete'
@@ -158,6 +161,8 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
   const [exportingConversation, setExportingConversation] = useState(false)
   const [imageMode, setImageMode] = useState(false)
   const [videoMode, setVideoMode] = useState(false)
+  const [attachments, setAttachments] = useState<AIChatMediaPart[]>([])
+  const [uploadingAttachments, setUploadingAttachments] = useState(false)
   const [activeMediaGeneration, setActiveMediaGeneration] = useState<{
     conversationId: number
     mediaType: 'image' | 'video'
@@ -195,6 +200,11 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
   const providerModels = providerOptions.find((provider) => provider.id === selectedProviderId)?.models ?? []
   const thinkingLevels = useMemo(() => getAIThinkingLevels(activeModel?.textModel), [activeModel?.textModel])
   const chatReady = hasProvider && readyModels.length > 0
+
+  useEffect(() => {
+    if (!activeModel?.providers.image) setImageMode(false)
+    if (!activeModel?.providers.video) setVideoMode(false)
+  }, [activeModel])
   const visibleModelSwitchMarkers = useMemo(
     () => modelSwitchMarkers.filter((marker) => marker.conversationId === activeConversationId && marker.ready),
     [activeConversationId, modelSwitchMarkers],
@@ -632,9 +642,37 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
     return renamed.data
   }
 
+  const selectAttachments = async () => {
+    if (!api?.selectAIChatAttachments || uploadingAttachments || submitting || isRunning || isMediaRunning || imageMode || videoMode) return
+    setUploadingAttachments(true)
+    setNotice(null)
+    const response = await api.selectAIChatAttachments() as ApiResponse<Array<{
+      id: number
+      mediaType: AIChatMediaPart['type']
+      mimeType: string
+      originalName?: string
+    }>>
+    setUploadingAttachments(false)
+    if (!response?.success) {
+      setNotice(errorMessage(response, t('aiChat.chat.attachment_upload_failed')))
+      return
+    }
+    setAttachments((current) => {
+      const seen = new Set(current.map((attachment) => attachment.assetId))
+      return [...current, ...response.data
+        .filter((asset) => !seen.has(asset.id))
+        .map((asset) => ({
+          type: asset.mediaType,
+          assetId: asset.id,
+          mimeType: asset.mimeType,
+          ...(asset.originalName ? { name: asset.originalName } : {}),
+        }))]
+    })
+  }
+
   const sendText = async (requestedText?: string) => {
     const text = (requestedText ?? draft).trim()
-    if (!text || submitting || isRunning) return
+    if ((!text && attachments.length === 0) || submitting || uploadingAttachments || isRunning) return
     const sendMethodAvailable = imageMode
       ? Boolean(api?.generateAIImages)
       : videoMode
@@ -651,6 +689,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
       return
     }
     if (imageMode) {
+      if (!text) return
       if (!activeModel?.providers.image || !api?.generateAIImages) {
         setNotice(t('aiChat.images.provider_required'))
         return
@@ -694,6 +733,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
       return
     }
     if (videoMode) {
+      if (!text) return
       if (!activeModel?.providers.video || !api?.generateAIVideos) {
         setNotice(t('aiChat.videos.provider_required'))
         return
@@ -742,7 +782,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
       conversationId: conversation.id,
       agentId,
       text,
-      attachmentAssetIds: [],
+      attachmentAssetIds: attachments.map((attachment) => attachment.assetId),
       thinkingLevel,
     })) as ApiResponse<{
       conversationId: number
@@ -766,6 +806,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
             triggerMessageId: response.data.triggerMessageId,
             messageId: response.data.messageId,
             text,
+            attachments,
             timestamp: now,
           }),
           'append',
@@ -789,7 +830,10 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
             },
           },
     )
-    if (!requestedText) setDraft('')
+    if (!requestedText) {
+      setDraft('')
+      setAttachments([])
+    }
     followOutputRef.current = true
     void loadConversations()
   }
@@ -1231,6 +1275,23 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
         )}
 
         <div className="ai-chat-composer">
+          {attachments.length > 0 && (
+            <div className="ai-chat-composer__attachments" aria-label={t('aiChat.chat.attachments_label')}>
+              {attachments.map((attachment) => (
+                <span className="ai-chat-composer__attachment" key={attachment.assetId}>
+                  <Paperclip size={12} aria-hidden="true" />
+                  <span>{attachment.name || t('aiChat.chat.attachment')}</span>
+                  <button
+                    onClick={() => setAttachments((current) => current.filter((item) => item.assetId !== attachment.assetId))}
+                    aria-label={t('aiChat.chat.remove_attachment_name', { name: attachment.name || t('aiChat.chat.attachment') })}
+                    disabled={submitting || isRunning}
+                  >
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             value={draft}
@@ -1244,12 +1305,21 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
                   ? t('aiChat.videos.composer_placeholder')
                   : t('aiChat.chat.composer_placeholder')}
             aria-label={t('aiChat.chat.composer_label')}
-            disabled={submitting || !chatReady}
+            disabled={submitting || uploadingAttachments || !chatReady}
             rows={2}
           />
           <div className="ai-chat-composer__footer">
             <div className="ai-chat-composer__mode">
               <button
+                className="ai-chat-composer__attachment-button"
+                onClick={() => void selectAttachments()}
+                disabled={submitting || uploadingAttachments || isRunning || isMediaRunning || imageMode || videoMode || !chatReady}
+                title={t('aiChat.chat.add_attachment')}
+              >
+                <Paperclip size={13} aria-hidden="true" />
+                {t(uploadingAttachments ? 'aiChat.chat.uploading_attachment' : 'aiChat.chat.add_attachment')}
+              </button>
+              {activeModel?.providers.image && api?.generateAIImages && <button
                 className={imageMode ? 'is-active' : ''}
                 onClick={() => {
                   if (!activeModel?.providers.image) {
@@ -1269,8 +1339,8 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
               >
                 <ImagePlus size={13} aria-hidden="true" />
                 {t(imageMode ? 'aiChat.images.mode_active' : 'aiChat.images.mode')}
-              </button>
-              <button
+              </button>}
+              {activeModel?.providers.video && api?.generateAIVideos && <button
                 className={videoMode ? 'is-active' : ''}
                 onClick={() => {
                   if (!activeModel?.providers.video) {
@@ -1290,7 +1360,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
               >
                 <Video size={13} aria-hidden="true" />
                 {t(videoMode ? 'aiChat.videos.mode_active' : 'aiChat.videos.mode')}
-              </button>
+              </button>}
               <span>{t(imageMode ? 'aiChat.images.composer_hint' : videoMode ? 'aiChat.videos.composer_hint' : 'aiChat.chat.composer_hint')}</span>
             </div>
             {isRunning || isMediaRunning ? (
@@ -1302,7 +1372,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
               <button
                 className="ai-chat-send"
                 onClick={() => void sendText()}
-                disabled={!chatReady || !draft.trim() || submitting}
+                disabled={!chatReady || (!draft.trim() && attachments.length === 0) || submitting || uploadingAttachments}
               >
                 <Send size={14} aria-hidden="true" />
                 {t('aiChat.chat.send')}

@@ -4,8 +4,10 @@ import type { AIMcpConfigService } from './mcpConfigService'
 import type { AIMcpManager } from './mcpManager'
 import type { AIMediaService } from './mediaService'
 import type { AIProviderService } from './providerService'
+import fs from 'node:fs'
 import {
   OpenAICompatibleAdapter,
+  type OpenAICompatibleContentPart,
   type OpenAICompatibleDelta,
   type OpenAICompatibleMessage,
   type OpenAICompatibleRequest,
@@ -58,7 +60,7 @@ export type AIAgentRuntimeServices = {
   conversations: AgentRuntimeConversationService
   mcp?: Pick<AIMcpManager, 'listTools' | 'callTool'>
   mcpConfig?: Pick<AIMcpConfigService, 'get'>
-  media?: Pick<AIMediaService, 'storeBase64' | 'downloadRemote'>
+  media?: Pick<AIMediaService, 'storeBase64' | 'downloadRemote' | 'getAsset' | 'getRegisteredFilePathSync'>
 }
 
 export type AIAgentRuntimeDependencies = {
@@ -95,7 +97,7 @@ type ActiveRun = {
   runStatus: 'running' | 'waiting_for_tool' | 'waiting_for_approval'
   mcp?: Pick<AIMcpManager, 'listTools' | 'callTool'>
   mcpConfig?: Pick<AIMcpConfigService, 'get'>
-  media?: Pick<AIMediaService, 'storeBase64' | 'downloadRemote'>
+  media?: Pick<AIMediaService, 'storeBase64' | 'downloadRemote' | 'getAsset' | 'getRegisteredFilePathSync'>
 }
 
 function runtimeError(code: AIErrorDetail['code'], message: string, retryable = false) {
@@ -115,15 +117,13 @@ function parseStartInput(value: unknown): AIStartRunInput {
   }
   const input = value as Partial<AIStartRunInput>
   const text = typeof input.text === 'string' ? input.text.trim() : ''
-  if (!text || text.length > 1_000_000) {
-    throw runtimeError('invalid_input', 'AI run text must contain between 1 and 1,000,000 characters.')
-  }
   if (!Array.isArray(input.attachmentAssetIds) || input.attachmentAssetIds.some((id) => !Number.isInteger(id) || id < 1)) {
     throw runtimeError('invalid_input', 'Invalid AI run attachments.')
   }
-  if (input.attachmentAssetIds.length > 0) {
-    throw runtimeError('unsupported', 'Text Agent attachments are not available in this runtime yet.')
+  if ((!text && input.attachmentAssetIds.length === 0) || text.length > 1_000_000) {
+    throw runtimeError('invalid_input', 'AI run needs text or an attachment, and text must not exceed 1,000,000 characters.')
   }
+  if (input.attachmentAssetIds.length > 20) throw runtimeError('invalid_input', 'Too many AI run attachments.')
   const thinkingLevel = input.thinkingLevel
   if (thinkingLevel !== undefined && !['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(thinkingLevel)) {
     throw runtimeError('invalid_input', 'Invalid thinking level.')
@@ -132,7 +132,7 @@ function parseStartInput(value: unknown): AIStartRunInput {
     conversationId: requireId(input.conversationId, 'conversation ID'),
     agentId: requireId(input.agentId, 'agent ID'),
     text,
-    attachmentAssetIds: [],
+    attachmentAssetIds: [...new Set(input.attachmentAssetIds)],
     ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
   }
 }
@@ -165,6 +165,50 @@ function toProviderMessage(message: ReturnType<AgentRuntimeConversationService['
     role: message.role,
     content,
   } satisfies OpenAICompatibleMessage
+}
+
+function attachmentDescription(asset: { mediaType: string; mimeType: string; byteSize: number; originalName?: string }) {
+  return `[Attachment: ${asset.originalName?.trim() || 'unnamed attachment'}; type: ${asset.mimeType}; size: ${asset.byteSize} bytes]`
+}
+
+function buildUserMessage(
+  text: string,
+  attachmentAssetIds: number[],
+  providerSupportsVision: boolean,
+  media: NonNullable<AIAgentRuntimeServices['media']>,
+) {
+  const assets = attachmentAssetIds.map((assetId) => {
+    const asset = media.getAsset(assetId)
+    if (asset.status !== 'completed') throw runtimeError('invalid_input', 'An attachment is not ready yet.')
+    return asset
+  })
+  const parts: AIMessageContentBlock[] = [
+    ...(text ? [{ type: 'text' as const, text }] : []),
+    ...assets.map((asset) => ({
+      type: asset.mediaType,
+      assetId: asset.id,
+      mimeType: asset.mimeType,
+      ...(asset.originalName ? { name: asset.originalName } : {}),
+    })),
+  ]
+  const content: OpenAICompatibleContentPart[] = [
+    ...(text ? [{ type: 'text' as const, text }] : []),
+    ...assets
+      .filter((asset) => asset.mediaType !== 'image' || !providerSupportsVision)
+      .map((asset) => ({ type: 'text' as const, text: attachmentDescription(asset) })),
+  ]
+  for (const asset of assets.filter((item) => item.mediaType === 'image' && providerSupportsVision)) {
+    const filePath = media.getRegisteredFilePathSync(asset.id)
+    const base64 = fs.readFileSync(filePath).toString('base64')
+    content.push({ type: 'image_url', image_url: { url: `data:${asset.mimeType};base64,${base64}` } })
+  }
+  return {
+    parts,
+    providerMessage: {
+      role: 'user' as const,
+      content: content.length === 1 && content[0].type === 'text' ? content[0].text : content,
+    },
+  }
 }
 
 export class AIAgentRuntime {
@@ -210,10 +254,16 @@ export class AIAgentRuntime {
       input.conversationId,
       Math.max(snapshot.context.maxMessages - 1, 0),
     )
+    if (input.attachmentAssetIds.length > 0 && !services.media) {
+      throw runtimeError('configuration_incomplete', 'The attachment service is not available.')
+    }
+    const userMessage = input.attachmentAssetIds.length > 0
+      ? buildUserMessage(input.text, input.attachmentAssetIds, provider.capabilities.includes('vision'), services.media!)
+      : { parts: [{ type: 'text' as const, text: input.text }], providerMessage: { role: 'user' as const, content: input.text } }
     const triggerMessage = services.conversations.createMessage({
       conversationId: input.conversationId,
       role: 'user',
-      parts: [{ type: 'text', text: input.text }],
+      parts: userMessage.parts,
     })
     const assistantMessage = services.conversations.createMessage({
       conversationId: input.conversationId,
@@ -234,7 +284,7 @@ export class AIAgentRuntime {
         ? [{ role: 'system' as const, content: snapshot.systemPrompt.trim() }]
         : []),
       ...history,
-      { role: 'user', content: input.text },
+      userMessage.providerMessage,
     ]
     const controller = new AbortController()
     const active: ActiveRun = {

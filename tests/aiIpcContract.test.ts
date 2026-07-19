@@ -182,7 +182,7 @@ test('AI conversation IPC validates identifiers before opening the isolated data
     },
     getRuntime: () => ({ isConversationActive: () => false }),
   })
-  assert.equal(AI_CONVERSATION_CHANNELS.length, 12)
+  assert.equal(AI_CONVERSATION_CHANNELS.length, 13)
   assert.equal(new Set(AI_CONVERSATION_CHANNELS).size, AI_CONVERSATION_CHANNELS.length)
   const result = await handlers['ai:conversations:messages']({}, { conversationId: 0 })
   assert.equal(result.success, false)

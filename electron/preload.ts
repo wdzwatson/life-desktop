@@ -149,6 +149,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('ai:conversations:runs', { conversationId, limit }),
   saveAIAsset: (assetId: number) => ipcRenderer.invoke('ai:media:saveAs', { assetId }),
   revealAIAsset: (assetId: number) => ipcRenderer.invoke('ai:media:reveal', { assetId }),
+  selectAIChatAttachments: () => ipcRenderer.invoke('ai:attachments:select'),
 
   // Encrypted password vault
   getVaultStatus: () => ipcRenderer.invoke('vault:status'),

@@ -220,6 +220,7 @@ export function createOptimisticRunMessages(input: {
   triggerMessageId: number
   messageId: number
   text: string
+  attachments?: AIChatMediaPart[]
   timestamp: string
 }) {
   const user: AIChatMessage = {
@@ -229,7 +230,10 @@ export function createOptimisticRunMessages(input: {
     status: 'completed',
     parentMessageId: null,
     providerMessageId: null,
-    parts: [{ type: 'text', text: input.text }],
+    parts: [
+      ...(input.text ? [{ type: 'text' as const, text: input.text }] : []),
+      ...(input.attachments ?? []),
+    ],
     createdAt: input.timestamp,
     startedAt: null,
     completedAt: input.timestamp,
