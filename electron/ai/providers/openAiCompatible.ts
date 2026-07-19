@@ -35,6 +35,7 @@ export type OpenAICompatibleRequest = {
   messages: OpenAICompatibleMessage[]
   temperature?: number
   maxOutputTokens?: number
+  reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   tools?: OpenAICompatibleTool[]
   toolChoice?: 'auto' | 'none' | 'required'
   signal?: AbortSignal
@@ -141,12 +142,14 @@ function buildRequestBody(config: OpenAICompatibleConfig, request: OpenAICompati
   delete overrides.tools
   delete overrides.tool_choice
   delete overrides.stream_options
+  delete overrides.reasoning_effort
   const streamOptions = customStreamOptions && typeof customStreamOptions === 'object' && !Array.isArray(customStreamOptions)
     ? customStreamOptions as Record<string, unknown>
     : {}
   return {
     ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
     ...(request.maxOutputTokens === undefined ? {} : { max_tokens: request.maxOutputTokens }),
+    ...(request.reasoningEffort === undefined ? {} : { reasoning_effort: request.reasoningEffort }),
     ...(request.tools?.length ? { tools: request.tools, tool_choice: request.toolChoice ?? 'auto' } : {}),
     ...overrides,
     model: config.model,

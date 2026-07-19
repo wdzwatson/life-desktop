@@ -124,11 +124,16 @@ function parseStartInput(value: unknown): AIStartRunInput {
   if (input.attachmentAssetIds.length > 0) {
     throw runtimeError('unsupported', 'Text Agent attachments are not available in this runtime yet.')
   }
+  const thinkingLevel = input.thinkingLevel
+  if (thinkingLevel !== undefined && !['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(thinkingLevel)) {
+    throw runtimeError('invalid_input', 'Invalid thinking level.')
+  }
   return {
     conversationId: requireId(input.conversationId, 'conversation ID'),
     agentId: requireId(input.agentId, 'agent ID'),
     text,
     attachmentAssetIds: [],
+    ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
   }
 }
 
@@ -244,6 +249,7 @@ export class AIAgentRuntime {
         messages,
         temperature: snapshot.modelParams.temperature,
         maxOutputTokens: snapshot.context.maxOutputTokens,
+        ...(input.thinkingLevel ? { reasoningEffort: input.thinkingLevel } : {}),
         signal: controller.signal,
       },
       publisher: new AIRunEventPublisher(

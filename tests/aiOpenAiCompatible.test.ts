@@ -122,6 +122,27 @@ test('OpenAI-compatible adapter merges provider request body while protecting ru
   assert.deepEqual(receivedBody?.response_format, { type: 'json_object' })
 })
 
+test('OpenAI-compatible adapter gives the selected thinking effort precedence over provider JSON', async () => {
+  let receivedBody: Record<string, unknown> | null = null
+  await withServer(async (request, response) => {
+    receivedBody = JSON.parse(await readRequestBody(request)) as Record<string, unknown>
+    response.writeHead(200, { 'content-type': 'text/event-stream' })
+    response.end('data: [DONE]\n\n')
+  }, async (baseUrl) => {
+    const adapter = new OpenAICompatibleAdapter({
+      baseUrl,
+      model: 'gpt-5.6-sol',
+      timeoutMs: 1000,
+      requestBody: { reasoning_effort: 'low' },
+    })
+    for await (const _ of adapter.streamChat({
+      messages: [{ role: 'user', content: 'Hello' }],
+      reasoningEffort: 'max',
+    })) { /* Consume the stream. */ }
+  })
+  assert.equal(receivedBody?.reasoning_effort, 'max')
+})
+
 test('OpenAI-compatible adapter maps provider HTTP failures without leaking credentials', async () => {
   const expectations = new Map([
     [401, 'authentication_failed'],

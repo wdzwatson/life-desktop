@@ -633,6 +633,10 @@
   width: clamp(84px, 9vw, 132px);
 }
 
+.ai-chat-stage__selector--thinking select {
+  width: clamp(68px, 7vw, 104px);
+}
+
 .ai-chat-stage__controls select {
   min-width: 0;
   max-width: none;

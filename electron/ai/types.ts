@@ -184,6 +184,7 @@ export type AIStartRunInput = {
   agentId: number
   text: string
   attachmentAssetIds: number[]
+  thinkingLevel?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 }
 
 export type AIToolApprovalInput = {

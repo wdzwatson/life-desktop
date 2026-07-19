@@ -29,6 +29,7 @@ import { ConversationDeleteDialog } from './ConversationDeleteDialog'
 import { ConversationRenameDialog } from './ConversationRenameDialog'
 import { MessageRenderer } from './MessageRenderer'
 import { ToolApprovalDialog } from './ToolApprovalDialog'
+import { getAIThinkingLevels, type AIThinkingLevel } from './thinkingUtils'
 import {
   applyAIChatRunEvent,
   buildAIConversationMarkdown,
@@ -134,6 +135,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
   }, [readyModels])
   const defaultAgentId = readyModels.find((model) => model.isDefault)?.id ?? readyModels[0]?.id ?? null
   const [selectedAgentId, setSelectedAgentId] = useState<number | null>(defaultAgentId)
+  const [thinkingLevel, setThinkingLevel] = useState<AIThinkingLevel>('medium')
   const [conversations, setConversations] = useState<AIChatConversation[]>([])
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null)
   const [messages, setMessages] = useState<AIChatMessage[]>([])
@@ -189,6 +191,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
   const activeModel = readyModels.find((model) => model.id === selectedAgentId)
   const selectedProviderId = activeModel?.providers.text ?? providerOptions[0]?.id ?? null
   const providerModels = providerOptions.find((provider) => provider.id === selectedProviderId)?.models ?? []
+  const thinkingLevels = useMemo(() => getAIThinkingLevels(activeModel?.textModel), [activeModel?.textModel])
   const chatReady = hasProvider && readyModels.length > 0
   const visibleModelSwitchMarkers = useMemo(
     () => modelSwitchMarkers.filter((marker) => marker.conversationId === activeConversationId && marker.ready),
@@ -258,6 +261,10 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
     if (selectedAgentId && readyModels.some((model) => model.id === selectedAgentId)) return
     setSelectedAgentId(defaultAgentId)
   }, [defaultAgentId, readyModels, selectedAgentId])
+
+  useEffect(() => {
+    setThinkingLevel(thinkingLevels[0])
+  }, [activeModel?.id, thinkingLevels])
 
   const loadConversations = useCallback(async () => {
     if (!api?.listAIConversations) return
@@ -704,6 +711,7 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
       agentId,
       text,
       attachmentAssetIds: [],
+      thinkingLevel,
     })) as ApiResponse<{
       conversationId: number
       runId: number
@@ -1014,6 +1022,19 @@ export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProvi
               >
                 {providerModels.length === 0 && <option value="">{t('aiChat.chat.no_model_option')}</option>}
                 {providerModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
+              </select>
+              <ChevronDown size={12} aria-hidden="true" />
+            </label>
+            <label className="ai-chat-stage__selector ai-chat-stage__selector--thinking">
+              <Gauge size={14} aria-hidden="true" />
+              <span className="sr-only">{t('aiChat.chat.select_thinking')}</span>
+              <select
+                value={thinkingLevel}
+                disabled={!activeModel || thinkingLevels.length < 2}
+                onChange={(event) => setThinkingLevel(event.target.value as AIThinkingLevel)}
+                aria-label={t('aiChat.chat.select_thinking')}
+              >
+                {thinkingLevels.map((level) => <option key={level} value={level}>{t(`aiChat.chat.thinking_${level}`)}</option>)}
               </select>
               <ChevronDown size={12} aria-hidden="true" />
             </label>
