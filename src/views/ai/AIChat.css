@@ -2142,6 +2142,7 @@
   place-items: stretch end;
   overflow: hidden;
   padding: 0;
+  -webkit-app-region: no-drag;
 }
 
 .ai-settings-drawer {
@@ -2155,6 +2156,7 @@
   border-width: 0 0 0 1px;
   border-radius: 0;
   animation-name: ai-settings-drawer-enter;
+  -webkit-app-region: no-drag;
 }
 
 .ai-settings-drawer--provider {
@@ -2184,6 +2186,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  -webkit-app-region: no-drag;
 }
 
 .ai-settings-drawer__title > button {
@@ -2200,6 +2203,7 @@
   background: transparent;
   color: var(--text-main);
   cursor: pointer;
+  -webkit-app-region: no-drag;
 }
 
 .ai-settings-drawer__title > button::before {
