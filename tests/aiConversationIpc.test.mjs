@@ -60,6 +60,27 @@ test('conversation IPC creates snapshot-backed conversations and manages their h
   assert.equal(messages.success, true)
   assert.equal(messages.data[0].parts[0].text, 'Draft a plan')
 
+  const event = await context.handlers['ai:conversations:upsertModelSwitchEvent']({}, {
+    conversationId,
+    afterMessageId: messages.data[0].id,
+    payload: {
+      fromAgentId: context.agentId,
+      fromProvider: 'Provider',
+      fromModel: 'chat',
+      toAgentId: context.agentId + 1,
+      toProvider: 'Provider Two',
+      toModel: 'chat-v2',
+    },
+  })
+  assert.equal(event.success, true)
+  const events = await context.handlers['ai:conversations:events']({}, { conversationId })
+  assert.deepEqual(events.data, [event.data])
+  const removedEvent = await context.handlers['ai:conversations:deleteModelSwitchEvent']({}, {
+    conversationId,
+    afterMessageId: messages.data[0].id,
+  })
+  assert.deepEqual(removedEvent.data, { deleted: true })
+
   assert.equal((await context.handlers['ai:conversations:rename']({}, { id: conversationId, title: 'Renamed' })).data.title, 'Renamed')
   assert.equal((await context.handlers['ai:conversations:setPinned']({}, { id: conversationId, pinned: true })).data.isPinned, true)
   assert.equal((await context.handlers['ai:conversations:setArchived']({}, { id: conversationId, archived: true })).data.isArchived, true)

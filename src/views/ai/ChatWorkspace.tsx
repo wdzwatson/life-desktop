@@ -1,5 +1,5 @@
 import {
-  Bot,
+  Boxes,
   ChevronDown,
   Database,
   Download,
@@ -17,6 +17,7 @@ import {
 import {
   useCallback,
   useEffect,
+  Fragment,
   useMemo,
   useRef,
   useState,
@@ -31,6 +32,7 @@ import { ToolApprovalDialog } from './ToolApprovalDialog'
 import {
   applyAIChatRunEvent,
   buildAIConversationMarkdown,
+  createAIConversationTitle,
   createOptimisticMediaMessages,
   createOptimisticRunMessages,
   getAIChatRetryText,
@@ -47,10 +49,12 @@ import {
   type AIChatToolApproval,
 } from './chatUtils'
 
-export type AIChatAgent = {
+export type AIChatModel = {
   id: number
   name: string
   description: string
+  providerName: string
+  textModel: string
   providers: { text: number; image?: number; video?: number }
   enabled: boolean
   isDefault: boolean
@@ -59,14 +63,38 @@ export type AIChatAgent = {
 }
 
 type ChatWorkspaceProps = {
-  agents: AIChatAgent[]
+  models: AIChatModel[]
   hasProvider: boolean
   onOpenSettings: () => void
   onOpenProviders: () => void
-  onOpenAgents: () => void
+  onOpenModels: () => void
 }
 
 type ApiResponse<T> = { success: true; data: T } | { success: false; error?: { message?: string } }
+
+type ModelSwitchMarker = {
+  id: number
+  conversationId: number
+  afterMessageId: number | null
+  fromAgentId: number
+  fromProvider: string
+  fromModel: string
+  toAgentId: number
+  toProvider: string
+  toModel: string
+  ready: boolean
+  dirty: boolean
+  saving: boolean
+}
+
+type ModelSwitchConversationEvent = {
+  id: number
+  conversationId: number
+  eventType: 'model_switch'
+  afterMessageId: number | null
+  payload: Omit<ModelSwitchMarker, 'id' | 'conversationId' | 'afterMessageId' | 'ready' | 'dirty' | 'saving'>
+  createdAt: string
+}
 
 function isTerminalRun(status: AIChatRunState['status'] | undefined) {
   return status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'interrupted'
@@ -87,14 +115,24 @@ function errorMessage(response: unknown, fallback: string) {
   return fallback
 }
 
-export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProviders, onOpenAgents }: ChatWorkspaceProps) {
-  const { t } = useTranslation()
+export function ChatWorkspace({ models, hasProvider, onOpenSettings, onOpenProviders, onOpenModels }: ChatWorkspaceProps) {
+  const { t, i18n } = useTranslation()
   const api = (window as any).electronAPI
-  const readyAgents = useMemo(
-    () => agents.filter((agent) => agent.enabled && agent.configurationStatus === 'ready'),
-    [agents],
+  const readyModels = useMemo(
+    () => models.filter((model) => model.enabled && model.configurationStatus === 'ready'),
+    [models],
   )
-  const defaultAgentId = readyAgents.find((agent) => agent.isDefault)?.id ?? readyAgents[0]?.id ?? null
+  const providerOptions = useMemo(() => {
+    const providers = new Map<number, { id: number; name: string; models: AIChatModel[] }>()
+    for (const model of readyModels) {
+      const providerId = model.providers.text
+      const provider = providers.get(providerId)
+      if (provider) provider.models.push(model)
+      else providers.set(providerId, { id: providerId, name: model.providerName, models: [model] })
+    }
+    return [...providers.values()]
+  }, [readyModels])
+  const defaultAgentId = readyModels.find((model) => model.isDefault)?.id ?? readyModels[0]?.id ?? null
   const [selectedAgentId, setSelectedAgentId] = useState<number | null>(defaultAgentId)
   const [conversations, setConversations] = useState<AIChatConversation[]>([])
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null)
@@ -123,6 +161,7 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
   } | null>(null)
   const [runAnnouncement, setRunAnnouncement] = useState('')
   const [showRunInspector, setShowRunInspector] = useState(false)
+  const [modelSwitchMarkers, setModelSwitchMarkers] = useState<ModelSwitchMarker[]>([])
   const activeConversationRef = useRef<number | null>(null)
   const messagesRef = useRef<AIChatMessage[]>([])
   const lastSequenceRef = useRef(new Map<string, number>())
@@ -130,12 +169,15 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
   const runEventFlushTimerRef = useRef<number | null>(null)
   const conversationRequestRef = useRef(0)
   const messageRequestRef = useRef(0)
+  const conversationEventRequestRef = useRef(0)
   const timelineRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const runInspectorToggleRef = useRef<HTMLButtonElement>(null)
   const conversationActionTriggerRef = useRef<HTMLButtonElement | null>(null)
   const followOutputRef = useRef(true)
   const mediaCancellationRequestedRef = useRef(false)
+  const modelSwitchMarkerIdRef = useRef(0)
+  const modelSwitchSavingRef = useRef(new Set<string>())
 
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === activeConversationId) ?? null,
@@ -144,10 +186,35 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
   const activeRun = activeConversationId ? runStates[activeConversationId] : undefined
   const isRunning = activeRun?.status === 'running'
   const isMediaRunning = activeMediaGeneration !== null
-  const activeAgent = readyAgents.find(
-    (agent) => agent.id === (activeConversation?.agentId ?? selectedAgentId),
+  const activeModel = readyModels.find((model) => model.id === selectedAgentId)
+  const selectedProviderId = activeModel?.providers.text ?? providerOptions[0]?.id ?? null
+  const providerModels = providerOptions.find((provider) => provider.id === selectedProviderId)?.models ?? []
+  const chatReady = hasProvider && readyModels.length > 0
+  const visibleModelSwitchMarkers = useMemo(
+    () => modelSwitchMarkers.filter((marker) => marker.conversationId === activeConversationId && marker.ready),
+    [activeConversationId, modelSwitchMarkers],
   )
-  const chatReady = hasProvider && readyAgents.length > 0
+  const modelSwitchMarkersByMessage = useMemo(() => {
+    const grouped = new Map<number, ModelSwitchMarker[]>()
+    for (const marker of visibleModelSwitchMarkers) {
+      if (marker.afterMessageId === null) continue
+      const current = grouped.get(marker.afterMessageId) ?? []
+      current.push(marker)
+      grouped.set(marker.afterMessageId, current)
+    }
+    return grouped
+  }, [visibleModelSwitchMarkers])
+  const trailingModelSwitchMarkers = useMemo(() => {
+    const messageIds = new Set(messages.map((message) => message.id))
+    const latestMessageId = messages.at(-1)?.id ?? null
+    return visibleModelSwitchMarkers.filter(
+      (marker) => marker.afterMessageId === null || (
+        latestMessageId !== null
+        && marker.afterMessageId > latestMessageId
+        && !messageIds.has(marker.afterMessageId)
+      ),
+    )
+  }, [messages, visibleModelSwitchMarkers])
 
   const closeRunInspector = useCallback(() => {
     setShowRunInspector(false)
@@ -188,9 +255,9 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
   }, [activeRun?.runId, activeRun?.status, t])
 
   useEffect(() => {
-    if (selectedAgentId && readyAgents.some((agent) => agent.id === selectedAgentId)) return
+    if (selectedAgentId && readyModels.some((model) => model.id === selectedAgentId)) return
     setSelectedAgentId(defaultAgentId)
-  }, [defaultAgentId, readyAgents, selectedAgentId])
+  }, [defaultAgentId, readyModels, selectedAgentId])
 
   const loadConversations = useCallback(async () => {
     if (!api?.listAIConversations) return
@@ -260,15 +327,49 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
     [api, t],
   )
 
-  useEffect(() => {
-    if (activeConversation?.agentId) setSelectedAgentId(activeConversation.agentId)
-  }, [activeConversation?.agentId])
+  const loadConversationEvents = useCallback(async (conversationId: number) => {
+    if (!api?.listAIConversationEvents) return
+    const requestId = ++conversationEventRequestRef.current
+    const response = (await api.listAIConversationEvents(conversationId)) as ApiResponse<ModelSwitchConversationEvent[]>
+    if (requestId !== conversationEventRequestRef.current || activeConversationRef.current !== conversationId) return
+    if (!response?.success) {
+      setNotice(errorMessage(response, t('aiChat.chat.messages_load_failed')))
+      return
+    }
+    const persisted = (response.data ?? [])
+      .filter((event) => event.eventType === 'model_switch')
+      .map<ModelSwitchMarker>((event) => ({
+        id: event.id,
+        conversationId: event.conversationId,
+        afterMessageId: event.afterMessageId,
+        ...event.payload,
+        ready: true,
+        dirty: false,
+        saving: false,
+      }))
+    const latestTargetAgentId = persisted.at(-1)?.toAgentId
+    if (latestTargetAgentId && readyModels.some((model) => model.id === latestTargetAgentId)) {
+      setSelectedAgentId(latestTargetAgentId)
+    }
+    setModelSwitchMarkers((current) => {
+      const local = current.filter((marker) =>
+        marker.conversationId === conversationId && (marker.id < 0 || marker.dirty || marker.saving),
+      )
+      const localAnchors = new Set(local.map((marker) => marker.afterMessageId ?? 0))
+      return [
+        ...current.filter((marker) => marker.conversationId !== conversationId),
+        ...persisted.filter((marker) => !localAnchors.has(marker.afterMessageId ?? 0)),
+        ...local,
+      ]
+    })
+  }, [api, readyModels, t])
 
   useEffect(() => {
     setMessages([])
     setHasOlderMessages(false)
     if (!activeConversationId) return
     void loadMessages(activeConversationId)
+    void loadConversationEvents(activeConversationId)
     if (api?.listAIConversationRuns) {
       void api.listAIConversationRuns(activeConversationId, 1).then((response: ApiResponse<any[]>) => {
         if (!response?.success || activeConversationRef.current !== activeConversationId) return
@@ -292,7 +393,7 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
         }))
       })
     }
-  }, [activeConversationId, api, loadMessages])
+  }, [activeConversationId, api, loadConversationEvents, loadMessages])
 
   const flushRunEvents = useCallback(() => {
     if (runEventFlushTimerRef.current !== null) {
@@ -367,6 +468,11 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
         runEventFlushTimerRef.current = window.setTimeout(flushRunEvents, 32)
       }
       if (terminal) {
+        setModelSwitchMarkers((current) => current.map((marker) =>
+          marker.conversationId === event.conversationId && !marker.ready
+            ? { ...marker, afterMessageId: marker.afterMessageId ?? event.messageId, ready: true }
+            : marker,
+        ))
         setToolApprovals((current) => Object.fromEntries(
           Object.entries(current).filter(([, approval]) => approval.runId !== event.runId),
         ))
@@ -392,15 +498,75 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
       const timeline = timelineRef.current
       if (timeline) timeline.scrollTop = timeline.scrollHeight
     })
-  }, [messages])
+  }, [messages, visibleModelSwitchMarkers])
+
+  useEffect(() => {
+    if (activeConversationId === null || isRunning || isMediaRunning || submitting) return
+    setModelSwitchMarkers((current) => current.map((marker) =>
+      marker.conversationId === activeConversationId && !marker.ready ? { ...marker, ready: true } : marker,
+    ))
+  }, [activeConversationId, isMediaRunning, isRunning, submitting])
+
+  useEffect(() => {
+    if (!api?.upsertAIModelSwitchEvent) return
+    const pending = modelSwitchMarkers.filter((marker) => marker.ready && marker.dirty && !marker.saving)
+    for (const marker of pending) {
+      const saveKey = `${marker.conversationId}:${marker.afterMessageId ?? 0}`
+      if (modelSwitchSavingRef.current.has(saveKey)) continue
+      modelSwitchSavingRef.current.add(saveKey)
+      setModelSwitchMarkers((current) => current.map((item) =>
+        item.id === marker.id ? { ...item, saving: true } : item,
+      ))
+      void api.upsertAIModelSwitchEvent({
+        conversationId: marker.conversationId,
+        afterMessageId: marker.afterMessageId,
+        payload: {
+          fromAgentId: marker.fromAgentId,
+          fromProvider: marker.fromProvider,
+          fromModel: marker.fromModel,
+          toAgentId: marker.toAgentId,
+          toProvider: marker.toProvider,
+          toModel: marker.toModel,
+        },
+      }).then((response: ApiResponse<ModelSwitchConversationEvent>) => {
+        modelSwitchSavingRef.current.delete(saveKey)
+        if (!response?.success) {
+          setModelSwitchMarkers((current) => current.map((item) =>
+            item.id === marker.id ? { ...item, dirty: false, saving: false } : item,
+          ))
+          setNotice(errorMessage(response, t('aiChat.chat.messages_load_failed')))
+          return
+        }
+        setModelSwitchMarkers((current) => current.map((item) => {
+          if (item.id !== marker.id) return item
+          const unchanged = item.toAgentId === marker.toAgentId
+            && item.fromAgentId === marker.fromAgentId
+            && item.afterMessageId === marker.afterMessageId
+          return {
+            ...item,
+            id: response.data.id,
+            dirty: unchanged ? false : item.dirty,
+            saving: false,
+          }
+        }))
+      })
+    }
+  }, [api, modelSwitchMarkers, t])
 
   const createConversation = async (agentId = selectedAgentId) => {
     if (!agentId || !api?.createAIConversation) {
-      setNotice(t('aiChat.chat.agent_required'))
+      setNotice(t('aiChat.chat.model_required'))
       return null
     }
+    const timestamp = new Intl.DateTimeFormat(i18n.language, {
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }).format(new Date())
     const response = (await api.createAIConversation(
-      t('aiChat.chat.untitled'),
+      t('aiChat.chat.untitled_timestamp', { value: timestamp }),
       agentId,
     )) as ApiResponse<AIChatConversation>
     if (!response?.success) {
@@ -415,6 +581,18 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
     return response.data
   }
 
+  const titleConversationFromPrompt = async (conversation: AIChatConversation, text: string) => {
+    if (conversation.messageCount !== 0 || !api?.renameAIConversation) return conversation
+    const title = createAIConversationTitle(text)
+    if (!title) return conversation
+    const renamed = (await api.renameAIConversation(conversation.id, title)) as ApiResponse<AIChatConversation>
+    if (!renamed?.success) return conversation
+    setConversations((current) =>
+      sortAIConversations(current.map((item) => (item.id === renamed.data.id ? renamed.data : item))),
+    )
+    return renamed.data
+  }
+
   const sendText = async (requestedText?: string) => {
     const text = (requestedText ?? draft).trim()
     if (!text || submitting || isRunning) return
@@ -427,13 +605,14 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
     let conversation = activeConversation
     if (!conversation) conversation = await createConversation()
     if (!conversation) return
-    const agentId = conversation.agentId ?? selectedAgentId
+    conversation = await titleConversationFromPrompt(conversation, text)
+    const agentId = selectedAgentId
     if (!agentId) {
-      setNotice(t('aiChat.chat.agent_required'))
+      setNotice(t('aiChat.chat.model_required'))
       return
     }
     if (imageMode) {
-      if (!activeAgent?.providers.image || !api?.generateAIImages) {
+      if (!activeModel?.providers.image || !api?.generateAIImages) {
         setNotice(t('aiChat.images.provider_required'))
         return
       }
@@ -476,7 +655,7 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
       return
     }
     if (videoMode) {
-      if (!activeAgent?.providers.video || !api?.generateAIVideos) {
+      if (!activeModel?.providers.video || !api?.generateAIVideos) {
         setNotice(t('aiChat.videos.provider_required'))
         return
       }
@@ -572,15 +751,6 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
     )
     if (!requestedText) setDraft('')
     followOutputRef.current = true
-    if (conversation.messageCount === 0 && api?.renameAIConversation) {
-      const title = text.replace(/\s+/g, ' ').slice(0, 54)
-      const renamed = (await api.renameAIConversation(conversation.id, title)) as ApiResponse<AIChatConversation>
-      if (renamed?.success) {
-        setConversations((current) =>
-          sortAIConversations(current.map((item) => (item.id === renamed.data.id ? renamed.data : item))),
-        )
-      }
-    }
     void loadConversations()
   }
 
@@ -643,16 +813,60 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
     void sendText()
   }
 
-  const handleAgentChange = async (agentId: number) => {
+  const handleModelChange = (agentId: number) => {
+    const nextModel = readyModels.find((model) => model.id === agentId)
+    const previousModel = activeModel
     setSelectedAgentId(agentId)
-    if (!activeConversation || activeConversation.agentId === agentId) return
-    if (activeConversation.messageCount === 0 && api?.deleteAIConversation) {
-      const deleted = await api.deleteAIConversation(activeConversation.id, false)
-      if (deleted?.success) {
-        setConversations((current) => current.filter((item) => item.id !== activeConversation.id))
-      }
+    if (!activeConversationId || !nextModel || !previousModel || previousModel.id === nextModel.id) return
+    const roundActive = isRunning || isMediaRunning || submitting
+    const afterMessageId = isRunning && activeRun?.messageId
+      ? activeRun.messageId
+      : roundActive
+        ? null
+        : messages.at(-1)?.id ?? null
+    if (!roundActive && afterMessageId === null) return
+    const nextMarker: ModelSwitchMarker = {
+      id: --modelSwitchMarkerIdRef.current,
+      conversationId: activeConversationId,
+      afterMessageId,
+      fromAgentId: previousModel.id,
+      fromProvider: previousModel.providerName,
+      fromModel: previousModel.textModel,
+      toAgentId: nextModel.id,
+      toProvider: nextModel.providerName,
+      toModel: nextModel.textModel,
+      ready: !roundActive,
+      dirty: true,
+      saving: false,
     }
-    await createConversation(agentId)
+    setModelSwitchMarkers((current) => {
+      const latestIndex = current.findLastIndex((marker) => marker.conversationId === activeConversationId)
+      const latest = latestIndex >= 0 ? current[latestIndex] : undefined
+      if (latest && latest.afterMessageId === nextMarker.afterMessageId && latest.ready === nextMarker.ready) {
+        if (latest.fromAgentId === nextMarker.toAgentId) {
+          if (latest.ready && api?.deleteAIModelSwitchEvent) {
+            void api.deleteAIModelSwitchEvent(latest.conversationId, latest.afterMessageId).then((response: ApiResponse<{ deleted: boolean }>) => {
+              if (!response?.success) setNotice(errorMessage(response, t('aiChat.chat.messages_load_failed')))
+            })
+          }
+          return current.filter((_, index) => index !== latestIndex)
+        }
+        return current.map((marker, index) => index === latestIndex ? {
+          ...marker,
+          toAgentId: nextMarker.toAgentId,
+          toProvider: nextMarker.toProvider,
+          toModel: nextMarker.toModel,
+          dirty: true,
+        } : marker)
+      }
+      return [...current, nextMarker]
+    })
+  }
+
+  const handleProviderChange = (providerId: number) => {
+    const provider = providerOptions.find((item) => item.id === providerId)
+    const nextModel = provider?.models.find((model) => model.isDefault) ?? provider?.models[0]
+    if (nextModel) handleModelChange(nextModel.id)
   }
 
   const confirmRenameConversation = async (title: string) => {
@@ -764,7 +978,7 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
         <header className="ai-chat-stage__header">
           <div>
             <h2>{activeConversation?.title ?? t('aiChat.chat.start_title')}</h2>
-            <p>{activeAgent?.description || t('aiChat.chat.start_desc')}</p>
+            <p>{activeModel ? `${activeModel.providerName} · ${activeModel.textModel}` : t('aiChat.chat.start_desc')}</p>
           </div>
           <div className="ai-chat-stage__controls">
             <button
@@ -775,16 +989,31 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
             >
               <Settings2 size={14} aria-hidden="true" />
             </button>
-            <label>
-              <Bot size={14} aria-hidden="true" />
-              <span className="sr-only">{t('aiChat.chat.select_agent')}</span>
+            <label className="ai-chat-stage__selector ai-chat-stage__selector--provider">
+              <Database size={14} aria-hidden="true" />
+              <span className="sr-only">{t('aiChat.chat.select_provider')}</span>
               <select
-                value={activeAgent?.id ?? selectedAgentId ?? ''}
-                disabled={isRunning || readyAgents.length === 0}
-                onChange={(event) => void handleAgentChange(Number(event.target.value))}
+                value={selectedProviderId ?? ''}
+                disabled={providerOptions.length === 0}
+                onChange={(event) => handleProviderChange(Number(event.target.value))}
+                aria-label={t('aiChat.chat.select_provider')}
               >
-                {readyAgents.length === 0 && <option value="">{t('aiChat.chat.no_agent_option')}</option>}
-                {readyAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                {providerOptions.length === 0 && <option value="">{t('aiChat.chat.no_provider_option')}</option>}
+                {providerOptions.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
+              </select>
+              <ChevronDown size={12} aria-hidden="true" />
+            </label>
+            <label className="ai-chat-stage__selector ai-chat-stage__selector--model">
+              <Boxes size={14} aria-hidden="true" />
+              <span className="sr-only">{t('aiChat.chat.select_model')}</span>
+              <select
+                value={selectedAgentId ?? ''}
+                disabled={providerModels.length === 0}
+                onChange={(event) => handleModelChange(Number(event.target.value))}
+                aria-label={t('aiChat.chat.select_model')}
+              >
+                {providerModels.length === 0 && <option value="">{t('aiChat.chat.no_model_option')}</option>}
+                {providerModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
               </select>
               <ChevronDown size={12} aria-hidden="true" />
             </label>
@@ -811,13 +1040,13 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
 
         {!chatReady && (
           <div className="ai-chat-setup-banner" role="status">
-            {hasProvider ? <Bot size={16} aria-hidden="true" /> : <Database size={16} aria-hidden="true" />}
+            {hasProvider ? <Boxes size={16} aria-hidden="true" /> : <Database size={16} aria-hidden="true" />}
             <div>
-              <strong>{t(hasProvider ? 'aiChat.chat.setup_agent_title' : 'aiChat.chat.setup_provider_title')}</strong>
-              <span>{t(hasProvider ? 'aiChat.chat.setup_agent_desc' : 'aiChat.chat.setup_provider_desc')}</span>
+              <strong>{t(hasProvider ? 'aiChat.chat.setup_model_title' : 'aiChat.chat.setup_provider_title')}</strong>
+              <span>{t(hasProvider ? 'aiChat.chat.setup_model_desc' : 'aiChat.chat.setup_provider_desc')}</span>
             </div>
-            <button className="btn primary" onClick={hasProvider ? onOpenAgents : onOpenProviders}>
-              {t(hasProvider ? 'aiChat.chat.configure_agent' : 'aiChat.chat.connect_provider')}
+            <button className="btn primary" onClick={hasProvider ? onOpenModels : onOpenProviders}>
+              {t(hasProvider ? 'aiChat.chat.configure_model' : 'aiChat.chat.connect_provider')}
             </button>
           </div>
         )}
@@ -868,28 +1097,61 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
           {!activeConversation && !chatReady && (
             <div className="ai-chat-welcome ai-chat-welcome--setup">
               <div className="ai-chat-welcome__visual" aria-hidden="true">
-                {hasProvider ? <Bot size={30} /> : <Database size={30} />}
+                {hasProvider ? <Boxes size={30} /> : <Database size={30} />}
               </div>
-              <h2>{t(hasProvider ? 'aiChat.chat.setup_agent_title' : 'aiChat.chat.setup_provider_title')}</h2>
-              <p>{t(hasProvider ? 'aiChat.chat.setup_agent_desc' : 'aiChat.chat.setup_provider_desc')}</p>
-              <button className="btn primary" onClick={hasProvider ? onOpenAgents : onOpenProviders}>
-                {t(hasProvider ? 'aiChat.chat.configure_agent' : 'aiChat.chat.connect_provider')}
+              <h2>{t(hasProvider ? 'aiChat.chat.setup_model_title' : 'aiChat.chat.setup_provider_title')}</h2>
+              <p>{t(hasProvider ? 'aiChat.chat.setup_model_desc' : 'aiChat.chat.setup_provider_desc')}</p>
+              <button className="btn primary" onClick={hasProvider ? onOpenModels : onOpenProviders}>
+                {t(hasProvider ? 'aiChat.chat.configure_model' : 'aiChat.chat.connect_provider')}
               </button>
             </div>
           )}
           {activeConversation && messages.length === 0 && !loadingMessages && (
             <div className="ai-chat-welcome ai-chat-welcome--compact">
               <h2>{t('aiChat.chat.empty_conversation_title')}</h2>
-              <p>{t('aiChat.chat.empty_conversation_desc', { agent: activeAgent?.name })}</p>
+              <p>{t('aiChat.chat.empty_conversation_desc', { model: activeModel?.name })}</p>
             </div>
           )}
           {messages.map((message) => (
-            <MessageRenderer
-              key={message.id}
-              message={message}
-              onRetry={retryMessage}
-              retryDisabled={isRunning || submitting}
-            />
+            <Fragment key={message.id}>
+              <MessageRenderer
+                message={message}
+                onRetry={retryMessage}
+                retryDisabled={isRunning || submitting}
+              />
+              {(modelSwitchMarkersByMessage.get(message.id) ?? []).map((marker) => (
+                <div className="ai-model-switch-divider" role="separator" key={marker.id}>
+                  <span>{t(marker.fromProvider === marker.toProvider
+                    ? 'aiChat.chat.model_switch_same_provider'
+                    : 'aiChat.chat.model_switch_provider', marker.fromProvider === marker.toProvider ? {
+                      provider: marker.toProvider,
+                      fromModel: marker.fromModel,
+                      toModel: marker.toModel,
+                    } : {
+                      fromProvider: marker.fromProvider,
+                      toProvider: marker.toProvider,
+                      fromModel: marker.fromModel,
+                      toModel: marker.toModel,
+                    })}</span>
+                </div>
+              ))}
+            </Fragment>
+          ))}
+          {trailingModelSwitchMarkers.map((marker) => (
+            <div className="ai-model-switch-divider" role="separator" key={marker.id}>
+              <span>{t(marker.fromProvider === marker.toProvider
+                ? 'aiChat.chat.model_switch_same_provider'
+                : 'aiChat.chat.model_switch_provider', marker.fromProvider === marker.toProvider ? {
+                  provider: marker.toProvider,
+                  fromModel: marker.fromModel,
+                  toModel: marker.toModel,
+                } : {
+                  fromProvider: marker.fromProvider,
+                  toProvider: marker.toProvider,
+                  fromModel: marker.fromModel,
+                  toModel: marker.toModel,
+                })}</span>
+            </div>
           ))}
         </div>
 
@@ -923,7 +1185,7 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
               <button
                 className={imageMode ? 'is-active' : ''}
                 onClick={() => {
-                  if (!activeAgent?.providers.image) {
+                  if (!activeModel?.providers.image) {
                     setNotice(t('aiChat.images.provider_required_action'))
                     return
                   }
@@ -936,7 +1198,7 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
                 }}
                 disabled={submitting || isRunning}
                 aria-pressed={imageMode}
-                title={activeAgent?.providers.image ? t('aiChat.images.toggle') : t('aiChat.images.provider_required')}
+                title={activeModel?.providers.image ? t('aiChat.images.toggle') : t('aiChat.images.provider_required')}
               >
                 <ImagePlus size={13} aria-hidden="true" />
                 {t(imageMode ? 'aiChat.images.mode_active' : 'aiChat.images.mode')}
@@ -944,7 +1206,7 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
               <button
                 className={videoMode ? 'is-active' : ''}
                 onClick={() => {
-                  if (!activeAgent?.providers.video) {
+                  if (!activeModel?.providers.video) {
                     setNotice(t('aiChat.videos.provider_required_action'))
                     return
                   }
@@ -957,7 +1219,7 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
                 }}
                 disabled={submitting || isRunning}
                 aria-pressed={videoMode}
-                title={activeAgent?.providers.video ? t('aiChat.videos.toggle') : t('aiChat.videos.provider_required')}
+                title={activeModel?.providers.video ? t('aiChat.videos.toggle') : t('aiChat.videos.provider_required')}
               >
                 <Video size={13} aria-hidden="true" />
                 {t(videoMode ? 'aiChat.videos.mode_active' : 'aiChat.videos.mode')}
@@ -1007,8 +1269,8 @@ export function ChatWorkspace({ agents, hasProvider, onOpenSettings, onOpenProvi
             </dd>
           </div>
           <div>
-            <dt>{t('aiChat.chat.run_agent')}</dt>
-            <dd>{activeAgent?.name ?? '—'}</dd>
+            <dt>{t('aiChat.chat.run_model')}</dt>
+            <dd>{activeModel?.name ?? '—'}</dd>
           </div>
           <div>
             <dt>{t('aiChat.chat.run_id')}</dt>

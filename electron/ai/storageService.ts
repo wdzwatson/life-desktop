@@ -34,6 +34,7 @@ type ScannedFile = {
 export type AIStorageServiceDependencies = {
   db: Database.Database
   mediaRoot: string
+  credentialPath?: string
   media: Pick<AIMediaService, 'deleteAsset'>
   conversations: Pick<AIConversationService, 'deleteConversation'>
   clearCredentials?: () => void
@@ -82,6 +83,8 @@ export class AIStorageService {
   }
 
   async getUsage() {
+    const databasePath = (this.dependencies.db.pragma('database_list') as Array<{ name: string; file: string }>)
+      .find((item) => item.name === 'main')?.file ?? ''
     const databaseBytes = Number(this.dependencies.db.pragma('page_count', { simple: true }))
       * Number(this.dependencies.db.pragma('page_size', { simple: true }))
     const mediaRows = this.dependencies.db.prepare(`
@@ -131,6 +134,11 @@ export class AIStorageService {
       orphanFileCount: scanned.filter((file) => file.kind === 'orphan').length,
       temporaryFileCount: scanned.filter((file) => file.kind === 'temporary').length,
       latestImageAssetId: latestImage?.id ?? null,
+      locations: {
+        database: databasePath,
+        media: this.dependencies.mediaRoot,
+        credentials: this.dependencies.credentialPath ?? '',
+      },
       byType: mediaRows.map((row) => ({ mediaType: row.media_type, count: row.count, bytes: row.bytes })),
     }
   }

@@ -59,6 +59,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAIProviderDependencies: (id: number) =>
     ipcRenderer.invoke('ai:providers:dependencies', { id }),
   deleteAIProvider: (id: number) => ipcRenderer.invoke('ai:providers:delete', { id }),
+  listAIModels: () => ipcRenderer.invoke('ai:models:list'),
+  createAIModel: (input: unknown) => ipcRenderer.invoke('ai:models:create', input),
+  updateAIModel: (id: number, input: unknown) => ipcRenderer.invoke('ai:models:update', { id, input }),
+  deleteAIModel: (id: number) => ipcRenderer.invoke('ai:models:delete', { id }),
+  syncAIModels: () => ipcRenderer.invoke('ai:models:sync'),
 
   listAIAgents: () => ipcRenderer.invoke('ai:agents:list'),
   getAIAgent: (id: number) => ipcRenderer.invoke('ai:agents:get', { id }),
@@ -132,6 +137,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('ai:conversations:delete', { id, deleteUnreferencedMedia }),
   listAIConversationMessages: (conversationId: number, options?: { beforeId?: number; limit?: number }) =>
     ipcRenderer.invoke('ai:conversations:messages', { conversationId, ...options }),
+  listAIConversationEvents: (conversationId: number) =>
+    ipcRenderer.invoke('ai:conversations:events', { conversationId }),
+  upsertAIModelSwitchEvent: (input: unknown) =>
+    ipcRenderer.invoke('ai:conversations:upsertModelSwitchEvent', input),
+  deleteAIModelSwitchEvent: (conversationId: number, afterMessageId: number | null) =>
+    ipcRenderer.invoke('ai:conversations:deleteModelSwitchEvent', { conversationId, afterMessageId }),
   listAIConversationRuns: (conversationId: number, limit?: number) =>
     ipcRenderer.invoke('ai:conversations:runs', { conversationId, limit }),
   saveAIAsset: (assetId: number) => ipcRenderer.invoke('ai:media:saveAs', { assetId }),

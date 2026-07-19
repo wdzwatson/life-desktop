@@ -196,6 +196,7 @@ export class AIAgentRuntime {
       baseUrl: provider.baseUrl,
       apiKey: credentials.apiKey,
       headers: credentials.headers,
+      requestBody: provider.requestBody,
       model: snapshot.providers.text.model,
       timeoutMs: provider.timeoutMs,
     })

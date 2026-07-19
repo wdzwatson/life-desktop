@@ -123,6 +123,69 @@ test('messages preserve ordered heterogeneous content blocks and paginate chrono
   context.db.close()
 })
 
+test('model switch events persist outside message history and coalesce by timeline anchor', () => {
+  const context = setup()
+  const conversation = createConversation(context)
+  const assistant = context.service.createMessage({
+    conversationId: conversation.id,
+    role: 'assistant',
+    parts: [{ type: 'text', text: 'First answer' }],
+  })
+  const first = context.service.upsertModelSwitchEvent({
+    conversationId: conversation.id,
+    afterMessageId: assistant.id,
+    payload: {
+      fromAgentId: context.agentId,
+      fromProvider: 'Provider',
+      fromModel: 'chat',
+      toAgentId: context.agentId + 1,
+      toProvider: 'Provider Two',
+      toModel: 'chat-v2',
+    },
+  })
+  const updated = context.service.upsertModelSwitchEvent({
+    conversationId: conversation.id,
+    afterMessageId: assistant.id,
+    payload: {
+      fromAgentId: context.agentId,
+      fromProvider: 'Provider',
+      fromModel: 'chat',
+      toAgentId: context.agentId + 2,
+      toProvider: 'Provider Three',
+      toModel: 'chat-v3',
+    },
+  })
+
+  assert.equal(updated.id, first.id)
+  assert.equal(context.service.listMessages(conversation.id).length, 1)
+  assert.deepEqual(context.service.listConversationEvents(conversation.id), [updated])
+  assert.equal(updated.payload.toModel, 'chat-v3')
+  assert.deepEqual(context.service.deleteModelSwitchEvent(conversation.id, assistant.id), { deleted: true })
+  assert.deepEqual(context.service.listConversationEvents(conversation.id), [])
+  context.db.close()
+})
+
+test('deleting a conversation cascades to persisted conversation events', () => {
+  const context = setup()
+  const conversation = createConversation(context)
+  context.service.upsertModelSwitchEvent({
+    conversationId: conversation.id,
+    afterMessageId: null,
+    payload: {
+      fromAgentId: context.agentId,
+      fromProvider: 'Provider',
+      fromModel: 'chat',
+      toAgentId: context.agentId + 1,
+      toProvider: 'Provider Two',
+      toModel: 'chat-v2',
+    },
+  })
+
+  context.service.deleteConversation(conversation.id)
+  assert.equal(context.db.prepare('SELECT COUNT(*) AS count FROM ai_conversation_events').get().count, 0)
+  context.db.close()
+})
+
 test('video message metadata survives conversation serialization and reload', () => {
   const context = setup()
   const conversation = createConversation(context)

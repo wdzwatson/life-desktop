@@ -3,6 +3,7 @@ import {
   ArchiveX,
   Database,
   Film,
+  FolderOpen,
   HardDrive,
   Image,
   RefreshCw,
@@ -31,6 +32,7 @@ type StorageUsage = {
   orphanFileCount: number
   temporaryFileCount: number
   latestImageAssetId: number | null
+  locations: { database: string; media: string; credentials: string }
   byType: Array<{ mediaType: 'image' | 'video' | 'audio' | 'file'; count: number; bytes: number }>
 }
 
@@ -230,6 +232,29 @@ export function StorageManager() {
           <strong>{usage.recoverableMediaCount}</strong>
           <small>{t('aiChat.storage.recovery_detail', { active: usage.activeMediaCount })} · {formatBytes(usage.orphanBytes + usage.temporaryBytes)}</small>
         </article>
+      </section>
+
+      <section className="ai-storage-locations" aria-labelledby="ai-storage-locations-title">
+        <div className="ai-storage-settings-card__heading">
+          <div>
+            <h3 id="ai-storage-locations-title">{t('aiChat.storage.locations_title')}</h3>
+            <p>{t('aiChat.storage.locations_desc')}</p>
+          </div>
+        </div>
+        <div className="ai-storage-location-list">
+          {(['database', 'media', 'credentials'] as const).map((kind) => (
+            <article key={kind}>
+              <div>
+                <span>{t(`aiChat.storage.location_${kind}`)}</span>
+                <code title={usage.locations[kind]}>{usage.locations[kind] || t('aiChat.storage.location_unavailable')}</code>
+              </div>
+              <button className="btn sm" disabled={!usage.locations[kind]} onClick={() => api?.revealInFinder?.(usage.locations[kind])}>
+                <FolderOpen size={13} aria-hidden="true" />
+                {t('aiChat.storage.reveal_location')}
+              </button>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="ai-storage-settings-grid">

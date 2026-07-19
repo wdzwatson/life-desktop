@@ -94,6 +94,34 @@ test('OpenAI-compatible adapter streams text, tool calls, usage, request ID, and
   assert.equal(receivedBody?.stream, true)
 })
 
+test('OpenAI-compatible adapter merges provider request body while protecting runtime fields', async () => {
+  let receivedBody: Record<string, unknown> | null = null
+  await withServer(async (request, response) => {
+    receivedBody = JSON.parse(await readRequestBody(request)) as Record<string, unknown>
+    response.writeHead(200, { 'content-type': 'text/event-stream' })
+    response.end('data: [DONE]\n\n')
+  }, async (baseUrl) => {
+    const adapter = new OpenAICompatibleAdapter({
+      baseUrl,
+      model: 'runtime-model',
+      timeoutMs: 1000,
+      requestBody: {
+        max_tokens: 1234,
+        response_format: { type: 'json_object' },
+        model: 'ignored-model',
+        messages: [],
+        stream: false,
+      },
+    })
+    await collect(adapter)
+  })
+  assert.equal(receivedBody?.model, 'runtime-model')
+  assert.equal(receivedBody?.stream, true)
+  assert.equal((receivedBody?.messages as unknown[])?.length, 1)
+  assert.equal(receivedBody?.max_tokens, 1234)
+  assert.deepEqual(receivedBody?.response_format, { type: 'json_object' })
+})
+
 test('OpenAI-compatible adapter maps provider HTTP failures without leaking credentials', async () => {
   const expectations = new Map([
     [401, 'authentication_failed'],

@@ -20,7 +20,7 @@ import {
 } from '../electron/ai/ipc.ts'
 
 test('AI configuration IPC exposes only the approved channel whitelist', () => {
-  assert.equal(AI_CONFIG_CHANNELS.length, 28)
+  assert.equal(AI_CONFIG_CHANNELS.length, 33)
   assert.equal(new Set(AI_CONFIG_CHANNELS).size, AI_CONFIG_CHANNELS.length)
   assert.equal(
     AI_CONFIG_CHANNELS.some((channel) => /runtime|credential:reveal|shell|sql/i.test(channel)),
@@ -33,6 +33,11 @@ test('preload exposes structured AI methods without runtime credentials or gener
   for (const method of [
     'listAIProviders',
     'createAIProvider',
+    'listAIModels',
+    'createAIModel',
+    'updateAIModel',
+    'deleteAIModel',
+    'syncAIModels',
     'listAIAgents',
     'listAIMcpServers',
     'connectAIMcpServer',
@@ -40,6 +45,9 @@ test('preload exposes structured AI methods without runtime credentials or gener
     'refreshAIMcpTools',
     'listAIConversations',
     'listAIConversationMessages',
+    'listAIConversationEvents',
+    'upsertAIModelSwitchEvent',
+    'deleteAIModelSwitchEvent',
     'startAIRun',
     'cancelAIRun',
     'approveAITool',
@@ -174,7 +182,7 @@ test('AI conversation IPC validates identifiers before opening the isolated data
     },
     getRuntime: () => ({ isConversationActive: () => false }),
   })
-  assert.equal(AI_CONVERSATION_CHANNELS.length, 9)
+  assert.equal(AI_CONVERSATION_CHANNELS.length, 12)
   assert.equal(new Set(AI_CONVERSATION_CHANNELS).size, AI_CONVERSATION_CHANNELS.length)
   const result = await handlers['ai:conversations:messages']({}, { conversationId: 0 })
   assert.equal(result.success, false)

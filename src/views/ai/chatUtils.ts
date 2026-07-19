@@ -144,6 +144,13 @@ export function sortAIConversations(conversations: AIChatConversation[]) {
   })
 }
 
+export function createAIConversationTitle(text: string, maxLength = 54) {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (!normalized) return ''
+  const firstSentence = normalized.split(/(?<=[。！？.!?])\s*/u)[0] || normalized
+  return Array.from(firstSentence).slice(0, maxLength).join('').trim()
+}
+
 export function mergeAIChatMessages(
   current: AIChatMessage[],
   incoming: AIChatMessage[],

@@ -11,8 +11,6 @@ import {
   Grid,
   MessageSquare,
   Settings,
-  Calendar,
-  RotateCcw,
   LogOut,
 } from 'lucide-react'
 
@@ -186,41 +184,6 @@ export const Sidebar: React.FC = () => {
           </span>
           <span className="nav-label">{t('sidebar.ai')}</span>
         </button>
-
-        {/* Pinned Links */}
-        <div
-          style={{
-            marginTop: '20px',
-            borderTop: '1px solid var(--color-border)',
-            paddingTop: '16px',
-          }}
-        >
-          <p
-            className="nav-label"
-            style={{
-              fontSize: '10px',
-              color: 'var(--text-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              paddingLeft: '14px',
-              marginBottom: '8px',
-            }}
-          >
-            {t('sidebar.pinned')}
-          </p>
-          <button className="nav-item" onClick={() => handleNavClick('tasks', 'calendar')}>
-            <span className="nav-icon">
-              <Calendar size={18} />
-            </span>
-            <span className="nav-label">{t('tasks.tab_calendar')}</span>
-          </button>
-          <button className="nav-item" onClick={() => handleNavClick('tasks', 'recurring')}>
-            <span className="nav-icon">
-              <RotateCcw size={18} />
-            </span>
-            <span className="nav-label">{t('tasks.tab_recurring')}</span>
-          </button>
-        </div>
       </div>
 
       <div className="nav-group" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

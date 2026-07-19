@@ -31,6 +31,7 @@ test('provider validation normalizes URLs and deduplicates capabilities', () => 
   assert.deepEqual(parsed.capabilities, ['text', 'streaming'])
   assert.equal(parsed.models.text, 'chat-model')
   assert.deepEqual(parsed.models.textOptions, ['chat-model', 'chat-model-fast'])
+  assert.deepEqual(parsed.requestBody, {})
 })
 
 test('provider validation rejects unknown fields, unsafe URLs, and missing capability models', () => {
@@ -68,6 +69,18 @@ test('provider validation rejects credentials embedded in URLs and invalid heade
         defaultHeaders: { Authorization: 'Bearer safe\r\nX-Injected: true' },
       }),
     /control line breaks/,
+  )
+})
+
+test('provider validation accepts bounded JSON request body fields', () => {
+  const parsed = parseAIProviderConfigInput({
+    ...providerInput(),
+    requestBody: { max_tokens: 4096, response_format: { type: 'json_object' } },
+  })
+  assert.deepEqual(parsed.requestBody, { max_tokens: 4096, response_format: { type: 'json_object' } })
+  assert.throws(
+    () => parseAIProviderConfigInput({ ...providerInput(), requestBody: ['not-an-object'] }),
+    /provider.requestBody/,
   )
 })
 

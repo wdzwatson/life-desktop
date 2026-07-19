@@ -4,6 +4,7 @@ import {
   applyAIChatRunEvent,
   buildAIConversationMarkdown,
   compareAIChatMessageOrder,
+  createAIConversationTitle,
   createOptimisticMediaMessages,
   createOptimisticRunMessages,
   getAIChatRetryText,
@@ -120,6 +121,11 @@ test('composer Enter sends while Shift+Enter inserts a newline and IME compositi
   assert.equal(getAIComposerIntent({ key: 'Enter', shiftKey: false, isComposing: false }), 'send')
   assert.equal(getAIComposerIntent({ key: 'Enter', shiftKey: true, isComposing: false }), 'newline')
   assert.equal(getAIComposerIntent({ key: 'Enter', shiftKey: false, isComposing: true }), 'none')
+})
+
+test('conversation titles use the first prompt sentence and stay compact', () => {
+  assert.equal(createAIConversationTitle('  帮我整理今天的任务。 后面这句不应进入标题。  '), '帮我整理今天的任务。')
+  assert.equal(createAIConversationTitle('A very long prompt '.repeat(10)).length, 54)
 })
 
 test('scroll following stops after the user moves away from the bottom', () => {

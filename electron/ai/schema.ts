@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 
-export const AI_SCHEMA_VERSION = 3
+export const AI_SCHEMA_VERSION = 9
 
 function hasColumn(db: Database.Database, table: string, column: string) {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>)
@@ -19,8 +19,11 @@ function createSchemaObjects(db: Database.Database) {
       capabilities_json TEXT NOT NULL DEFAULT '[]',
       text_model TEXT,
       text_models_json TEXT NOT NULL DEFAULT '[]',
+      request_body_json TEXT NOT NULL DEFAULT '{}',
       image_model TEXT,
+      image_models_json TEXT NOT NULL DEFAULT '[]',
       video_model TEXT,
+      video_models_json TEXT NOT NULL DEFAULT '[]',
       timeout_ms INTEGER NOT NULL DEFAULT 60000 CHECK(timeout_ms BETWEEN 1000 AND 600000),
       allow_local_network INTEGER NOT NULL DEFAULT 0 CHECK(allow_local_network IN (0, 1)),
       enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
@@ -42,6 +45,17 @@ function createSchemaObjects(db: Database.Database) {
     CREATE UNIQUE INDEX IF NOT EXISTS ai_providers_default_video_unique
       ON ai_providers(is_default_video) WHERE is_default_video = 1;
     CREATE INDEX IF NOT EXISTS ai_providers_enabled_idx ON ai_providers(enabled, name);
+
+    CREATE TABLE IF NOT EXISTS ai_model_catalog (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+      category TEXT NOT NULL DEFAULT 'other',
+      capabilities_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS ai_model_catalog_name_idx
+      ON ai_model_catalog(name);
 
     CREATE TABLE IF NOT EXISTS ai_mcp_servers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,6 +98,7 @@ function createSchemaObjects(db: Database.Database) {
       max_tool_calls INTEGER NOT NULL DEFAULT 8 CHECK(max_tool_calls BETWEEN 0 AND 32),
       enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
       is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0, 1)),
+      managed_model_key TEXT,
       configuration_status TEXT NOT NULL DEFAULT 'ready'
         CHECK(configuration_status IN ('ready', 'incomplete')),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -139,6 +154,22 @@ function createSchemaObjects(db: Database.Database) {
 
     CREATE INDEX IF NOT EXISTS ai_messages_conversation_idx
       ON ai_messages(conversation_id, id);
+
+    CREATE TABLE IF NOT EXISTS ai_conversation_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id INTEGER NOT NULL,
+      event_type TEXT NOT NULL CHECK(event_type IN ('model_switch')),
+      after_message_id INTEGER,
+      payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE,
+      FOREIGN KEY (after_message_id) REFERENCES ai_messages(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS ai_conversation_events_conversation_idx
+      ON ai_conversation_events(conversation_id, id);
+    CREATE UNIQUE INDEX IF NOT EXISTS ai_conversation_events_anchor_unique
+      ON ai_conversation_events(conversation_id, event_type, COALESCE(after_message_id, 0));
 
     CREATE TABLE IF NOT EXISTS ai_media_assets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -246,6 +277,13 @@ function createSchemaObjects(db: Database.Database) {
   `)
 }
 
+function ensureManagedModelIndex(db: Database.Database) {
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ai_agents_managed_model_unique
+      ON ai_agents(managed_model_key) WHERE managed_model_key IS NOT NULL
+  `)
+}
+
 function migrateSchema(db: Database.Database, currentVersion: number) {
   if (currentVersion < 2) {
     if (!hasColumn(db, 'ai_media_assets', 'run_id')) {
@@ -272,6 +310,152 @@ function migrateSchema(db: Database.Database, currentVersion: number) {
       updateModels.run(JSON.stringify(provider.text_model ? [provider.text_model] : []), provider.id)
     }
   }
+  if (currentVersion < 4) {
+    if (!hasColumn(db, 'ai_agents', 'managed_model_key')) {
+      db.exec('ALTER TABLE ai_agents ADD COLUMN managed_model_key TEXT')
+    }
+  }
+  if (currentVersion < 5) {
+    if (!hasColumn(db, 'ai_providers', 'image_models_json')) {
+      db.exec("ALTER TABLE ai_providers ADD COLUMN image_models_json TEXT NOT NULL DEFAULT '[]'")
+    }
+    if (!hasColumn(db, 'ai_providers', 'video_models_json')) {
+      db.exec("ALTER TABLE ai_providers ADD COLUMN video_models_json TEXT NOT NULL DEFAULT '[]'")
+    }
+    const providers = db.prepare(`
+      SELECT id, text_model, text_models_json, image_model, image_models_json, video_model, video_models_json
+      FROM ai_providers
+    `).all() as Array<{
+      id: number
+      text_model: string | null
+      text_models_json: string
+      image_model: string | null
+      image_models_json: string
+      video_model: string | null
+      video_models_json: string
+    }>
+    const parseModels = (value: string, fallback: string | null) => {
+      try {
+        const parsed = JSON.parse(value)
+        if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string') && parsed.length > 0) return parsed
+      } catch {
+        // Legacy invalid JSON falls back to the selected model below.
+      }
+      return fallback ? [fallback] : []
+    }
+    const update = db.prepare(`
+      UPDATE ai_providers SET image_models_json = ?, video_models_json = ? WHERE id = ?
+    `)
+    const usesLegacyCatalog = hasColumn(db, 'ai_model_catalog', 'capability')
+    const insertLegacyCatalog = usesLegacyCatalog ? db.prepare(`
+      INSERT OR IGNORE INTO ai_model_catalog (name, capability) VALUES (?, ?)
+    `) : null
+    const selectCatalog = usesLegacyCatalog ? null : db.prepare(`
+      SELECT capabilities_json FROM ai_model_catalog WHERE name = ? COLLATE NOCASE
+    `)
+    const insertCatalog = usesLegacyCatalog ? null : db.prepare(`
+      INSERT INTO ai_model_catalog (name, capabilities_json) VALUES (?, ?)
+    `)
+    const updateCatalog = usesLegacyCatalog ? null : db.prepare(`
+      UPDATE ai_model_catalog SET capabilities_json = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ? COLLATE NOCASE
+    `)
+    const addCatalogModel = (name: string, capability: 'text' | 'image' | 'video') => {
+      if (insertLegacyCatalog) {
+        insertLegacyCatalog.run(name, capability)
+        return
+      }
+      const existing = selectCatalog!.get(name) as { capabilities_json: string } | undefined
+      if (!existing) {
+        insertCatalog!.run(name, JSON.stringify([capability]))
+        return
+      }
+      const capabilities = parseModels(existing.capabilities_json, null)
+      if (!capabilities.includes(capability)) updateCatalog!.run(JSON.stringify([...capabilities, capability]), name)
+    }
+    for (const provider of providers) {
+      const textModels = parseModels(provider.text_models_json, provider.text_model)
+      const imageModels = parseModels(provider.image_models_json, provider.image_model)
+      const videoModels = parseModels(provider.video_models_json, provider.video_model)
+      update.run(JSON.stringify(imageModels), JSON.stringify(videoModels), provider.id)
+      for (const model of textModels) addCatalogModel(model, 'text')
+      for (const model of imageModels) addCatalogModel(model, 'image')
+      for (const model of videoModels) addCatalogModel(model, 'video')
+    }
+  }
+  if (currentVersion < 6 && hasColumn(db, 'ai_model_catalog', 'capability')) {
+    const rows = db.prepare(`
+      SELECT id, name, capability, created_at, updated_at
+      FROM ai_model_catalog ORDER BY id
+    `).all() as Array<{
+      id: number
+      name: string
+      capability: 'text' | 'image' | 'video'
+      created_at: string
+      updated_at: string
+    }>
+    const merged = new Map<string, {
+      id: number
+      name: string
+      capabilities: Set<string>
+      createdAt: string
+      updatedAt: string
+    }>()
+    for (const row of rows) {
+      const key = row.name.toLocaleLowerCase()
+      const current = merged.get(key)
+      if (current) {
+        current.capabilities.add(row.capability)
+        if (row.updated_at > current.updatedAt) current.updatedAt = row.updated_at
+      } else {
+        merged.set(key, {
+          id: row.id,
+          name: row.name,
+          capabilities: new Set([row.capability]),
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        })
+      }
+    }
+    db.exec(`
+      CREATE TABLE ai_model_catalog_v6 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        capabilities_json TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    const insert = db.prepare(`
+      INSERT INTO ai_model_catalog_v6 (id, name, capabilities_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+    `)
+    for (const model of merged.values()) {
+      insert.run(model.id, model.name, JSON.stringify([...model.capabilities]), model.createdAt, model.updatedAt)
+    }
+    db.exec(`
+      DROP TABLE ai_model_catalog;
+      ALTER TABLE ai_model_catalog_v6 RENAME TO ai_model_catalog;
+      CREATE INDEX ai_model_catalog_name_idx ON ai_model_catalog(name);
+    `)
+  }
+  if (currentVersion < 8 && !hasColumn(db, 'ai_model_catalog', 'category')) {
+    db.exec("ALTER TABLE ai_model_catalog ADD COLUMN category TEXT NOT NULL DEFAULT 'other'")
+    db.exec(`
+      UPDATE ai_model_catalog
+      SET category = CASE
+        WHEN lower(name) LIKE 'gpt%' OR lower(name) LIKE 'o1%' OR lower(name) LIKE 'o3%' OR lower(name) LIKE 'o4%' THEN 'chatgpt'
+        WHEN lower(name) LIKE 'claude%' THEN 'claude'
+        WHEN lower(name) LIKE 'gemini%' THEN 'gemini'
+        WHEN lower(name) LIKE 'grok%' THEN 'grok'
+        WHEN lower(name) LIKE 'deepseek%' THEN 'deepseek'
+        WHEN lower(name) LIKE 'qwen%' THEN 'qwen'
+        ELSE 'other'
+      END
+    `)
+  }
+  if (currentVersion < 9 && !hasColumn(db, 'ai_providers', 'request_body_json')) {
+    db.exec("ALTER TABLE ai_providers ADD COLUMN request_body_json TEXT NOT NULL DEFAULT '{}'")
+  }
 }
 
 export function initializeAISchema(db: Database.Database) {
@@ -294,6 +478,7 @@ export function initializeAISchema(db: Database.Database) {
     }
     createSchemaObjects(db)
     migrateSchema(db, currentVersion)
+    ensureManagedModelIndex(db)
     db.prepare(
       `
       INSERT INTO ai_schema_meta (id, schema_version, updated_at)

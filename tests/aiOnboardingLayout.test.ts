@@ -53,11 +53,12 @@ test('chat and configuration use separate workspace modes', () => {
   assert.match(css, /\.ai-settings-shell[\s\S]*grid-template-columns:\s*190px minmax\(0, 1fr\)/)
 })
 
-test('core settings expose Agent management while keeping MCP out of the primary workflow', () => {
-  assert.match(shell, /AgentManager/)
-  assert.match(shell, /nav_agents/)
+test('core settings expose direct model management while keeping Agent and MCP out of the primary workflow', () => {
+  assert.match(shell, /ModelManager/)
+  assert.match(shell, /nav_models/)
+  assert.doesNotMatch(shell, /AgentManager|nav_agents/)
   assert.doesNotMatch(shell, /McpManager|nav_mcp|'mcp'/)
-  assert.match(workspace, /onOpenAgents/)
-  assert.match(workspace, /hasProvider \? 'aiChat\.chat\.configure_agent'/)
-  assert.match(workspace, /onClick=\{hasProvider \? onOpenAgents : onOpenProviders\}/)
+  assert.match(workspace, /onOpenModels/)
+  assert.match(workspace, /hasProvider \? 'aiChat\.chat\.configure_model'/)
+  assert.match(workspace, /onClick=\{hasProvider \? onOpenModels : onOpenProviders\}/)
 })

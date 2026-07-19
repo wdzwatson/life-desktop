@@ -21,6 +21,7 @@ function setup() {
   const storage = new AIStorageService({
     db,
     mediaRoot,
+    credentialPath: path.join(dir, 'ai-credentials.json'),
     media,
     conversations,
     clearCredentials: () => { clearedCredentials += 1 },
@@ -95,6 +96,9 @@ test('usage counts database, managed media, orphan files, temporary files, and p
     assert.equal(usage.orphanFileCount, 1)
     assert.equal(usage.temporaryFileCount, 1)
     assert.ok(usage.databaseBytes > 0)
+    assert.equal(usage.locations.database, fs.realpathSync(path.join(context.dir, 'ai.db')))
+    assert.equal(usage.locations.media, context.mediaRoot)
+    assert.equal(usage.locations.credentials, path.join(context.dir, 'ai-credentials.json'))
   } finally {
     context.close()
   }

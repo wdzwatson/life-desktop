@@ -26,6 +26,7 @@ export type OpenAICompatibleConfig = {
   baseUrl: string
   apiKey?: string
   headers?: Record<string, string>
+  requestBody?: Record<string, unknown>
   model: string
   timeoutMs: number
 }
@@ -131,6 +132,30 @@ function abortReason(signal: AbortSignal, timedOut: boolean) {
   return providerError('network_error', 'The model provider request failed.', true)
 }
 
+function buildRequestBody(config: OpenAICompatibleConfig, request: OpenAICompatibleRequest) {
+  const overrides = { ...(config.requestBody ?? {}) }
+  const customStreamOptions = overrides.stream_options
+  delete overrides.model
+  delete overrides.messages
+  delete overrides.stream
+  delete overrides.tools
+  delete overrides.tool_choice
+  delete overrides.stream_options
+  const streamOptions = customStreamOptions && typeof customStreamOptions === 'object' && !Array.isArray(customStreamOptions)
+    ? customStreamOptions as Record<string, unknown>
+    : {}
+  return {
+    ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
+    ...(request.maxOutputTokens === undefined ? {} : { max_tokens: request.maxOutputTokens }),
+    ...(request.tools?.length ? { tools: request.tools, tool_choice: request.toolChoice ?? 'auto' } : {}),
+    ...overrides,
+    model: config.model,
+    messages: request.messages,
+    stream: true,
+    stream_options: { include_usage: true, ...streamOptions },
+  }
+}
+
 export class OpenAICompatibleAdapter {
   constructor(
     private readonly config: OpenAICompatibleConfig,
@@ -157,15 +182,7 @@ export class OpenAICompatibleAdapter {
         response = await this.fetchImpl(buildEndpoint(this.config.baseUrl), {
           method: 'POST',
           headers: buildHeaders(this.config),
-          body: JSON.stringify({
-            model: this.config.model,
-            messages: request.messages,
-            stream: true,
-            stream_options: { include_usage: true },
-            ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
-            ...(request.maxOutputTokens === undefined ? {} : { max_tokens: request.maxOutputTokens }),
-            ...(request.tools?.length ? { tools: request.tools, tool_choice: request.toolChoice ?? 'auto' } : {}),
-          }),
+          body: JSON.stringify(buildRequestBody(this.config, request)),
           signal: controller.signal,
         })
       } catch {

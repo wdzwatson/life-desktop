@@ -12,11 +12,14 @@ type ProviderRow = {
   base_url: string
   credential_ref: string | null
   default_headers_json: string
+  request_body_json: string
   capabilities_json: string
   text_model: string | null
   text_models_json: string
   image_model: string | null
+  image_models_json: string
   video_model: string | null
+  video_models_json: string
   timeout_ms: number
   allow_local_network: number
   enabled: number
@@ -42,6 +45,7 @@ export type AIProviderSummary = {
   baseUrl: string
   credentialConfigured: boolean
   headerNames: string[]
+  requestBody: Record<string, unknown>
   capabilities: AIProviderCapability[]
   models: AIProviderConfigInput['models']
   timeoutMs: number
@@ -85,8 +89,19 @@ function parseJsonArray<T>(value: string, fallback: T[] = []) {
   }
 }
 
+function parseJsonObject(value: string) {
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+  } catch {
+    return {}
+  }
+}
+
 function toSummary(row: ProviderRow): AIProviderSummary {
   const textOptions = parseJsonArray<string>(row.text_models_json)
+  const imageOptions = parseJsonArray<string>(row.image_models_json)
+  const videoOptions = parseJsonArray<string>(row.video_models_json)
   const normalizedTextOptions = textOptions.length > 0
     ? textOptions
     : (row.text_model ? [row.text_model] : [])
@@ -97,12 +112,15 @@ function toSummary(row: ProviderRow): AIProviderSummary {
     baseUrl: row.base_url,
     credentialConfigured: Boolean(row.credential_ref),
     headerNames: parseJsonArray<string>(row.default_headers_json),
+    requestBody: parseJsonObject(row.request_body_json),
     capabilities: parseJsonArray<AIProviderCapability>(row.capabilities_json),
     models: {
       text: row.text_model ?? undefined,
       textOptions: normalizedTextOptions,
       image: row.image_model ?? undefined,
+      imageOptions: imageOptions.length > 0 ? imageOptions : (row.image_model ? [row.image_model] : []),
       video: row.video_model ?? undefined,
+      videoOptions: videoOptions.length > 0 ? videoOptions : (row.video_model ? [row.video_model] : []),
     },
     timeoutMs: row.timeout_ms,
     allowLocalNetwork: Boolean(row.allow_local_network),
@@ -172,10 +190,10 @@ export class AIProviderService {
         .prepare(
           `
           INSERT INTO ai_providers (
-            name, protocol, base_url, credential_ref, default_headers_json,
-            capabilities_json, text_model, text_models_json, image_model, video_model,
-            timeout_ms, allow_local_network, enabled
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            name, protocol, base_url, credential_ref, default_headers_json, request_body_json,
+            capabilities_json, text_model, text_models_json, image_model, image_models_json,
+            video_model, video_models_json, timeout_ms, allow_local_network, enabled
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `,
         )
         .run(
@@ -184,11 +202,14 @@ export class AIProviderService {
           input.baseUrl,
           credentialRef,
           JSON.stringify(Object.keys(input.defaultHeaders).sort()),
+          JSON.stringify(input.requestBody),
           JSON.stringify(input.capabilities),
           input.models.text ?? null,
           JSON.stringify(input.models.textOptions ?? []),
           input.models.image ?? null,
+          JSON.stringify(input.models.imageOptions ?? []),
           input.models.video ?? null,
+          JSON.stringify(input.models.videoOptions ?? []),
           input.timeoutMs,
           input.allowLocalNetwork ? 1 : 0,
           input.enabled ? 1 : 0,
@@ -231,8 +252,9 @@ export class AIProviderService {
             `
             UPDATE ai_providers SET
               name = ?, protocol = ?, base_url = ?, credential_ref = ?,
-              default_headers_json = ?, capabilities_json = ?,
-              text_model = ?, text_models_json = ?, image_model = ?, video_model = ?, timeout_ms = ?,
+              default_headers_json = ?, request_body_json = ?, capabilities_json = ?,
+              text_model = ?, text_models_json = ?, image_model = ?, image_models_json = ?,
+              video_model = ?, video_models_json = ?, timeout_ms = ?,
               allow_local_network = ?, enabled = ?,
               is_default_text = CASE WHEN ? THEN is_default_text ELSE 0 END,
               is_default_image = CASE WHEN ? THEN is_default_image ELSE 0 END,
@@ -247,11 +269,14 @@ export class AIProviderService {
             input.baseUrl,
             nextRef,
             JSON.stringify(Object.keys(nextBundle.headers).sort()),
+            JSON.stringify(input.requestBody),
             JSON.stringify(input.capabilities),
             input.models.text ?? null,
             JSON.stringify(input.models.textOptions ?? []),
             input.models.image ?? null,
+            JSON.stringify(input.models.imageOptions ?? []),
             input.models.video ?? null,
+            JSON.stringify(input.models.videoOptions ?? []),
             input.timeoutMs,
             input.allowLocalNetwork ? 1 : 0,
             input.enabled ? 1 : 0,
@@ -292,6 +317,7 @@ export class AIProviderService {
       baseUrl: summary.baseUrl,
       apiKey: bundle.apiKey,
       defaultHeaders: bundle.headers,
+      requestBody: summary.requestBody,
       capabilities: summary.capabilities,
       models: summary.models,
       timeoutMs: summary.timeoutMs,
@@ -393,11 +419,20 @@ export class AIProviderService {
 
   delete(id: number) {
     const row = this.requireRow(id)
-    const dependencies = this.getDependencies(id)
-    if (dependencies.length > 0) {
-      throw serviceError('configuration_incomplete', 'Provider is still used by one or more agents.')
-    }
-    this.db.prepare('DELETE FROM ai_providers WHERE id = ?').run(id)
+    this.db.transaction(() => {
+      this.db.prepare(`
+        UPDATE ai_agents SET image_provider_id = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE image_provider_id = ?
+      `).run(id)
+      this.db.prepare(`
+        UPDATE ai_agents SET video_provider_id = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE video_provider_id = ?
+      `).run(id)
+      this.db.prepare(`
+        DELETE FROM ai_agents WHERE text_provider_id = ?
+      `).run(id)
+      this.db.prepare('DELETE FROM ai_providers WHERE id = ?').run(id)
+    })()
     if (row.credential_ref) this.credentials.delete(row.credential_ref)
     return true
   }

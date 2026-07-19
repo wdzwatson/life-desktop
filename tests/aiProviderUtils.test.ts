@@ -6,6 +6,7 @@ import {
   createProviderDraft,
   formatProviderLastTestedAt,
   parseProviderHeaders,
+  parseProviderRequestBody,
   providerToDraft,
   toggleProviderCapability,
   toggleProviderTextModel,
@@ -26,6 +27,7 @@ test('provider drafts build normalized API payloads', () => {
   assert.equal(payload.models.text, 'chat')
   assert.deepEqual(payload.models.textOptions, ['chat', 'chat-fast'])
   assert.deepEqual(payload.defaultHeaders, { 'X-Tenant': 'alpha' })
+  assert.deepEqual(payload.requestBody, {})
   assert.equal(payload.timeoutMs, 60000)
 })
 
@@ -37,6 +39,7 @@ test('editing a provider preserves masked headers until replacement is requested
     baseUrl: 'https://x.test',
     credentialConfigured: true,
     headerNames: ['Authorization'],
+    requestBody: { max_tokens: 1024 },
     capabilities: ['image'],
     models: { image: 'image-model' },
     timeoutMs: 30000,
@@ -49,11 +52,17 @@ test('editing a provider preserves masked headers until replacement is requested
   assert.equal(draft.replaceHeaders, false)
   assert.equal(draft.apiKey, '')
   assert.deepEqual(buildProviderPayload(draft).defaultHeaders, {})
+  assert.deepEqual(buildProviderPayload(draft).requestBody, { max_tokens: 1024 })
 })
 
 test('provider header parsing rejects arrays and non-string values', () => {
   assert.throws(() => parseProviderHeaders('[]'), /JSON object/)
   assert.throws(() => parseProviderHeaders('{"X":1}'), /must be a string/)
+})
+
+test('provider request body parsing requires a JSON object', () => {
+  assert.deepEqual(parseProviderRequestBody('{"reasoning_effort":"high"}'), { reasoning_effort: 'high' })
+  assert.throws(() => parseProviderRequestBody('[]'), /JSON object/)
 })
 
 test('provider capabilities toggle without duplicates', () => {

@@ -7,8 +7,16 @@ export type ProviderSummary = {
   baseUrl: string
   credentialConfigured: boolean
   headerNames: string[]
+  requestBody: Record<string, unknown>
   capabilities: ProviderCapability[]
-  models: { text?: string; textOptions?: string[]; image?: string; video?: string }
+  models: {
+    text?: string
+    textOptions?: string[]
+    image?: string
+    imageOptions?: string[]
+    video?: string
+    videoOptions?: string[]
+  }
   timeoutMs: number
   allowLocalNetwork: boolean
   enabled: boolean
@@ -23,12 +31,15 @@ export type ProviderDraft = {
   baseUrl: string
   apiKey: string
   headersJson: string
+  requestBodyJson: string
   replaceHeaders: boolean
   capabilities: ProviderCapability[]
   textModel: string
   textModels: string[]
   imageModel: string
+  imageModels: string[]
   videoModel: string
+  videoModels: string[]
   timeoutSeconds: string
   allowLocalNetwork: boolean
   enabled: boolean
@@ -50,12 +61,15 @@ export function createProviderDraft(): ProviderDraft {
     baseUrl: '',
     apiKey: '',
     headersJson: '{}',
+    requestBodyJson: '{}',
     replaceHeaders: true,
     capabilities: ['text', 'streaming'],
     textModel: '',
     textModels: [],
     imageModel: '',
+    imageModels: [],
     videoModel: '',
+    videoModels: [],
     timeoutSeconds: '60',
     allowLocalNetwork: false,
     enabled: true,
@@ -69,6 +83,7 @@ export function providerToDraft(provider: ProviderSummary): ProviderDraft {
     baseUrl: provider.baseUrl,
     apiKey: '',
     headersJson: '{}',
+    requestBodyJson: JSON.stringify(provider.requestBody ?? {}, null, 2),
     replaceHeaders: false,
     capabilities: [...provider.capabilities],
     textModel: provider.models.text ?? '',
@@ -76,7 +91,13 @@ export function providerToDraft(provider: ProviderSummary): ProviderDraft {
       ? [...provider.models.textOptions]
       : (provider.models.text ? [provider.models.text] : []),
     imageModel: provider.models.image ?? '',
+    imageModels: provider.models.imageOptions?.length
+      ? [...provider.models.imageOptions]
+      : (provider.models.image ? [provider.models.image] : []),
     videoModel: provider.models.video ?? '',
+    videoModels: provider.models.videoOptions?.length
+      ? [...provider.models.videoOptions]
+      : (provider.models.video ? [provider.models.video] : []),
     timeoutSeconds: String(provider.timeoutMs / 1000),
     allowLocalNetwork: provider.allowLocalNetwork,
     enabled: provider.enabled,
@@ -96,6 +117,14 @@ export function parseProviderHeaders(value: string) {
   return headers
 }
 
+export function parseProviderRequestBody(value: string) {
+  const parsed = JSON.parse(value || '{}') as unknown
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Request body must be a JSON object.')
+  }
+  return parsed as Record<string, unknown>
+}
+
 export function buildProviderPayload(draft: ProviderDraft) {
   const timeoutSeconds = Number(draft.timeoutSeconds)
   if (!Number.isFinite(timeoutSeconds)) throw new Error('Timeout must be a number.')
@@ -106,17 +135,30 @@ export function buildProviderPayload(draft: ProviderDraft) {
   if (draft.capabilities.includes('text') && (!defaultTextModel || !textOptions.includes(defaultTextModel))) {
     throw new Error('Select a default text model from the available text models.')
   }
+  const imageOptions = normalizeProviderTextModels(
+    draft.imageModels.length > 0 ? draft.imageModels : (draft.imageModel.trim() ? [draft.imageModel] : []),
+  )
+  const videoOptions = normalizeProviderTextModels(
+    draft.videoModels.length > 0 ? draft.videoModels : (draft.videoModel.trim() ? [draft.videoModel] : []),
+  )
+  if (draft.capabilities.includes('image') && (!draft.imageModel.trim() || !imageOptions.includes(draft.imageModel.trim()))) {
+    throw new Error('Select a default image model from the available image models.')
+  }
+  if (draft.capabilities.includes('video') && (!draft.videoModel.trim() || !videoOptions.includes(draft.videoModel.trim()))) {
+    throw new Error('Select a default video model from the available video models.')
+  }
   return {
     name: draft.name,
     protocol: draft.protocol,
     baseUrl: draft.baseUrl,
     ...(draft.apiKey.trim() ? { apiKey: draft.apiKey.trim() } : {}),
     defaultHeaders: draft.replaceHeaders ? parseProviderHeaders(draft.headersJson) : {},
+    requestBody: parseProviderRequestBody(draft.requestBodyJson),
     capabilities: draft.capabilities,
     models: {
       ...(defaultTextModel ? { text: defaultTextModel, textOptions } : {}),
-      ...(draft.imageModel.trim() ? { image: draft.imageModel.trim() } : {}),
-      ...(draft.videoModel.trim() ? { video: draft.videoModel.trim() } : {}),
+      ...(draft.imageModel.trim() ? { image: draft.imageModel.trim(), imageOptions } : {}),
+      ...(draft.videoModel.trim() ? { video: draft.videoModel.trim(), videoOptions } : {}),
     },
     timeoutMs: Math.round(timeoutSeconds * 1000),
     allowLocalNetwork: draft.allowLocalNetwork,

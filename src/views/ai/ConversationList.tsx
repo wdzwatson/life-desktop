@@ -61,7 +61,7 @@ export function ConversationList({
           className="btn primary ai-conversation-new"
           onClick={onCreate}
           disabled={!canCreate}
-          title={!canCreate ? t('aiChat.chat.agent_required') : undefined}
+          title={!canCreate ? t('aiChat.chat.model_required') : undefined}
         >
           <Plus size={15} aria-hidden="true" />
           {t('aiChat.chat.new_conversation')}

@@ -1,8 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
-  Bot,
   Check,
-  ChevronDown,
   Copy,
   Database,
   Pencil,
@@ -18,44 +16,24 @@ import { AccessibleDialog } from '../../components/AccessibleDialog'
 import { useAppStore } from '../../store/useAppStore'
 import {
   PROVIDER_CAPABILITIES,
-  appendProviderTextModel,
   buildProviderPayload,
   createProviderDraft,
   formatProviderLastTestedAt,
   providerToDraft,
   toggleProviderCapability,
-  toggleProviderTextModel,
   type ProviderDraft,
   type ProviderSummary,
 } from './providerUtils'
-import { buildAgentPayload, type AgentSummary } from './agentUtils'
-import {
-  PROVIDER_AGENT_PRESETS,
-  appendCustomAgentName,
-  createCustomAgentSystemPrompt,
-  createProviderLinkedAgentDraft,
-  toggleProviderAgentPreset,
-  type ProviderAgentPresetId,
-} from './providerAgentUtils'
 
 type Props = { onChanged: () => void | Promise<void> }
 
-const COMMON_TEXT_MODELS = [
-  'gpt-4.1',
-  'gpt-4.1-mini',
-  'gpt-4o',
-  'gpt-4o-mini',
-  'o3',
-  'o4-mini',
-  'grok-3',
-  'deepseek-chat',
-] as const
+type CatalogModel = { id: number; name: string; capabilities: Array<'text' | 'image' | 'video'> }
 
 export function ProviderManager({ onChanged }: Props) {
   const { t, i18n } = useTranslation()
   const showToast = useAppStore((state) => state.showToast)
   const [providers, setProviders] = useState<ProviderSummary[]>([])
-  const [agents, setAgents] = useState<AgentSummary[]>([])
+  const [catalogModels, setCatalogModels] = useState<CatalogModel[]>([])
   const [search, setSearch] = useState('')
   const [protocol, setProtocol] = useState('')
   const [capability, setCapability] = useState('')
@@ -64,28 +42,21 @@ export function ProviderManager({ onChanged }: Props) {
   const [error, setError] = useState('')
   const [editing, setEditing] = useState<ProviderSummary | null>(null)
   const [draft, setDraft] = useState<ProviderDraft | null>(null)
-  const [selectedPresetIds, setSelectedPresetIds] = useState<ProviderAgentPresetId[]>([])
-  const [customAgentName, setCustomAgentName] = useState('')
-  const [customAgentNames, setCustomAgentNames] = useState<string[]>([])
-  const [agentPickerOpen, setAgentPickerOpen] = useState(false)
-  const [customTextModel, setCustomTextModel] = useState('')
   const nameRef = useRef<HTMLInputElement | null>(null)
   const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
-  const agentPickerRef = useRef<HTMLDivElement | null>(null)
-  const agentPickerButtonRef = useRef<HTMLButtonElement | null>(null)
   const api = (window as any).electronAPI
 
   const loadProviders = async () => {
     if (!api?.listAIProviders) return
     setBusy(true)
-    const [response, agentResponse] = await Promise.all([
+    const [response, catalogResponse] = await Promise.all([
       api.listAIProviders({
         ...(search.trim() ? { search: search.trim() } : {}),
         ...(protocol ? { protocol } : {}),
         ...(capability ? { capability } : {}),
         ...(enabled ? { enabled: enabled === 'enabled' } : {}),
       }),
-      api.listAIAgents?.() ?? Promise.resolve({ success: true, data: [] }),
+      api.listAIModels?.() ?? Promise.resolve({ success: true, data: [] }),
     ])
     setBusy(false)
     if (!response?.success) {
@@ -93,7 +64,7 @@ export function ProviderManager({ onChanged }: Props) {
       return
     }
     setProviders(response.data ?? [])
-    setAgents(agentResponse?.success ? (agentResponse.data ?? []) : [])
+    setCatalogModels(catalogResponse?.success ? (catalogResponse.data ?? []) : [])
     setError('')
   }
 
@@ -101,33 +72,6 @@ export function ProviderManager({ onChanged }: Props) {
     const timer = window.setTimeout(() => void loadProviders(), 120)
     return () => window.clearTimeout(timer)
   }, [search, protocol, capability, enabled])
-
-  useEffect(() => {
-    if (!agentPickerOpen) return
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!agentPickerRef.current?.contains(event.target as Node)) setAgentPickerOpen(false)
-    }
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      setAgentPickerOpen(false)
-      agentPickerButtonRef.current?.focus()
-    }
-    document.addEventListener('pointerdown', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [agentPickerOpen])
-
-  const selectedAgentLabels = useMemo(() => [
-    ...selectedPresetIds.map((presetId) => {
-      const preset = PROVIDER_AGENT_PRESETS.find((item) => item.id === presetId)
-      return preset ? t(preset.nameKey) : ''
-    }).filter(Boolean),
-    ...customAgentNames,
-  ], [customAgentNames, selectedPresetIds, t])
 
   const refresh = async () => {
     await loadProviders()
@@ -137,26 +81,12 @@ export function ProviderManager({ onChanged }: Props) {
   const closeEditor = () => {
     setDraft(null)
     setEditing(null)
-    setSelectedPresetIds([])
-    setCustomAgentName('')
-    setCustomAgentNames([])
-    setAgentPickerOpen(false)
-    setCustomTextModel('')
   }
 
   const openCreate = (trigger: HTMLButtonElement) => {
     drawerTriggerRef.current = trigger
     setEditing(null)
     setDraft(createProviderDraft())
-    setSelectedPresetIds(
-      agents.some((agent) => agent.systemPrompt === PROVIDER_AGENT_PRESETS[0].systemPrompt)
-        ? []
-        : ['general'],
-    )
-    setCustomAgentName('')
-    setCustomAgentNames([])
-    setAgentPickerOpen(false)
-    setCustomTextModel('')
     setError('')
   }
 
@@ -164,85 +94,18 @@ export function ProviderManager({ onChanged }: Props) {
     drawerTriggerRef.current = trigger
     setEditing(provider)
     setDraft(providerToDraft(provider))
-    setSelectedPresetIds([])
-    setCustomAgentName('')
-    setCustomAgentNames([])
-    setAgentPickerOpen(false)
-    setCustomTextModel('')
     setError('')
   }
 
-  const addCustomAgent = () => {
-    const next = appendCustomAgentName(customAgentNames, customAgentName, agents.map((agent) => agent.name))
-    if (next === customAgentNames) return
-    setCustomAgentNames(next)
-    setCustomAgentName('')
-  }
-
-  const updateTextModels = (models: string[]) => {
+  const updateModels = (kind: 'text' | 'image' | 'video', models: string[]) => {
     if (!draft) return
+    const plural = `${kind}Models` as 'textModels' | 'imageModels' | 'videoModels'
+    const defaultKey = `${kind}Model` as 'textModel' | 'imageModel' | 'videoModel'
     setDraft({
       ...draft,
-      textModels: models,
-      textModel: models.includes(draft.textModel) ? draft.textModel : (models[0] ?? ''),
+      [plural]: models,
+      [defaultKey]: models.includes(draft[defaultKey]) ? draft[defaultKey] : (models[0] ?? ''),
     })
-  }
-
-  const addCustomTextModel = () => {
-    if (!draft) return
-    const models = appendProviderTextModel(draft.textModels, customTextModel)
-    if (models.length === draft.textModels.length) return
-    updateTextModels(models)
-    setCustomTextModel('')
-  }
-
-  const createRequestedAgents = async (provider: ProviderSummary) => {
-    if (!provider.capabilities.includes('text') || !provider.models.text) return { created: 0, failed: 0 }
-    const presetRequests = selectedPresetIds
-      .map((presetId) => PROVIDER_AGENT_PRESETS.find((preset) => preset.id === presetId))
-      .filter((preset) => preset && !agents.some((agent) => agent.systemPrompt === preset.systemPrompt))
-      .map((preset) => ({
-        name: t(preset!.nameKey),
-        description: t(preset!.descriptionKey),
-        systemPrompt: preset!.systemPrompt,
-      }))
-    const existingNames = new Set(agents.map((agent) => agent.name.trim().toLocaleLowerCase()))
-    const customRequests = customAgentNames
-      .filter((name) => !existingNames.has(name.trim().toLocaleLowerCase()))
-      .map((name) => ({
-        name,
-        description: t('aiChat.providers.custom_agent_description', { name }),
-        systemPrompt: createCustomAgentSystemPrompt(name),
-      }))
-    const requests = [...presetRequests, ...customRequests]
-    let shouldSetDefault = provider.enabled && !agents.some(
-      (agent) => agent.isDefault && agent.enabled && agent.configurationStatus === 'ready',
-    )
-    let created = 0
-    let failed = 0
-
-    for (const request of requests) {
-      if (!api?.createAIAgent) {
-        failed += 1
-        continue
-      }
-      const agentDraft = createProviderLinkedAgentDraft({
-        providerId: provider.id,
-        ...request,
-        capabilities: provider.capabilities,
-        textModel: provider.models.text,
-        enabled: provider.enabled,
-        isDefault: shouldSetDefault,
-      })
-      const response = await api.createAIAgent(buildAgentPayload(agentDraft))
-      if (response?.success) {
-        created += 1
-        shouldSetDefault = false
-      } else {
-        failed += 1
-      }
-    }
-    return { created, failed }
   }
 
   const saveProvider = async () => {
@@ -257,23 +120,12 @@ export function ProviderManager({ onChanged }: Props) {
           })
         : await api.createAIProvider(payload)
       if (!response?.success) throw new Error(response?.error?.message || t('aiChat.providers.save_failed'))
-      const linkedResult = await createRequestedAgents(response.data as ProviderSummary)
+      const wasEditing = Boolean(editing)
+      await api.syncAIModels?.()
       setDraft(null)
       setEditing(null)
-      setSelectedPresetIds([])
-      setCustomAgentName('')
-      setCustomAgentNames([])
-      setAgentPickerOpen(false)
-      setCustomTextModel('')
-      showToast(t(linkedResult.created > 0
-        ? 'aiChat.providers.saved_with_agents'
-        : editing
-          ? 'aiChat.providers.updated'
-          : 'aiChat.providers.created', { count: linkedResult.created }))
+      showToast(t(wasEditing ? 'aiChat.providers.updated' : 'aiChat.providers.created'))
       await refresh()
-      if (linkedResult.failed > 0) {
-        setError(t('aiChat.providers.agents_create_failed', { count: linkedResult.failed }))
-      }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : t('aiChat.providers.save_failed'))
     } finally {
@@ -381,39 +233,16 @@ export function ProviderManager({ onChanged }: Props) {
                 {(['text', 'image', 'video'] as const).map((kind) => provider.models[kind] && (
                   <div key={kind}>
                     <span>{t(`aiChat.providers.model_${kind}`)}</span>
-                    <strong>{provider.models[kind]}{kind === 'text' && (provider.models.textOptions?.length ?? 0) > 1
-                      ? ` ${t('aiChat.providers.more_text_models', { count: provider.models.textOptions!.length - 1 })}`
+                    <strong>{provider.models[kind]}{((kind === 'text' ? provider.models.textOptions : kind === 'image' ? provider.models.imageOptions : provider.models.videoOptions)?.length ?? 0) > 1
+                      ? ` ${t('aiChat.providers.more_text_models', { count: ((kind === 'text' ? provider.models.textOptions : kind === 'image' ? provider.models.imageOptions : provider.models.videoOptions)?.length ?? 1) - 1 })}`
                       : ''}</strong>
                     {provider.defaults[kind] && <em><Check size={12} aria-hidden="true" />{t('aiChat.providers.default')}</em>}
                   </div>
                 ))}
               </div>
-              {agents.some((agent) => agent.providers.text === provider.id) && (
-                <div className="ai-provider-linked-agents">
-                  <Bot size={13} aria-hidden="true" />
-                  <span>{t('aiChat.providers.linked_agents')}</span>
-                  {agents
-                    .filter((agent) => agent.providers.text === provider.id)
-                    .map((agent) => <strong key={agent.id}>{agent.name}</strong>)}
-                </div>
-              )}
             </div>
 
             <div className="ai-provider-card__actions">
-              {(['text', 'image', 'video'] as const).map((kind) =>
-                provider.capabilities.includes(kind) && provider.models[kind] ? (
-                  <button
-                    key={kind}
-                    className="btn sm"
-                    disabled={busy || !provider.enabled || provider.defaults[kind]}
-                    onClick={() => void runAction(() => api.setDefaultAIProvider(provider.id, kind), 'aiChat.providers.default_updated')}
-                  >
-                    {provider.defaults[kind]
-                      ? t('aiChat.providers.default_kind', { kind: t(`aiChat.providers.model_${kind}`) })
-                      : t('aiChat.providers.set_default_kind', { kind: t(`aiChat.providers.model_${kind}`) })}
-                  </button>
-                ) : null,
-              )}
               <button className="ai-chat-icon-button" onClick={(event) => openEdit(provider, event.currentTarget)} aria-label={t('aiChat.providers.edit_name', { name: provider.name })}>
                 <Pencil size={15} />
               </button>
@@ -481,170 +310,59 @@ export function ProviderManager({ onChanged }: Props) {
               ))}
             </fieldset>
 
-            {draft.capabilities.includes('text') && (
-              <div className="ai-provider-text-models">
-                <details className="ai-provider-model-multiselect">
-                  <summary>
-                    <Database size={15} aria-hidden="true" />
-                    <span>
-                      <strong>{t('aiChat.providers.text_models')}</strong>
-                      <small>{draft.textModels.length > 0
-                        ? t('aiChat.providers.text_models_selected', { count: draft.textModels.length })
-                        : t('aiChat.providers.text_models_placeholder')}</small>
-                    </span>
-                    <ChevronDown size={14} aria-hidden="true" />
-                  </summary>
-                  <div className="ai-provider-model-multiselect__menu">
-                    <div className="ai-provider-model-options">
-                      {[...new Set([...COMMON_TEXT_MODELS, ...draft.textModels])].map((model) => (
-                        <label key={model}>
-                          <input
-                            type="checkbox"
-                            checked={draft.textModels.includes(model)}
-                            onChange={() => updateTextModels(toggleProviderTextModel(draft.textModels, model))}
-                          />
-                          <span>{model}</span>
-                        </label>
-                      ))}
-                    </div>
-                    <div className="ai-provider-agent-custom">
-                      <input
-                        className="form-field"
-                        value={customTextModel}
-                        onChange={(event) => setCustomTextModel(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key !== 'Enter') return
-                          event.preventDefault()
-                          addCustomTextModel()
-                        }}
-                        placeholder={t('aiChat.providers.custom_text_model_placeholder')}
-                        aria-label={t('aiChat.providers.custom_text_model_label')}
-                      />
-                      <button type="button" className="btn" disabled={!customTextModel.trim()} onClick={addCustomTextModel}>
-                        <Plus size={14} aria-hidden="true" />
-                        {t('aiChat.providers.add_text_model')}
-                      </button>
-                    </div>
+            <label className="ai-provider-request-body">
+              <span>{t('aiChat.providers.request_body')}</span>
+              <small>{t('aiChat.providers.request_body_hint')}</small>
+              <textarea
+                className="form-field"
+                value={draft.requestBodyJson}
+                onChange={(event) => setDraft({ ...draft, requestBodyJson: event.target.value })}
+                spellCheck={false}
+                aria-label={t('aiChat.providers.request_body')}
+              />
+            </label>
+
+            <div className="ai-provider-model-catalog">
+              {(['text', 'image', 'video'] as const).map((kind) => draft.capabilities.includes(kind) && (
+                <fieldset key={kind}>
+                  <legend>{t(`aiChat.providers.model_${kind}`)}</legend>
+                  <p>{t('aiChat.providers.model_catalog_hint')}</p>
+                  <div className="ai-provider-model-options">
+                    {catalogModels.filter((model) => model.capabilities.includes(kind)).map((model) => {
+                      const plural = `${kind}Models` as 'textModels' | 'imageModels' | 'videoModels'
+                      const selected = draft[plural]
+                      return <label key={model.id}>
+                        <input type="checkbox" checked={selected.includes(model.name)} onChange={() => updateModels(
+                          kind,
+                          selected.includes(model.name) ? selected.filter((item) => item !== model.name) : [...selected, model.name],
+                        )} />
+                        <span>{model.name}</span>
+                      </label>
+                    })}
+                    {catalogModels.filter((model) => model.capabilities.includes(kind)).length === 0 && <span className="ai-provider-model-catalog__empty">{t('aiChat.providers.model_catalog_empty')}</span>}
                   </div>
-                </details>
-                <label>
-                  <span>{t('aiChat.providers.default_text_model')}</span>
-                  <select className="form-field" value={draft.textModel} disabled={draft.textModels.length === 0} onChange={(event) => setDraft({ ...draft, textModel: event.target.value })}>
-                    <option value="">{t('aiChat.providers.select_default_text_model')}</option>
-                    {draft.textModels.map((model) => <option key={model} value={model}>{model}</option>)}
-                  </select>
-                </label>
-              </div>
-            )}
+                  <label className="ai-provider-model-catalog__default">
+                    <span>{t('aiChat.providers.default_model')}</span>
+                    {(() => {
+                      const plural = `${kind}Models` as 'textModels' | 'imageModels' | 'videoModels'
+                      const defaultKey = `${kind}Model` as 'textModel' | 'imageModel' | 'videoModel'
+                      return <select className="form-field" value={draft[defaultKey]} disabled={draft[plural].length === 0} onChange={(event) => setDraft({ ...draft, [defaultKey]: event.target.value })}>
+                        <option value="">{t('aiChat.providers.select_default_model')}</option>
+                        {draft[plural].map((model) => <option key={model} value={model}>{model}</option>)}
+                      </select>
+                    })()}
+                  </label>
+                </fieldset>
+              ))}
+            </div>
 
             <div className="ai-provider-form__grid">
-              {(['image', 'video'] as const).map((kind) => draft.capabilities.includes(kind) && (
-                <label key={kind}>
-                  <span>{t(`aiChat.providers.model_${kind}`)}</span>
-                  <input className="form-field" value={draft[`${kind}Model`]} onChange={(event) => setDraft({ ...draft, [`${kind}Model`]: event.target.value })} />
-                </label>
-              ))}
               <label>
                 <span>{t('aiChat.providers.timeout')}</span>
                 <input className="form-field" type="number" min="1" max="600" value={draft.timeoutSeconds} onChange={(event) => setDraft({ ...draft, timeoutSeconds: event.target.value })} />
               </label>
             </div>
 
-            <fieldset className="ai-provider-agent-picker" disabled={!draft.capabilities.includes('text') || !draft.textModel.trim()}>
-              <legend>{t('aiChat.providers.agents_section')}</legend>
-              <p>{t(draft.capabilities.includes('text') && draft.textModel.trim()
-                ? 'aiChat.providers.agents_section_desc'
-                : 'aiChat.providers.agents_require_text')}</p>
-              <div className="ai-provider-agent-select" ref={agentPickerRef}>
-                <button
-                  ref={agentPickerButtonRef}
-                  type="button"
-                  className="ai-provider-agent-select__trigger"
-                  aria-expanded={agentPickerOpen}
-                  aria-controls="ai-provider-agent-options"
-                  disabled={!draft.capabilities.includes('text') || !draft.textModel.trim()}
-                  onClick={() => setAgentPickerOpen((current) => !current)}
-                >
-                  <Bot size={15} aria-hidden="true" />
-                  <span>
-                    <strong>{t('aiChat.providers.agent_select_label')}</strong>
-                    <small>{selectedAgentLabels.length > 0
-                      ? t('aiChat.providers.agent_selected_count', { count: selectedAgentLabels.length, names: selectedAgentLabels.join('、') })
-                      : t('aiChat.providers.agent_select_placeholder')}</small>
-                  </span>
-                  <ChevronDown size={14} aria-hidden="true" />
-                </button>
-
-                {agentPickerOpen && (
-                  <div id="ai-provider-agent-options" className="ai-provider-agent-select__menu">
-                    <strong className="ai-provider-agent-select__label">{t('aiChat.providers.agent_options_label')}</strong>
-                    <div className="ai-provider-agent-presets">
-                      {PROVIDER_AGENT_PRESETS.map((preset) => {
-                        const existingAgent = agents.find((agent) => agent.systemPrompt === preset.systemPrompt)
-                        const linkedToCurrent = Boolean(existingAgent && editing && existingAgent.providers.text === editing.id)
-                        const checked = linkedToCurrent || selectedPresetIds.includes(preset.id)
-                        return (
-                          <label key={preset.id} className={existingAgent ? 'is-existing' : ''}>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              disabled={Boolean(existingAgent)}
-                              onChange={() => setSelectedPresetIds(toggleProviderAgentPreset(selectedPresetIds, preset.id))}
-                            />
-                            <span>
-                              <strong>{t(preset.nameKey)}</strong>
-                              <small>{t(linkedToCurrent
-                                ? 'aiChat.providers.agent_already_linked'
-                                : existingAgent
-                                  ? 'aiChat.providers.agent_already_exists'
-                                  : preset.descriptionKey)}</small>
-                            </span>
-                          </label>
-                        )
-                      })}
-                    </div>
-
-                    <strong className="ai-provider-agent-select__label">{t('aiChat.providers.custom_agents_label')}</strong>
-                    <div className="ai-provider-agent-custom">
-                      <input
-                        className="form-field"
-                        value={customAgentName}
-                        onChange={(event) => setCustomAgentName(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key !== 'Enter') return
-                          event.preventDefault()
-                          addCustomAgent()
-                        }}
-                        placeholder={t('aiChat.providers.custom_agent_placeholder')}
-                        aria-label={t('aiChat.providers.custom_agent_label')}
-                      />
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={!customAgentName.trim() || agents.some((agent) => agent.name.trim().toLocaleLowerCase() === customAgentName.trim().toLocaleLowerCase())}
-                        onClick={addCustomAgent}
-                      >
-                        <Plus size={14} aria-hidden="true" />
-                        {t('aiChat.providers.add_custom_agent')}
-                      </button>
-                    </div>
-                    {customAgentNames.length > 0 && (
-                      <div className="ai-provider-agent-chips" aria-label={t('aiChat.providers.pending_agents')}>
-                        {customAgentNames.map((name) => (
-                          <span key={name}>
-                            <Check size={10} aria-hidden="true" />
-                            {name}
-                            <button type="button" onClick={() => setCustomAgentNames((current) => current.filter((item) => item !== name))} aria-label={t('aiChat.providers.remove_custom_agent', { name })}>
-                              <X size={11} aria-hidden="true" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </fieldset>
             {editing && editing.headerNames.length > 0 && !draft.replaceHeaders && (
               <div className="ai-provider-preserved-headers">
                 <ShieldCheck size={15} aria-hidden="true" />

@@ -67,10 +67,22 @@ test('provider service stores secrets outside SQLite and returns a redacted list
   assert.ok(row.credential_ref)
   assert.equal(row.default_headers_json, '["X-Tenant"]')
   assert.equal(credentials.entries.size, 1)
+  assert.deepEqual(created.requestBody, {})
   assert.deepEqual(service.getCredentialBundle(created.id), {
     apiKey: 'secret-key',
     headers: { 'X-Tenant': 'private-tenant' },
   })
+  db.close()
+})
+
+test('provider service saves a JSON request body without treating it as a credential', () => {
+  const { db, credentials, service } = setup()
+  const created = service.create(providerInput({
+    requestBody: { max_tokens: 8192, response_format: { type: 'json_object' } },
+  }))
+  assert.deepEqual(created.requestBody, { max_tokens: 8192, response_format: { type: 'json_object' } })
+  assert.equal(db.prepare('SELECT request_body_json FROM ai_providers WHERE id = ?').get(created.id).request_body_json, '{"max_tokens":8192,"response_format":{"type":"json_object"}}')
+  assert.equal(credentials.entries.size, 1)
   db.close()
 })
 
@@ -153,25 +165,68 @@ test('provider copy uses an independent credential and starts disabled', () => {
   db.close()
 })
 
-test('provider dependencies block deletion and disabling marks agents incomplete', () => {
-  const { db, service } = setup()
+test('provider deletion removes dependent profiles while preserving conversation snapshots', () => {
+  const { db, credentials, service } = setup()
   const provider = service.create(providerInput())
-  db.prepare(
+  const agentId = Number(db.prepare(
     `
     INSERT INTO ai_agents (
       name, text_provider_id, model_params_json, context_json,
       allowed_tools_json, blocked_tools_json
     ) VALUES ('Dependent Agent', ?, '{}', '{}', '[]', '[]')
     `,
-  ).run(provider.id)
+  ).run(provider.id).lastInsertRowid)
+  db.prepare(`
+    INSERT INTO ai_conversations (title, agent_id, agent_snapshot_json)
+    VALUES ('History', ?, '{"providers":{"text":{"model":"chat-model"}}}')
+  `).run(agentId)
   assert.deepEqual(service.getDependencies(provider.id), [
-    { agentId: 1, agentName: 'Dependent Agent', usages: ['text'] },
+    { agentId, agentName: 'Dependent Agent', usages: ['text'] },
   ])
-  assert.throws(() => service.delete(provider.id), (error) => {
-    return error instanceof AIServiceError && error.detail.code === 'configuration_incomplete'
+  assert.equal(service.delete(provider.id), true)
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM ai_providers').get().count, 0)
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM ai_agents').get().count, 0)
+  assert.equal(db.prepare('SELECT agent_id FROM ai_conversations').get().agent_id, null)
+  assert.equal(db.prepare('SELECT agent_snapshot_json FROM ai_conversations').get().agent_snapshot_json.includes('chat-model'), true)
+  assert.equal(credentials.entries.size, 0)
+  db.close()
+})
+
+test('provider deletion detaches optional image and video provider links from surviving agents', () => {
+  const { db, service } = setup()
+  const textProvider = service.create(providerInput({ name: 'Text source' }))
+  const mediaProvider = service.create(providerInput({
+    name: 'Media source',
+    capabilities: ['image'],
+    models: { image: 'image-model' },
+  }))
+  const agentId = Number(db.prepare(`
+    INSERT INTO ai_agents (
+      name, text_provider_id, image_provider_id, video_provider_id, model_params_json, context_json,
+      allowed_tools_json, blocked_tools_json
+    ) VALUES ('Mixed Agent', ?, ?, ?, '{}', '{}', '[]', '[]')
+  `).run(textProvider.id, mediaProvider.id, mediaProvider.id).lastInsertRowid)
+
+  assert.equal(service.delete(mediaProvider.id), true)
+  assert.deepEqual(db.prepare('SELECT text_provider_id, image_provider_id, video_provider_id FROM ai_agents WHERE id = ?').get(agentId), {
+    text_provider_id: textProvider.id,
+    image_provider_id: null,
+    video_provider_id: null,
   })
+  db.close()
+})
+
+test('disabling a provider marks its dependent agents incomplete', () => {
+  const { db, service } = setup()
+  const provider = service.create(providerInput())
+  const agentId = Number(db.prepare(`
+    INSERT INTO ai_agents (
+      name, text_provider_id, model_params_json, context_json, allowed_tools_json, blocked_tools_json
+    ) VALUES ('Dependent Agent', ?, '{}', '{}', '[]', '[]')
+  `).run(provider.id).lastInsertRowid)
+
   service.setEnabled(provider.id, false)
-  assert.equal(db.prepare('SELECT configuration_status FROM ai_agents WHERE id = 1').get().configuration_status, 'incomplete')
+  assert.equal(db.prepare('SELECT configuration_status FROM ai_agents WHERE id = ?').get(agentId).configuration_status, 'incomplete')
   db.close()
 })
 

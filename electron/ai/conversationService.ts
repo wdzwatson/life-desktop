@@ -48,6 +48,24 @@ type MessagePartRow = {
   created_at: string
 }
 
+type ConversationEventRow = {
+  id: number
+  conversation_id: number
+  event_type: 'model_switch'
+  after_message_id: number | null
+  payload_json: string
+  created_at: string
+}
+
+type ModelSwitchEventPayload = {
+  fromAgentId: number
+  fromProvider: string
+  fromModel: string
+  toAgentId: number
+  toProvider: string
+  toModel: string
+}
+
 type RunRow = {
   id: number
   conversation_id: number
@@ -484,6 +502,61 @@ export class AIConversationService {
       byMessage.set(part.message_id, current)
     }
     return ordered.map((row) => this.toMessage(row, byMessage.get(row.id) ?? []))
+  }
+
+  listConversationEvents(conversationId: number) {
+    const normalizedConversationId = requireId(conversationId, 'conversation ID')
+    this.requireConversationRow(normalizedConversationId)
+    return (this.db
+      .prepare('SELECT * FROM ai_conversation_events WHERE conversation_id = ? ORDER BY id')
+      .all(normalizedConversationId) as ConversationEventRow[]).map((row) => this.toConversationEvent(row))
+  }
+
+  upsertModelSwitchEvent(input: {
+    conversationId: number
+    afterMessageId?: number | null
+    payload: ModelSwitchEventPayload
+  }) {
+    const conversationId = requireId(input.conversationId, 'conversation ID')
+    this.requireConversationRow(conversationId)
+    const afterMessageId = input.afterMessageId === undefined || input.afterMessageId === null
+      ? null
+      : requireId(input.afterMessageId, 'after message ID')
+    if (afterMessageId !== null) this.requireMessageInConversation(afterMessageId, conversationId)
+    const payload = this.requireModelSwitchEventPayload(input.payload)
+    const now = this.now().toISOString()
+    try {
+      this.db.prepare(`
+        INSERT INTO ai_conversation_events (
+          conversation_id, event_type, after_message_id, payload_json, created_at
+        ) VALUES (?, 'model_switch', ?, ?, ?)
+        ON CONFLICT DO UPDATE SET
+          payload_json = excluded.payload_json,
+          created_at = excluded.created_at
+      `).run(conversationId, afterMessageId, JSON.stringify(payload), now)
+      const row = this.db.prepare(`
+        SELECT * FROM ai_conversation_events
+        WHERE conversation_id = ? AND event_type = 'model_switch'
+          AND COALESCE(after_message_id, 0) = COALESCE(?, 0)
+      `).get(conversationId, afterMessageId) as ConversationEventRow
+      return this.toConversationEvent(row)
+    } catch (error) {
+      throw this.mapDbError(error, 'Conversation event could not be saved.')
+    }
+  }
+
+  deleteModelSwitchEvent(conversationId: number, afterMessageId?: number | null) {
+    const normalizedConversationId = requireId(conversationId, 'conversation ID')
+    this.requireConversationRow(normalizedConversationId)
+    const normalizedMessageId = afterMessageId === undefined || afterMessageId === null
+      ? null
+      : requireId(afterMessageId, 'after message ID')
+    const result = this.db.prepare(`
+      DELETE FROM ai_conversation_events
+      WHERE conversation_id = ? AND event_type = 'model_switch'
+        AND COALESCE(after_message_id, 0) = COALESCE(?, 0)
+    `).run(normalizedConversationId, normalizedMessageId)
+    return { deleted: result.changes > 0 }
   }
 
   createRun(input: {
@@ -943,6 +1016,24 @@ export class AIConversationService {
     }
   }
 
+  private toConversationEvent(row: ConversationEventRow) {
+    return {
+      id: row.id,
+      conversationId: row.conversation_id,
+      eventType: row.event_type,
+      afterMessageId: row.after_message_id,
+      payload: parseJson<ModelSwitchEventPayload>(row.payload_json, {
+        fromAgentId: 0,
+        fromProvider: '',
+        fromModel: '',
+        toAgentId: 0,
+        toProvider: '',
+        toModel: '',
+      }),
+      createdAt: row.created_at,
+    }
+  }
+
   private toMessage(row: MessageRow, parts: MessagePartRow[]) {
     return {
       id: row.id,
@@ -1069,6 +1160,18 @@ export class AIConversationService {
       throw serviceError('invalid_input', 'Message does not belong to the conversation.')
     }
     return message
+  }
+
+  private requireModelSwitchEventPayload(value: unknown): ModelSwitchEventPayload {
+    const payload = requirePlainObject(value, 'model switch payload')
+    return {
+      fromAgentId: requireId(payload.fromAgentId, 'source agent ID'),
+      fromProvider: requireString(payload.fromProvider, 'source provider', { max: 300 }),
+      fromModel: requireString(payload.fromModel, 'source model', { max: 1_000 }),
+      toAgentId: requireId(payload.toAgentId, 'target agent ID'),
+      toProvider: requireString(payload.toProvider, 'target provider', { max: 300 }),
+      toModel: requireString(payload.toModel, 'target model', { max: 1_000 }),
+    }
   }
 
   private requireAgent(id: number) {

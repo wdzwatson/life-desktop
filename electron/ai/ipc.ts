@@ -8,6 +8,7 @@ import { AIAgentService } from './agentService'
 import { AICredentialService, type AICredentialCryptoAdapter } from './credentialService'
 import { AIConversationService } from './conversationService'
 import { AIMcpConfigService } from './mcpConfigService'
+import { AIModelService } from './modelService'
 import { AIProviderService } from './providerService'
 import { AIServiceError } from './types'
 import { AIValidationError } from './validation'
@@ -23,6 +24,11 @@ export const AI_CONFIG_CHANNELS = [
   'ai:providers:removeCredential',
   'ai:providers:dependencies',
   'ai:providers:delete',
+  'ai:models:list',
+  'ai:models:create',
+  'ai:models:update',
+  'ai:models:delete',
+  'ai:models:sync',
   'ai:agents:list',
   'ai:agents:get',
   'ai:agents:create',
@@ -57,6 +63,9 @@ export const AI_CONVERSATION_CHANNELS = [
   'ai:conversations:setArchived',
   'ai:conversations:delete',
   'ai:conversations:messages',
+  'ai:conversations:events',
+  'ai:conversations:upsertModelSwitchEvent',
+  'ai:conversations:deleteModelSwitchEvent',
   'ai:conversations:runs',
 ] as const
 
@@ -77,6 +86,7 @@ type AIHandler = (_event: unknown, payload?: unknown) => unknown | Promise<unkno
 
 type AIConfigServices = {
   providers: AIProviderService
+  models: AIModelService
   agents: AIAgentService
   mcp: AIMcpConfigService
 }
@@ -224,6 +234,7 @@ export function createAIConfigHandlers(
     )
     return {
       providers: new AIProviderService(db, credentials),
+      models: new AIModelService(db),
       agents: new AIAgentService(db),
       mcp: new AIMcpConfigService(db, credentials),
     }
@@ -283,6 +294,18 @@ export function createAIConfigHandlers(
       ),
     'ai:providers:delete': (_event, payload) =>
       respondWithObject(payload, (data) => services().providers.delete(requireId(data.id))),
+
+    'ai:models:list': () => respond(() => services().models.list()),
+    'ai:models:create': (_event, payload) => respond(() => services().models.create(payload)),
+    'ai:models:update': (_event, payload) =>
+      respondWithObject(payload, (data) => services().models.update(requireId(data.id), data.input)),
+    'ai:models:delete': (_event, payload) =>
+      respondWithObject(payload, (data) => services().models.delete(requireId(data.id))),
+    'ai:models:sync': () => respond(() => {
+      const serviceSet = services()
+      serviceSet.models.syncManagedAgents()
+      return serviceSet.models.listRuntimeProfiles()
+    }),
 
     'ai:agents:list': () => respond(() => services().agents.list()),
     'ai:agents:get': (_event, payload) =>
@@ -610,6 +633,39 @@ export function createAIConversationHandlers(
           ...(data.limit === undefined ? {} : { limit: requireId(data.limit, 'message limit') }),
         }
         return services().conversations.listMessages(conversationId, options)
+      }),
+    'ai:conversations:events': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const conversationId = requireId(data.conversationId, 'conversation ID')
+        return services().conversations.listConversationEvents(conversationId)
+      }),
+    'ai:conversations:upsertModelSwitchEvent': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const conversationId = requireId(data.conversationId, 'conversation ID')
+        const afterMessageId = data.afterMessageId === undefined || data.afterMessageId === null
+          ? null
+          : requireId(data.afterMessageId, 'after message ID')
+        const eventPayload = requireObject(data.payload)
+        return services().conversations.upsertModelSwitchEvent({
+          conversationId,
+          afterMessageId,
+          payload: {
+            fromAgentId: requireId(eventPayload.fromAgentId, 'source agent ID'),
+            fromProvider: requireString(eventPayload.fromProvider, 'source provider', 300),
+            fromModel: requireString(eventPayload.fromModel, 'source model', 1_000),
+            toAgentId: requireId(eventPayload.toAgentId, 'target agent ID'),
+            toProvider: requireString(eventPayload.toProvider, 'target provider', 300),
+            toModel: requireString(eventPayload.toModel, 'target model', 1_000),
+          },
+        })
+      }),
+    'ai:conversations:deleteModelSwitchEvent': (_event, payload) =>
+      respondWithObject(payload, (data) => {
+        const conversationId = requireId(data.conversationId, 'conversation ID')
+        const afterMessageId = data.afterMessageId === undefined || data.afterMessageId === null
+          ? null
+          : requireId(data.afterMessageId, 'after message ID')
+        return services().conversations.deleteModelSwitchEvent(conversationId, afterMessageId)
       }),
     'ai:conversations:runs': (_event, payload) =>
       respondWithObject(payload, (data) => {

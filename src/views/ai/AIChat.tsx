@@ -1,51 +1,64 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Bot, Database, HardDrive, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Boxes, Database, HardDrive, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import './AIChat.css'
-import { AgentManager } from './AgentManager'
-import { ChatWorkspace, type AIChatAgent } from './ChatWorkspace'
+import { ChatWorkspace, type AIChatModel } from './ChatWorkspace'
+import { ModelManager } from './ModelManager'
 import { ProviderManager } from './ProviderManager'
 import { StorageManager } from './StorageManager'
 
 type AIMode = 'chat' | 'settings'
-type AISettingsView = 'providers' | 'agents' | 'storage'
-type ConfigCounts = { providers: number; agents: number }
+type AISettingsView = 'providers' | 'models' | 'storage'
+type ConfigCounts = { providers: number; models: number }
 type LoadState = 'loading' | 'ready' | 'error'
 
-const EMPTY_COUNTS: ConfigCounts = { providers: 0, agents: 0 }
+const EMPTY_COUNTS: ConfigCounts = { providers: 0, models: 0 }
 
 export function AIChat() {
   const { t } = useTranslation()
   const [mode, setMode] = useState<AIMode>('chat')
   const [settingsView, setSettingsView] = useState<AISettingsView>('providers')
   const [counts, setCounts] = useState<ConfigCounts>(EMPTY_COUNTS)
-  const [agents, setAgents] = useState<AIChatAgent[]>([])
+  const [models, setModels] = useState<AIChatModel[]>([])
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const setupTransitionRef = useRef(false)
   const api = (window as any).electronAPI
 
   const loadConfiguration = async () => {
-    if (!api?.listAIProviders || !api?.listAIAgents) {
+    if (!api?.listAIProviders || !api?.listAIModels) {
       setCounts(EMPTY_COUNTS)
       setLoadState('ready')
       return
     }
     setLoadState('loading')
     try {
-      const [providers, agents] = await Promise.all([
+      const [providers, catalogResponse, runtimeResponse] = await Promise.all([
         api.listAIProviders(),
-        api.listAIAgents(),
+        api.listAIModels(),
+        api.syncAIModels(),
       ])
-      if (!providers?.success || !agents?.success) throw new Error('load failed')
+      if (!providers?.success || !catalogResponse?.success || !runtimeResponse?.success) throw new Error('load failed')
+      const textModels = (runtimeResponse.data ?? []).filter((model: any) => model.agentId && model.providers) as any[]
       setCounts({
         providers: providers.data?.length ?? 0,
-        agents: agents.data?.length ?? 0,
+        models: catalogResponse.data?.length ?? 0,
       })
       if ((providers.data?.length ?? 0) > 0 && setupTransitionRef.current) {
         setupTransitionRef.current = false
         setMode('chat')
       }
-      setAgents(agents.data ?? [])
+      setModels(textModels.map((model: any) => ({
+        id: model.agentId,
+        name: model.model,
+        description: model.providerName,
+        providerName: model.providerName,
+        textModel: model.model,
+        providers: model.providers,
+        enabled: model.enabled,
+        isDefault: model.isDefault,
+        configurationStatus: model.enabled ? 'ready' : 'incomplete',
+        issues: [],
+      })))
       setLoadState('ready')
     } catch {
       setLoadState('error')
@@ -59,7 +72,7 @@ export function AIChat() {
   const settingsNavigation = useMemo(
     () => [
       { id: 'providers' as const, label: t('aiChat.nav_providers'), icon: Database, count: counts.providers },
-      { id: 'agents' as const, label: t('aiChat.nav_agents'), icon: Bot, count: counts.agents },
+      { id: 'models' as const, label: t('aiChat.nav_models'), icon: Boxes, count: counts.models },
       { id: 'storage' as const, label: t('aiChat.nav_storage'), icon: HardDrive },
     ],
     [counts, t],
@@ -108,14 +121,14 @@ export function AIChat() {
 
         {loadState === 'ready' && mode === 'chat' && (
           <ChatWorkspace
-            agents={agents}
+            models={models}
             hasProvider={hasProvider}
             onOpenSettings={() => openSettings()}
             onOpenProviders={() => {
               setupTransitionRef.current = true
               openSettings('providers')
             }}
-            onOpenAgents={() => openSettings('agents')}
+            onOpenModels={() => openSettings('models')}
           />
         )}
 
@@ -137,7 +150,7 @@ export function AIChat() {
             </nav>
             <section className="ai-settings-content">
               {settingsView === 'providers' && <ProviderManager onChanged={loadConfiguration} />}
-              {settingsView === 'agents' && <AgentManager onChanged={loadConfiguration} />}
+              {settingsView === 'models' && <ModelManager onChanged={loadConfiguration} />}
               {settingsView === 'storage' && <StorageManager />}
             </section>
           </div>

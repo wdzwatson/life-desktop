@@ -13,6 +13,7 @@ const conversationDelete = readFileSync(path.resolve('src/views/ai/ConversationD
 const conversationRename = readFileSync(path.resolve('src/views/ai/ConversationRenameDialog.tsx'), 'utf8')
 const conversationList = readFileSync(path.resolve('src/views/ai/ConversationList.tsx'), 'utf8')
 const providerManager = readFileSync(path.resolve('src/views/ai/ProviderManager.tsx'), 'utf8')
+const modelManager = readFileSync(path.resolve('src/views/ai/ModelManager.tsx'), 'utf8')
 const agentManager = readFileSync(path.resolve('src/views/ai/AgentManager.tsx'), 'utf8')
 const mcpManager = readFileSync(path.resolve('src/views/ai/McpManager.tsx'), 'utf8')
 const messageRenderer = readFileSync(path.resolve('src/views/ai/MessageRenderer.tsx'), 'utf8')
@@ -117,26 +118,58 @@ test('provider creation uses a full-height settings drawer with focus restoratio
   assert.match(css, /\.ai-settings-drawer \.ai-provider-form__actions\s*\{[\s\S]*position:\s*sticky[\s\S]*bottom:\s*0/)
 })
 
-test('provider creation offers a constant multi-select dropdown with custom assistant creation', () => {
-  assert.match(providerManager, /PROVIDER_AGENT_PRESETS\.map/)
-  assert.match(providerManager, /className="ai-provider-agent-picker"/)
-  assert.match(providerManager, /className="ai-provider-agent-select__trigger"/)
-  assert.match(providerManager, /aria-expanded=\{agentPickerOpen\}/)
-  assert.match(providerManager, /className="ai-provider-agent-select__menu"/)
-  assert.match(providerManager, /api\.createAIAgent\(buildAgentPayload\(agentDraft\)\)/)
-  assert.match(providerManager, /customAgentNames\.map/)
-  assert.match(css, /\.ai-provider-agent-presets\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)[\s\S]*grid-auto-flow:\s*dense/)
+test('provider creation selects catalog models by capability and does not create Agents', () => {
+  assert.match(providerManager, /catalogModels\.filter\(\(model\) => model\.capabilities\.includes\(kind\)\)/)
+  assert.match(providerManager, /type="checkbox" checked=\{selected\.includes\(model\.name\)\}/)
+  assert.match(providerManager, /const plural = `\$\{kind\}Models`/)
+  assert.match(providerManager, /className="ai-provider-model-catalog"/)
+  assert.match(providerManager, /default_model/)
+  assert.doesNotMatch(providerManager, /PROVIDER_AGENT_PRESETS|createAIAgent|ai-provider-agent-picker/)
 })
 
-test('provider and agent editors separate model catalogs from the active model choice', () => {
-  assert.match(providerManager, /className="ai-provider-model-multiselect"/)
-  assert.match(providerManager, /COMMON_TEXT_MODELS/)
-  assert.match(providerManager, /toggleProviderTextModel/)
-  assert.match(providerManager, /customTextModel/)
-  assert.match(providerManager, /default_text_model/)
-  assert.match(agentManager, /selectedTextModels\.map/)
-  assert.match(agentManager, /textModel: provider\?\.models\.text/)
-  assert.doesNotMatch(agentManager, /className="ai-agent-mcp-grid"/)
+test('provider and model editors separate connection settings from the model catalog', () => {
+  assert.match(providerManager, /api\.listAIModels/)
+  assert.match(providerManager, /imageModels/)
+  assert.match(providerManager, /videoModels/)
+  assert.doesNotMatch(modelManager, /className="ai-model-capability-grid"/)
+  assert.match(modelManager, /aiChat\.models\.all_models/)
+  assert.match(modelManager, /aria-label=\{t\('aiChat\.models\.capability_filter'\)\}/)
+  assert.match(modelManager, /api\.createAIModel/)
+  assert.match(modelManager, /api\.updateAIModel/)
+  assert.match(modelManager, /type="checkbox" value=\{capability\}/)
+  assert.match(modelManager, /draft\.capabilities\.includes\(capability\)/)
+  assert.doesNotMatch(modelManager, /providerName|setDefaultAIProvider/)
+  assert.doesNotMatch(modelManager, /ai-model-form__intro/)
+  assert.match(modelManager, /api\.syncAIModels/)
+  assert.match(css, /\.ai-model-toolbar > select\s*\{[\s\S]*min-height:\s*38px/)
+})
+
+test('model switching only changes the model used by the next run', () => {
+  const modelChangeHandler = workspace.match(/const handleModelChange = \(agentId: number\) => \{[\s\S]*?\n {2}\}\n\n {2}const handleProviderChange/)?.[0] ?? ''
+  assert.match(modelChangeHandler, /setSelectedAgentId\(agentId\)/)
+  assert.match(workspace, /const agentId = selectedAgentId/)
+  assert.doesNotMatch(modelChangeHandler, /deleteAIConversation/)
+  assert.doesNotMatch(modelChangeHandler, /createConversation/)
+})
+
+test('model switching adds a deferred timeline divider after the active round', () => {
+  assert.match(workspace, /type ModelSwitchMarker = \{[\s\S]*fromProvider:[\s\S]*toProvider:[\s\S]*ready: boolean/)
+  assert.match(workspace, /const roundActive = isRunning \|\| isMediaRunning \|\| submitting/)
+  assert.match(workspace, /ready: !roundActive/)
+  assert.match(workspace, /disabled=\{providerOptions\.length === 0\}/)
+  assert.match(workspace, /disabled=\{providerModels\.length === 0\}/)
+  assert.match(workspace, /marker\.conversationId === activeConversationId && !marker\.ready \? \{ \.\.\.marker, ready: true \}/)
+  assert.match(workspace, /className="ai-model-switch-divider" role="separator"/)
+  assert.match(css, /\.ai-model-switch-divider\s*\{[\s\S]*grid-template-columns:[\s\S]*color:/)
+  assert.match(css, /\.ai-model-switch-divider::before,[\s\S]*\.ai-model-switch-divider::after[\s\S]*height:\s*1px/)
+})
+
+test('model switch dividers persist as conversation events without entering message history', () => {
+  assert.match(workspace, /api\.listAIConversationEvents\(conversationId\)/)
+  assert.match(workspace, /api\.upsertAIModelSwitchEvent\(\{/)
+  assert.match(workspace, /api\.deleteAIModelSwitchEvent\(latest\.conversationId, latest\.afterMessageId\)/)
+  assert.match(workspace, /event\.eventType === 'model_switch'/)
+  assert.match(workspace, /setSelectedAgentId\(latestTargetAgentId\)/)
 })
 
 test('agent creation reuses the settings drawer and returns focus to its trigger', () => {

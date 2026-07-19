@@ -446,6 +446,7 @@ function getAIStorageService() {
   return new AIStorageService({
     db: getUserDb('ai'),
     mediaRoot: getAIMediaRoot(),
+    credentialPath: path.join(BASE_DIR, 'users', activeUserId, 'config', 'ai-credentials.json'),
     media: getAIMediaService(),
     conversations: new AIConversationService(getUserDb('ai')),
     clearCredentials: () => new AICredentialService(

@@ -152,6 +152,26 @@ function readHeaders(value: unknown, path: string) {
   return result
 }
 
+function readJsonValue(value: unknown, path: string, depth = 0): unknown {
+  if (depth > 10) throw new AIValidationError([{ path, message: 'must not exceed 10 levels' }])
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (Array.isArray(value)) {
+    if (value.length > 100) throw new AIValidationError([{ path, message: 'must contain at most 100 items' }])
+    return value.map((item, index) => readJsonValue(item, `${path}[${index}]`, depth + 1))
+  }
+  if (isPlainObject(value)) {
+    if (Object.keys(value).length > 100) throw new AIValidationError([{ path, message: 'must contain at most 100 fields' }])
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, readJsonValue(item, `${path}.${key}`, depth + 1)]))
+  }
+  throw new AIValidationError([{ path, message: 'must be valid JSON data' }])
+}
+
+function readRequestBody(value: unknown, path: string) {
+  const object = requireObject(value, path)
+  return readJsonValue(object, path) as Record<string, unknown>
+}
+
 function readUrl(value: unknown, path: string) {
   const text = readString(value, path, { max: 2_048 }) as string
   let parsed: URL
@@ -171,22 +191,35 @@ function readUrl(value: unknown, path: string) {
 
 function readModels(value: unknown): AIProviderModels {
   const object = requireObject(value, 'provider.models')
-  rejectUnknownKeys(object, ['text', 'textOptions', 'image', 'video'], 'provider.models')
+  rejectUnknownKeys(object, ['text', 'textOptions', 'image', 'imageOptions', 'video', 'videoOptions'], 'provider.models')
   const text = readString(object.text, 'provider.models.text', { max: 200, optional: true })
   const textOptions = object.textOptions === undefined
     ? (text ? [text] : [])
     : readStringArray(object.textOptions, 'provider.models.textOptions', { maxItems: 100, itemMax: 200 })
-  if (text && !textOptions.includes(text)) {
-    throw new AIValidationError([{
-      path: 'provider.models.text',
-      message: 'must be included in provider.models.textOptions',
-    }])
+  const image = readString(object.image, 'provider.models.image', { max: 200, optional: true })
+  const imageOptions = object.imageOptions === undefined
+    ? (image ? [image] : [])
+    : readStringArray(object.imageOptions, 'provider.models.imageOptions', { maxItems: 100, itemMax: 200 })
+  const video = readString(object.video, 'provider.models.video', { max: 200, optional: true })
+  const videoOptions = object.videoOptions === undefined
+    ? (video ? [video] : [])
+    : readStringArray(object.videoOptions, 'provider.models.videoOptions', { maxItems: 100, itemMax: 200 })
+  for (const [model, options, path] of [
+    [text, textOptions, 'provider.models.text'],
+    [image, imageOptions, 'provider.models.image'],
+    [video, videoOptions, 'provider.models.video'],
+  ] as const) {
+    if (model && !options.includes(model)) {
+      throw new AIValidationError([{ path, message: 'must be included in its model options' }])
+    }
   }
   return {
     text,
     textOptions,
-    image: readString(object.image, 'provider.models.image', { max: 200, optional: true }),
-    video: readString(object.video, 'provider.models.video', { max: 200, optional: true }),
+    image,
+    imageOptions,
+    video,
+    videoOptions,
   }
 }
 
@@ -213,6 +246,7 @@ export function parseAIProviderConfigInput(value: unknown): AIProviderConfigInpu
       'baseUrl',
       'apiKey',
       'defaultHeaders',
+      'requestBody',
       'capabilities',
       'models',
       'timeoutMs',
@@ -236,11 +270,11 @@ export function parseAIProviderConfigInput(value: unknown): AIProviderConfigInpu
   if (capabilities.includes('text') && (!models.text || !models.textOptions?.length)) {
     throw new AIValidationError([{ path: 'provider.models.textOptions', message: 'requires a default text model and at least one option' }])
   }
-  if (capabilities.includes('image') && !models.image) {
-    throw new AIValidationError([{ path: 'provider.models.image', message: 'is required for image capability' }])
+  if (capabilities.includes('image') && (!models.image || !models.imageOptions?.length)) {
+    throw new AIValidationError([{ path: 'provider.models.imageOptions', message: 'requires a default image model and at least one option' }])
   }
-  if (capabilities.includes('video') && !models.video) {
-    throw new AIValidationError([{ path: 'provider.models.video', message: 'is required for video capability' }])
+  if (capabilities.includes('video') && (!models.video || !models.videoOptions?.length)) {
+    throw new AIValidationError([{ path: 'provider.models.videoOptions', message: 'requires a default video model and at least one option' }])
   }
   return {
     name: readString(object.name, 'provider.name', { max: 120 }) as string,
@@ -248,6 +282,7 @@ export function parseAIProviderConfigInput(value: unknown): AIProviderConfigInpu
     baseUrl: readUrl(object.baseUrl, 'provider.baseUrl'),
     apiKey: readString(object.apiKey, 'provider.apiKey', { max: 8_000, optional: true }),
     defaultHeaders: readHeaders(object.defaultHeaders, 'provider.defaultHeaders'),
+    requestBody: readRequestBody(object.requestBody ?? {}, 'provider.requestBody'),
     capabilities: capabilities as AIProviderCapability[],
     models,
     timeoutMs: readInteger(object.timeoutMs, 'provider.timeoutMs', { min: 1_000, max: 600_000 }),

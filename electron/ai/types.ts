@@ -12,7 +12,9 @@ export type AIProviderModels = {
   text?: string
   textOptions?: string[]
   image?: string
+  imageOptions?: string[]
   video?: string
+  videoOptions?: string[]
 }
 
 export type AIProviderConfigInput = {
@@ -21,6 +23,7 @@ export type AIProviderConfigInput = {
   baseUrl: string
   apiKey?: string
   defaultHeaders: Record<string, string>
+  requestBody: Record<string, unknown>
   capabilities: AIProviderCapability[]
   models: AIProviderModels
   timeoutMs: number
