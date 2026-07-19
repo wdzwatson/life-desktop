@@ -143,16 +143,6 @@ export function ModelManager({ onChanged }: Props) {
 
   return (
     <div className="ai-model-manager" ref={rootRef} aria-busy={busy}>
-      <header className="ai-model-hero ai-model-hero--catalog">
-        <div>
-          <h2>{t('aiChat.models.catalog_title')}</h2>
-          <p>{t('aiChat.models.catalog_desc')}</p>
-        </div>
-        <button className="btn primary" onClick={(event) => openCreate(event.currentTarget)}>
-          <Plus size={15} aria-hidden="true" />{t('aiChat.models.add')}
-        </button>
-      </header>
-
       <div className="ai-model-toolbar">
         <label><Search size={14} aria-hidden="true" /><span className="sr-only">{t('aiChat.models.search_label')}</span>
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('aiChat.models.search_placeholder')} />
@@ -165,10 +155,13 @@ export function ModelManager({ onChanged }: Props) {
           <option value="">{t('aiChat.models.all_categories')}</option>
           {categories.map((category) => <option key={category} value={category}>{category}</option>)}
         </select>
+        <button className="btn primary ai-model-toolbar__add" onClick={(event) => openCreate(event.currentTarget)}>
+          <Plus size={15} aria-hidden="true" />{t('aiChat.models.add')}
+        </button>
       </div>
       {error && <p className="ai-provider-error" role="alert">{error}</p>}
 
-      <div className="ai-model-list" role="list" aria-label={t('aiChat.models.catalog_title')}>
+      <div className="ai-model-list" role="list" aria-label={t('aiChat.models.all_models')}>
         {!busy && filtered.length === 0 && <div className="ai-provider-empty"><Type size={24} aria-hidden="true" />
           <h2>{t('aiChat.models.empty_title')}</h2><p>{t('aiChat.models.empty_desc')}</p></div>}
         {filtered.map((model) => {
