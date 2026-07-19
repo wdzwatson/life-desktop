@@ -10,3 +10,7 @@ test('the model catalog renders every model as an equal flat list item', () => {
   assert.match(manager, /className="ai-model-card" key=\{model\.id\} role="listitem"/)
   assert.doesNotMatch(manager, /model\.children|parentModel|childModel/)
 })
+
+test('model rows do not animate opacity, scale, or position by scroll state', () => {
+  assert.doesNotMatch(manager, /useGSAP|gsap\.fromTo|ScrollTrigger/)
+})

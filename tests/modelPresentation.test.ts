@@ -23,3 +23,10 @@ test('model catalog exposes categories without nesting model rows', () => {
   assert.doesNotMatch(modelManager, /parentModel|childModel|model\.children/)
   assert.match(providerManager, /requestBodyJson/)
 })
+
+test('model catalog rows use one stable visual state', () => {
+  const cardRule = css.match(/\.ai-model-card\s*\{[\s\S]*?\n\}/)?.[0] ?? ''
+  assert.match(cardRule, /opacity:\s*1/)
+  assert.match(cardRule, /transform:\s*none/)
+  assert.doesNotMatch(css, /\.ai-model-card\.is-disabled/)
+})

@@ -2523,7 +2523,8 @@
   padding: 15px 16px;
   border-bottom: 1px solid var(--color-border);
   background: var(--bg-surface);
-  transform-origin: center center;
+  opacity: 1;
+  transform: none;
 }
 
 .ai-model-card__capabilities {
@@ -2767,10 +2768,6 @@
 
 .ai-model-card:last-child {
   border-bottom: 0;
-}
-
-.ai-model-card.is-disabled {
-  opacity: 0.56;
 }
 
 .ai-model-card__icon {

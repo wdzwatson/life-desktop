@@ -1,13 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useGSAP } from '@gsap/react'
-import gsap from 'gsap'
-import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { Pencil, Plus, Search, Trash2, Type, Image, Video, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
 import { useAppStore } from '../../store/useAppStore'
-
-gsap.registerPlugin(ScrollTrigger)
 
 export type AIModelCatalogItem = {
   id: number
@@ -33,7 +28,6 @@ export function ModelManager({ onChanged }: Props) {
   const { t } = useTranslation()
   const showToast = useAppStore((state) => state.showToast)
   const api = (window as any).electronAPI
-  const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const nameRef = useRef<HTMLInputElement | null>(null)
   const [models, setModels] = useState<AIModelCatalogItem[]>([])
@@ -73,20 +67,6 @@ export function ModelManager({ onChanged }: Props) {
     () => [...new Set(models.map((model) => model.category))].sort((left, right) => left.localeCompare(right)),
     [models],
   )
-
-  useGSAP(() => {
-    const root = rootRef.current
-    if (!root) return
-    const scroller = root.closest('.ai-settings-content')
-    gsap.utils.toArray<HTMLElement>('.ai-model-card', root).forEach((card) => {
-      gsap.fromTo(card, { y: 28, scale: 0.96, opacity: 0.18 }, {
-        y: 0,
-        scale: 1,
-        opacity: 1,
-        scrollTrigger: { trigger: card, scroller, start: 'top 90%', end: 'top 62%', scrub: true },
-      })
-    })
-  }, { scope: rootRef, dependencies: [filtered.length] })
 
   const openCreate = (trigger: HTMLButtonElement) => {
     triggerRef.current = trigger
@@ -142,7 +122,7 @@ export function ModelManager({ onChanged }: Props) {
   }
 
   return (
-    <div className="ai-model-manager" ref={rootRef} aria-busy={busy}>
+    <div className="ai-model-manager" aria-busy={busy}>
       <div className="ai-model-toolbar">
         <label><Search size={14} aria-hidden="true" /><span className="sr-only">{t('aiChat.models.search_label')}</span>
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('aiChat.models.search_placeholder')} />
