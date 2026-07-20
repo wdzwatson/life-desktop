@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import Database from 'better-sqlite3'
-import { AI_SCHEMA_VERSION, initializeAISchema } from '../electron/ai/schema.ts'
+import { AI_SCHEMA_VERSION, DEFAULT_MODEL_CATALOG, initializeAISchema } from '../electron/ai/schema.ts'
 import { initializeUserDatabase } from '../electron/db/schema.ts'
 
 const EXPECTED_TABLES = [
@@ -42,6 +42,16 @@ function createProvider(db, name, defaults = {}) {
   )
 }
 
+function expectedCatalogRows() {
+  return [...DEFAULT_MODEL_CATALOG]
+    .map((model) => ({
+      name: model.name,
+      category: model.category,
+      capabilities_json: JSON.stringify(model.capabilities),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name))
+}
+
 test('AI schema creates the complete isolated database with required indexes', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-ai-schema-'))
   initializeUserDatabase(dir)
@@ -75,7 +85,10 @@ test('AI schema creates the complete isolated database with required indexes', (
       `missing ${indexName}`,
     )
   }
-  assert.ok(db.prepare('PRAGMA table_info(ai_model_catalog)').all().some((column) => column.name === 'category'))
+  assert.deepEqual(
+    db.prepare('SELECT name, category, capabilities_json FROM ai_model_catalog ORDER BY name COLLATE NOCASE').all(),
+    expectedCatalogRows(),
+  )
   assert.ok(db.prepare('PRAGMA table_info(ai_providers)').all().some((column) => column.name === 'request_body_json'))
   db.close()
 })
@@ -178,13 +191,10 @@ test('AI schema migrates version 4 media models into multi-select catalogs', () 
   const provider = db.prepare('SELECT image_models_json, video_models_json FROM ai_providers WHERE id = ?').get(providerId)
   assert.equal(provider.image_models_json, '["image-1"]')
   assert.equal(provider.video_models_json, '["video-1"]')
-  assert.deepEqual(db.prepare('SELECT name, capabilities_json FROM ai_model_catalog ORDER BY name').all(), [
-    { name: 'gpt-image-1.5', capabilities_json: '["image"]' },
-    { name: 'gpt-image-2', capabilities_json: '["image"]' },
-    { name: 'image-1', capabilities_json: '["image"]' },
-    { name: 'model', capabilities_json: '["text"]' },
-    { name: 'video-1', capabilities_json: '["video"]' },
-  ])
+  assert.deepEqual(
+    db.prepare('SELECT name, category, capabilities_json FROM ai_model_catalog ORDER BY name COLLATE NOCASE').all(),
+    expectedCatalogRows(),
+  )
   db.close()
 })
 
@@ -208,40 +218,34 @@ test('AI schema migrates version 5 catalog rows into composite capabilities', ()
 
   initializeAISchema(db)
 
-  assert.deepEqual(db.prepare('SELECT name, capabilities_json FROM ai_model_catalog ORDER BY name').all(), [
-    { name: 'gpt-image-1.5', capabilities_json: '["image"]' },
-    { name: 'gpt-image-2', capabilities_json: '["image"]' },
-    { name: 'omni-model', capabilities_json: '["text","image"]' },
-    { name: 'video-model', capabilities_json: '["video"]' },
-  ])
+  assert.deepEqual(
+    db.prepare('SELECT name, category, capabilities_json FROM ai_model_catalog ORDER BY name COLLATE NOCASE').all(),
+    expectedCatalogRows(),
+  )
   assert.equal(db.prepare('SELECT schema_version FROM ai_schema_meta WHERE id = 1').get().schema_version, AI_SCHEMA_VERSION)
   db.close()
 })
 
-test('AI schema removes the obsolete GPT-5.6 record and adds current GPT image models', () => {
+test('AI schema clears existing catalog rows and seeds the curated model list', () => {
   const db = new Database(':memory:')
   initializeAISchema(db)
-  const providerId = createProvider(db, 'GPT catalog migration')
   db.prepare(`
-    UPDATE ai_providers SET text_model = 'gpt-5.6', text_models_json = '["gpt-5.6","gpt-5.5"]' WHERE id = ?
-  `).run(providerId)
+    UPDATE ai_model_catalog
+    SET category = 'other', capabilities_json = '["video"]'
+    WHERE name = 'gpt-5.4'
+  `).run()
   db.prepare(`
     INSERT INTO ai_model_catalog (name, category, capabilities_json)
-    VALUES ('gpt-5.6', 'chatgpt', '["text"]')
+    VALUES ('custom-model', 'other', '["text"]')
   `).run()
-  db.prepare('UPDATE ai_schema_meta SET schema_version = 9 WHERE id = 1').run()
+  db.prepare('UPDATE ai_schema_meta SET schema_version = 11 WHERE id = 1').run()
 
   initializeAISchema(db)
 
-  assert.equal(db.prepare("SELECT 1 FROM ai_model_catalog WHERE name = 'gpt-5.6'").get(), undefined)
-  assert.deepEqual(db.prepare('SELECT text_model, text_models_json FROM ai_providers WHERE id = ?').get(providerId), {
-    text_model: 'gpt-5.5',
-    text_models_json: '["gpt-5.5"]',
-  })
-  assert.deepEqual(db.prepare("SELECT name, category, capabilities_json FROM ai_model_catalog WHERE name LIKE 'gpt-image-%' ORDER BY name").all(), [
-    { name: 'gpt-image-1.5', category: 'chatgpt', capabilities_json: '["image"]' },
-    { name: 'gpt-image-2', category: 'chatgpt', capabilities_json: '["image"]' },
-  ])
+  assert.deepEqual(
+    db.prepare('SELECT name, category, capabilities_json FROM ai_model_catalog ORDER BY name COLLATE NOCASE').all(),
+    expectedCatalogRows(),
+  )
   db.close()
 })
 

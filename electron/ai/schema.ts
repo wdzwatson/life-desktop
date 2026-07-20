@@ -1,10 +1,67 @@
 import type Database from 'better-sqlite3'
 
-export const AI_SCHEMA_VERSION = 10
+export const AI_SCHEMA_VERSION = 13
+
+export const DEFAULT_MODEL_CATALOG = [
+  { name: 'claude-opus-4.6', category: 'claude', capabilities: ['text'] as const },
+  { name: 'claude-opus-4.7', category: 'claude', capabilities: ['text'] as const },
+  { name: 'claude-opus-4.7-thinking', category: 'claude', capabilities: ['text'] as const },
+  { name: 'claude-opus-4.8', category: 'claude', capabilities: ['text'] as const },
+  { name: 'claude-opus-4.8-thinking', category: 'claude', capabilities: ['text'] as const },
+  { name: 'claude-sonnet-4.6', category: 'claude', capabilities: ['text'] as const },
+  { name: 'claude-sonnet-4.6-thinking', category: 'claude', capabilities: ['text'] as const },
+  { name: 'claude-sonnet-5', category: 'claude', capabilities: ['text'] as const },
+  { name: 'claude-sonnet-5-thinking', category: 'claude', capabilities: ['text'] as const },
+  { name: 'claude-fable-5', category: 'claude', capabilities: ['text'] as const },
+  { name: 'claude-fable-5-thinking', category: 'claude', capabilities: ['text'] as const },
+  { name: 'gpt-5.4', category: 'chatgpt', capabilities: ['text'] as const },
+  { name: 'gpt-5.5', category: 'chatgpt', capabilities: ['text'] as const },
+  { name: 'gpt-5.6-luna', category: 'chatgpt', capabilities: ['text'] as const },
+  { name: 'gpt-5.6-terra', category: 'chatgpt', capabilities: ['text'] as const },
+  { name: 'gpt-5.6-sol', category: 'chatgpt', capabilities: ['text'] as const },
+  { name: 'gpt-image-1.5', category: 'chatgpt', capabilities: ['image'] as const },
+  { name: 'gpt-image-2', category: 'chatgpt', capabilities: ['image'] as const },
+  { name: 'grok-4', category: 'grok', capabilities: ['text'] as const },
+  { name: 'grok-4.1', category: 'grok', capabilities: ['text'] as const },
+  { name: 'grok-4.2', category: 'grok', capabilities: ['text'] as const },
+  { name: 'grok-4.3', category: 'grok', capabilities: ['text'] as const },
+  { name: 'grok-4.4', category: 'grok', capabilities: ['text'] as const },
+  { name: 'grok-4.5', category: 'grok', capabilities: ['text'] as const },
+  { name: 'grok-4.20', category: 'grok', capabilities: ['text'] as const },
+  { name: 'grok-imagine-image', category: 'grok', capabilities: ['image'] as const },
+  { name: 'grok-imagine-image-quality', category: 'grok', capabilities: ['image'] as const },
+  { name: 'grok-imagine-video', category: 'grok', capabilities: ['video'] as const },
+  { name: 'grok-imagine-video-1.5', category: 'grok', capabilities: ['video'] as const },
+  { name: 'gemini-3-flash-preview', category: 'gemini', capabilities: ['text'] as const },
+  { name: 'gemini-3.1-pro-preview', category: 'gemini', capabilities: ['text'] as const },
+  { name: 'gemini-3.1-flash-lite', category: 'gemini', capabilities: ['text'] as const },
+  { name: 'gemini-3.5-flash', category: 'gemini', capabilities: ['text'] as const },
+  { name: 'gemini-3-pro-image-preview', category: 'gemini', capabilities: ['image'] as const },
+  { name: 'gemini-3.1-flash-image-preview', category: 'gemini', capabilities: ['image'] as const },
+  { name: 'gemini-3.5-flash-image', category: 'gemini', capabilities: ['image'] as const },
+] as const
 
 function hasColumn(db: Database.Database, table: string, column: string) {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>)
     .some((item) => item.name === column)
+}
+
+function seedDefaultModelCatalog(db: Database.Database) {
+  const upsert = db.prepare(`
+    INSERT INTO ai_model_catalog (name, category, capabilities_json)
+    VALUES (?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET
+      category = excluded.category,
+      capabilities_json = excluded.capabilities_json,
+      updated_at = CURRENT_TIMESTAMP
+  `)
+  for (const model of DEFAULT_MODEL_CATALOG) {
+    upsert.run(model.name, model.category, JSON.stringify(model.capabilities))
+  }
+}
+
+function resetModelCatalog(db: Database.Database) {
+  db.prepare('DELETE FROM ai_model_catalog').run()
 }
 
 function createSchemaObjects(db: Database.Database) {
@@ -456,43 +513,9 @@ function migrateSchema(db: Database.Database, currentVersion: number) {
   if (currentVersion < 9 && !hasColumn(db, 'ai_providers', 'request_body_json')) {
     db.exec("ALTER TABLE ai_providers ADD COLUMN request_body_json TEXT NOT NULL DEFAULT '{}'")
   }
-  if (currentVersion < 10) {
-    const obsoleteModel = 'gpt-5.6'
-    const providers = db.prepare(`
-      SELECT id, text_model, text_models_json FROM ai_providers
-    `).all() as Array<{ id: number; text_model: string | null; text_models_json: string }>
-    const parseModels = (value: string, fallback: string | null) => {
-      try {
-        const parsed = JSON.parse(value)
-        if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) return parsed as string[]
-      } catch {
-        // Legacy malformed lists fall back to the selected model below.
-      }
-      return fallback ? [fallback] : []
-    }
-    const updateProviderModels = db.prepare(`
-      UPDATE ai_providers SET text_model = ?, text_models_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-    `)
-    for (const provider of providers) {
-      const models = parseModels(provider.text_models_json, provider.text_model)
-      const remaining = models.filter((model) => model.toLocaleLowerCase() !== obsoleteModel)
-      if (remaining.length === models.length && provider.text_model?.toLocaleLowerCase() !== obsoleteModel) continue
-      const defaultModel = provider.text_model?.toLocaleLowerCase() === obsoleteModel
-        ? (remaining[0] ?? null)
-        : provider.text_model
-      updateProviderModels.run(defaultModel, JSON.stringify(remaining), provider.id)
-    }
-    db.prepare('DELETE FROM ai_model_catalog WHERE lower(name) = ?').run(obsoleteModel)
-    const addImageModel = db.prepare(`
-      INSERT INTO ai_model_catalog (name, category, capabilities_json)
-      VALUES (?, 'chatgpt', '["image"]')
-      ON CONFLICT(name) DO UPDATE SET
-        category = excluded.category,
-        capabilities_json = excluded.capabilities_json,
-        updated_at = CURRENT_TIMESTAMP
-    `)
-    addImageModel.run('gpt-image-1.5')
-    addImageModel.run('gpt-image-2')
+  if (currentVersion < 13) {
+    resetModelCatalog(db)
+    seedDefaultModelCatalog(db)
   }
 }
 

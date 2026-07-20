@@ -10,6 +10,7 @@ import {
   DEFAULT_VIDEO_METADATA_TIMEOUT_MS,
   DEFAULT_VIDEO_TOOL_CHECK_TIMEOUT_MS,
   buildResolvedDownloadArgs,
+  getVideoCookieAccessStatus,
   isVideoEngineReady,
   getManagedVideoToolPath,
   parseFfmpegDurationSeconds,
@@ -28,6 +29,13 @@ import {
   shouldUseBilibiliHtmlFallback,
   startVideoDownload,
 } from '../electron/video/service.ts'
+
+function writeFakeYtDlp(outputDir: string, unixScript: string, windowsScript: string) {
+  const fakeYtDlp = path.join(outputDir, process.platform === 'win32' ? 'fake-yt-dlp.cmd' : 'fake-yt-dlp')
+  writeFileSync(fakeYtDlp, process.platform === 'win32' ? windowsScript : unixScript)
+  if (process.platform !== 'win32') chmodSync(fakeYtDlp, 0o755)
+  return fakeYtDlp
+}
 
 test('video tool checks allow slow macOS managed yt-dlp startup', () => {
   assert.ok(DEFAULT_VIDEO_TOOL_CHECK_TIMEOUT_MS >= 45000)
@@ -109,6 +117,50 @@ test('resolveCookieConfigForUrl applies configured cookies only to Bilibili urls
   assert.deepEqual(resolveCookieConfigForUrl(settings, 'https://www.youtube.com/watch?v=HigBrtgPzKQ'), {
     mode: 'none',
   })
+})
+
+test('getVideoCookieAccessStatus requires configured cookies for Bilibili downloads', () => {
+  const missing = getVideoCookieAccessStatus({}, 'https://www.bilibili.com/video/BV1G7jJ6nEbV/')
+  assert.equal(missing.required, true)
+  assert.equal(missing.hasAccess, false)
+
+  const browser = getVideoCookieAccessStatus(
+    { cookieMode: 'browser', cookieBrowser: 'firefox' },
+    'https://www.bilibili.com/video/BV1G7jJ6nEbV/',
+  )
+  assert.equal(browser.required, true)
+  assert.equal(browser.hasAccess, true)
+
+  const nonBilibili = getVideoCookieAccessStatus({}, 'https://www.youtube.com/watch?v=HigBrtgPzKQ')
+  assert.equal(nonBilibili.required, false)
+  assert.equal(nonBilibili.hasAccess, true)
+})
+
+test('getVideoCookieAccessStatus validates configured Bilibili cookie files', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-cookie-status-'))
+  const cookiePath = path.join(dir, 'bilibili-cookies.txt')
+  writeFileSync(
+    cookiePath,
+    [
+      '# Netscape HTTP Cookie File',
+      '#HttpOnly_.bilibili.com\tTRUE\t/\tTRUE\t1893456000\tSESSDATA\tsecret',
+      '',
+    ].join('\n'),
+  )
+
+  const valid = getVideoCookieAccessStatus(
+    { cookieMode: 'bilibili', bilibiliCookiesPath: cookiePath },
+    'https://www.bilibili.com/video/BV1G7jJ6nEbV/',
+  )
+  assert.equal(valid.required, true)
+  assert.equal(valid.hasAccess, true)
+
+  const missing = getVideoCookieAccessStatus(
+    { cookieMode: 'bilibili', bilibiliCookiesPath: path.join(dir, 'missing.txt') },
+    'https://www.bilibili.com/video/BV1G7jJ6nEbV/',
+  )
+  assert.equal(missing.required, true)
+  assert.equal(missing.hasAccess, false)
 })
 
 test('resolveVideoDownloadDir prefers configured directory over per-user default', () => {
@@ -242,9 +294,8 @@ test('inferDownloadPhase maps yt-dlp output into user-facing phases', () => {
 
 test('active download progress is monotonic and does not report 100 before completion', async () => {
   const outputDir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-download-progress-'))
-  const fakeYtDlp = path.join(outputDir, 'fake-yt-dlp')
-  writeFileSync(
-    fakeYtDlp,
+  const fakeYtDlp = writeFakeYtDlp(
+    outputDir,
     [
       '#!/bin/sh',
       'echo "[download]   0.0% of 10.00MiB"',
@@ -259,8 +310,17 @@ test('active download progress is monotonic and does not report 100 before compl
       'exit 0',
       '',
     ].join('\n'),
+    [
+      '@echo off',
+      'echo [download]   0.0%% of 10.00MiB',
+      'echo [download] 100.0%% of 10.00MiB',
+      'echo [download]   8.0%% of 2.00MiB',
+      'echo [download]  54.0%% of 2.00MiB',
+      'echo filepath:"/tmp/final.mp4"',
+      'exit /b 0',
+      '',
+    ].join('\r\n'),
   )
-  chmodSync(fakeYtDlp, 0o755)
   const sent: any[][] = []
   const progressUpdates: number[] = []
 
@@ -312,12 +372,11 @@ test('active download progress is monotonic and does not report 100 before compl
 
 test('startVideoDownload fails when yt-dlp exits successfully without a filepath', async () => {
   const outputDir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-download-no-filepath-'))
-  const fakeYtDlp = path.join(outputDir, 'fake-yt-dlp')
-  writeFileSync(
-    fakeYtDlp,
+  const fakeYtDlp = writeFakeYtDlp(
+    outputDir,
     '#!/bin/sh\necho "[download] 100.0% of 10.00MiB"\nexit 0\n',
+    '@echo off\r\necho [download] 100.0%% of 10.00MiB\r\nexit /b 0\r\n',
   )
-  chmodSync(fakeYtDlp, 0o755)
   const sent: any[][] = []
   const message = await new Promise<string>((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('download failure callback was not called')), 3000)
@@ -451,12 +510,11 @@ test('startVideoDownload sends an initial progress event without a duplicate sta
 
 test('startVideoDownload reports the real yt-dlp stderr instead of only exit code 1', async () => {
   const outputDir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-download-error-'))
-  const fakeYtDlp = path.join(outputDir, 'fake-yt-dlp')
-  writeFileSync(
-    fakeYtDlp,
+  const fakeYtDlp = writeFakeYtDlp(
+    outputDir,
     '#!/bin/sh\necho "ERROR: [BiliBili] 1G7jJ6nEbV: Unable to download JSON metadata: HTTP Error 412: Precondition Failed" >&2\nexit 1\n',
+    '@echo off\r\necho ERROR: [BiliBili] 1G7jJ6nEbV: Unable to download JSON metadata: HTTP Error 412: Precondition Failed 1>&2\r\nexit /b 1\r\n',
   )
-  chmodSync(fakeYtDlp, 0o755)
   const sent: any[][] = []
   const message = await new Promise<string>((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('download failure callback was not called')), 3000)
@@ -489,12 +547,11 @@ test('startVideoDownload reports the real yt-dlp stderr instead of only exit cod
 
 test('startVideoDownload includes video id in progress and failure events when provided', async () => {
   const outputDir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-download-id-'))
-  const fakeYtDlp = path.join(outputDir, 'fake-yt-dlp')
-  writeFileSync(
-    fakeYtDlp,
+  const fakeYtDlp = writeFakeYtDlp(
+    outputDir,
     '#!/bin/sh\necho "[download]  42.0% of 10.00MiB"\necho "ERROR: cookies are missing" >&2\nexit 1\n',
+    '@echo off\r\necho [download]  42.0%% of 10.00MiB\r\necho ERROR: cookies are missing 1>&2\r\nexit /b 1\r\n',
   )
-  chmodSync(fakeYtDlp, 0o755)
   const sent: any[][] = []
 
   await new Promise<void>((resolve, reject) => {

@@ -48,7 +48,6 @@ function App() {
   const setTaskTab = useAppStore((state) => state.setTaskTab)
   const loadInitialConfig = useAppStore((state) => state.loadInitialConfig)
   const showToast = useAppStore((state) => state.showToast)
-  const userId = useAppStore((state) => state.userId)
 
   // Command palette overlay states
   const [searchOpen, setSearchOpen] = useState(false)
@@ -58,7 +57,6 @@ function App() {
   const hasMountedScreen = useRef(false)
 
   const api = (window as any).electronAPI
-  const isMac = navigator.userAgent.includes('Mac')
 
   useEffect(() => {
     if (!hasMountedScreen.current) {
@@ -295,14 +293,6 @@ function App() {
     }
   }
 
-  const handleDotClick = (action: string) => {
-    if (api) {
-      if (action === 'minimize') api.minimize()
-      else if (action === 'maximize') api.maximize()
-      else if (action === 'close') api.close()
-    }
-  }
-
   // Screen View Switch Router
   const renderScreen = () => {
     switch (activeScreen) {
@@ -337,22 +327,7 @@ function App() {
 
   return (
     <div className="app-container">
-      {/* 1. Window Frameless Titlebar */}
-      <header className="title-bar">
-        <div className="window-dots">
-          {!isMac && (
-            <>
-              <button className="dot-btn dot-close" onClick={() => handleDotClick('close')} />
-              <button className="dot-btn dot-min" onClick={() => handleDotClick('minimize')} />
-              <button className="dot-btn dot-max" onClick={() => handleDotClick('maximize')} />
-            </>
-          )}
-        </div>
-        <div className="app-title">LifeOS — Local Workspace</div>
-        <div className="app-meta">SQLite · Local ({userId})</div>
-      </header>
-
-      {/* 2. Main Workspace Layout */}
+      {/* 1. Main Workspace Layout. The native title bar lives outside this client area. */}
       <div className="shell-container">
         <Sidebar />
         <main className="main-workspace">
@@ -372,10 +347,10 @@ function App() {
         </main>
       </div>
 
-      {/* 3. Window Status bar */}
+      {/* 2. Window Status bar */}
       <Statusbar />
 
-      {/* 4. Global Search & Command Palette Modal Overlay */}
+      {/* 3. Global Search & Command Palette Modal Overlay */}
       {searchOpen && (
         <ViewportPortal>
           <div

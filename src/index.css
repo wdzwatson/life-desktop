@@ -109,58 +109,11 @@ body,
   user-select: none;
 }
 
-/* Frameless Window Custom Layout */
+/* The system title bar sits outside the renderer's client area. */
 .app-container {
   height: 100vh;
   display: grid;
-  grid-template-rows: 38px 1fr 28px;
-}
-
-.title-bar {
-  display: grid;
-  grid-template-columns: 110px 1fr 120px;
-  align-items: center;
-  background-color: var(--bg-surface);
-  border-bottom: 1px solid var(--color-border);
-  -webkit-app-region: drag; /* Electron drag window */
-  padding: 0 16px;
-}
-
-.window-dots {
-  display: flex;
-  gap: 8px;
-  -webkit-app-region: no-drag;
-}
-
-.dot-btn {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-}
-.dot-close {
-  background-color: var(--color-danger);
-}
-.dot-min {
-  background-color: var(--color-warn);
-}
-.dot-max {
-  background-color: var(--color-success);
-}
-
-.app-title {
-  text-align: center;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-.app-meta {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-  text-align: right;
+  grid-template-rows: 1fr 28px;
 }
 
 /* App Main Body Shell */

@@ -451,6 +451,7 @@
     "toast_videos_added_to_list": "Added {{count}} videos to the video list",
     "toast_videos_download_started": "Started downloading {{count}} videos",
     "toast_video_added": "Video added to background download queue",
+    "toast_bilibili_cookie_required": "Sign in to Bilibili or configure cookies in Download Settings before downloading.",
     "toast_priority_updated": "Video priority updated",
     "confirm_delete": "Are you sure you want to delete this video record?",
     "confirm_bulk_delete": "Delete {{count}} selected video records?",

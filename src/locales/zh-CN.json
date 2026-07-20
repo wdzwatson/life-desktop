@@ -451,6 +451,7 @@
     "toast_videos_added_to_list": "已加入视频列表：{{count}} 个视频",
     "toast_videos_download_started": "已开始下载：{{count}} 个视频",
     "toast_video_added": "视频已加入后台下载队列",
+    "toast_bilibili_cookie_required": "请先在下载设置中登录 Bilibili 或配置 Cookie，再开始下载。",
     "toast_priority_updated": "视频优先级已更改",
     "confirm_delete": "确定要删除此视频记录吗？",
     "confirm_bulk_delete": "确定要删除选中的 {{count}} 个视频记录吗？",

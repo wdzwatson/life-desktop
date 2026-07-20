@@ -103,6 +103,12 @@ type FilterId = number | null | 'all'
 
 type VideoDataLoadResult = { ok: true } | { ok: false; error: string }
 
+type VideoDownloadAuthTarget = {
+  source?: string | null
+  sourceUrl?: string | null
+  url?: string | null
+}
+
 function getVideoDownloadPhaseKey(video: VideoRecord) {
   if (video.download_phase === 'processing') return 'videos.download_stage_processing'
   if (video.download_phase === 'downloading') return 'videos.download_stage_downloading'
@@ -565,6 +571,25 @@ export const Videos: React.FC = () => {
     setActiveScreen('settings')
   }
 
+  const getAuthCheckUrl = (target: VideoDownloadAuthTarget) =>
+    target.sourceUrl || target.url || ''
+
+  const needsBilibiliAuthCheck = (target: VideoDownloadAuthTarget) => {
+    const url = getAuthCheckUrl(target)
+    return target.source === 'bilibili' || /(^|\.)bilibili\.com\//i.test(url)
+  }
+
+  const guardVideoCookieAccess = async (targets: VideoDownloadAuthTarget[]) => {
+    if (!api?.getVideoCookieAccessStatus) return true
+    const target = targets.find((item) => needsBilibiliAuthCheck(item) && getAuthCheckUrl(item))
+    if (!target) return true
+    const result = await api.getVideoCookieAccessStatus(getAuthCheckUrl(target))
+    if (result?.success && (!result.required || result.hasAccess)) return true
+    showToast(t('videos.toast_bilibili_cookie_required'))
+    handleOpenVideoSettings()
+    return false
+  }
+
   const guardVideoDownload = () => {
     const gate = canStartVideoDownloadWithEngine(videoEngineStatus)
     if (gate.canStart) return true
@@ -804,6 +829,7 @@ export const Videos: React.FC = () => {
       return
     }
     if (!guardVideoDownload()) return
+    if (!(await guardVideoCookieAccess(selected))) return
 
     setIsAddingToQueue(true)
     try {
@@ -852,7 +878,10 @@ export const Videos: React.FC = () => {
     }
   }
 
-  const handleDownloadVideoFromList = async (video: VideoRecord) => {
+  const handleDownloadVideoFromList = async (
+    video: VideoRecord,
+    options: { skipCookieCheck?: boolean } = {},
+  ) => {
     if (!api) return
     const action = getVideoRowDownloadAction(video)
     if (action.disabled) return
@@ -862,6 +891,8 @@ export const Videos: React.FC = () => {
       showToast(t('videos.toast_missing_download_source'))
       return
     }
+    if (!options.skipCookieCheck && !(await guardVideoCookieAccess([{ ...video, sourceUrl }])))
+      return
     const task = {
       id: video.id,
       title: video.title,
@@ -1424,6 +1455,11 @@ export const Videos: React.FC = () => {
     }
 
     if (!guardVideoDownload()) return
+    const downloadableVideos = selectedVideos.filter((video) => {
+      const action = getVideoRowDownloadAction(video)
+      return action.visible && !action.disabled
+    })
+    if (!(await guardVideoCookieAccess(downloadableVideos))) return
 
     setBulkSelectedVideoIds([])
     showToast(t('videos.bulk_download_started', { count: downloadPlan.downloadableCount }))
@@ -1431,11 +1467,8 @@ export const Videos: React.FC = () => {
       showToast(t('videos.bulk_download_skipped', { count: downloadPlan.skippedCount }))
     }
 
-    for (const video of selectedVideos) {
-      const action = getVideoRowDownloadAction(video)
-      if (action.visible && !action.disabled) {
-        await handleDownloadVideoFromList(video)
-      }
+    for (const video of downloadableVideos) {
+      await handleDownloadVideoFromList(video, { skipCookieCheck: true })
     }
   }
 

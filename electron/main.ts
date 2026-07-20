@@ -27,6 +27,7 @@ import {
   formatDurationSeconds,
   installManagedVideoTool,
   isVideoEngineReady,
+  getVideoCookieAccessStatus,
   parseVideoUrl,
   probeVideoDurationSeconds,
   resolveVideoToolPath,
@@ -759,8 +760,10 @@ function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    frame: false, // Custom frameless title bar
-    titleBarStyle: 'hidden',
+    // Let each operating system provide its standard title bar and window controls.
+    // This preserves the expected Windows, macOS, and Linux interactions instead of
+    // recreating a macOS-style control strip in the renderer.
+    title: 'LifeOS',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
@@ -811,23 +814,6 @@ app.on('activate', () => {
   if (mainWindow === null) {
     createWindow()
   }
-})
-
-// IPC Handlers: Custom Frameless Window Controls
-ipcMain.on('window:minimize', () => {
-  mainWindow?.minimize()
-})
-
-ipcMain.on('window:maximize', () => {
-  if (mainWindow?.isMaximized()) {
-    mainWindow.unmaximize()
-  } else {
-    mainWindow?.maximize()
-  }
-})
-
-ipcMain.on('window:close', () => {
-  mainWindow?.close()
 })
 
 ipcMain.handle('ai:media:saveAs', async (_event, payload: { assetId?: number }) => {
@@ -2148,6 +2134,10 @@ ipcMain.handle('video:loginBilibili', async () => {
 
 ipcMain.handle('video:getBilibiliAuthStatus', async () => {
   return getBilibiliAuthStatus()
+})
+
+ipcMain.handle('video:getCookieAccessStatus', async (_, url: string) => {
+  return getVideoCookieAccessStatus(getVideoToolSettings(), url)
 })
 
 ipcMain.handle('video:parseUrl', async (_, url: string) => {

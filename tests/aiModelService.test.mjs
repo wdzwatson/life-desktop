@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import Database from 'better-sqlite3'
 import { AIModelService } from '../electron/ai/modelService.ts'
-import { initializeAISchema } from '../electron/ai/schema.ts'
+import { DEFAULT_MODEL_CATALOG, initializeAISchema } from '../electron/ai/schema.ts'
 
 function createDb() {
   const db = new Database(':memory:')
@@ -29,15 +29,17 @@ test('model service keeps a global catalog and creates one managed chat profile 
   const db = createDb()
   const service = new AIModelService(db)
   const models = service.list()
+  const expectedModels = [
+    ...DEFAULT_MODEL_CATALOG,
+    { name: 'alpha', capabilities: ['text', 'image'] },
+    { name: 'beta', capabilities: ['text'] },
+    { name: 'image-1', capabilities: ['image'] },
+    { name: 'image-2', capabilities: ['image'] },
+    { name: 'video-1', capabilities: ['video'] },
+    { name: 'video-2', capabilities: ['video'] },
+  ].sort((left, right) => left.name.localeCompare(right.name))
   assert.deepEqual(models.map((model) => [model.capabilities, model.name]), [
-    [['text', 'image'], 'alpha'],
-    [['text'], 'beta'],
-    [['image'], 'gpt-image-1.5'],
-    [['image'], 'gpt-image-2'],
-    [['image'], 'image-1'],
-    [['image'], 'image-2'],
-    [['video'], 'video-1'],
-    [['video'], 'video-2'],
+    ...expectedModels.map((model) => [model.capabilities, model.name]),
   ])
   service.syncManagedAgents()
   const agents = db.prepare(`

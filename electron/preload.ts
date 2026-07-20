@@ -2,10 +2,6 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { getManagedVideoToolInstallSupport } from './video/toolSupport'
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Window controls
-  minimize: () => ipcRenderer.send('window:minimize'),
-  maximize: () => ipcRenderer.send('window:maximize'),
-  close: () => ipcRenderer.send('window:close'),
   isMac: process.platform === 'darwin',
   platform: process.platform,
   managedVideoToolInstallSupport: getManagedVideoToolInstallSupport(),
@@ -186,6 +182,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installVideoTool: (tool: 'yt-dlp' | 'ffmpeg') => ipcRenderer.invoke('video:installTool', tool),
   loginBilibili: () => ipcRenderer.invoke('video:loginBilibili'),
   getBilibiliAuthStatus: () => ipcRenderer.invoke('video:getBilibiliAuthStatus'),
+  getVideoCookieAccessStatus: (url: string) => ipcRenderer.invoke('video:getCookieAccessStatus', url),
   verifyVideoCookieAccess: () => ipcRenderer.invoke('video:verifyCookieAccess'),
   selectVideoDownloadDir: () => ipcRenderer.invoke('video:selectDownloadDir'),
   parseVideoUrl: (url: string) => ipcRenderer.invoke('video:parseUrl', url),

@@ -4,6 +4,7 @@ import path from 'node:path'
 import type { BrowserWindow } from 'electron'
 import AdmZip from 'adm-zip'
 import { fetchBilibiliHtmlMetadata } from './bilibiliFallback'
+import { parseBilibiliCookieFile } from './bilibiliCookies'
 import { shouldTryBilibiliDirectDownload, startBilibiliDirectDownload } from './bilibiliDirect'
 import { fetchYoutubeOEmbedMetadata, shouldPreferYoutubeOEmbedMetadata } from './youtubeOembed'
 import { buildDownloadArgs, buildMetadataArgs } from './ytDlpArgs'
@@ -45,6 +46,14 @@ export function resolveVideoToolPath(settings: Record<string, any>, executable: 
     if (fs.existsSync(managedPath)) return managedPath
   }
   return executable
+}
+
+function shouldSpawnWithShell(command: string) {
+  return process.platform === 'win32' && ['.cmd', '.bat'].includes(path.extname(command).toLocaleLowerCase())
+}
+
+function buildSpawnOptions(command: string) {
+  return { windowsHide: true, shell: shouldSpawnWithShell(command) }
 }
 
 function getToolDownloadPlan(tool: ManagedVideoTool) {
@@ -164,6 +173,46 @@ export function resolveCookieConfigForUrl(settings: Record<string, any>, url: st
   return resolveCookieConfigFromSettings(settings)
 }
 
+export function getVideoCookieAccessStatus(settings: Record<string, any>, url: string) {
+  if (!isBilibiliUrl(url)) {
+    return { success: true, required: false, hasAccess: true, mode: 'none' }
+  }
+
+  const cookieConfig = resolveCookieConfigForUrl(settings, url)
+  if (cookieConfig.mode === 'none') {
+    return {
+      success: true,
+      required: true,
+      hasAccess: false,
+      mode: 'none',
+      reason: 'Bilibili downloads require login cookies or an in-app Bilibili login.',
+    }
+  }
+
+  if (cookieConfig.mode === 'browser') {
+    return { success: true, required: true, hasAccess: true, mode: 'browser' }
+  }
+
+  if (!fs.existsSync(cookieConfig.cookiesPath)) {
+    return {
+      success: true,
+      required: true,
+      hasAccess: false,
+      mode: cookieConfig.mode,
+      reason: 'The configured Bilibili cookie file does not exist.',
+    }
+  }
+
+  const cookieHeader = parseBilibiliCookieFile(cookieConfig.cookiesPath)
+  return {
+    success: true,
+    required: true,
+    hasAccess: Boolean(cookieHeader),
+    mode: cookieConfig.mode,
+    reason: cookieHeader ? undefined : 'The configured cookie file does not contain Bilibili cookies.',
+  }
+}
+
 function isBilibiliVideoUrl(url: string) {
   try {
     const parsed = new URL(url)
@@ -190,7 +239,7 @@ export function runProcess(
   options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ) {
   return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
-    const child = spawn(command, args, { windowsHide: true })
+    const child = spawn(command, args, buildSpawnOptions(command))
     let stdout = ''
     let stderr = ''
     let settled = false
@@ -567,7 +616,7 @@ export async function startVideoDownload(input: {
       })
     }
   }
-  const child = spawn(ytDlpPath, args, { windowsHide: true })
+  const child = spawn(ytDlpPath, args, buildSpawnOptions(ytDlpPath))
   let downloadedFilePath: string | undefined
   let lastProgress = 0
   let outputLog = ''
