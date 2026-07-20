@@ -252,9 +252,10 @@ export class AIConversationService {
     this.db.pragma('foreign_keys = ON')
   }
 
-  listConversations(filters: { search?: string; archived?: boolean; limit?: number; offset?: number } = {}) {
+  listConversations(filters: { search?: string; archived?: boolean; includeArchived?: boolean; limit?: number; offset?: number } = {}) {
     const search = filters.search?.trim() ?? ''
     const archived = filters.archived === true ? 1 : 0
+    const includeArchived = filters.includeArchived === true ? 1 : 0
     const limit = this.requirePageNumber(filters.limit, 'limit', 50, 1, 200)
     const offset = this.requirePageNumber(filters.offset, 'offset', 0, 0, 1_000_000)
     const rows = this.db
@@ -262,7 +263,7 @@ export class AIConversationService {
         `
         SELECT c.*
         FROM ai_conversations c
-        WHERE c.is_archived = ?
+        WHERE (? = 1 OR c.is_archived = ?)
           AND (
             ? = ''
             OR instr(lower(c.title), lower(?)) > 0
@@ -277,7 +278,7 @@ export class AIConversationService {
         LIMIT ? OFFSET ?
         `,
       )
-      .all(archived, search, search, search, limit, offset) as ConversationRow[]
+      .all(includeArchived, archived, search, search, search, limit, offset) as ConversationRow[]
     return rows.map((row) => this.toConversation(row))
   }
 

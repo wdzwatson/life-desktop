@@ -81,6 +81,22 @@ test('conversation lifecycle preserves immutable agent snapshots and supports se
   context.db.close()
 })
 
+test('conversation list can include archived conversations without hiding active ones', () => {
+  const context = setup()
+  const archived = createConversation(context, { title: 'Archived notes' })
+  context.advance('2026-07-18T02:00:00.000Z')
+  const active = createConversation(context, { title: 'Active notes' })
+  context.service.setConversationArchived(archived.id, true)
+
+  assert.deepEqual(context.service.listConversations().map((item) => item.id), [active.id])
+  assert.deepEqual(context.service.listConversations({ archived: true }).map((item) => item.id), [archived.id])
+  assert.deepEqual(
+    context.service.listConversations({ includeArchived: true }).map((item) => item.id).sort((a, b) => a - b),
+    [archived.id, active.id].sort((a, b) => a - b),
+  )
+  context.db.close()
+})
+
 test('messages preserve ordered heterogeneous content blocks and paginate chronologically', () => {
   const context = setup()
   const conversation = createConversation(context)

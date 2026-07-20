@@ -429,7 +429,7 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
     setLoadingConversations(true)
     const response = (await api.listAIConversations({
       search,
-      archived: showArchived,
+      ...(showArchived ? { includeArchived: true } : { archived: false }),
       limit: 200,
     })) as ApiResponse<AIChatConversation[]>
     if (requestId !== conversationRequestRef.current) return
