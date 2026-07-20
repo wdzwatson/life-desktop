@@ -230,6 +230,11 @@ body.theme-dense .nav-item.active {
   transition: opacity 0.15s ease;
 }
 
+.settings-nav-label {
+  font-size: 13px;
+  opacity: 1;
+}
+
 .sidebar-nav:hover .nav-label {
   opacity: 1;
 }

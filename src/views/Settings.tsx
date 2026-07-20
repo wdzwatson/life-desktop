@@ -564,7 +564,7 @@ export const Settings: React.FC = () => {
               <span className="nav-icon">
                 <Palette size={15} />
               </span>
-              <span className="nav-label">{t('settings.menu_appearance')}</span>
+              <span className="settings-nav-label">{t('settings.menu_appearance')}</span>
             </button>
             <button
               className={`nav-item ${activeMenu === 'categories' ? 'active' : ''}`}
@@ -574,7 +574,7 @@ export const Settings: React.FC = () => {
               <span className="nav-icon">
                 <BookOpen size={15} />
               </span>
-              <span className="nav-label">{t('settings.menu_categories')}</span>
+              <span className="settings-nav-label">{t('settings.menu_categories')}</span>
             </button>
             <button
               className={`nav-item ${activeMenu === 'profile' ? 'active' : ''}`}
@@ -584,7 +584,7 @@ export const Settings: React.FC = () => {
               <span className="nav-icon">
                 <User size={15} />
               </span>
-              <span className="nav-label">{t('settings.menu_profile')}</span>
+              <span className="settings-nav-label">{t('settings.menu_profile')}</span>
             </button>
             <button
               className={`nav-item ${activeMenu === 'security' ? 'active' : ''}`}
@@ -594,7 +594,7 @@ export const Settings: React.FC = () => {
               <span className="nav-icon">
                 <Shield size={15} />
               </span>
-              <span className="nav-label">{t('settings.menu_data')}</span>
+              <span className="settings-nav-label">{t('settings.menu_data')}</span>
             </button>
             <button
               className={`nav-item ${activeMenu === 'updates' ? 'active' : ''}`}
@@ -604,7 +604,7 @@ export const Settings: React.FC = () => {
               <span className="nav-icon">
                 <RefreshCw size={15} />
               </span>
-              <span className="nav-label">{t('settings.menu_updates')}</span>
+              <span className="settings-nav-label">{t('settings.menu_updates')}</span>
             </button>
             <button
               className={`nav-item ${activeMenu === 'video' ? 'active' : ''}`}
@@ -614,7 +614,7 @@ export const Settings: React.FC = () => {
               <span className="nav-icon">
                 <Download size={15} />
               </span>
-              <span className="nav-label">{t('settings.video_downloader_title')}</span>
+              <span className="settings-nav-label">{t('settings.video_downloader_title')}</span>
             </button>
           </div>
         </aside>
