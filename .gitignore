@@ -16,6 +16,11 @@ dist-ssr
 .superpowers/
 .worktrees/
 
+# Local browser/test artifacts
+.playwright-cli/
+artifacts/
+output/playwright/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
