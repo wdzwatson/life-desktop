@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, dialog, protocol, net, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, dialog, protocol, Menu } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import Database from 'better-sqlite3'
@@ -10,7 +10,7 @@ import {
   restoreLifeOsBackupPackage,
 } from './backup/service'
 import AdmZip from 'adm-zip'
-import { fileURLToPath, pathToFileURL } from 'url'
+import { fileURLToPath } from 'url'
 import { autoUpdater } from 'electron-updater'
 import crypto from 'crypto'
 import { PDFParse } from 'pdf-parse'
@@ -33,13 +33,13 @@ import {
   resolveVideoToolPath,
   resolvePlaybackPath,
   resolveVideoDownloadDir,
-  resolveVideoProtocolPath,
   runProcess,
   startVideoDownload,
   verifyVideoCookieAccess,
   type VideoEngineStatus,
 } from './video/service'
 import { hasBilibiliLoginCookie, writeBilibiliCookieFile } from './video/bilibiliCookies'
+import { handleVideoProtocolRequest } from './video/protocol'
 import { classifyVideoDownloadFailure } from './video/downloadState'
 import { normalizeBulkVideoTagPayload } from '../src/views/videoStateUtils'
 import { VaultService, serializeVaultError } from './vault/service'
@@ -549,13 +549,9 @@ function getActiveUserVideoDir() {
 }
 
 function setupVideoProtocol() {
-  protocol.handle('life-video', (request) => {
-    const resolved = resolveVideoProtocolPath(getActiveUserVideoDir(), request.url)
-    if (!resolved.success || !resolved.path) {
-      return new Response(resolved.error || 'Unable to load video.', { status: 403 })
-    }
-    return net.fetch(pathToFileURL(resolved.path).toString())
-  })
+  protocol.handle('life-video', (request) =>
+    handleVideoProtocolRequest({ request, userVideoDir: getActiveUserVideoDir() }),
+  )
 }
 
 function getAIMediaRoot() {
