@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Download,
   FolderOpen,
+  KeyRound,
 } from 'lucide-react'
 
 interface UpdateInfo {
@@ -71,6 +72,7 @@ export const Settings: React.FC = () => {
     cookieMode: 'none',
     cookieBrowser: 'chrome',
     cookiesPath: '',
+    bilibiliCookiesPath: '',
     qualityPreference: 'best',
     videoDownloadDir: '',
     maxDownloads: 3,
@@ -78,6 +80,7 @@ export const Settings: React.FC = () => {
   const [videoToolStatus, setVideoToolStatus] = useState<any>(null)
   const [installingVideoTool, setInstallingVideoTool] = useState<'yt-dlp' | 'ffmpeg' | null>(null)
   const [verifyingCookieAccess, setVerifyingCookieAccess] = useState(false)
+  const [loggingInBilibili, setLoggingInBilibili] = useState(false)
 
   // Categories list state
   const [categories, setCategories] = useState<any[]>([])
@@ -152,6 +155,7 @@ export const Settings: React.FC = () => {
           cookieMode: settings.cookieMode || 'none',
           cookieBrowser: settings.cookieBrowser || 'chrome',
           cookiesPath: settings.cookiesPath || '',
+          bilibiliCookiesPath: settings.bilibiliCookiesPath || '',
           qualityPreference: settings.qualityPreference || 'best',
           videoDownloadDir: settings.videoDownloadDir || '',
           maxDownloads: clampVideoConcurrentDownloads(settings.maxDownloads),
@@ -279,6 +283,30 @@ export const Settings: React.FC = () => {
       }
     } finally {
       setVerifyingCookieAccess(false)
+    }
+  }
+
+  const handleLoginBilibili = async () => {
+    if (!api || loggingInBilibili) return
+    setLoggingInBilibili(true)
+    try {
+      const result = await api.loginBilibili()
+      if (result?.success) {
+        const current = (await api.getSettings()) as Record<string, any>
+        const nextSettings = {
+          ...videoSettings,
+          cookieMode: 'bilibili',
+          bilibiliCookiesPath: result.path || current.bilibiliCookiesPath || '',
+          maxDownloads: clampVideoConcurrentDownloads(videoSettings.maxDownloads),
+        }
+        setVideoSettings(nextSettings)
+        await api.saveSettings({ ...current, ...nextSettings })
+        showToast(t('settings.video_bilibili_login_success'))
+      } else if (!result?.canceled) {
+        showToast(t('settings.video_bilibili_login_failed', { error: result?.error || '' }))
+      }
+    } finally {
+      setLoggingInBilibili(false)
     }
   }
 
@@ -1307,6 +1335,7 @@ export const Settings: React.FC = () => {
                     }
                   >
                     <option value="none">{t('settings.video_cookie_none')}</option>
+                    <option value="bilibili">{t('settings.video_cookie_bilibili')}</option>
                     <option value="browser">{t('settings.video_cookie_browser')}</option>
                     <option value="file">{t('settings.video_cookie_file')}</option>
                   </select>
@@ -1362,6 +1391,38 @@ export const Settings: React.FC = () => {
                 </label>
               )}
 
+              {videoSettings.cookieMode === 'bilibili' && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    padding: '10px 12px',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--bg-muted)',
+                  }}
+                >
+                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                    {videoSettings.bilibiliCookiesPath
+                      ? t('settings.video_bilibili_logged_in')
+                      : t('settings.video_bilibili_login_required')}
+                  </span>
+                  <button
+                    className="btn"
+                    onClick={handleLoginBilibili}
+                    disabled={loggingInBilibili}
+                    type="button"
+                  >
+                    <KeyRound size={14} />
+                    {loggingInBilibili
+                      ? t('settings.video_bilibili_logging_in')
+                      : t('settings.video_bilibili_login')}
+                  </button>
+                </div>
+              )}
+
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                 <button className="btn primary" onClick={handleSaveVideoSettings}>
                   {t('common.save')}
@@ -1379,6 +1440,19 @@ export const Settings: React.FC = () => {
                     ? t('settings.video_cookie_verifying')
                     : t('settings.video_cookie_verify')}
                 </button>
+                {videoSettings.cookieMode !== 'bilibili' && (
+                  <button
+                    className="btn"
+                    onClick={handleLoginBilibili}
+                    disabled={loggingInBilibili}
+                    type="button"
+                  >
+                    <KeyRound size={14} />
+                    {loggingInBilibili
+                      ? t('settings.video_bilibili_logging_in')
+                      : t('settings.video_bilibili_login')}
+                  </button>
+                )}
                 <button
                   className="btn"
                   onClick={() => handleInstallVideoTool('yt-dlp')}

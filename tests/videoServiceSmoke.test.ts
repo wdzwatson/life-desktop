@@ -90,6 +90,13 @@ test('resolveCookieConfigFromSettings handles none, browser, and file modes', ()
       cookiesPath: '/tmp/c.txt',
     },
   )
+  assert.deepEqual(
+    resolveCookieConfigFromSettings({ cookieMode: 'bilibili', bilibiliCookiesPath: '/tmp/bili.txt' }),
+    {
+      mode: 'bilibili',
+      cookiesPath: '/tmp/bili.txt',
+    },
+  )
 })
 
 test('resolveCookieConfigForUrl applies configured cookies only to Bilibili urls', () => {
@@ -123,6 +130,13 @@ test('buildCookieAccessVerificationArgs uses current cookie configuration', () =
   })
   assert.equal(fileArgs.includes('--cookies'), true)
   assert.equal(fileArgs.includes('/tmp/cookies.txt'), true)
+
+  const bilibiliArgs = buildCookieAccessVerificationArgs({
+    url: 'https://www.bilibili.com/video/BV1G7jJ6nEbV/',
+    cookieConfig: { mode: 'bilibili', cookiesPath: '/tmp/bilibili-cookies.txt' },
+  })
+  assert.equal(bilibiliArgs.includes('--cookies'), true)
+  assert.equal(bilibiliArgs.includes('/tmp/bilibili-cookies.txt'), true)
 })
 
 test('buildResolvedDownloadArgs passes managed ffmpeg location to yt-dlp', () => {

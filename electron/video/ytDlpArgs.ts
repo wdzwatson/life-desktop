@@ -21,7 +21,7 @@ function appendCookieArgs(args: string[], cookieConfig: VideoCookieConfig) {
   if (cookieConfig.mode === 'browser') {
     args.push('--cookies-from-browser', cookieConfig.browser)
   }
-  if (cookieConfig.mode === 'file') {
+  if (cookieConfig.mode === 'file' || cookieConfig.mode === 'bilibili') {
     args.push('--cookies', cookieConfig.cookiesPath)
   }
 }

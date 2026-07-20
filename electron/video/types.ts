@@ -4,6 +4,7 @@ export type VideoCookieConfig =
   | { mode: 'none' }
   | { mode: 'browser'; browser: 'chrome' | 'safari' | 'firefox' | 'edge' | 'brave' | 'chromium' }
   | { mode: 'file'; cookiesPath: string }
+  | { mode: 'bilibili'; cookiesPath: string }
 
 export type VideoQualityPreference = 'best' | '1080p' | '720p' | 'audio'
 

@@ -2,6 +2,9 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { VideoCookieConfig, VideoQualityPreference } from './types'
+import { parseBilibiliCookieFile } from './bilibiliCookies'
+
+export { parseBilibiliCookieFile } from './bilibiliCookies'
 
 interface BilibiliStream {
   id?: number
@@ -38,20 +41,6 @@ export function buildBilibiliApiUrl(input: {
     fourk: '1',
   })
   return `https://api.bilibili.com/x/player/playurl?${params.toString()}`
-}
-
-export function parseBilibiliCookieFile(filePath: string) {
-  if (!filePath || !fs.existsSync(filePath)) return undefined
-  const pairs: string[] = []
-  for (const line of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
-    if (!line || line.startsWith('#')) continue
-    const columns = line.split('\t')
-    if (columns.length < 7) continue
-    const domain = columns[0].toLowerCase()
-    if (!domain.includes('bilibili.com')) continue
-    pairs.push(`${columns[5]}=${columns[6]}`)
-  }
-  return pairs.length > 0 ? pairs.join('; ') : undefined
 }
 
 function streamUrl(stream: BilibiliStream | undefined) {
@@ -162,7 +151,9 @@ export async function startBilibiliDirectDownload(input: {
   const cid = input.sourceCid || (await fetchCidFromPage(input.url))
   if (!cid) throw new Error('Bilibili fast path requires a cid.')
   const cookieHeader =
-    input.cookieConfig.mode === 'file' ? parseBilibiliCookieFile(input.cookieConfig.cookiesPath) : undefined
+    input.cookieConfig.mode === 'file' || input.cookieConfig.mode === 'bilibili'
+      ? parseBilibiliCookieFile(input.cookieConfig.cookiesPath)
+      : undefined
   const headers = buildHeaders(input.url, cookieHeader)
   const apiUrl = buildBilibiliApiUrl({ bvid, cid, quality: input.quality })
   const play = await fetch(apiUrl, { headers: buildFetchHeaders(input.url, cookieHeader) }).then((response) =>

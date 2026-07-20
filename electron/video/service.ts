@@ -143,6 +143,9 @@ export function resolveCookieConfigFromSettings(settings: Record<string, any>): 
   if (settings.cookieMode === 'file' && settings.cookiesPath) {
     return { mode: 'file', cookiesPath: settings.cookiesPath }
   }
+  if (settings.cookieMode === 'bilibili' && settings.bilibiliCookiesPath) {
+    return { mode: 'bilibili', cookiesPath: settings.bilibiliCookiesPath }
+  }
   return { mode: 'none' }
 }
 
@@ -330,7 +333,8 @@ export function buildCookieAccessVerificationArgs(input: {
 }
 
 export async function verifyVideoCookieAccess(settings: Record<string, any>) {
-  const cookieConfig = resolveCookieConfigForUrl(settings, url)
+  const testUrl = settings.cookieTestUrl || 'https://www.bilibili.com/video/BV1G7jJ6nEbV/'
+  const cookieConfig = resolveCookieConfigForUrl(settings, testUrl)
   if (cookieConfig.mode === 'none') {
     return { success: false, error: 'Cookie mode is disabled.' }
   }
@@ -338,7 +342,7 @@ export async function verifyVideoCookieAccess(settings: Record<string, any>) {
   const result = await runProcess(
     ytDlpPath,
     buildCookieAccessVerificationArgs({
-      url: settings.cookieTestUrl || 'https://www.bilibili.com/video/BV1G7jJ6nEbV/',
+      url: testUrl,
       cookieConfig,
     }),
     { timeoutMs: 45000 },

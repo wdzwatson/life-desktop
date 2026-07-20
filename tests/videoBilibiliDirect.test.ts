@@ -11,6 +11,10 @@ import {
   selectBilibiliDashStreams,
   shouldTryBilibiliDirectDownload,
 } from '../electron/video/bilibiliDirect.ts'
+import {
+  hasBilibiliLoginCookie,
+  serializeBilibiliCookiesToNetscape,
+} from '../electron/video/bilibiliCookies.ts'
 
 test('buildBilibiliApiUrl creates a playurl request from bvid and cid', () => {
   assert.equal(
@@ -58,6 +62,46 @@ test('parseBilibiliCookieFile returns a Cookie header for Bilibili domains', () 
   )
 
   assert.equal(parseBilibiliCookieFile(filePath), 'SESSDATA=abc; bili_jct=def')
+})
+
+test('parseBilibiliCookieFile keeps HttpOnly Bilibili login cookies', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-bili-cookies-'))
+  const filePath = path.join(dir, 'cookies.txt')
+  writeFileSync(
+    filePath,
+    [
+      '# Netscape HTTP Cookie File',
+      '#HttpOnly_.bilibili.com\tTRUE\t/\tTRUE\t1893456000\tSESSDATA\tsecret',
+      '.bilibili.com\tTRUE\t/\tFALSE\t0\tDedeUserID\t123',
+      '',
+    ].join('\n'),
+  )
+
+  assert.equal(parseBilibiliCookieFile(filePath), 'SESSDATA=secret; DedeUserID=123')
+})
+
+test('serializeBilibiliCookiesToNetscape writes login cookies for yt-dlp', () => {
+  const cookies = [
+    {
+      domain: '.bilibili.com',
+      httpOnly: true,
+      name: 'SESSDATA',
+      path: '/',
+      secure: true,
+      expirationDate: 1893456000,
+      value: 'secret',
+    },
+    {
+      domain: '.example.com',
+      name: 'ignored',
+      value: 'nope',
+    },
+  ]
+
+  assert.equal(hasBilibiliLoginCookie(cookies), true)
+  const content = serializeBilibiliCookiesToNetscape(cookies)
+  assert.match(content, /#HttpOnly_\.bilibili\.com\tTRUE\t\/\tTRUE\t1893456000\tSESSDATA\tsecret/)
+  assert.doesNotMatch(content, /ignored/)
 })
 
 test('parseFfmpegProgressPercent reads ffmpeg progress output from duration', () => {

@@ -184,6 +184,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getVideoEngineStatus: () => ipcRenderer.invoke('video:getEngineStatus'),
   loadVideoEngine: () => ipcRenderer.invoke('video:loadEngine'),
   installVideoTool: (tool: 'yt-dlp' | 'ffmpeg') => ipcRenderer.invoke('video:installTool', tool),
+  loginBilibili: () => ipcRenderer.invoke('video:loginBilibili'),
+  getBilibiliAuthStatus: () => ipcRenderer.invoke('video:getBilibiliAuthStatus'),
   verifyVideoCookieAccess: () => ipcRenderer.invoke('video:verifyCookieAccess'),
   selectVideoDownloadDir: () => ipcRenderer.invoke('video:selectDownloadDir'),
   parseVideoUrl: (url: string) => ipcRenderer.invoke('video:parseUrl', url),

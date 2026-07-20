@@ -38,6 +38,7 @@ import {
   verifyVideoCookieAccess,
   type VideoEngineStatus,
 } from './video/service'
+import { hasBilibiliLoginCookie, writeBilibiliCookieFile } from './video/bilibiliCookies'
 import { classifyVideoDownloadFailure } from './video/downloadState'
 import { normalizeBulkVideoTagPayload } from '../src/views/videoStateUtils'
 import { VaultService, serializeVaultError } from './vault/service'
@@ -155,6 +156,130 @@ function getVideoToolSettings() {
     ...getSettings(),
     videoToolsDir: path.join(BASE_DIR, 'tools', 'video'),
   }
+}
+
+function getBilibiliCookieFilePath() {
+  return path.join(BASE_DIR, 'users', activeUserId, 'config', 'bilibili-cookies.txt')
+}
+
+function getBilibiliLoginPartition() {
+  const safeUserId = activeUserId.replace(/[^a-zA-Z0-9_.-]/g, '_')
+  return `persist:lifeos-bilibili-${safeUserId}`
+}
+
+async function collectBilibiliCookies(authWindow: BrowserWindow) {
+  const cookieStore = authWindow.webContents.session.cookies
+  const groups = await Promise.all([
+    cookieStore.get({ url: 'https://www.bilibili.com' }),
+    cookieStore.get({ url: 'https://passport.bilibili.com' }),
+    cookieStore.get({ url: 'https://api.bilibili.com' }),
+    cookieStore.get({ domain: '.bilibili.com' }),
+  ])
+  const seen = new Set<string>()
+  return groups.flat().filter((cookie) => {
+    const key = `${cookie.domain}\t${cookie.path}\t${cookie.name}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+async function persistBilibiliCookies(authWindow: BrowserWindow) {
+  const cookies = await collectBilibiliCookies(authWindow)
+  if (!hasBilibiliLoginCookie(cookies)) {
+    return { success: false, error: 'Bilibili login cookies were not found.' }
+  }
+  const cookiePath = getBilibiliCookieFilePath()
+  writeBilibiliCookieFile(cookiePath, cookies)
+  const settings = getSettings()
+  saveSettings({
+    ...settings,
+    cookieMode: 'bilibili',
+    bilibiliCookiesPath: cookiePath,
+  })
+  return { success: true, path: cookiePath }
+}
+
+async function getBilibiliAuthStatus() {
+  const settings = getVideoToolSettings()
+  const cookiePath = settings.bilibiliCookiesPath || getBilibiliCookieFilePath()
+  return {
+    success: true,
+    loggedIn: fs.existsSync(cookiePath),
+    path: cookiePath,
+  }
+}
+
+async function startBilibiliAccountLogin() {
+  if (!mainWindow) return { success: false, error: 'Main window is not available.' }
+
+  const loginWindow = new BrowserWindow({
+    width: 980,
+    height: 740,
+    minWidth: 720,
+    minHeight: 560,
+    parent: mainWindow,
+    title: 'Bilibili Login',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      partition: getBilibiliLoginPartition(),
+    },
+  })
+
+  const cookieStore = loginWindow.webContents.session.cookies
+  return new Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>((resolve) => {
+    let settled = false
+    let checking = false
+    const finish = async (canceled: boolean) => {
+      if (settled || checking || loginWindow.isDestroyed()) return
+      checking = true
+      try {
+        const result = await persistBilibiliCookies(loginWindow)
+        if (result.success) {
+          settled = true
+          cookieStore.removeListener('changed', onCookieChanged)
+          if (!loginWindow.isDestroyed()) loginWindow.close()
+          resolve(result)
+          return
+        }
+        if (canceled) {
+          settled = true
+          cookieStore.removeListener('changed', onCookieChanged)
+          if (!loginWindow.isDestroyed()) loginWindow.close()
+          resolve({ success: false, canceled: true, error: result.error })
+        }
+      } catch (error: any) {
+        settled = true
+        cookieStore.removeListener('changed', onCookieChanged)
+        if (!loginWindow.isDestroyed()) loginWindow.close()
+        resolve({ success: false, error: error?.message || String(error) })
+      } finally {
+        checking = false
+      }
+    }
+    const onCookieChanged = () => {
+      void finish(false)
+    }
+
+    cookieStore.on('changed', onCookieChanged)
+    loginWindow.webContents.on('did-finish-load', () => {
+      void finish(false)
+    })
+    loginWindow.on('close', (event) => {
+      if (settled) return
+      event.preventDefault()
+      const closeAfterCurrentCheck = () => {
+        if (checking) {
+          setTimeout(closeAfterCurrentCheck, 50)
+          return
+        }
+        void finish(true)
+      }
+      closeAfterCurrentCheck()
+    })
+    loginWindow.loadURL('https://passport.bilibili.com/login')
+  })
 }
 
 function emitVideoEngineStatus() {
@@ -1006,6 +1131,7 @@ ipcMain.handle('settings:save', async (_, newSettings: any) => {
     'cookieMode',
     'cookieBrowser',
     'cookiesPath',
+    'bilibiliCookiesPath',
   ]
   if (videoSettingKeys.some((key) => previousSettings[key] !== newSettings[key])) {
     void loadVideoEngine({ force: true })
@@ -2014,6 +2140,14 @@ ipcMain.handle('video:getEngineStatus', async () => {
 
 ipcMain.handle('video:loadEngine', async () => {
   return loadVideoEngine({ force: true })
+})
+
+ipcMain.handle('video:loginBilibili', async () => {
+  return startBilibiliAccountLogin()
+})
+
+ipcMain.handle('video:getBilibiliAuthStatus', async () => {
+  return getBilibiliAuthStatus()
 })
 
 ipcMain.handle('video:parseUrl', async (_, url: string) => {
