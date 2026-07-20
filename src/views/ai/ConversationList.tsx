@@ -64,7 +64,7 @@ export function ConversationList({
           title={!canCreate ? t('aiChat.chat.model_required') : undefined}
         >
           <Plus size={15} aria-hidden="true" />
-          {t('aiChat.chat.new_conversation')}
+          <span className="ai-conversation-new__label">{t('aiChat.chat.new_conversation')}</span>
         </button>
       </div>
 

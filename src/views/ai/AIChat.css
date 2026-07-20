@@ -340,12 +340,24 @@
 
 .ai-conversation-new {
   min-height: 34px;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 4px;
   flex: 0 0 auto;
   padding: 0 9px;
   font-size: 11px;
+}
+
+.ai-conversation-new svg {
+  flex: 0 0 auto;
+}
+
+.ai-conversation-new__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ai-conversation-new:disabled {
@@ -4444,15 +4456,19 @@
   }
 
   .ai-conversation-new {
-    width: 30px;
+    width: 34px;
+    height: 34px;
     justify-content: center;
     padding: 0;
     overflow: hidden;
-    color: transparent;
   }
 
   .ai-conversation-new svg {
     color: var(--color-accent-contrast, #fff);
+  }
+
+  .ai-conversation-new__label {
+    display: none;
   }
 
   .ai-chat-stage__header {
