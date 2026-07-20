@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, dialog, protocol, net } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, dialog, protocol, net, Menu } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import Database from 'better-sqlite3'
@@ -748,6 +748,19 @@ function runSchedulerCycle() {
 }
 
 // Electron window creation
+function configureApplicationMenu() {
+  if (process.platform !== 'win32') return
+
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: 'View',
+        submenu: [{ role: 'reload', label: 'Reload' }],
+      },
+    ]),
+  )
+}
+
 function createWindow() {
   initConfig()
 
@@ -795,6 +808,7 @@ function createWindow() {
 app.whenReady().then(() => {
   setupVideoProtocol()
   setupAIMediaProtocol()
+  configureApplicationMenu()
   createWindow()
 })
 
