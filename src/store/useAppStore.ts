@@ -1,9 +1,12 @@
 import { create } from 'zustand'
 import i18n from '../i18n'
 
+export type SettingsMenu = 'appearance' | 'categories' | 'profile' | 'security' | 'updates' | 'video'
+
 interface AppState {
   activeScreen: string
   taskTab: string
+  settingsMenu: SettingsMenu
   theme: string
   language: string
   userId: string
@@ -16,6 +19,7 @@ interface AppState {
   // Actions
   setActiveScreen: (screen: string) => void
   setTaskTab: (tab: string) => void
+  setSettingsMenu: (menu: SettingsMenu) => void
   setTheme: (theme: string) => Promise<void>
   setLanguage: (lang: string) => Promise<void>
   showToast: (msg: string) => void
@@ -80,6 +84,7 @@ const saveMockSettings = (settings: any) => {
 export const useAppStore = create<AppState>((set, get) => ({
   activeScreen: 'dashboard',
   taskTab: 'kanban',
+  settingsMenu: 'appearance',
   theme: 'Minimal',
   language: 'zh-CN',
   userId: 'guest',
@@ -91,6 +96,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setActiveScreen: (screen) => set({ activeScreen: screen }),
   setTaskTab: (tab) => set({ taskTab: tab }),
+  setSettingsMenu: (menu) => set({ settingsMenu: menu }),
 
   setTheme: async (theme) => {
     document.body.className = `theme-${theme.toLowerCase().replace(' ', '-')}`

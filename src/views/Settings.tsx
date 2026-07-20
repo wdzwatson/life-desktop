@@ -46,15 +46,12 @@ export const Settings: React.FC = () => {
   const showToast = useAppStore((state) => state.showToast)
   const loadInitialConfig = useAppStore((state) => state.loadInitialConfig)
   const signOut = useAppStore((state) => state.signOut)
+  const activeMenu = useAppStore((state) => state.settingsMenu)
+  const setActiveMenu = useAppStore((state) => state.setSettingsMenu)
   const configuredLocales = useMemo(
     () => getConfiguredLocales(i18n.language),
     [i18n.language],
   )
-
-  // Settings tab switching
-  const [activeMenu, setActiveMenu] = useState<
-    'appearance' | 'categories' | 'profile' | 'security' | 'updates' | 'video'
-  >('appearance')
 
   // Update states
   const [appVersion, setAppVersion] = useState('1.0.0')

@@ -14,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   SortAsc,
   SortDesc,
   Trash2,
@@ -129,6 +130,8 @@ function replaceVideoGroupTranslationValues(
 export const Videos: React.FC = () => {
   const { t, i18n } = useTranslation()
   const showToast = useAppStore((state) => state.showToast)
+  const setActiveScreen = useAppStore((state) => state.setActiveScreen)
+  const setSettingsMenu = useAppStore((state) => state.setSettingsMenu)
   const userId = useAppStore((state) => state.userId)
   const api = (window as any).electronAPI
   const playbackChrome = getPlaybackOverlayChrome(Boolean(api?.isMac))
@@ -555,6 +558,11 @@ export const Videos: React.FC = () => {
       setVideoEngineStatus({ status: 'error', message, updatedAt: new Date().toISOString() })
       showToast(t('videos.toast_video_engine_failed', { error: message }))
     }
+  }
+
+  const handleOpenVideoSettings = () => {
+    setSettingsMenu('video')
+    setActiveScreen('settings')
   }
 
   const guardVideoDownload = () => {
@@ -1497,9 +1505,29 @@ export const Videos: React.FC = () => {
         minHeight: 0,
       }}
     >
-      <header style={{ marginBottom: '16px' }}>
-        <h1 style={{ fontSize: '22px', fontWeight: 800 }}>{t('videos.title')}</h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{t('videos.subtitle')}</p>
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: '12px',
+          marginBottom: '16px',
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ fontSize: '22px', fontWeight: 800 }}>{t('videos.title')}</h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{t('videos.subtitle')}</p>
+        </div>
+        <button
+          type="button"
+          className="btn"
+          onClick={handleOpenVideoSettings}
+          title={t('videos.open_download_settings')}
+          style={{ flexShrink: 0 }}
+        >
+          <SlidersHorizontal size={14} />
+          {t('videos.open_download_settings')}
+        </button>
       </header>
 
       <div
@@ -1622,6 +1650,16 @@ export const Videos: React.FC = () => {
             >
               <Search size={14} />
               {isParsingUrl ? t('videos.status_parsing') : t('videos.btn_parse_url')}
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={handleOpenVideoSettings}
+              title={t('videos.download_settings_hint')}
+              style={{ flexShrink: 0 }}
+            >
+              <SlidersHorizontal size={14} />
+              {t('videos.settings_shortcut')}
             </button>
           </form>
 
