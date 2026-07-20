@@ -6,9 +6,7 @@ import { clampVideoConcurrentDownloads } from './videoLibraryUtils'
 import {
   Palette,
   User,
-  BookOpen,
   Shield,
-  Trash2,
   RefreshCw,
   Download,
   FolderOpen,
@@ -79,9 +77,6 @@ export const Settings: React.FC = () => {
   const [verifyingCookieAccess, setVerifyingCookieAccess] = useState(false)
   const [loggingInBilibili, setLoggingInBilibili] = useState(false)
 
-  // Categories list state
-  const [categories, setCategories] = useState<any[]>([])
-
   // User Profile Form States
   const [editNickname, setEditNickname] = useState(userNickname)
   const [editAvatar, setEditAvatar] = useState(userAvatar)
@@ -109,15 +104,7 @@ export const Settings: React.FC = () => {
   const canInstallManagedFfmpeg = api?.managedVideoToolInstallSupport?.ffmpeg ?? isMacPlatform
   const showManualFfmpegInstallNote = !canInstallManagedFfmpeg
 
-  const loadCategories = async () => {
-    if (api) {
-      const res = await api.dbQuery('books', 'SELECT * FROM categories ORDER BY sort_order ASC')
-      if (res?.success) setCategories(res.data)
-    }
-  }
-
   useEffect(() => {
-    loadCategories()
     setEditNickname(userNickname)
     setEditAvatar(userAvatar)
 
@@ -324,36 +311,6 @@ export const Settings: React.FC = () => {
     } else {
       showToast(t('settings.video_tool_install_failed', { tool, error: result?.error || '' }))
     }
-  }
-
-  // Category management
-  const handleAddCategory = async () => {
-    if (!api) return
-    const name = window.prompt(t('settings.prompt_add_category'))
-    if (!name?.trim()) return
-
-    const res = await api.dbQuery(
-      'books',
-      'INSERT INTO categories (name, sort_order) VALUES (?, ?)',
-      [name.trim(), categories.length + 1],
-    )
-    if (res?.success) {
-      showToast(t('settings.toast_category_added', { name }))
-      loadCategories()
-    }
-  }
-
-  const handleDeleteCategory = async (id: number, name: string) => {
-    const confirmMsg = t('settings.prompt_delete_category', { name })
-    if (!api || !window.confirm(confirmMsg)) return
-
-    // 1. Update books
-    await api.dbQuery('books', 'UPDATE books SET category = ? WHERE category = ?', ['未分类', name])
-    // 2. Delete category
-    await api.dbQuery('books', 'DELETE FROM categories WHERE id = ?', [id])
-
-    showToast(t('settings.toast_category_deleted'))
-    loadCategories()
   }
 
   // Save User Profile Changes
@@ -567,16 +524,6 @@ export const Settings: React.FC = () => {
               <span className="settings-nav-label">{t('settings.menu_appearance')}</span>
             </button>
             <button
-              className={`nav-item ${activeMenu === 'categories' ? 'active' : ''}`}
-              onClick={() => setActiveMenu('categories')}
-              style={{ width: '100%', border: 'none', background: 'none' }}
-            >
-              <span className="nav-icon">
-                <BookOpen size={15} />
-              </span>
-              <span className="settings-nav-label">{t('settings.menu_categories')}</span>
-            </button>
-            <button
               className={`nav-item ${activeMenu === 'profile' ? 'active' : ''}`}
               onClick={() => setActiveMenu('profile')}
               style={{ width: '100%', border: 'none', background: 'none' }}
@@ -700,63 +647,6 @@ export const Settings: React.FC = () => {
                 </div>
               </div>
             </>
-          )}
-
-          {/* TAB: BOOK CATEGORIES */}
-          {activeMenu === 'categories' && (
-            <div>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '12px',
-                }}
-              >
-                <div>
-                  <h3 style={{ fontSize: '15px', fontWeight: 800 }}>
-                    {t('settings.category_title')}
-                  </h3>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-                    {t('settings.category_subtitle')}
-                  </p>
-                </div>
-                <button className="btn sm primary" onClick={handleAddCategory}>
-                  {t('settings.category_add_btn')}
-                </button>
-              </div>
-
-              <div
-                style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '480px' }}
-              >
-                {categories.map((cat) => (
-                  <div
-                    key={cat.id}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '10px 14px',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: '8px',
-                      backgroundColor: 'var(--bg-app)',
-                    }}
-                  >
-                    <span style={{ fontSize: '13px', fontWeight: 600 }}>
-                      {cat.name === '未分类' ? t('settings.category_uncategorized') : cat.name}
-                    </span>
-                    <button
-                      className="btn sm"
-                      onClick={() => handleDeleteCategory(cat.id, cat.name)}
-                      style={{ border: 'none', background: 'none' }}
-                      disabled={cat.name === '未分类'}
-                    >
-                      <Trash2 size={13} color="var(--color-danger)" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
           )}
 
           {/* TAB: PROFILE CENTER & PASSWORD SETUP */}

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import i18n from '../i18n'
 
-export type SettingsMenu = 'appearance' | 'categories' | 'profile' | 'security' | 'updates' | 'video'
+export type SettingsMenu = 'appearance' | 'profile' | 'security' | 'updates' | 'video'
 
 interface AppState {
   activeScreen: string
