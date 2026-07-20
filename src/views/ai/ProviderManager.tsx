@@ -101,17 +101,6 @@ export function ProviderManager({ onChanged }: Props) {
     setError('')
   }
 
-  const updateModels = (kind: ModelCapability, models: string[]) => {
-    if (!draft) return
-    const plural = `${kind}Models` as 'textModels' | 'imageModels' | 'videoModels'
-    const defaultKey = `${kind}Model` as 'textModel' | 'imageModel' | 'videoModel'
-    setDraft({
-      ...draft,
-      [plural]: models,
-      [defaultKey]: models.includes(draft[defaultKey]) ? draft[defaultKey] : (models[0] ?? ''),
-    })
-  }
-
   const toggleCatalogModel = (model: CatalogModel) => {
     if (!draft) return
     const applicableCapabilities = model.capabilities.filter((item) => draft.capabilities.includes(item))

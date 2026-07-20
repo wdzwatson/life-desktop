@@ -135,10 +135,12 @@ test('OpenAI-compatible adapter gives the selected thinking effort precedence ov
       timeoutMs: 1000,
       requestBody: { reasoning_effort: 'low' },
     })
-    for await (const _ of adapter.streamChat({
+    for await (const chunk of adapter.streamChat({
       messages: [{ role: 'user', content: 'Hello' }],
       reasoningEffort: 'max',
-    })) { /* Consume the stream. */ }
+    })) {
+      assert.ok(chunk)
+    }
   })
   assert.equal(receivedBody?.reasoning_effort, 'max')
 })
