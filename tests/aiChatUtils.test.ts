@@ -42,7 +42,7 @@ test('conversation ordering keeps pinned items first and then uses recent activi
   assert.deepEqual(ordered.map((item) => item.id), [2, 3, 1])
 })
 
-test('conversation selection accepts only a saved model and supported thinking level', () => {
+test('conversation selection accepts saved text and media model choices', () => {
   const conversation = {
     id: 1,
     title: 'Saved selection',
@@ -55,8 +55,16 @@ test('conversation selection accepts only a saved model and supported thinking l
     updatedAt: '',
     lastMessageAt: null,
   }
-  assert.deepEqual(getAIChatConversationSelection(conversation), { agentId: 4, thinkingLevel: 'high' })
+  assert.deepEqual(getAIChatConversationSelection(conversation), { agentId: 4, thinkingLevel: 'high', mode: 'chat' })
+  assert.deepEqual(getAIChatConversationSelection({
+    ...conversation,
+    agentSnapshot: { chatSelection: { agentId: 4, thinkingLevel: 'high', mode: 'image', imageProviderId: 8, imageModel: 'image-pro' } },
+  }), { agentId: 4, thinkingLevel: 'high', mode: 'image', imageProviderId: 8, imageModel: 'image-pro' })
   assert.equal(getAIChatConversationSelection({ ...conversation, agentSnapshot: { chatSelection: { agentId: 4, thinkingLevel: 'invalid' } } }), null)
+  assert.deepEqual(getAIChatConversationSelection({
+    ...conversation,
+    agentSnapshot: { chatSelection: { agentId: 4, thinkingLevel: 'high', mode: 'image', imageProviderId: 8 } },
+  }), { agentId: 4, thinkingLevel: 'high', mode: 'chat' })
 })
 
 test('message merging deduplicates IDs and preserves live streaming text', () => {

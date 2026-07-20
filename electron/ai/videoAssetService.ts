@@ -7,7 +7,16 @@ import type { AIVideoAdapterConfig } from './providers/videoAdapter'
 import { AIServiceError, type AIErrorDetail } from './types'
 import type { AIVideoGenerationService } from './videoGenerationService'
 
-type VideoConversations = Pick<AIConversationService, 'getConversation' | 'createMessage' | 'appendMessageParts' | 'transitionMessage' | 'createRun' | 'transitionRun'>
+type VideoConversations = Pick<AIConversationService, 'getConversation' | 'setConversationSelection' | 'createMessage' | 'appendMessageParts' | 'transitionMessage' | 'createRun' | 'transitionRun'>
+
+const THINKING_LEVELS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+
+function readThinkingLevel(snapshot: Record<string, unknown>) {
+  const selection = snapshot.chatSelection
+  if (!selection || typeof selection !== 'object' || Array.isArray(selection)) return 'medium'
+  const thinkingLevel = (selection as Record<string, unknown>).thinkingLevel
+  return typeof thinkingLevel === 'string' && THINKING_LEVELS.has(thinkingLevel) ? thinkingLevel : 'medium'
+}
 
 export type AIVideoAssetServiceDependencies = {
   db: Database.Database
@@ -55,7 +64,7 @@ export class AIVideoAssetService {
   }) {
     const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : ''
     if (!prompt) throw new AIServiceError({ code: 'invalid_input', message: 'A video prompt is required.', retryable: false })
-    this.dependencies.conversations.getConversation(input.conversationId)
+    const conversation = this.dependencies.conversations.getConversation(input.conversationId)
     const snapshot = this.dependencies.agents.getSnapshot(input.agentId)
     const providerId = input.providerId ?? snapshot.providers.video?.id
     if (!providerId) throw new AIServiceError({ code: 'configuration_incomplete', message: 'No video provider is selected.', retryable: false })
@@ -63,6 +72,15 @@ export class AIVideoAssetService {
     if (!provider.enabled || !provider.capabilities.includes('video') || !provider.models.video) {
       throw new AIServiceError({ code: 'configuration_incomplete', message: 'The Agent video provider is not ready.', retryable: false })
     }
+    const model = input.model?.trim() || provider.models.video || snapshot.providers.video?.model || ''
+    const chatSelection = {
+      agentId: input.agentId,
+      thinkingLevel: readThinkingLevel(conversation.agentSnapshot),
+      mode: 'video' as const,
+      videoProviderId: provider.id,
+      videoModel: model,
+    }
+    this.dependencies.conversations.setConversationSelection(input.conversationId, chatSelection)
     const credentials = this.dependencies.providers.getCredentialBundle(provider.id)
     const user = this.dependencies.conversations.createMessage({
       conversationId: input.conversationId,
@@ -80,7 +98,7 @@ export class AIVideoAssetService {
       conversationId: input.conversationId,
       triggerMessageId: user.id,
       assistantMessageId: assistant.id,
-      agentSnapshot: snapshot,
+      agentSnapshot: { ...snapshot, chatSelection },
       status: 'queued',
       currentStage: 'video_generation',
     })
@@ -91,7 +109,7 @@ export class AIVideoAssetService {
         baseUrl: provider.baseUrl,
         apiKey: credentials.apiKey,
         headers: credentials.headers,
-        model: input.model?.trim() || provider.models.video || snapshot.providers.video?.model || '',
+        model,
         timeoutMs: provider.timeoutMs,
       }
       const task = await this.dependencies.videoTasks.run({

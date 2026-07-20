@@ -23,10 +23,16 @@ const QUICKTIME_BYTES = Buffer.concat([
 class FakeConversations {
   messages = []
   runs = []
+  selection = null
   messageId = 0
   runId = 0
 
-  getConversation(id) { return { id } }
+  getConversation(id) { return { id, agentSnapshot: { chatSelection: { thinkingLevel: 'low' } } } }
+
+  setConversationSelection(id, selection) {
+    this.selection = selection
+    return { id, agentSnapshot: { chatSelection: selection } }
+  }
 
   createMessage(input) {
     const message = { id: ++this.messageId, status: input.status ?? 'completed', parts: [...(input.parts ?? [])], ...input }
@@ -207,6 +213,14 @@ test('video generation stores a local video message and never exposes the provid
     const result = await service.generate({ conversationId: 1, agentId: 1, prompt: 'A moving landscape' })
     assert.equal(result.assetId, assetId)
     assert.equal(conversations.runs[0].status, 'completed')
+    assert.deepEqual(conversations.selection, {
+      agentId: 1,
+      thinkingLevel: 'low',
+      mode: 'video',
+      videoProviderId: 1,
+      videoModel: 'video-1',
+    })
+    assert.deepEqual(conversations.runs[0].agentSnapshot.chatSelection, conversations.selection)
     const assistant = conversations.messages[1]
     assert.equal(assistant.status, 'completed')
     const videos = assistant.parts.filter((part) => part.type === 'video')

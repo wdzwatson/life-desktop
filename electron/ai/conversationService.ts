@@ -66,6 +66,16 @@ type ModelSwitchEventPayload = {
   toModel: string
 }
 
+type ConversationSelectionInput = {
+  agentId: number
+  thinkingLevel: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  mode?: 'chat' | 'image' | 'video'
+  imageProviderId?: number
+  imageModel?: string
+  videoProviderId?: number
+  videoModel?: string
+}
+
 type RunRow = {
   id: number
   conversation_id: number
@@ -306,23 +316,19 @@ export class AIConversationService {
     return this.getConversation(id)
   }
 
-  setConversationSelection(
-    id: number,
-    agentId: number,
-    thinkingLevel: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max',
-  ) {
+  setConversationSelection(id: number, input: ConversationSelectionInput) {
     const conversation = this.requireConversationRow(id)
-    this.requireAgent(agentId)
+    const selection = this.normalizeConversationSelection(input)
     const snapshot = parseJson<Record<string, unknown>>(conversation.agent_snapshot_json, {})
     const nextSnapshot = {
       ...snapshot,
-      chatSelection: { agentId, thinkingLevel },
+      chatSelection: selection,
     }
     this.db.prepare(`
       UPDATE ai_conversations
       SET agent_id = ?, agent_snapshot_json = ?, updated_at = ?
       WHERE id = ?
-    `).run(agentId, JSON.stringify(redactForStorage(nextSnapshot)), this.now().toISOString(), id)
+    `).run(selection.agentId, JSON.stringify(redactForStorage(nextSnapshot)), this.now().toISOString(), id)
     return this.getConversation(id)
   }
 
@@ -1192,6 +1198,40 @@ export class AIConversationService {
       toProvider: requireString(payload.toProvider, 'target provider', { max: 300 }),
       toModel: requireString(payload.toModel, 'target model', { max: 1_000 }),
     }
+  }
+
+  private normalizeConversationSelection(input: ConversationSelectionInput) {
+    const agentId = requireId(input.agentId, 'agent ID')
+    this.requireAgent(agentId)
+    const thinkingLevel = input.thinkingLevel
+    if (!['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(thinkingLevel)) {
+      throw serviceError('invalid_input', 'Invalid thinking level.')
+    }
+    const mode = input.mode ?? 'chat'
+    if (mode === 'image') {
+      const imageProviderId = requireId(input.imageProviderId, 'image provider ID')
+      this.requireProvider(imageProviderId)
+      return {
+        agentId,
+        thinkingLevel,
+        mode,
+        imageProviderId,
+        imageModel: requireString(input.imageModel, 'image model', { max: 200 }),
+      }
+    }
+    if (mode === 'video') {
+      const videoProviderId = requireId(input.videoProviderId, 'video provider ID')
+      this.requireProvider(videoProviderId)
+      return {
+        agentId,
+        thinkingLevel,
+        mode,
+        videoProviderId,
+        videoModel: requireString(input.videoModel, 'video model', { max: 200 }),
+      }
+    }
+    if (mode !== 'chat') throw serviceError('invalid_input', 'Invalid conversation mode.')
+    return { agentId, thinkingLevel, mode }
   }
 
   private requireAgent(id: number) {

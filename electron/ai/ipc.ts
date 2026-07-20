@@ -225,6 +225,38 @@ function requireThinkingLevel(value: unknown) {
   return value as typeof AI_THINKING_LEVELS[number]
 }
 
+function requireConversationSelection(data: Record<string, unknown>) {
+  const agentId = requireId(data.agentId, 'agent ID')
+  const thinkingLevel = requireThinkingLevel(data.thinkingLevel)
+  const mode = data.mode === undefined ? 'chat' : data.mode
+  if (mode === 'image') {
+    return {
+      agentId,
+      thinkingLevel,
+      mode,
+      imageProviderId: requireId(data.imageProviderId, 'image provider ID'),
+      imageModel: requireString(data.imageModel, 'image model', 200),
+    }
+  }
+  if (mode === 'video') {
+    return {
+      agentId,
+      thinkingLevel,
+      mode,
+      videoProviderId: requireId(data.videoProviderId, 'video provider ID'),
+      videoModel: requireString(data.videoModel, 'video model', 200),
+    }
+  }
+  if (mode !== 'chat') {
+    throw new AIServiceError({
+      code: 'invalid_input',
+      message: 'Invalid conversation mode.',
+      retryable: false,
+    })
+  }
+  return { agentId, thinkingLevel, mode }
+}
+
 function requireOptionalName(value: unknown) {
   if (value === undefined) return undefined
   if (typeof value !== 'string' || !value.trim() || value.length > 120) {
@@ -592,10 +624,13 @@ export function createAIConversationHandlers(
       }),
     'ai:conversations:create': (_event, payload) =>
       respondWithObject(payload, (data) => {
-        const agentId = requireId(data.agentId, 'agent ID')
         const thinkingLevel = data.thinkingLevel === undefined
           ? undefined
           : requireThinkingLevel(data.thinkingLevel)
+        const selection = thinkingLevel === undefined
+          ? undefined
+          : requireConversationSelection({ ...data, thinkingLevel })
+        const agentId = selection?.agentId ?? requireId(data.agentId, 'agent ID')
         const serviceSet = services()
         const snapshot = serviceSet.agents.getSnapshot(agentId)
         return serviceSet.conversations.createConversation({
@@ -603,7 +638,7 @@ export function createAIConversationHandlers(
           agentId,
           agentSnapshot: {
             ...snapshot,
-            ...(thinkingLevel ? { chatSelection: { agentId, thinkingLevel } } : {}),
+            ...(selection ? { chatSelection: selection } : {}),
           },
         })
       }),
@@ -611,8 +646,7 @@ export function createAIConversationHandlers(
       respondWithObject(payload, (data) =>
         services().conversations.setConversationSelection(
           requireId(data.conversationId, 'conversation ID'),
-          requireId(data.agentId, 'agent ID'),
-          requireThinkingLevel(data.thinkingLevel),
+          requireConversationSelection(data),
         )),
     'ai:conversations:rename': (_event, payload) =>
       respondWithObject(payload, (data) => {

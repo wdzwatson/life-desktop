@@ -14,20 +14,54 @@ export type AIChatConversation = {
 export type AIChatConversationSelection = {
   agentId: number
   thinkingLevel: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  mode: 'chat' | 'image' | 'video'
+  imageProviderId?: number
+  imageModel?: string
+  videoProviderId?: number
+  videoModel?: string
 }
 
 const AI_THINKING_LEVELS = new Set<AIChatConversationSelection['thinkingLevel']>([
   'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max',
 ])
 
+function readPositiveInteger(value: unknown) {
+  return Number.isInteger(value) && Number(value) > 0 ? Number(value) : undefined
+}
+
+function readNonEmptyString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
 export function getAIChatConversationSelection(conversation: AIChatConversation | null | undefined): AIChatConversationSelection | null {
-  const selection = conversation?.agentSnapshot?.chatSelection
+  return getAIChatSnapshotSelection(conversation?.agentSnapshot)
+}
+
+export function getAIChatSnapshotSelection(snapshot: Record<string, unknown> | null | undefined): AIChatConversationSelection | null {
+  const selection = snapshot?.chatSelection
   if (!selection || typeof selection !== 'object' || Array.isArray(selection)) return null
   const { agentId, thinkingLevel } = selection as Record<string, unknown>
   if (!Number.isInteger(agentId) || Number(agentId) < 1 || typeof thinkingLevel !== 'string' || !AI_THINKING_LEVELS.has(thinkingLevel as AIChatConversationSelection['thinkingLevel'])) {
     return null
   }
-  return { agentId: Number(agentId), thinkingLevel: thinkingLevel as AIChatConversationSelection['thinkingLevel'] }
+  const record = selection as Record<string, unknown>
+  const mode: AIChatConversationSelection['mode'] = record.mode === 'image' || record.mode === 'video' ? record.mode : 'chat'
+  const base: Pick<AIChatConversationSelection, 'agentId' | 'thinkingLevel' | 'mode'> = {
+    agentId: Number(agentId),
+    thinkingLevel: thinkingLevel as AIChatConversationSelection['thinkingLevel'],
+    mode,
+  }
+  if (mode === 'image') {
+    const imageProviderId = readPositiveInteger(record.imageProviderId)
+    const imageModel = readNonEmptyString(record.imageModel)
+    return imageProviderId && imageModel ? { ...base, imageProviderId, imageModel } : { ...base, mode: 'chat' }
+  }
+  if (mode === 'video') {
+    const videoProviderId = readPositiveInteger(record.videoProviderId)
+    const videoModel = readNonEmptyString(record.videoModel)
+    return videoProviderId && videoModel ? { ...base, videoProviderId, videoModel } : { ...base, mode: 'chat' }
+  }
+  return base
 }
 
 export type AIChatMediaPart = {

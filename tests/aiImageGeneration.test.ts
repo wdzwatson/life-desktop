@@ -50,9 +50,14 @@ test('image adapter polls same-origin asynchronous tasks and rejects unsafe stat
 class FakeConversations {
   messages: any[] = []
   runs: any[] = []
+  selection: any
   private messageId = 0
   private runId = 0
-  getConversation(id: number) { return { id } }
+  getConversation(id: number) { return { id, agentSnapshot: { chatSelection: { thinkingLevel: 'high' } } } }
+  setConversationSelection(_id: number, selection: any) {
+    this.selection = selection
+    return { id: _id, agentSnapshot: { chatSelection: selection } }
+  }
   createMessage(input: any) {
     const message = { id: ++this.messageId, status: input.status ?? 'completed', parts: [...(input.parts ?? [])], ...input }
     this.messages.push(message)
@@ -130,6 +135,14 @@ test('image generation persists provider results as local image blocks and never
   const result = await context.service.generate({ conversationId: 1, agentId: 1, prompt: 'Two images', count: 2 })
   assert.equal(result.assets.length, 2)
   assert.equal(context.conversations.runs[0].status, 'completed')
+  assert.deepEqual(context.conversations.selection, {
+    agentId: 1,
+    thinkingLevel: 'high',
+    mode: 'image',
+    imageProviderId: 2,
+    imageModel: 'image-1',
+  })
+  assert.deepEqual(context.conversations.runs[0].agentSnapshot.chatSelection, context.conversations.selection)
   const assistant = context.conversations.messages[1]
   const images = assistant.parts.filter((part: any) => part.type === 'image')
   assert.deepEqual(images.map((part: any) => part.assetId), [41, 42])

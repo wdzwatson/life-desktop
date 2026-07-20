@@ -5,7 +5,16 @@ import type { AIProviderService } from './providerService'
 import { AIImageAdapter, type AIImageAdapterConfig } from './providers/imageAdapter'
 import { AIServiceError, type AIErrorDetail } from './types'
 
-type ImageConversations = Pick<AIConversationService, 'getConversation' | 'createMessage' | 'appendMessageParts' | 'transitionMessage' | 'createRun' | 'transitionRun'>
+type ImageConversations = Pick<AIConversationService, 'getConversation' | 'setConversationSelection' | 'createMessage' | 'appendMessageParts' | 'transitionMessage' | 'createRun' | 'transitionRun'>
+
+const THINKING_LEVELS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+
+function readThinkingLevel(snapshot: Record<string, unknown>) {
+  const selection = snapshot.chatSelection
+  if (!selection || typeof selection !== 'object' || Array.isArray(selection)) return 'medium'
+  const thinkingLevel = (selection as Record<string, unknown>).thinkingLevel
+  return typeof thinkingLevel === 'string' && THINKING_LEVELS.has(thinkingLevel) ? thinkingLevel : 'medium'
+}
 
 export type AIImageGenerationDependencies = {
   agents: Pick<AIAgentService, 'getSnapshot'>
@@ -29,7 +38,7 @@ export class AIImageGenerationService {
   async generate(input: { conversationId: number; agentId: number; prompt: string; count?: number; size?: string; providerId?: number; model?: string; signal?: AbortSignal }) {
     const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : ''
     if (!prompt) throw new AIServiceError({ code: 'invalid_input', message: 'An image prompt is required.', retryable: false })
-    this.dependencies.conversations.getConversation(input.conversationId)
+    const conversation = this.dependencies.conversations.getConversation(input.conversationId)
     const snapshot = this.dependencies.agents.getSnapshot(input.agentId)
     const providerId = input.providerId ?? snapshot.providers.image?.id
     if (!providerId) throw new AIServiceError({ code: 'configuration_incomplete', message: 'No image provider is selected.', retryable: false })
@@ -37,6 +46,15 @@ export class AIImageGenerationService {
     if (!provider.enabled || !provider.capabilities.includes('image') || !provider.models.image) {
       throw new AIServiceError({ code: 'configuration_incomplete', message: 'The Agent image provider is not ready.', retryable: false })
     }
+    const model = input.model?.trim() || provider.models.image || snapshot.providers.image?.model || ''
+    const chatSelection = {
+      agentId: input.agentId,
+      thinkingLevel: readThinkingLevel(conversation.agentSnapshot),
+      mode: 'image' as const,
+      imageProviderId: provider.id,
+      imageModel: model,
+    }
+    this.dependencies.conversations.setConversationSelection(input.conversationId, chatSelection)
     const credentials = this.dependencies.providers.getCredentialBundle(provider.id)
     const user = this.dependencies.conversations.createMessage({
       conversationId: input.conversationId,
@@ -54,7 +72,7 @@ export class AIImageGenerationService {
       conversationId: input.conversationId,
       triggerMessageId: user.id,
       assistantMessageId: assistant.id,
-      agentSnapshot: snapshot,
+      agentSnapshot: { ...snapshot, chatSelection },
       status: 'queued',
       currentStage: 'image_generation',
     })
@@ -65,7 +83,7 @@ export class AIImageGenerationService {
         baseUrl: provider.baseUrl,
         apiKey: credentials.apiKey,
         headers: credentials.headers,
-        model: input.model?.trim() || provider.models.image || snapshot.providers.image?.model || '',
+        model,
         timeoutMs: provider.timeoutMs,
       })
       const generated = await adapter.generate({ prompt, count: input.count, size: input.size, signal: input.signal })

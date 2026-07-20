@@ -13,8 +13,8 @@ function setup() {
       .prepare(
         `
         INSERT INTO ai_providers (
-          name, protocol, base_url, capabilities_json, text_model, enabled
-        ) VALUES ('Provider', 'openai_compatible', 'https://api.test/v1', '["text","streaming"]', 'chat', 1)
+          name, protocol, base_url, capabilities_json, text_model, image_model, enabled
+        ) VALUES ('Provider', 'openai_compatible', 'https://api.test/v1', '["text","streaming","image"]', 'chat', 'image', 1)
         `,
       )
       .run().lastInsertRowid,
@@ -24,12 +24,12 @@ function setup() {
       .prepare(
         `
         INSERT INTO ai_agents (
-          name, system_prompt, text_provider_id, model_params_json, context_json,
+          name, system_prompt, text_provider_id, image_provider_id, model_params_json, context_json,
           allowed_tools_json, blocked_tools_json, enabled, configuration_status
-        ) VALUES ('Agent', 'Stay concise.', ?, '{}', '{"maxMessages":20}', '[]', '[]', 1, 'ready')
+        ) VALUES ('Agent', 'Stay concise.', ?, ?, '{}', '{"maxMessages":20}', '[]', '[]', 1, 'ready')
         `,
       )
-      .run(providerId).lastInsertRowid,
+      .run(providerId, providerId).lastInsertRowid,
   )
   const active = new Set()
   const handlers = createAIConversationHandlers({
@@ -57,7 +57,23 @@ test('conversation IPC creates snapshot-backed conversations and manages their h
   })
   assert.equal(selected.success, true)
   assert.equal(selected.data.agentId, context.agentId)
-  assert.deepEqual(selected.data.agentSnapshot.chatSelection, { agentId: context.agentId, thinkingLevel: 'high' })
+  assert.deepEqual(selected.data.agentSnapshot.chatSelection, { agentId: context.agentId, thinkingLevel: 'high', mode: 'chat' })
+  const imageSelected = await context.handlers['ai:conversations:setSelection']({}, {
+    conversationId,
+    agentId: context.agentId,
+    thinkingLevel: 'high',
+    mode: 'image',
+    imageProviderId: selected.data.agentSnapshot.providers.image.id,
+    imageModel: selected.data.agentSnapshot.providers.image.model,
+  })
+  assert.equal(imageSelected.success, true)
+  assert.deepEqual(imageSelected.data.agentSnapshot.chatSelection, {
+    agentId: context.agentId,
+    thinkingLevel: 'high',
+    mode: 'image',
+    imageProviderId: selected.data.agentSnapshot.providers.image.id,
+    imageModel: selected.data.agentSnapshot.providers.image.model,
+  })
   const service = new AIConversationService(context.db)
   service.createMessage({
     conversationId,
