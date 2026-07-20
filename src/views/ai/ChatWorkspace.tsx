@@ -12,6 +12,7 @@ import {
   Square,
   TimerReset,
   TriangleAlert,
+  Type,
   Video,
   X,
 } from 'lucide-react'
@@ -38,6 +39,7 @@ import {
   createOptimisticMediaMessages,
   createOptimisticRunMessages,
   getAIChatConversationSelection,
+  getAIChatSnapshotSelection,
   getAIChatRetryText,
   getAIComposerIntent,
   loadAllAIChatMessages,
@@ -75,6 +77,8 @@ export type AIChatMediaProvider = {
   models: { imageOptions?: string[]; image?: string; videoOptions?: string[]; video?: string }
 }
 
+type AIChatSelectionMode = 'chat' | 'image' | 'video'
+
 type ChatWorkspaceProps = {
   models: AIChatModel[]
   mediaProviders: AIChatMediaProvider[]
@@ -110,6 +114,20 @@ type ModelSwitchConversationEvent = {
   createdAt: string
 }
 
+type AIChatRunRecord = {
+  id: number
+  assistantMessageId: number | null
+  agentSnapshot: Record<string, unknown>
+  status: AIChatRunState['status']
+  currentStage?: string | null
+  usage?: Record<string, unknown>
+  error?: { code?: string; message?: string } | null
+  startedAt?: string | null
+  completedAt?: string | null
+  lastActivityAt?: string | null
+  createdAt: string
+}
+
 function isTerminalRun(status: AIChatRunState['status'] | undefined) {
   return status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'interrupted'
 }
@@ -127,6 +145,20 @@ function errorMessage(response: unknown, fallback: string) {
     if (typeof error?.message === 'string' && error.message) return error.message
   }
   return fallback
+}
+
+function getMediaModelOptions(provider: AIChatMediaProvider | undefined, mediaType: 'image' | 'video') {
+  if (!provider) return []
+  if (mediaType === 'image') {
+    return provider.models.imageOptions?.length ? provider.models.imageOptions : provider.models.image ? [provider.models.image] : []
+  }
+  return provider.models.videoOptions?.length ? provider.models.videoOptions : provider.models.video ? [provider.models.video] : []
+}
+
+function hasSavedSelectionMode(conversation: AIChatConversation | null | undefined) {
+  const selection = conversation?.agentSnapshot?.chatSelection
+  if (!selection || typeof selection !== 'object' || Array.isArray(selection)) return false
+  return ['chat', 'image', 'video'].includes(String((selection as Record<string, unknown>).mode ?? ''))
 }
 
 export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSettings, onOpenProviders, onOpenModels }: ChatWorkspaceProps) {
@@ -217,8 +249,89 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
   const videoProviders = useMemo(() => mediaProviders.filter((provider) => provider.enabled && provider.capabilities.includes('video') && provider.models.video), [mediaProviders])
   const selectedImageProvider = imageProviders.find((provider) => provider.id === selectedImageProviderId) ?? imageProviders[0]
   const selectedVideoProvider = videoProviders.find((provider) => provider.id === selectedVideoProviderId) ?? videoProviders[0]
-  const imageModels = selectedImageProvider?.models.imageOptions?.length ? selectedImageProvider.models.imageOptions : selectedImageProvider?.models.image ? [selectedImageProvider.models.image] : []
-  const videoModels = selectedVideoProvider?.models.videoOptions?.length ? selectedVideoProvider.models.videoOptions : selectedVideoProvider?.models.video ? [selectedVideoProvider.models.video] : []
+  const imageModels = getMediaModelOptions(selectedImageProvider, 'image')
+  const videoModels = getMediaModelOptions(selectedVideoProvider, 'video')
+  const activeSelectionMode: AIChatSelectionMode = imageMode ? 'image' : videoMode ? 'video' : 'chat'
+  const canUseImageComposer = imageProviders.length > 0 && Boolean(api?.generateAIImages)
+  const canUseVideoComposer = videoProviders.length > 0 && Boolean(api?.generateAIVideos)
+  const stageModelLabel = imageMode
+    ? `${selectedImageProvider?.name ?? t('aiChat.chat.no_provider_option')} · ${selectedImageModel || t('aiChat.chat.no_model_option')}`
+    : videoMode
+      ? `${selectedVideoProvider?.name ?? t('aiChat.chat.no_provider_option')} · ${selectedVideoModel || t('aiChat.chat.no_model_option')}`
+      : activeModel
+        ? `${activeModel.providerName} · ${activeModel.textModel}`
+        : t('aiChat.chat.start_desc')
+  const applyConversationSelection = useCallback((
+    savedSelection: ReturnType<typeof getAIChatConversationSelection>,
+    fallbackAgentId: number | null | undefined,
+    resetWhenMissing = true,
+  ) => {
+    const targetAgentId = savedSelection?.agentId ?? fallbackAgentId
+    const savedModel = readyModels.find((model) => model.id === targetAgentId)
+    if (!savedModel) return false
+    setSelectedAgentId(savedModel.id)
+    const savedThinkingLevel = savedSelection?.thinkingLevel
+    if (savedThinkingLevel && getAIThinkingLevels(savedModel.textModel).includes(savedThinkingLevel)) {
+      setThinkingLevel(savedThinkingLevel)
+    }
+    if (savedSelection?.mode === 'image') {
+      const savedProvider = imageProviders.find((provider) => provider.id === savedSelection.imageProviderId)
+      if (savedProvider && getMediaModelOptions(savedProvider, 'image').includes(savedSelection.imageModel ?? '')) {
+        setSelectedImageProviderId(savedProvider.id)
+        setSelectedImageModel(savedSelection.imageModel ?? '')
+        setImageMode(true)
+        setVideoMode(false)
+        return true
+      }
+    }
+    if (savedSelection?.mode === 'video') {
+      const savedProvider = videoProviders.find((provider) => provider.id === savedSelection.videoProviderId)
+      if (savedProvider && getMediaModelOptions(savedProvider, 'video').includes(savedSelection.videoModel ?? '')) {
+        setSelectedVideoProviderId(savedProvider.id)
+        setSelectedVideoModel(savedSelection.videoModel ?? '')
+        setVideoMode(true)
+        setImageMode(false)
+        return true
+      }
+    }
+    if (resetWhenMissing) {
+      setImageMode(false)
+      setVideoMode(false)
+    }
+    return true
+  }, [imageProviders, readyModels, videoProviders])
+
+  const inferMediaSelection = useCallback((mediaType: 'image' | 'video', agentId: number | null | undefined) => {
+    const model = readyModels.find((item) => item.id === agentId)
+    if (mediaType === 'image') {
+      const provider = imageProviders.find((item) => item.id === model?.providers.image) ?? imageProviders[0]
+      const imageModel = getMediaModelOptions(provider, 'image')[0] ?? ''
+      return provider && imageModel && agentId
+        ? { agentId, thinkingLevel, mode: 'image' as const, imageProviderId: provider.id, imageModel }
+        : null
+    }
+    const provider = videoProviders.find((item) => item.id === model?.providers.video) ?? videoProviders[0]
+    const videoModel = getMediaModelOptions(provider, 'video')[0] ?? ''
+    return provider && videoModel && agentId
+      ? { agentId, thinkingLevel, mode: 'video' as const, videoProviderId: provider.id, videoModel }
+      : null
+  }, [imageProviders, readyModels, thinkingLevel, videoProviders])
+
+  const inferMediaSelectionFromMessages = useCallback((loadedMessages: AIChatMessage[], agentId: number | null | undefined) => {
+    for (let messageIndex = loadedMessages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+      const message = loadedMessages[messageIndex]
+      for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex -= 1) {
+        const part = message.parts[partIndex]
+        if (part.type === 'image' || (part.type === 'media_task' && part.mediaType === 'image')) {
+          return inferMediaSelection('image', agentId)
+        }
+        if (part.type === 'video' || (part.type === 'media_task' && part.mediaType === 'video')) {
+          return inferMediaSelection('video', agentId)
+        }
+      }
+    }
+    return null
+  }, [inferMediaSelection])
 
   useEffect(() => {
     if (imageMode && !selectedImageProvider) setImageMode(false)
@@ -307,16 +420,8 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
 
   useEffect(() => {
     if (!activeConversation) return
-    const savedSelection = getAIChatConversationSelection(activeConversation)
-    const targetAgentId = savedSelection?.agentId ?? activeConversation.agentId
-    const savedModel = readyModels.find((model) => model.id === targetAgentId)
-    if (!savedModel) return
-    setSelectedAgentId(savedModel.id)
-    const savedThinkingLevel = savedSelection?.thinkingLevel
-    if (savedThinkingLevel && getAIThinkingLevels(savedModel.textModel).includes(savedThinkingLevel)) {
-      setThinkingLevel(savedThinkingLevel)
-    }
-  }, [activeConversation, readyModels])
+    applyConversationSelection(getAIChatConversationSelection(activeConversation), activeConversation.agentId)
+  }, [activeConversation, applyConversationSelection])
 
   const loadConversations = useCallback(async () => {
     if (!api?.listAIConversations) return
@@ -371,8 +476,13 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
         setLoadingMessages(false)
         return
       }
-      setMessages((current) => mergeAIChatMessages(current, response.data ?? [], mode))
-      setHasOlderMessages((response.data?.length ?? 0) === 50)
+      const incoming = response.data ?? []
+      if (mode === 'replace' && !hasSavedSelectionMode(activeConversation)) {
+        const inferred = inferMediaSelectionFromMessages(incoming, activeConversation?.agentId ?? selectedAgentId)
+        if (inferred) applyConversationSelection(inferred, inferred.agentId, false)
+      }
+      setMessages((current) => mergeAIChatMessages(current, incoming, mode))
+      setHasOlderMessages(incoming.length === 50)
       setLoadingMessages(false)
       if (mode === 'prepend') {
         window.requestAnimationFrame(() => {
@@ -383,7 +493,7 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
         followOutputRef.current = true
       }
     },
-    [api, t],
+    [activeConversation, api, applyConversationSelection, inferMediaSelectionFromMessages, selectedAgentId, t],
   )
 
   const loadConversationEvents = useCallback(async (conversationId: number) => {
@@ -430,10 +540,16 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
     void loadMessages(activeConversationId)
     void loadConversationEvents(activeConversationId)
     if (api?.listAIConversationRuns) {
-      void api.listAIConversationRuns(activeConversationId, 1).then((response: ApiResponse<any[]>) => {
+      void api.listAIConversationRuns(activeConversationId, 20).then((response: ApiResponse<AIChatRunRecord[]>) => {
         if (!response?.success || activeConversationRef.current !== activeConversationId) return
         const latest = response.data?.[0]
         if (!latest) return
+        if (!hasSavedSelectionMode(activeConversation)) {
+          const mediaSelection = response.data
+            ?.map((run) => getAIChatSnapshotSelection(run.agentSnapshot))
+            .find((selection) => selection?.mode === 'image' || selection?.mode === 'video')
+          if (mediaSelection) applyConversationSelection(mediaSelection, mediaSelection.agentId, false)
+        }
         setRunStates((current) => ({
           ...current,
           [activeConversationId]: {
@@ -452,7 +568,7 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
         }))
       })
     }
-  }, [activeConversationId, api, loadConversationEvents, loadMessages])
+  }, [activeConversation, activeConversationId, api, applyConversationSelection, loadConversationEvents, loadMessages])
 
   const flushRunEvents = useCallback(() => {
     if (runEventFlushTimerRef.current !== null) {
@@ -612,6 +728,38 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
     }
   }, [api, modelSwitchMarkers, t])
 
+  const buildConversationSelection = useCallback((
+    mode: AIChatSelectionMode = activeSelectionMode,
+    overrides: {
+      imageProviderId?: number
+      imageModel?: string
+      videoProviderId?: number
+      videoModel?: string
+    } = {},
+  ) => {
+    if (mode === 'image') {
+      const imageProviderId = overrides.imageProviderId ?? selectedImageProvider?.id
+      const imageModel = overrides.imageModel ?? (selectedImageModel || getMediaModelOptions(selectedImageProvider, 'image')[0] || '')
+      return imageProviderId && imageModel
+        ? { mode, imageProviderId, imageModel }
+        : { mode: 'chat' as const }
+    }
+    if (mode === 'video') {
+      const videoProviderId = overrides.videoProviderId ?? selectedVideoProvider?.id
+      const videoModel = overrides.videoModel ?? (selectedVideoModel || getMediaModelOptions(selectedVideoProvider, 'video')[0] || '')
+      return videoProviderId && videoModel
+        ? { mode, videoProviderId, videoModel }
+        : { mode: 'chat' as const }
+    }
+    return { mode: 'chat' as const }
+  }, [
+    activeSelectionMode,
+    selectedImageModel,
+    selectedImageProvider,
+    selectedVideoModel,
+    selectedVideoProvider,
+  ])
+
   const createConversation = async (agentId = selectedAgentId) => {
     if (!agentId || !api?.createAIConversation) {
       setNotice(t('aiChat.chat.model_required'))
@@ -628,6 +776,7 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
       t('aiChat.chat.untitled_timestamp', { value: timestamp }),
       agentId,
       thinkingLevel,
+      buildConversationSelection(),
     )) as ApiResponse<AIChatConversation>
     if (!response?.success) {
       setNotice(errorMessage(response, t('aiChat.chat.create_failed')))
@@ -645,9 +794,10 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
     conversationId: number,
     agentId: number,
     nextThinkingLevel: AIThinkingLevel,
+    selection = buildConversationSelection(),
   ) => {
     if (!api?.setAIConversationSelection) return
-    const response = (await api.setAIConversationSelection(conversationId, agentId, nextThinkingLevel)) as ApiResponse<AIChatConversation>
+    const response = (await api.setAIConversationSelection(conversationId, agentId, nextThinkingLevel, selection)) as ApiResponse<AIChatConversation>
     if (!response?.success) {
       setNotice(errorMessage(response, t('aiChat.chat.messages_load_failed')))
       return
@@ -655,7 +805,7 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
     setConversations((current) => current.map((conversation) =>
       conversation.id === response.data.id ? response.data : conversation,
     ))
-  }, [api, t])
+  }, [api, buildConversationSelection, t])
 
   const titleConversationFromPrompt = async (conversation: AIChatConversation, text: string) => {
     if (conversation.messageCount !== 0 || !api?.renameAIConversation) return conversation
@@ -721,6 +871,7 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
         setNotice(t('aiChat.images.provider_required'))
         return
       }
+      await persistConversationSelection(conversation.id, agentId, thinkingLevel, buildConversationSelection('image'))
       setSubmitting(true)
       setActiveMediaGeneration({ conversationId: conversation.id, mediaType: 'image' })
       mediaCancellationRequestedRef.current = false
@@ -767,6 +918,7 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
         setNotice(t('aiChat.videos.provider_required'))
         return
       }
+      await persistConversationSelection(conversation.id, agentId, thinkingLevel, buildConversationSelection('video'))
       setSubmitting(true)
       setActiveMediaGeneration({ conversationId: conversation.id, mediaType: 'video' })
       mediaCancellationRequestedRef.current = false
@@ -928,15 +1080,17 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
     void sendText()
   }
 
-  const handleModelChange = (agentId: number) => {
-    const nextModel = readyModels.find((model) => model.id === agentId)
-    const previousModel = activeModel
-    if (!nextModel) return
-    const nextThinkingLevel = getAIThinkingLevels(nextModel.textModel)[0]
-    setSelectedAgentId(agentId)
-    setThinkingLevel(nextThinkingLevel)
-    if (activeConversationId) void persistConversationSelection(activeConversationId, agentId, nextThinkingLevel)
-    if (!activeConversationId || !previousModel || previousModel.id === nextModel.id) return
+  const queueModelSwitchMarker = useCallback((
+    switchState: Omit<ModelSwitchMarker, 'id' | 'conversationId' | 'afterMessageId' | 'ready' | 'dirty' | 'saving'>,
+  ) => {
+    if (!activeConversationId) return
+    if (
+      switchState.fromAgentId === switchState.toAgentId
+      && switchState.fromProvider === switchState.toProvider
+      && switchState.fromModel === switchState.toModel
+    ) {
+      return
+    }
     const roundActive = isRunning || isMediaRunning || submitting
     const afterMessageId = isRunning && activeRun?.messageId
       ? activeRun.messageId
@@ -948,12 +1102,7 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
       id: --modelSwitchMarkerIdRef.current,
       conversationId: activeConversationId,
       afterMessageId,
-      fromAgentId: previousModel.id,
-      fromProvider: previousModel.providerName,
-      fromModel: previousModel.textModel,
-      toAgentId: nextModel.id,
-      toProvider: nextModel.providerName,
-      toModel: nextModel.textModel,
+      ...switchState,
       ready: !roundActive,
       dirty: true,
       saving: false,
@@ -962,7 +1111,11 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
       const latestIndex = current.findLastIndex((marker) => marker.conversationId === activeConversationId)
       const latest = latestIndex >= 0 ? current[latestIndex] : undefined
       if (latest && latest.afterMessageId === nextMarker.afterMessageId && latest.ready === nextMarker.ready) {
-        if (latest.fromAgentId === nextMarker.toAgentId) {
+        if (
+          latest.fromAgentId === nextMarker.toAgentId
+          && latest.fromProvider === nextMarker.toProvider
+          && latest.fromModel === nextMarker.toModel
+        ) {
           if (latest.ready && api?.deleteAIModelSwitchEvent) {
             void api.deleteAIModelSwitchEvent(latest.conversationId, latest.afterMessageId).then((response: ApiResponse<{ deleted: boolean }>) => {
               if (!response?.success) setNotice(errorMessage(response, t('aiChat.chat.messages_load_failed')))
@@ -980,12 +1133,182 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
       }
       return [...current, nextMarker]
     })
+  }, [activeConversationId, activeRun, api, isMediaRunning, isRunning, messages, submitting, t])
+
+  const handleModelChange = (agentId: number) => {
+    const nextModel = readyModels.find((model) => model.id === agentId)
+    const previousModel = activeModel
+    if (!nextModel) return
+    const nextThinkingLevel = getAIThinkingLevels(nextModel.textModel)[0]
+    setSelectedAgentId(agentId)
+    setThinkingLevel(nextThinkingLevel)
+    if (activeConversationId) void persistConversationSelection(activeConversationId, agentId, nextThinkingLevel)
+    if (!previousModel || previousModel.id === nextModel.id) return
+    queueModelSwitchMarker({
+      fromAgentId: previousModel.id,
+      fromProvider: previousModel.providerName,
+      fromModel: previousModel.textModel,
+      toAgentId: nextModel.id,
+      toProvider: nextModel.providerName,
+      toModel: nextModel.textModel,
+    })
   }
 
   const handleProviderChange = (providerId: number) => {
     const provider = providerOptions.find((item) => item.id === providerId)
     const nextModel = provider?.models.find((model) => model.isDefault) ?? provider?.models[0]
     if (nextModel) handleModelChange(nextModel.id)
+  }
+
+  const handleStageProviderChange = (providerId: number) => {
+    if (imageMode) {
+      const previousProvider = selectedImageProvider
+      const previousModel = selectedImageModel
+      const provider = imageProviders.find((item) => item.id === providerId)
+      const models = getMediaModelOptions(provider, 'image')
+      const nextModel = models.includes(selectedImageModel) ? selectedImageModel : models[0] ?? ''
+      setSelectedImageProviderId(providerId)
+      setSelectedImageModel(nextModel)
+      if (activeConversationId && selectedAgentId && nextModel) {
+        void persistConversationSelection(activeConversationId, selectedAgentId, thinkingLevel, {
+          mode: 'image',
+          imageProviderId: providerId,
+          imageModel: nextModel,
+        })
+      }
+      if (previousProvider && nextModel && selectedAgentId) {
+        queueModelSwitchMarker({
+          fromAgentId: selectedAgentId,
+          fromProvider: previousProvider.name,
+          fromModel: previousModel,
+          toAgentId: selectedAgentId,
+          toProvider: provider?.name ?? previousProvider.name,
+          toModel: nextModel,
+        })
+      }
+      return
+    }
+    if (videoMode) {
+      const previousProvider = selectedVideoProvider
+      const previousModel = selectedVideoModel
+      const provider = videoProviders.find((item) => item.id === providerId)
+      const models = getMediaModelOptions(provider, 'video')
+      const nextModel = models.includes(selectedVideoModel) ? selectedVideoModel : models[0] ?? ''
+      setSelectedVideoProviderId(providerId)
+      setSelectedVideoModel(nextModel)
+      if (activeConversationId && selectedAgentId && nextModel) {
+        void persistConversationSelection(activeConversationId, selectedAgentId, thinkingLevel, {
+          mode: 'video',
+          videoProviderId: providerId,
+          videoModel: nextModel,
+        })
+      }
+      if (previousProvider && nextModel && selectedAgentId) {
+        queueModelSwitchMarker({
+          fromAgentId: selectedAgentId,
+          fromProvider: previousProvider.name,
+          fromModel: previousModel,
+          toAgentId: selectedAgentId,
+          toProvider: provider?.name ?? previousProvider.name,
+          toModel: nextModel,
+        })
+      }
+      return
+    }
+    handleProviderChange(providerId)
+  }
+
+  const handleStageModelChange = (value: string) => {
+    if (imageMode) {
+      const previousProvider = selectedImageProvider
+      const previousModel = selectedImageModel
+      setSelectedImageModel(value)
+      if (activeConversationId && selectedAgentId) {
+        void persistConversationSelection(activeConversationId, selectedAgentId, thinkingLevel, {
+          mode: 'image',
+          imageProviderId: selectedImageProvider?.id,
+          imageModel: value,
+        })
+      }
+      if (previousProvider && previousModel !== value && selectedAgentId) {
+        queueModelSwitchMarker({
+          fromAgentId: selectedAgentId,
+          fromProvider: previousProvider.name,
+          fromModel: previousModel,
+          toAgentId: selectedAgentId,
+          toProvider: previousProvider.name,
+          toModel: value,
+        })
+      }
+      return
+    }
+    if (videoMode) {
+      const previousProvider = selectedVideoProvider
+      const previousModel = selectedVideoModel
+      setSelectedVideoModel(value)
+      if (activeConversationId && selectedAgentId) {
+        void persistConversationSelection(activeConversationId, selectedAgentId, thinkingLevel, {
+          mode: 'video',
+          videoProviderId: selectedVideoProvider?.id,
+          videoModel: value,
+        })
+      }
+      if (previousProvider && previousModel !== value && selectedAgentId) {
+        queueModelSwitchMarker({
+          fromAgentId: selectedAgentId,
+          fromProvider: previousProvider.name,
+          fromModel: previousModel,
+          toAgentId: selectedAgentId,
+          toProvider: previousProvider.name,
+          toModel: value,
+        })
+      }
+      return
+    }
+    handleModelChange(Number(value))
+  }
+
+  const handleComposerModeChange = (nextMode: AIChatSelectionMode) => {
+    if (nextMode === activeSelectionMode) return
+    if (nextMode === 'image') {
+      if (!selectedImageProvider) {
+        setNotice(t('aiChat.images.provider_required_action'))
+        return
+      }
+      if (!api?.generateAIImages) {
+        setNotice(t('aiChat.images.feature_unavailable'))
+        return
+      }
+      const selection = buildConversationSelection('image')
+      setImageMode(true)
+      setVideoMode(false)
+      if (activeConversationId && selectedAgentId) {
+        void persistConversationSelection(activeConversationId, selectedAgentId, thinkingLevel, selection)
+      }
+      return
+    }
+    if (nextMode === 'video') {
+      if (!selectedVideoProvider) {
+        setNotice(t('aiChat.videos.provider_required_action'))
+        return
+      }
+      if (!api?.generateAIVideos) {
+        setNotice(t('aiChat.videos.feature_unavailable'))
+        return
+      }
+      const selection = buildConversationSelection('video')
+      setVideoMode(true)
+      setImageMode(false)
+      if (activeConversationId && selectedAgentId) {
+        void persistConversationSelection(activeConversationId, selectedAgentId, thinkingLevel, selection)
+      }
+      return
+    }
+    setImageMode(false)
+    setVideoMode(false)
+    if (activeConversationId && selectedAgentId) {
+      void persistConversationSelection(activeConversationId, selectedAgentId, thinkingLevel, { mode: 'chat' })
+    }
   }
 
   const handleThinkingChange = (nextThinkingLevel: AIThinkingLevel) => {
@@ -1104,7 +1427,7 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
         <header className="ai-chat-stage__header">
           <div>
             <h2>{activeConversation?.title ?? t('aiChat.chat.start_title')}</h2>
-            <p>{activeModel ? `${activeModel.providerName} · ${activeModel.textModel}` : t('aiChat.chat.start_desc')}</p>
+            <p>{stageModelLabel}</p>
           </div>
           <div className="ai-chat-stage__controls">
             <button
@@ -1123,9 +1446,7 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
                 disabled={imageMode ? imageProviders.length === 0 : videoMode ? videoProviders.length === 0 : providerOptions.length === 0}
                 onChange={(event) => {
                   const providerId = Number(event.target.value)
-                  if (imageMode) setSelectedImageProviderId(providerId)
-                  else if (videoMode) setSelectedVideoProviderId(providerId)
-                  else handleProviderChange(providerId)
+                  handleStageProviderChange(providerId)
                 }}
                 aria-label={t('aiChat.chat.select_provider')}
               >
@@ -1140,7 +1461,7 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
               <select
                 value={imageMode ? selectedImageModel : videoMode ? selectedVideoModel : selectedAgentId ?? ''}
                 disabled={imageMode ? imageModels.length === 0 : videoMode ? videoModels.length === 0 : providerModels.length === 0}
-                onChange={(event) => imageMode ? setSelectedImageModel(event.target.value) : videoMode ? setSelectedVideoModel(event.target.value) : handleModelChange(Number(event.target.value))}
+                onChange={(event) => handleStageModelChange(event.target.value)}
                 aria-label={t('aiChat.chat.select_model')}
               >
                 {imageMode ? imageModels.map((model) => <option key={model} value={model}>{model}</option>) : videoMode ? videoModels.map((model) => <option key={model} value={model}>{model}</option>) : providerModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
@@ -1148,12 +1469,12 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
               <span className="ai-chat-stage__selector-value" aria-hidden="true">{imageMode ? selectedImageModel : videoMode ? selectedVideoModel : activeModel?.name ?? t('aiChat.chat.no_model_option')}</span>
               <ChevronDown size={12} aria-hidden="true" />
             </label>
-            <label className="ai-chat-stage__selector ai-chat-stage__selector--thinking">
+            {!imageMode && !videoMode && <label className="ai-chat-stage__selector ai-chat-stage__selector--thinking">
               <Gauge size={14} aria-hidden="true" />
               <span className="sr-only">{t('aiChat.chat.select_thinking')}</span>
               <select
                 value={thinkingLevel}
-                disabled={imageMode || videoMode || !activeModel || thinkingLevels.length < 2}
+                disabled={!activeModel || thinkingLevels.length < 2}
                 onChange={(event) => handleThinkingChange(event.target.value as AIThinkingLevel)}
                 aria-label={t('aiChat.chat.select_thinking')}
               >
@@ -1161,14 +1482,16 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
               </select>
               <span className="ai-chat-stage__selector-value" aria-hidden="true">{t(`aiChat.chat.thinking_${thinkingLevel}`)}</span>
               <ChevronDown size={12} aria-hidden="true" />
-            </label>
+            </label>}
             <button
               className="ai-chat-stage__export"
               onClick={() => void exportConversation()}
               disabled={!activeConversation || messages.length === 0 || exportingConversation}
+              aria-label={t(exportingConversation ? 'aiChat.chat.exporting' : 'aiChat.chat.export')}
+              title={t(exportingConversation ? 'aiChat.chat.exporting' : 'aiChat.chat.export')}
             >
               <Download size={13} aria-hidden="true" />
-              {t(exportingConversation ? 'aiChat.chat.exporting' : 'aiChat.chat.export')}
+              <span className="ai-chat-stage__export-label">{t(exportingConversation ? 'aiChat.chat.exporting' : 'aiChat.chat.export')}</span>
             </button>
             <button
               ref={runInspectorToggleRef}
@@ -1353,48 +1676,24 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
                 <Paperclip size={13} aria-hidden="true" />
                 {t(uploadingAttachments ? 'aiChat.chat.uploading_attachment' : 'aiChat.chat.add_attachment')}
               </button>
-              {imageProviders.length > 0 && api?.generateAIImages && <button
-                className={imageMode ? 'is-active' : ''}
-                onClick={() => {
-                  if (!selectedImageProvider) {
-                    setNotice(t('aiChat.images.provider_required_action'))
-                    return
-                  }
-                  if (!api?.generateAIImages) {
-                    setNotice(t('aiChat.images.feature_unavailable'))
-                    return
-                  }
-                  setImageMode((value) => !value)
-                  setVideoMode(false)
-                }}
-                disabled={submitting || isRunning}
-                aria-pressed={imageMode}
-                title={selectedImageProvider ? t('aiChat.images.toggle') : t('aiChat.images.provider_required')}
-              >
-                <ImagePlus size={13} aria-hidden="true" />
-                {t(imageMode ? 'aiChat.images.mode_active' : 'aiChat.images.mode')}
-              </button>}
-              {videoProviders.length > 0 && api?.generateAIVideos && <button
-                className={videoMode ? 'is-active' : ''}
-                onClick={() => {
-                  if (!selectedVideoProvider) {
-                    setNotice(t('aiChat.videos.provider_required_action'))
-                    return
-                  }
-                  if (!api?.generateAIVideos) {
-                    setNotice(t('aiChat.videos.feature_unavailable'))
-                    return
-                  }
-                  setVideoMode((value) => !value)
-                  setImageMode(false)
-                }}
-                disabled={submitting || isRunning}
-                aria-pressed={videoMode}
-                title={selectedVideoProvider ? t('aiChat.videos.toggle') : t('aiChat.videos.provider_required')}
-              >
-                <Video size={13} aria-hidden="true" />
-                {t(videoMode ? 'aiChat.videos.mode_active' : 'aiChat.videos.mode')}
-              </button>}
+              <label className={`ai-chat-composer__mode-select ${activeSelectionMode !== 'chat' ? 'is-active' : ''}`}>
+                {imageMode ? <ImagePlus size={13} aria-hidden="true" /> : videoMode ? <Video size={13} aria-hidden="true" /> : <Type size={13} aria-hidden="true" />}
+                <span className="sr-only">{t('aiChat.chat.mode_select')}</span>
+                <select
+                  value={activeSelectionMode}
+                  disabled={submitting || uploadingAttachments || isRunning || isMediaRunning || !chatReady}
+                  onChange={(event) => handleComposerModeChange(event.target.value as AIChatSelectionMode)}
+                  aria-label={t('aiChat.chat.mode_select')}
+                >
+                  <option value="chat">{t('aiChat.chat.mode_text')}</option>
+                  {(canUseImageComposer || imageMode) && <option value="image">{t('aiChat.images.mode')}</option>}
+                  {(canUseVideoComposer || videoMode) && <option value="video">{t('aiChat.videos.mode')}</option>}
+                </select>
+                <span className="ai-chat-composer__mode-value" aria-hidden="true">
+                  {t(imageMode ? 'aiChat.images.mode' : videoMode ? 'aiChat.videos.mode' : 'aiChat.chat.mode_text')}
+                </span>
+                <ChevronDown size={12} aria-hidden="true" />
+              </label>
               <span>{t(imageMode ? 'aiChat.images.composer_hint' : videoMode ? 'aiChat.videos.composer_hint' : 'aiChat.chat.composer_hint')}</span>
             </div>
             {isRunning || isMediaRunning ? (
@@ -1441,7 +1740,7 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
           </div>
           <div>
             <dt>{t('aiChat.chat.run_model')}</dt>
-            <dd>{activeModel?.name ?? '—'}</dd>
+            <dd>{stageModelLabel}</dd>
           </div>
           <div>
             <dt>{t('aiChat.chat.run_id')}</dt>

@@ -817,6 +817,8 @@
       "composer_placeholder": "输入消息，按 Enter 发送",
       "composer_label": "对话输入",
       "composer_hint": "Enter 发送，Shift+Enter 换行",
+      "mode_text": "文本",
+      "mode_select": "选择输入模式",
       "add_attachment": "添加附件",
       "uploading_attachment": "正在添加…",
       "attachments_label": "待发送附件",

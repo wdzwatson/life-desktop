@@ -78,10 +78,11 @@ test('AI controls and run states retain visible keyboard focus and theme-derived
 })
 
 test('media mode controls render only for configured matching providers', () => {
-  assert.match(workspace, /imageProviders\.length > 0 && api\?\.generateAIImages && <button/)
-  assert.match(workspace, /videoProviders\.length > 0 && api\?\.generateAIVideos && <button/)
-  assert.match(workspace, /aria-pressed=\{imageMode\}/)
-  assert.match(workspace, /aria-pressed=\{videoMode\}/)
+  assert.match(workspace, /className=\{`ai-chat-composer__mode-select/)
+  assert.match(workspace, /value=\{activeSelectionMode\}/)
+  assert.match(workspace, /onChange=\{\(event\) => handleComposerModeChange\(event\.target\.value as AIChatSelectionMode\)\}/)
+  assert.match(workspace, /\(canUseImageComposer \|\| imageMode\) && <option value="image">/)
+  assert.match(workspace, /\(canUseVideoComposer \|\| videoMode\) && <option value="video">/)
   assert.doesNotMatch(workspace, /disabled=\{!activeAgent\?\.providers\.(?:image|video)/)
   assert.match(workspace, /aiChat\.images\.composer_placeholder/)
   assert.match(workspace, /aiChat\.videos\.composer_placeholder/)
@@ -177,14 +178,26 @@ test('model switching only changes the model used by the next run', () => {
 
 test('model switching adds a deferred timeline divider after the active round', () => {
   assert.match(workspace, /type ModelSwitchMarker = \{[\s\S]*fromProvider:[\s\S]*toProvider:[\s\S]*ready: boolean/)
+  assert.match(workspace, /const queueModelSwitchMarker = useCallback/)
   assert.match(workspace, /const roundActive = isRunning \|\| isMediaRunning \|\| submitting/)
   assert.match(workspace, /ready: !roundActive/)
+  assert.match(workspace, /latest\.fromProvider === nextMarker\.toProvider/)
+  assert.match(workspace, /latest\.fromModel === nextMarker\.toModel/)
   assert.match(workspace, /disabled=\{imageMode \? imageProviders\.length === 0/)
   assert.match(workspace, /disabled=\{imageMode \? imageModels\.length === 0/)
   assert.match(workspace, /marker\.conversationId === activeConversationId && !marker\.ready \? \{ \.\.\.marker, ready: true \}/)
   assert.match(workspace, /className="ai-model-switch-divider" role="separator"/)
   assert.match(css, /\.ai-model-switch-divider\s*\{[\s\S]*grid-template-columns:[\s\S]*color:/)
   assert.match(css, /\.ai-model-switch-divider::before,[\s\S]*\.ai-model-switch-divider::after[\s\S]*height:\s*1px/)
+})
+
+test('media model switching queues the same timeline divider as text model switching', () => {
+  const stageProviderHandler = workspace.match(/const handleStageProviderChange = \(providerId: number\) => \{[\s\S]*?\n {2}\}\n\n {2}const handleStageModelChange/)?.[0] ?? ''
+  const stageModelHandler = workspace.match(/const handleStageModelChange = \(value: string\) => \{[\s\S]*?\n {2}\}\n\n {2}const handleComposerModeChange/)?.[0] ?? ''
+  assert.match(stageProviderHandler, /if \(imageMode\) \{[\s\S]*queueModelSwitchMarker\(\{[\s\S]*toModel: nextModel/)
+  assert.match(stageProviderHandler, /if \(videoMode\) \{[\s\S]*queueModelSwitchMarker\(\{[\s\S]*toModel: nextModel/)
+  assert.match(stageModelHandler, /if \(imageMode\) \{[\s\S]*queueModelSwitchMarker\(\{[\s\S]*toModel: value/)
+  assert.match(stageModelHandler, /if \(videoMode\) \{[\s\S]*queueModelSwitchMarker\(\{[\s\S]*toModel: value/)
 })
 
 test('model switch dividers persist as conversation events without entering message history', () => {
@@ -217,7 +230,7 @@ test('daily chat typography and action targets remain readable', () => {
   assert.match(css, /\.ai-message__body\s*\{[\s\S]*font-size:\s*13px/)
   assert.match(css, /\.ai-chat-composer textarea\s*\{[\s\S]*font-size:\s*13px/)
   assert.match(css, /\.ai-conversation-item__actions button\s*\{[\s\S]*width:\s*32px[\s\S]*height:\s*32px/)
-  assert.match(css, /\.ai-chat-composer__mode button\s*\{[\s\S]*min-height:\s*32px/)
+  assert.match(css, /\.ai-chat-composer__mode-select\s*\{[\s\S]*min-height:\s*32px/)
 })
 
 test('chat timeline uses compact document-like assistant messages without shrinking user bubbles', () => {
