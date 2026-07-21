@@ -259,6 +259,28 @@ export const Tasks: React.FC = () => {
         [task.recur_rule_id, task.instance_key],
       )
       const materialized = result?.data?.[0]
+      if (materialized) {
+        const children = await api.dbQuery(
+          'tasks',
+          'SELECT id FROM tasks WHERE parent_id = ? LIMIT 1',
+          [materialized.id],
+        )
+        if (!children?.data?.length) {
+          const steps = await api.dbQuery(
+            'tasks',
+            'SELECT * FROM recurring_rule_steps WHERE rule_id = ? ORDER BY sort_order ASC, id ASC',
+            [task.recur_rule_id],
+          )
+          for (const step of steps?.data ?? []) {
+            await api.dbQuery(
+              'tasks',
+              `INSERT INTO tasks (title, description, priority, status, due_date, recur_rule_id, instance_key, parent_id, progress)
+               VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, 0)`,
+              [step.title, step.description || '', step.priority || task.priority, task.due_date, task.recur_rule_id, task.instance_key, materialized.id],
+            )
+          }
+        }
+      }
       await loadData()
       if (materialized) selectTaskForDetails(materialized)
       return
@@ -553,11 +575,13 @@ export const Tasks: React.FC = () => {
 
     if (drawerMode === 'create') {
       const frequency = taskDraft.repeat === 'none' ? 'custom' : taskDraft.repeat
+      const date = new Date(`${taskDraft.dueDate}T12:00:00`)
+      const weekDay = date.getDay() === 0 ? 7 : date.getDay()
       const res = await api.dbQuery(
         'tasks',
-        `INSERT INTO recurring_rules (title, description, frequency, interval, start_date, start_time, priority, end_condition, missed_policy)
-         VALUES (?, ?, ?, 1, ?, ?, ?, ?, 'skip')`,
-        [taskDraft.title.trim(), taskDraft.description, frequency, taskDraft.dueDate, taskDraft.time, taskDraft.priority, frequency === 'custom' ? 'count:1' : 'never'],
+        `INSERT INTO recurring_rules (title, description, frequency, interval, week_days, start_date, start_time, priority, end_condition, missed_policy)
+         VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, 'skip')`,
+        [taskDraft.title.trim(), taskDraft.description, frequency, frequency === 'weekly' ? String(weekDay) : '', taskDraft.dueDate, taskDraft.time, taskDraft.priority, frequency === 'custom' ? 'count:1' : 'never'],
       )
       if (res?.success) {
         await runDueTaskGeneration()
