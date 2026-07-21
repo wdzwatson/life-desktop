@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
+  X,
   Kanban,
   ListChecks,
   ListTodo,
@@ -86,11 +87,15 @@ export const Tasks: React.FC = () => {
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<string | null>(null)
 
-  // Quick Add State
-  const [quickTitle, setQuickTitle] = useState('')
-  const [quickPriority, setQuickPriority] = useState('mid')
-  const [quickDueDate] = useState('')
-  const quickTitleInputRef = useRef<HTMLInputElement | null>(null)
+  const [drawerMode, setDrawerMode] = useState<'create' | 'edit' | null>(null)
+  const [taskDraft, setTaskDraft] = useState({
+    title: '',
+    description: '',
+    dueDate: toLocalDateKey(new Date()),
+    time: getCurrentTimeValue(),
+    priority: 'mid',
+    repeat: 'none',
+  })
 
   // Detail Panel Edit State
   const [editDesc, setEditDesc] = useState('')
@@ -233,10 +238,7 @@ export const Tasks: React.FC = () => {
   }, [calendarDate, calendarMode, calendarWeekDays, i18n.language])
 
   const openCalendarTask = (task: any) => {
-    setSelectedTaskId(task.id)
-    setEditDesc(task.description || '')
-    setEditProgress(task.progress || 0)
-    setTaskTab('list')
+    selectTaskForDetails(task)
   }
 
   const renderCalendarTask = (task: any) => (
@@ -253,14 +255,33 @@ export const Tasks: React.FC = () => {
     </button>
   )
 
-  const focusQuickAddInput = () => {
-    setTimeout(() => quickTitleInputRef.current?.focus(), 0)
+  const openCreateDrawer = () => {
+    setSelectedTaskId(null)
+    setTaskDraft({
+      title: '',
+      description: '',
+      dueDate: toLocalDateKey(new Date()),
+      time: getCurrentTimeValue(),
+      priority: 'mid',
+      repeat: 'none',
+    })
+    setDrawerMode('create')
   }
 
   const selectTaskForDetails = (task: any) => {
     setSelectedTaskId(task.id)
     setEditDesc(task.description || '')
     setEditProgress(task.progress || 0)
+    const rule = task.recur_rule_id ? rules.find((candidate) => candidate.id === task.recur_rule_id) : null
+    setTaskDraft({
+      title: task.title || '',
+      description: task.description || '',
+      dueDate: task.due_date || toLocalDateKey(new Date()),
+      time: rule ? getTemplateStartTime(rule) : '09:00',
+      priority: task.priority || 'mid',
+      repeat: rule && rule.frequency !== 'custom' ? rule.frequency : 'none',
+    })
+    setDrawerMode('edit')
   }
 
   const getFrequencyLabel = (frequency: string) => {
@@ -290,7 +311,7 @@ export const Tasks: React.FC = () => {
 
   const handleStartFirstTask = () => {
     setTaskTab('list')
-    focusQuickAddInput()
+    openCreateDrawer()
   }
 
   const handleMoveTaskStatus = async (task: any, nextStatus: string) => {
@@ -496,84 +517,39 @@ export const Tasks: React.FC = () => {
         ]
       })
 
-  // Quick Add task submit
-  const handleQuickAdd = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!quickTitle.trim() || !api) return
+  const handleSaveDrawer = async () => {
+    if (!api || !taskDraft.title.trim()) return
 
-    let finalTitle = quickTitle
-    let extractedPriority = quickPriority
-    let extractedDueDate = quickDueDate || new Date().toISOString().slice(0, 10)
-
-    const priorityTokens = {
-      high: t('tasks.quick_token_priority_high'),
-      mid: t('tasks.quick_token_priority_mid'),
-      low: t('tasks.quick_token_priority_low'),
-    }
-    const dueTokens = {
-      tomorrow: t('tasks.quick_token_due_tomorrow'),
-      today: t('tasks.quick_token_due_today'),
-    }
-
-    // NLP parser mock (like Todoist)
-    if (
-      finalTitle.includes(`#${priorityTokens.high}`) ||
-      finalTitle.toLowerCase().includes('#high')
-    ) {
-      extractedPriority = 'high'
-      finalTitle = finalTitle.replace(`#${priorityTokens.high}`, '').replace(/#high/i, '')
-    } else if (
-      finalTitle.includes(`#${priorityTokens.mid}`) ||
-      finalTitle.toLowerCase().includes('#mid')
-    ) {
-      extractedPriority = 'mid'
-      finalTitle = finalTitle.replace(`#${priorityTokens.mid}`, '').replace(/#mid/i, '')
-    } else if (
-      finalTitle.includes(`#${priorityTokens.low}`) ||
-      finalTitle.toLowerCase().includes('#low')
-    ) {
-      extractedPriority = 'low'
-      finalTitle = finalTitle.replace(`#${priorityTokens.low}`, '').replace(/#low/i, '')
-    }
-
-    if (
-      finalTitle.includes(dueTokens.tomorrow) ||
-      finalTitle.toLowerCase().includes('tomorrow')
-    ) {
-      const tomorrow = new Date()
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      extractedDueDate = tomorrow.toISOString().slice(0, 10)
-      finalTitle = finalTitle.replace(dueTokens.tomorrow, '').replace(/tomorrow/i, '')
-    } else if (
-      finalTitle.includes(dueTokens.today) ||
-      finalTitle.toLowerCase().includes('today')
-    ) {
-      extractedDueDate = new Date().toISOString().slice(0, 10)
-      finalTitle = finalTitle.replace(dueTokens.today, '').replace(/today/i, '')
-    }
-
-    const startTime =
-      extractedDueDate === toLocalDateKey(new Date()) ? getCurrentTimeValue() : '09:00'
-    const query = `
-      INSERT INTO recurring_rules (
-        title, description, frequency, interval, start_date, start_time, priority, end_condition, missed_policy
+    if (drawerMode === 'create') {
+      const frequency = taskDraft.repeat === 'none' ? 'custom' : taskDraft.repeat
+      const res = await api.dbQuery(
+        'tasks',
+        `INSERT INTO recurring_rules (title, description, frequency, interval, start_date, start_time, priority, end_condition, missed_policy)
+         VALUES (?, ?, ?, 1, ?, ?, ?, ?, 'skip')`,
+        [taskDraft.title.trim(), taskDraft.description, frequency, taskDraft.dueDate, taskDraft.time, taskDraft.priority, frequency === 'custom' ? 'count:1' : 'never'],
       )
-      VALUES (?, ?, 'custom', 1, ?, ?, ?, 'count:1', 'skip')
-    `
-    const res = await api.dbQuery('tasks', query, [
-      finalTitle.trim(),
-      '',
-      extractedDueDate,
-      startTime,
-      extractedPriority,
-    ])
-
-    if (res?.success) {
-      await runDueTaskGeneration()
-      showToast(t('tasks.toast_template_created'))
-      setQuickTitle('')
-      loadData()
+      if (res?.success) {
+        await runDueTaskGeneration()
+        showToast(t('tasks.toast_task_added'))
+      }
+    } else if (activeTask) {
+      await api.dbQuery(
+        'tasks',
+        'UPDATE tasks SET title = ?, description = ?, priority = ?, due_date = ? WHERE id = ?',
+        [taskDraft.title.trim(), taskDraft.description, taskDraft.priority, taskDraft.dueDate, activeTask.id],
+      )
+      if (activeTask.recur_rule_id) {
+        await api.dbQuery(
+          'tasks',
+          'UPDATE recurring_rules SET title = ?, description = ?, frequency = ?, start_date = ?, start_time = ?, priority = ? WHERE id = ?',
+          [taskDraft.title.trim(), taskDraft.description, taskDraft.repeat === 'none' ? 'custom' : taskDraft.repeat, taskDraft.dueDate, taskDraft.time, taskDraft.priority, activeTask.recur_rule_id],
+        )
+      }
+      showToast(t('tasks.toast_details_updated'))
     }
+
+    setDrawerMode(null)
+    await loadData()
   }
 
   // Subtask creation
@@ -965,10 +941,7 @@ export const Tasks: React.FC = () => {
                                 : 'var(--shadow-app)',
                           }}
                           onClick={() => {
-                            setSelectedTaskId(task.id)
-                            setEditDesc(task.description || '')
-                            setEditProgress(task.progress || 0)
-                            setTaskTab('list')
+                            selectTaskForDetails(task)
                           }}
                         >
                           <h4
@@ -1018,41 +991,17 @@ export const Tasks: React.FC = () => {
             {/* Left list tree */}
             <section className="task-panel task-panel--list">
               <div className="task-panel__header">
-                <div>
+                <div className="task-panel__header--row">
+                  <div>
                   <strong>{t('tasks.instance_panel_title')}</strong>
                   <p>{t('tasks.instance_panel_desc')}</p>
+                  </div>
+                  <button type="button" className="btn primary" onClick={openCreateDrawer}>
+                    <Plus size={16} aria-hidden="true" />
+                    {t('tasks.drawer_create_title')}
+                  </button>
                 </div>
               </div>
-              {/* Quick Add Bar */}
-              <form className="task-quick-add" onSubmit={handleQuickAdd}>
-                <input
-                  id="quickTitle"
-                  ref={quickTitleInputRef}
-                  className="form-field"
-                  aria-label={t('tasks.quick_add_label')}
-                  value={quickTitle}
-                  onChange={(e) => setQuickTitle(e.target.value)}
-                  placeholder={t('tasks.quick_add_placeholder')}
-                />
-                <select
-                  className="form-field"
-                  aria-label={t('tasks.quick_add_priority_label')}
-                  value={quickPriority}
-                  onChange={(e) => setQuickPriority(e.target.value)}
-                >
-                  <option value="high">{t('tasks.priority_high')}</option>
-                  <option value="mid">{t('tasks.priority_mid')}</option>
-                  <option value="low">{t('tasks.priority_low')}</option>
-                </select>
-                <button
-                  type="submit"
-                  className="btn primary task-quick-add__submit"
-                  aria-label={t('tasks.quick_add_submit_label')}
-                  title={t('tasks.quick_add_submit_label')}
-                >
-                  <Plus size={16} />
-                </button>
-              </form>
 
               {/* Task rows */}
               <div className="task-list">
@@ -1154,9 +1103,7 @@ export const Tasks: React.FC = () => {
             </section>
 
             {/* Right details panel */}
-            <aside
-              className="task-panel task-details-panel"
-            >
+            <aside className="task-panel task-details-panel">
               {activeTask ? (
                 <>
                   <div className="task-details-panel__header">
@@ -1252,7 +1199,7 @@ export const Tasks: React.FC = () => {
                   </div>
                   <strong>{t('tasks.details_empty_title')}</strong>
                   <p>{t('tasks.details_empty_description')}</p>
-                  <button type="button" className="btn sm" onClick={focusQuickAddInput}>
+                  <button type="button" className="btn sm" onClick={openCreateDrawer}>
                     <Plus size={14} aria-hidden="true" />
                     {t('tasks.details_empty_action')}
                   </button>
@@ -1791,6 +1738,27 @@ export const Tasks: React.FC = () => {
           </div>
         )}
       </div>
+      {drawerMode && (
+        <div className="task-drawer-backdrop" role="presentation" onMouseDown={() => setDrawerMode(null)}>
+          <aside className="task-drawer" role="dialog" aria-modal="true" aria-label={drawerMode === 'create' ? t('tasks.drawer_create_title') : t('tasks.drawer_edit_title')} onMouseDown={(event) => event.stopPropagation()}>
+            <header className="task-drawer__header">
+              <h2>{drawerMode === 'create' ? t('tasks.drawer_create_title') : t('tasks.drawer_edit_title')}</h2>
+              <button type="button" className="btn sm task-drawer__close" onClick={() => setDrawerMode(null)} aria-label={t('tasks.drawer_close')} title={t('tasks.drawer_close')}><X size={16} /></button>
+            </header>
+            <div className="task-drawer__body">
+              <label className="task-form-section"><span>{t('tasks.details_label_title')}</span><input autoFocus className="form-field" value={taskDraft.title} onChange={(event) => setTaskDraft({ ...taskDraft, title: event.target.value })} /></label>
+              <label className="task-form-section"><span>{t('tasks.details_label_desc')}</span><textarea className="form-field" rows={4} value={taskDraft.description} onChange={(event) => setTaskDraft({ ...taskDraft, description: event.target.value })} placeholder={t('tasks.details_desc_placeholder')} /></label>
+              <div className="task-drawer__grid">
+                <label className="task-form-section"><span>{t('tasks.details_due_prefix')}</span><input className="form-field" type="date" value={taskDraft.dueDate} onChange={(event) => setTaskDraft({ ...taskDraft, dueDate: event.target.value })} /></label>
+                <label className="task-form-section"><span>{t('tasks.time_label')}</span><input className="form-field" type="time" value={taskDraft.time} onChange={(event) => setTaskDraft({ ...taskDraft, time: event.target.value })} /></label>
+                <label className="task-form-section"><span>{t('tasks.quick_add_priority_label')}</span><select className="form-field" value={taskDraft.priority} onChange={(event) => setTaskDraft({ ...taskDraft, priority: event.target.value })}><option value="high">{t('tasks.priority_high')}</option><option value="mid">{t('tasks.priority_mid')}</option><option value="low">{t('tasks.priority_low')}</option></select></label>
+                <label className="task-form-section"><span>{t('tasks.repeat_label')}</span><select className="form-field" value={taskDraft.repeat} onChange={(event) => setTaskDraft({ ...taskDraft, repeat: event.target.value })}><option value="none">{t('tasks.repeat_none')}</option><option value="daily">{t('tasks.freq_daily')}</option><option value="weekday">{t('tasks.freq_weekday')}</option><option value="weekly">{t('tasks.freq_weekly')}</option><option value="monthly">{t('tasks.freq_monthly')}</option></select></label>
+              </div>
+            </div>
+            <footer className="task-drawer__footer"><button type="button" className="btn" onClick={() => setDrawerMode(null)}>{t('common.cancel')}</button><button type="button" className="btn primary" onClick={handleSaveDrawer}>{t('tasks.btn_save_changes')}</button></footer>
+          </aside>
+        </div>
+      )}
     </div>
   )
 }
