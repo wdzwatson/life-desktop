@@ -653,33 +653,6 @@ export const Tasks: React.FC = () => {
     await loadData()
   }
 
-  // Subtask creation
-  const handleAddSubtask = async (parentId: number) => {
-    if (!api) return
-    const title = window.prompt(t('tasks.prompt_subtask_title'))
-    if (!title?.trim()) return
-    const parentTask = tasks.find((task) => task.id === parentId)
-
-    const query = `
-      INSERT INTO tasks (
-        title, description, priority, status, due_date, parent_id, recur_rule_id, instance_key, is_completed, progress
-      )
-      VALUES (?, '', 'mid', '待处理', ?, ?, ?, ?, 0, 0)
-    `
-    const res = await api.dbQuery('tasks', query, [
-      title.trim(),
-      parentTask?.due_date || toLocalDateKey(new Date()),
-      parentId,
-      parentTask?.recur_rule_id || null,
-      parentTask?.instance_key || null,
-    ])
-
-    if (res?.success) {
-      showToast(t('tasks.toast_subtask_added'))
-      loadData()
-    }
-  }
-
   // Save Task Detail modifications
   const handleSaveDetails = async () => {
     if (!selectedTaskId || !api) return

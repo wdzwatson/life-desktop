@@ -43,6 +43,7 @@ import { handleVideoProtocolRequest } from './video/protocol'
 import { classifyVideoDownloadFailure } from './video/downloadState'
 import { normalizeBulkVideoTagPayload } from '../src/views/videoStateUtils'
 import { getDueTemplateOccurrence, toLocalDateKey } from '../src/views/taskScheduleUtils'
+import { runTaskSchedulerCore } from './taskSchedulerCore'
 import { VaultService, serializeVaultError } from './vault/service'
 import { getDirectDbAccessError } from './db/accessPolicy'
 import {
@@ -664,6 +665,18 @@ function startScheduler() {
 }
 
 function runSchedulerCycle(options: { notify?: boolean } = {}) {
+  const result = runTaskSchedulerCore(getUserDb('tasks'))
+  if (options.notify !== false && mainWindow) {
+    for (const task of result.generatedTasks) {
+      mainWindow.webContents.send('scheduler:notif', { title: '任务实例已生成', body: task.title })
+    }
+    for (const task of result.overdueTasks) {
+      mainWindow.webContents.send('scheduler:overdue', task)
+    }
+  }
+  return { generatedCount: result.generatedTasks.length, overdueCount: result.overdueTasks.length }
+
+  /* legacy scheduler body retained temporarily below for migration reference */
   const notify = options.notify !== false
   const db = getUserDb('tasks')
   const now = new Date()
