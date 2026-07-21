@@ -62,6 +62,7 @@ export function initializeUserDatabase(userDbDir: string) {
       status TEXT NOT NULL DEFAULT '待收集',
       due_date TEXT,
       recur_rule_id INTEGER,
+      instance_key TEXT,
       parent_id INTEGER,
       progress INTEGER DEFAULT 0,
       associated_note_id INTEGER,
@@ -79,10 +80,24 @@ export function initializeUserDatabase(userDbDir: string) {
       week_days TEXT,     -- e.g., '1,3,5' for Mon, Wed, Fri
       month_days TEXT,    -- e.g., '1,15,-1' for 1st, 15th, last day
       cron TEXT,          -- standard cron string
+      start_date TEXT,
+      start_time TEXT DEFAULT '09:00',
+      priority TEXT CHECK(priority IN ('high', 'mid', 'low')) DEFAULT 'mid',
       end_condition TEXT,  -- 'never' or 'count:X' or 'date:YYYY-MM-DD'
       missed_policy TEXT DEFAULT 'accumulate', -- 'skip', 'accumulate', 'prompt'
       last_trigger_time TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS recurring_rule_steps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      rule_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      priority TEXT CHECK(priority IN ('high', 'mid', 'low')) DEFAULT 'mid',
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (rule_id) REFERENCES recurring_rules(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS translations (
@@ -92,7 +107,54 @@ export function initializeUserDatabase(userDbDir: string) {
       translation TEXT NOT NULL,
       PRIMARY KEY (entity_type, entity_id, locale)
     );
+
   `)
+
+  try {
+    const taskColumns = tasksDb.prepare('PRAGMA table_info(tasks)').all() as { name: string }[]
+    const taskColumnNames = new Set(taskColumns.map((column) => column.name))
+    if (!taskColumnNames.has('instance_key')) {
+      tasksDb.exec('ALTER TABLE tasks ADD COLUMN instance_key TEXT')
+    }
+
+    const ruleColumns = tasksDb
+      .prepare('PRAGMA table_info(recurring_rules)')
+      .all() as { name: string }[]
+    const ruleColumnNames = new Set(ruleColumns.map((column) => column.name))
+    if (!ruleColumnNames.has('start_date')) {
+      tasksDb.exec('ALTER TABLE recurring_rules ADD COLUMN start_date TEXT')
+    }
+    if (!ruleColumnNames.has('start_time')) {
+      tasksDb.exec("ALTER TABLE recurring_rules ADD COLUMN start_time TEXT DEFAULT '09:00'")
+    }
+    if (!ruleColumnNames.has('priority')) {
+      tasksDb.exec("ALTER TABLE recurring_rules ADD COLUMN priority TEXT DEFAULT 'mid'")
+    }
+
+    tasksDb.exec(`
+      UPDATE recurring_rules
+      SET start_date = COALESCE(start_date, substr(created_at, 1, 10)),
+          start_time = COALESCE(start_time, '09:00'),
+          priority = COALESCE(priority, 'mid');
+
+      CREATE TABLE IF NOT EXISTS recurring_rule_steps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        priority TEXT CHECK(priority IN ('high', 'mid', 'low')) DEFAULT 'mid',
+        sort_order INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (rule_id) REFERENCES recurring_rules(id) ON DELETE CASCADE
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS tasks_recur_instance_parent_idx
+        ON tasks (recur_rule_id, instance_key, COALESCE(parent_id, -1))
+        WHERE recur_rule_id IS NOT NULL AND instance_key IS NOT NULL;
+    `)
+  } catch (err) {
+    console.error('Failed to migrate task template schema:', err)
+  }
 
   const tasksTransCount = tasksDb
     .prepare("SELECT count(*) as count FROM translations WHERE entity_type = 'task_status'")

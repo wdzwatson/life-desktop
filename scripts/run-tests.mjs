@@ -34,6 +34,7 @@ const electronNodeTests = new Set([
   'tests/aiConversationIpc.test.mjs',
   'tests/aiChatRoundTrip.test.mjs',
   'tests/dbTransaction.test.mjs',
+  'tests/taskSchema.test.mjs',
   'tests/vaultService.test.mjs',
   'tests/videoSchema.test.mjs',
 ])
