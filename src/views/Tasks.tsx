@@ -293,6 +293,12 @@ export const Tasks: React.FC = () => {
     setDrawerMode('create')
   }
 
+  useEffect(() => {
+    const handleCreateTask = () => openCreateDrawer()
+    window.addEventListener('task:create', handleCreateTask)
+    return () => window.removeEventListener('task:create', handleCreateTask)
+  }, [])
+
   const selectTaskForDetails = (task: any) => {
     setSelectedTaskId(task.id)
     setEditDesc(task.description || '')

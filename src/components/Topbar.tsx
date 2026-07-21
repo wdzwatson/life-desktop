@@ -29,10 +29,7 @@ export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch })
   const handleNewTask = () => {
     setActiveScreen('tasks')
     setTaskTab('list')
-    setTimeout(() => {
-      const input = document.getElementById('quickTitle')
-      if (input) input.focus()
-    }, 100)
+    setTimeout(() => window.dispatchEvent(new Event('task:create')), 0)
   }
 
   const handleImportFile = () => {
