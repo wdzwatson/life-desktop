@@ -748,8 +748,15 @@ export const Tasks: React.FC = () => {
   const activeTaskTemplate = activeTask?.recur_rule_id
     ? rules.find((rule) => rule.id === activeTask.recur_rule_id)
     : null
-  const rootTasks = useMemo(() => tasks.filter((task) => !task.parent_id), [tasks])
   const todayKey = toLocalDateKey(new Date())
+  const executionTasks = useMemo(
+    () => tasks.filter((task) => !task.due_date || task.due_date <= todayKey),
+    [tasks, todayKey],
+  )
+  const rootTasks = useMemo(
+    () => executionTasks.filter((task) => !task.parent_id),
+    [executionTasks],
+  )
   const openTaskCount = tasks.filter(
     (task) => task.is_completed !== 1 && task.status !== '已关闭',
   ).length
@@ -879,7 +886,7 @@ export const Tasks: React.FC = () => {
               }}
             >
               {boardLanes.map((lane) => {
-                const laneTasks = tasks.filter(
+                const laneTasks = executionTasks.filter(
                   (t) =>
                     t.status === lane.dbVal ||
                     (lane.dbVal === '待处理' && t.status === '已逾期'),
