@@ -11,13 +11,13 @@ export function runTaskSchedulerCore(db: any, now = new Date()) {
     if (db.prepare('SELECT 1 FROM recurring_rule_occurrence_exceptions WHERE recur_rule_id = ? AND instance_key = ? LIMIT 1').get(rule.id, occurrence.instanceKey)) continue
     if (db.prepare('SELECT id FROM tasks WHERE recur_rule_id = ? AND instance_key = ? AND parent_id IS NULL LIMIT 1').get(rule.id, occurrence.instanceKey)) continue
 
-    const inserted = db.prepare(`INSERT INTO tasks (title, description, priority, status, due_date, recur_rule_id, instance_key, progress) VALUES (?, ?, ?, '待处理', ?, ?, ?, 0)`).run(
-      rule.title, rule.description || '', rule.priority || 'mid', occurrence.dateKey, rule.id, occurrence.instanceKey,
+    const inserted = db.prepare(`INSERT INTO tasks (title, description, priority, status, due_date, due_time, recur_rule_id, instance_key, progress) VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, 0)`).run(
+      rule.title, rule.description || '', rule.priority || 'mid', occurrence.dateKey, occurrence.time, rule.id, occurrence.instanceKey,
     )
     const parentId = Number(inserted.lastInsertRowid)
-    const insertStep = db.prepare(`INSERT INTO tasks (title, description, priority, status, due_date, recur_rule_id, instance_key, parent_id, progress) VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, 0)`)
+    const insertStep = db.prepare(`INSERT INTO tasks (title, description, priority, status, due_date, due_time, recur_rule_id, instance_key, parent_id, progress) VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, 0)`)
     for (const step of db.prepare('SELECT * FROM recurring_rule_steps WHERE rule_id = ? ORDER BY sort_order ASC, id ASC').all(rule.id) as any[]) {
-      insertStep.run(step.title, step.description || '', step.priority || rule.priority || 'mid', occurrence.dateKey, rule.id, occurrence.instanceKey, parentId)
+      insertStep.run(step.title, step.description || '', step.priority || rule.priority || 'mid', occurrence.dateKey, occurrence.time, rule.id, occurrence.instanceKey, parentId)
     }
     db.prepare('UPDATE recurring_rules SET last_trigger_time = ? WHERE id = ?').run(now.toISOString(), rule.id)
     generatedTasks.push({ title: rule.title })

@@ -13,6 +13,7 @@ export type CalendarOccurrence = PersistedTask & {
   status: string
   is_virtual?: boolean
   occurrence_time?: string
+  due_time?: string | null
 }
 
 export const projectCalendarOccurrences = (
@@ -39,6 +40,7 @@ export const projectCalendarOccurrences = (
         priority: (rule as any).priority || 'mid',
         status: '待处理',
         due_date: occurrence.dateKey,
+        due_time: occurrence.time,
         recur_rule_id: rule.id,
         instance_key: occurrence.instanceKey,
         occurrence_time: occurrence.time,

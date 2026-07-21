@@ -250,9 +250,9 @@ export const Tasks: React.FC = () => {
     if (task.is_virtual && api) {
       await api.dbQuery(
         'tasks',
-        `INSERT OR IGNORE INTO tasks (title, description, priority, status, due_date, recur_rule_id, instance_key, progress)
-         VALUES (?, ?, ?, '待处理', ?, ?, ?, 0)`,
-        [task.title, task.description || '', task.priority, task.due_date, task.recur_rule_id, task.instance_key],
+        `INSERT OR IGNORE INTO tasks (title, description, priority, status, due_date, due_time, recur_rule_id, instance_key, progress)
+         VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, 0)`,
+        [task.title, task.description || '', task.priority, task.due_date, task.due_time || task.occurrence_time || null, task.recur_rule_id, task.instance_key],
       )
       const result = await api.dbQuery(
         'tasks',
@@ -275,9 +275,9 @@ export const Tasks: React.FC = () => {
           for (const step of steps?.data ?? []) {
             await api.dbQuery(
               'tasks',
-              `INSERT INTO tasks (title, description, priority, status, due_date, recur_rule_id, instance_key, parent_id, progress)
-               VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, 0)`,
-              [step.title, step.description || '', step.priority || task.priority, task.due_date, task.recur_rule_id, task.instance_key, materialized.id],
+              `INSERT INTO tasks (title, description, priority, status, due_date, due_time, recur_rule_id, instance_key, parent_id, progress)
+               VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, 0)`,
+              [step.title, step.description || '', step.priority || task.priority, task.due_date, task.due_time || task.occurrence_time || null, task.recur_rule_id, task.instance_key, materialized.id],
             )
           }
         }
@@ -287,6 +287,11 @@ export const Tasks: React.FC = () => {
       return
     }
     selectTaskForDetails(task)
+  }
+
+  const formatDue = (task: any) => {
+    if (!task.due_date) return t('tasks.due_date_not_set')
+    return task.due_time ? `${task.due_date} ${task.due_time}` : task.due_date
   }
 
   const renderCalendarTask = (task: any) => (
@@ -552,7 +557,7 @@ export const Tasks: React.FC = () => {
               )}
             </button>
             <span className="task-row__date">
-              {child.due_date}
+              {formatDue(child)}
             </span>
             <span className="task-row__title">{child.title}</span>
             <span
@@ -595,8 +600,8 @@ export const Tasks: React.FC = () => {
     } else if (activeTask) {
       await api.dbQuery(
         'tasks',
-        'UPDATE tasks SET title = ?, description = ?, priority = ?, due_date = ? WHERE id = ?',
-        [taskDraft.title.trim(), taskDraft.description, taskDraft.priority, taskDraft.dueDate, activeTask.id],
+        'UPDATE tasks SET title = ?, description = ?, priority = ?, due_date = ?, due_time = ? WHERE id = ?',
+        [taskDraft.title.trim(), taskDraft.description, taskDraft.priority, taskDraft.dueDate, taskDraft.time || null, activeTask.id],
       )
       if (activeTask.recur_rule_id) {
         await api.dbQuery(
@@ -1058,7 +1063,7 @@ export const Tasks: React.FC = () => {
                             }}
                           >
                             <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                              {task.due_date || t('tasks.due_date_not_set')}
+                              {formatDue(task)}
                             </span>
                             <span
                               className={`pill ${task.priority === 'high' ? 'red' : task.priority === 'mid' ? 'yellow' : 'green'}`}
@@ -1157,8 +1162,10 @@ export const Tasks: React.FC = () => {
                           </button>
                           <span className="task-row__date">
                             {isOverdue
-                              ? t('tasks.overdue_due_date', { date: task.due_date })
-                              : task.due_date}
+                              ? task.due_time
+                                ? t('tasks.overdue_due_datetime', { date: task.due_date, time: task.due_time })
+                                : t('tasks.overdue_due_date', { date: task.due_date })
+                              : formatDue(task)}
                           </span>
                           <div className="task-row__main">
                             <span className="task-row__title">{task.title}</span>
@@ -1202,7 +1209,7 @@ export const Tasks: React.FC = () => {
                     </div>
                     <div>
                       <span>{t('tasks.details_due_prefix')}</span>
-                      <strong>{activeTask.due_date || t('tasks.due_date_not_set')}</strong>
+                      <strong>{formatDue(activeTask)}</strong>
                     </div>
                   </div>
                   <div className="task-details-field">
@@ -1223,7 +1230,7 @@ export const Tasks: React.FC = () => {
                       </span>
                       <span className="pill">
                         {t('tasks.details_due_prefix')}{' '}
-                        {activeTask.due_date || t('tasks.due_date_not_set')}
+                        {formatDue(activeTask)}
                       </span>
                       {activeTaskTemplate && (
                         <span className="pill blue">

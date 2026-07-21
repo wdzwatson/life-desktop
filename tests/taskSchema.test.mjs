@@ -122,6 +122,7 @@ test('task schema creates template scheduling and step columns on a fresh databa
         .get()
 
       assert.ok(taskColumns.includes('instance_key'))
+      assert.ok(taskColumns.includes('due_time'))
       assert.ok(ruleColumns.includes('start_date'))
       assert.ok(ruleColumns.includes('start_time'))
       assert.ok(ruleColumns.includes('priority'))

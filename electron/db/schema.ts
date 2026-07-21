@@ -61,6 +61,7 @@ export function initializeUserDatabase(userDbDir: string) {
       priority TEXT CHECK(priority IN ('high', 'mid', 'low')) DEFAULT 'mid',
       status TEXT NOT NULL DEFAULT '待收集',
       due_date TEXT,
+      due_time TEXT,
       recur_rule_id INTEGER,
       instance_key TEXT,
       parent_id INTEGER,
@@ -124,6 +125,9 @@ export function initializeUserDatabase(userDbDir: string) {
     if (!taskColumnNames.has('instance_key')) {
       tasksDb.exec('ALTER TABLE tasks ADD COLUMN instance_key TEXT')
     }
+    if (!taskColumnNames.has('due_time')) {
+      tasksDb.exec('ALTER TABLE tasks ADD COLUMN due_time TEXT')
+    }
 
     const ruleColumns = tasksDb
       .prepare('PRAGMA table_info(recurring_rules)')
@@ -144,6 +148,10 @@ export function initializeUserDatabase(userDbDir: string) {
       SET start_date = COALESCE(start_date, substr(created_at, 1, 10)),
           start_time = COALESCE(start_time, '09:00'),
           priority = COALESCE(priority, 'mid');
+
+      UPDATE tasks
+      SET due_time = substr(instance_key, 12, 5)
+      WHERE due_time IS NULL AND instance_key GLOB '????-??-??T??:??';
 
       CREATE TABLE IF NOT EXISTS recurring_rule_steps (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
