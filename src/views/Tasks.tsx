@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
+  AlertTriangle,
   CalendarDays,
   Check,
   ChevronLeft,
@@ -253,6 +254,31 @@ export const Tasks: React.FC = () => {
     setTimeout(() => quickTitleInputRef.current?.focus(), 0)
   }
 
+  const selectTaskForDetails = (task: any) => {
+    setSelectedTaskId(task.id)
+    setEditDesc(task.description || '')
+    setEditProgress(task.progress || 0)
+  }
+
+  const getFrequencyLabel = (frequency: string) => {
+    switch (frequency) {
+      case 'custom':
+        return t('tasks.freq_once')
+      case 'daily':
+        return t('tasks.freq_daily')
+      case 'weekday':
+        return t('tasks.freq_weekday')
+      case 'weekly':
+        return t('tasks.freq_weekly')
+      case 'monthly':
+        return t('tasks.freq_monthly')
+      case 'cron':
+        return t('tasks.freq_cron')
+      default:
+        return frequency
+    }
+  }
+
   const runDueTaskGeneration = async () => {
     if (api?.runTaskScheduler) {
       await api.runTaskScheduler()
@@ -402,31 +428,18 @@ export const Tasks: React.FC = () => {
         return [
           <div
             key={child.id}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'auto auto 1fr auto auto',
-              alignItems: 'center',
-              gap: '12px',
-              padding: `10px 12px 10px ${32 + (depth - 1) * 18}px`,
-              borderLeft: '2px solid var(--color-border)',
-              backgroundColor:
-                selectedTaskId === child.id ? 'rgba(59, 130, 246, 0.02)' : 'transparent',
-              cursor: 'pointer',
-            }}
+            className={`task-row task-row--child ${selectedTaskId === child.id ? 'is-selected' : ''} ${
+              child.is_completed === 1 ? 'is-completed' : ''
+            }`}
+            style={{ paddingLeft: `${30 + (depth - 1) * 18}px` }}
             role="button"
             tabIndex={0}
             aria-label={child.title}
-            onClick={() => {
-              setSelectedTaskId(child.id)
-              setEditDesc(child.description || '')
-              setEditProgress(child.progress || 0)
-            }}
+            onClick={() => selectTaskForDetails(child)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault()
-                setSelectedTaskId(child.id)
-                setEditDesc(child.description || '')
-                setEditProgress(child.progress || 0)
+                selectTaskForDetails(child)
               }
             }}
           >
@@ -446,12 +459,7 @@ export const Tasks: React.FC = () => {
                 e.stopPropagation()
                 toggleTaskDone(child)
               }}
-              style={{
-                border: 'none',
-                background: 'none',
-                display: 'flex',
-                alignItems: 'center',
-              }}
+              className="task-row__check"
             >
               {child.is_completed === 1 ? (
                 <Check size={14} color="var(--color-success)" />
@@ -459,21 +467,12 @@ export const Tasks: React.FC = () => {
                 <Circle size={14} color="var(--text-muted)" />
               )}
             </button>
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+            <span className="task-row__date">
               {child.due_date}
             </span>
-            <span
-              style={{
-                fontSize: '12.5px',
-                textDecoration: child.is_completed === 1 ? 'line-through' : 'none',
-                color: child.is_completed === 1 ? 'var(--text-muted)' : 'var(--text-main)',
-              }}
-            >
-              {child.title}
-            </span>
+            <span className="task-row__title">{child.title}</span>
             <span
               className={`pill ${child.priority === 'high' ? 'red' : child.priority === 'mid' ? 'yellow' : 'green'}`}
-              style={{ fontSize: '9px', transform: 'scale(0.85)' }}
             >
               {getPriorityLabel(child.priority)}
             </span>
@@ -745,30 +744,79 @@ export const Tasks: React.FC = () => {
   const activeTaskTemplate = activeTask?.recur_rule_id
     ? rules.find((rule) => rule.id === activeTask.recur_rule_id)
     : null
+  const rootTasks = useMemo(() => tasks.filter((task) => !task.parent_id), [tasks])
+  const todayKey = toLocalDateKey(new Date())
+  const openTaskCount = tasks.filter(
+    (task) => task.is_completed !== 1 && task.status !== '已关闭',
+  ).length
+  const todayTaskCount = tasks.filter((task) => task.due_date === todayKey).length
+  const overdueTaskCount = tasks.filter((task) => task.status === '已逾期').length
+  const selectedRule = selectedRuleId
+    ? rules.find((rule) => rule.id === selectedRuleId)
+    : null
+  const rulePreviewOccurrences = useMemo(
+    () =>
+      getNextTemplateOccurrences(
+        {
+          id: selectedRuleId || 0,
+          title: ruleName,
+          description: ruleDesc,
+          frequency: ruleFreq,
+          interval: ruleInterval,
+          week_days: ruleWeekDays.join(','),
+          month_days: ruleMonthDays.join(','),
+          cron: ruleCron,
+          start_date: ruleStartDate,
+          start_time: ruleTime,
+        },
+        new Date(),
+        5,
+      ),
+    [
+      selectedRuleId,
+      ruleName,
+      ruleDesc,
+      ruleFreq,
+      ruleInterval,
+      ruleWeekDays,
+      ruleMonthDays,
+      ruleCron,
+      ruleStartDate,
+      ruleTime,
+    ],
+  )
 
   return (
-    <div
-      style={{
-        animation: 'enter 0.15s ease both',
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      {/* Page Header */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '16px',
-        }}
-      >
-        <div>
-          <h1 style={{ fontSize: '22px', fontWeight: 800 }}>{t('tasks.title')}</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{t('tasks.subtitle')}</p>
+    <div className="task-page">
+      <header className="task-header">
+        <div className="task-header__copy">
+          <span className="task-header__eyebrow">{t('tasks.workspace_label')}</span>
+          <h1>{t('tasks.title')}</h1>
+          <p>{t('tasks.subtitle')}</p>
         </div>
-      </div>
+        <div className="task-header__stats" aria-label={t('tasks.overview_label')}>
+          <div className="task-stat">
+            <ListTodo aria-hidden="true" />
+            <span>{t('tasks.stat_open')}</span>
+            <strong>{openTaskCount}</strong>
+          </div>
+          <div className="task-stat">
+            <CalendarDays aria-hidden="true" />
+            <span>{t('tasks.stat_today')}</span>
+            <strong>{todayTaskCount}</strong>
+          </div>
+          <div className={`task-stat ${overdueTaskCount > 0 ? 'is-warning' : ''}`}>
+            <AlertTriangle aria-hidden="true" />
+            <span>{t('tasks.stat_overdue')}</span>
+            <strong>{overdueTaskCount}</strong>
+          </div>
+          <div className="task-stat">
+            <Repeat2 aria-hidden="true" />
+            <span>{t('tasks.stat_templates')}</span>
+            <strong>{rules.length}</strong>
+          </div>
+        </div>
+      </header>
 
       <nav className="task-navigation" aria-label={t('tasks.navigation_label')}>
         <div
@@ -776,6 +824,7 @@ export const Tasks: React.FC = () => {
           role="group"
           aria-label={t('tasks.view_modes_label')}
         >
+          <span className="task-navigation__group-label">{t('tasks.instances_group_label')}</span>
           <button
             type="button"
             className={`task-navigation__view ${taskTab === 'kanban' ? 'active' : ''}`}
@@ -810,6 +859,7 @@ export const Tasks: React.FC = () => {
           role="group"
           aria-label={t('tasks.workflow_tools_label')}
         >
+          <span className="task-navigation__group-label">{t('tasks.automation_group_label')}</span>
           <button
             type="button"
             className={`task-navigation__tool ${taskTab === 'recurring' ? 'active' : ''}`}
@@ -840,7 +890,7 @@ export const Tasks: React.FC = () => {
         </div>
       </nav>
 
-      <div style={{ flexGrow: 1, minHeight: 0 }}>
+      <div className="task-content">
         {/* TAB: KANBAN BOARD */}
         {taskTab === 'kanban' &&
           (tasks.length === 0 ? (
@@ -1001,18 +1051,15 @@ export const Tasks: React.FC = () => {
 
         {/* TAB: LIST & DETAIL PANEL */}
         {taskTab === 'list' && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 340px',
-              gap: '16px',
-              height: '100%',
-            }}
-          >
+          <div className="task-list-layout">
             {/* Left list tree */}
-            <div
-              style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}
-            >
+            <section className="task-panel task-panel--list">
+              <div className="task-panel__header">
+                <div>
+                  <strong>{t('tasks.instance_panel_title')}</strong>
+                  <p>{t('tasks.instance_panel_desc')}</p>
+                </div>
+              </div>
               {/* Quick Add Bar */}
               <form className="task-quick-add" onSubmit={handleQuickAdd}>
                 <input
@@ -1045,48 +1092,32 @@ export const Tasks: React.FC = () => {
               </form>
 
               {/* Task rows */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {tasks
-                  .filter((t) => !t.parent_id)
-                  .map((task) => {
+              <div className="task-list">
+                {rootTasks.length === 0 ? (
+                  <div className="task-list-empty">
+                    <ListTodo aria-hidden="true" />
+                    <strong>{t('tasks.board_empty_title')}</strong>
+                    <p>{t('tasks.board_empty_description')}</p>
+                  </div>
+                ) : (
+                  rootTasks.map((task) => {
                     const isSelected = selectedTaskId === task.id
                     const isOverdue = task.status === '已逾期'
 
                     return (
-                      <div key={task.id} style={{ display: 'flex', flexDirection: 'column' }}>
+                      <div key={task.id} className="task-row-group">
                         <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'auto auto 1fr auto auto',
-                            alignItems: 'center',
-                            gap: '12px',
-                            padding: '12px',
-                            border: '1px solid var(--color-border)',
-                            borderRadius: '8px',
-                            backgroundColor: isSelected
-                              ? 'rgba(59, 130, 246, 0.04)'
-                              : 'var(--bg-surface)',
-                            borderColor: isOverdue
-                              ? 'var(--color-danger)'
-                              : isSelected
-                                ? 'var(--color-accent)'
-                                : 'var(--color-border)',
-                            cursor: 'pointer',
-                          }}
+                          className={`task-row ${isSelected ? 'is-selected' : ''} ${isOverdue ? 'is-overdue' : ''} ${
+                            task.is_completed === 1 ? 'is-completed' : ''
+                          }`}
                           role="button"
                           tabIndex={0}
                           aria-label={task.title}
-                          onClick={() => {
-                            setSelectedTaskId(task.id)
-                            setEditDesc(task.description || '')
-                            setEditProgress(task.progress || 0)
-                          }}
+                          onClick={() => selectTaskForDetails(task)}
                           onKeyDown={(event) => {
                             if (event.key === 'Enter' || event.key === ' ') {
                               event.preventDefault()
-                              setSelectedTaskId(task.id)
-                              setEditDesc(task.description || '')
-                              setEditProgress(task.progress || 0)
+                              selectTaskForDetails(task)
                             }
                           }}
                         >
@@ -1106,12 +1137,7 @@ export const Tasks: React.FC = () => {
                               e.stopPropagation()
                               toggleTaskDone(task)
                             }}
-                            style={{
-                              border: 'none',
-                              background: 'none',
-                              display: 'flex',
-                              alignItems: 'center',
-                            }}
+                            className="task-row__check"
                           >
                             {task.is_completed === 1 ? (
                               <Check size={16} color="var(--color-success)" />
@@ -1122,52 +1148,23 @@ export const Tasks: React.FC = () => {
                               />
                             )}
                           </button>
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              color: isOverdue ? 'var(--color-danger)' : 'var(--text-muted)',
-                              fontFamily: 'var(--font-mono)',
-                            }}
-                          >
+                          <span className="task-row__date">
                             {isOverdue ? t('common.overdue') : task.due_date}
                           </span>
-                          <div style={{ minWidth: 0 }}>
-                            <span
-                              style={{
-                                fontSize: '13px',
-                                fontWeight: 600,
-                                textDecoration: task.is_completed === 1 ? 'line-through' : 'none',
-                                color:
-                                  task.is_completed === 1
-                                    ? 'var(--text-muted)'
-                                    : 'var(--text-main)',
-                              }}
-                            >
-                              {task.title}
+                          <div className="task-row__main">
+                            <span className="task-row__title">{task.title}</span>
+                            <span className="task-row__meta">
+                              {getStatusLabel(task.status)}
+                              {task.recur_rule_id ? ` · ${t('tasks.details_template_prefix')}` : ''}
                             </span>
                             {task.progress > 0 && task.progress < 100 && (
-                              <div
-                                style={{
-                                  height: '3px',
-                                  backgroundColor: 'var(--color-border)',
-                                  borderRadius: '2px',
-                                  marginTop: '4px',
-                                  width: '80px',
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    height: '100%',
-                                    width: `${task.progress}%`,
-                                    backgroundColor: 'var(--color-accent)',
-                                  }}
-                                />
+                              <div className="task-row__progress">
+                                <div style={{ width: `${task.progress}%` }} />
                               </div>
                             )}
                           </div>
                           <span
                             className={`pill ${task.priority === 'high' ? 'red' : task.priority === 'mid' ? 'yellow' : 'green'}`}
-                            style={{ fontSize: '10px' }}
                           >
                             {getPriorityLabel(task.priority)}
                           </span>
@@ -1188,68 +1185,44 @@ export const Tasks: React.FC = () => {
                         {renderSubtaskRows(task.id)}
                       </div>
                     )
-                  })}
+                  })
+                )}
               </div>
-            </div>
+            </section>
 
             {/* Right details panel */}
             <aside
-              className="card"
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '14px',
-                height: '100%',
-                overflowY: 'auto',
-              }}
+              className="task-panel task-details-panel"
             >
               {activeTask ? (
                 <>
-                  <h3 style={{ fontSize: '15px', fontWeight: 800 }}>{t('tasks.details_title')}</h3>
-                  <div>
-                    <label
-                      style={{
-                        fontSize: '11px',
-                        color: 'var(--text-muted)',
-                        display: 'block',
-                        marginBottom: '4px',
-                      }}
-                    >
-                      {t('tasks.details_label_title')}
-                    </label>
-                    <div style={{ fontSize: '14px', fontWeight: 700 }}>{activeTask.title}</div>
+                  <div className="task-details-panel__header">
+                    <span>{t('tasks.details_title')}</span>
+                    <h3>{activeTask.title}</h3>
                   </div>
-                  <div>
-                    <label
-                      style={{
-                        fontSize: '11px',
-                        color: 'var(--text-muted)',
-                        display: 'block',
-                        marginBottom: '4px',
-                      }}
-                    >
-                      {t('tasks.details_label_desc')}
-                    </label>
+                  <div className="task-details-meta">
+                    <div>
+                      <span>{t('tasks.details_label_status')}</span>
+                      <strong>{getStatusLabel(activeTask.status)}</strong>
+                    </div>
+                    <div>
+                      <span>{t('tasks.details_due_prefix')}</span>
+                      <strong>{activeTask.due_date || t('tasks.due_date_not_set')}</strong>
+                    </div>
+                  </div>
+                  <div className="task-details-field">
+                    <span>{t('tasks.details_label_desc')}</span>
                     <textarea
                       className="form-field"
-                      rows={3}
+                      rows={4}
                       value={editDesc}
                       onChange={(e) => setEditDesc(e.target.value)}
                       placeholder={t('tasks.details_desc_placeholder')}
                     />
                   </div>
-                  <div>
-                    <label
-                      style={{
-                        fontSize: '11px',
-                        color: 'var(--text-muted)',
-                        display: 'block',
-                        marginBottom: '4px',
-                      }}
-                    >
-                      {t('tasks.details_label_status')}: {getStatusLabel(activeTask.status)}
-                    </label>
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                  <div className="task-details-field">
+                    <span>{t('tasks.details_label_status')}</span>
+                    <div className="task-details-pills">
                       <span className="pill">
                         {getPriorityLabel(activeTask.priority)} {t('tasks.details_priority_suffix')}
                       </span>
@@ -1272,57 +1245,25 @@ export const Tasks: React.FC = () => {
 
                   {/* Manual Progress Slider */}
                   {!activeTask.parent_id && tasks.some((c) => c.parent_id === activeTask.id) ? (
-                    <div>
-                      <label
-                        style={{
-                          fontSize: '11px',
-                          color: 'var(--text-muted)',
-                          display: 'block',
-                          marginBottom: '4px',
-                        }}
-                      >
+                    <div className="task-details-field">
+                      <span>
                         {t('tasks.details_subtask_progress')}
-                      </label>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div
-                          style={{
-                            height: '6px',
-                            backgroundColor: 'var(--color-border)',
-                            borderRadius: '99px',
-                            flexGrow: 1,
-                            overflow: 'hidden',
-                          }}
-                        >
-                          <div
-                            style={{
-                              height: '100%',
-                              width: `${activeTask.progress}%`,
-                              backgroundColor: 'var(--color-accent)',
-                            }}
-                          />
+                      </span>
+                      <div className="task-details-progress">
+                        <div className="task-details-progress__track">
+                          <div style={{ width: `${activeTask.progress}%` }} />
                         </div>
-                        <span style={{ fontSize: '11px', fontWeight: 'bold' }}>
-                          {activeTask.progress}%
-                        </span>
+                        <strong>{activeTask.progress}%</strong>
                       </div>
-                      <p
-                        style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '4px' }}
-                      >
+                      <p className="task-details-hint">
                         {t('tasks.details_subtask_progress_tip')}
                       </p>
                     </div>
                   ) : (
-                    <div>
-                      <label
-                        style={{
-                          fontSize: '11px',
-                          color: 'var(--text-muted)',
-                          display: 'block',
-                          marginBottom: '4px',
-                        }}
-                      >
+                    <div className="task-details-field">
+                      <span>
                         {t('tasks.details_label_progress')}: {editProgress}%
-                      </label>
+                      </span>
                       <input
                         type="range"
                         min="0"
@@ -1335,9 +1276,8 @@ export const Tasks: React.FC = () => {
                   )}
 
                   <button
-                    className="btn primary"
+                    className="btn primary task-details-save"
                     onClick={handleSaveDetails}
-                    style={{ marginTop: 'auto' }}
                   >
                     {t('tasks.btn_save_changes')}
                   </button>
@@ -1506,23 +1446,14 @@ export const Tasks: React.FC = () => {
 
         {/* TAB: RECURRING RULES */}
         {taskTab === 'recurring' && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '320px 1fr',
-              gap: '16px',
-              height: '100%',
-            }}
-          >
+          <div className="task-template-layout">
             {/* Left rules list */}
-            <div
-              className="card"
-              style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}
-            >
-              <div
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-              >
-                <strong style={{ fontSize: '13px' }}>{t('tasks.recurring_rules_title')}</strong>
+            <section className="task-panel task-template-list-panel">
+              <div className="task-panel__header task-panel__header--row">
+                <div>
+                  <strong>{t('tasks.recurring_rules_title')}</strong>
+                  <p>{t('tasks.rules_empty_description')}</p>
+                </div>
                 <button
                   type="button"
                   className="btn sm primary task-row__subtask-action"
@@ -1533,7 +1464,7 @@ export const Tasks: React.FC = () => {
                   <Plus size={14} aria-hidden="true" />
                 </button>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div className="task-template-list">
                 {rules.length === 0 ? (
                   <div className="task-rules-empty">
                     <strong>{t('tasks.rules_empty_title')}</strong>
@@ -1547,21 +1478,10 @@ export const Tasks: React.FC = () => {
                   rules.map((rule) => (
                     <div
                       key={rule.id}
+                      className={`task-template-item ${selectedRuleId === rule.id ? 'is-selected' : ''}`}
                       role="button"
                       tabIndex={0}
                       aria-label={rule.title}
-                      style={{
-                        padding: '10px',
-                        border: '1px solid var(--color-border)',
-                        borderRadius: '8px',
-                        backgroundColor:
-                          selectedRuleId === rule.id ? 'rgba(59, 130, 246, 0.04)' : 'transparent',
-                        borderColor:
-                          selectedRuleId === rule.id
-                            ? 'var(--color-accent)'
-                            : 'var(--color-border)',
-                        cursor: 'pointer',
-                      }}
                       onClick={() => selectRule(rule)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
@@ -1570,40 +1490,28 @@ export const Tasks: React.FC = () => {
                         }
                       }}
                     >
-                      <div style={{ fontWeight: 600, fontSize: '13px' }}>{rule.title}</div>
-                      <div
-                        style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}
-                      >
-                        {rule.frequency === 'daily'
-                          ? t('tasks.freq_daily')
-                          : rule.frequency === 'weekday'
-                            ? t('tasks.freq_weekday')
-                            : rule.frequency === 'weekly'
-                              ? t('tasks.freq_weekly')
-                              : rule.frequency === 'monthly'
-                                ? t('tasks.freq_monthly')
-                                : rule.frequency === 'custom'
-                                  ? t('tasks.freq_once')
-                                : rule.frequency}{' '}
-                        · {getTemplateStartDateKey(rule)} {getTemplateStartTime(rule)}
-                      </div>
+                      <strong>{rule.title}</strong>
+                      <span>
+                        {getFrequencyLabel(rule.frequency)} · {getTemplateStartDateKey(rule)}{' '}
+                        {getTemplateStartTime(rule)}
+                      </span>
                     </div>
                   ))
                 )}
               </div>
-            </div>
+            </section>
 
             {/* Right rule editor */}
-            <div
-              className="card"
-              style={{ display: 'flex', flexDirection: 'column', gap: '14px', overflowY: 'auto' }}
-            >
-              <div
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-              >
-                <h3 style={{ fontSize: '15px', fontWeight: 800 }}>
-                  {t('tasks.config_rule_title')}
-                </h3>
+            <section className="task-panel task-template-editor">
+              <div className="task-panel__header task-panel__header--row">
+                <div>
+                  <strong>{t('tasks.config_rule_title')}</strong>
+                  <p>
+                    {selectedRule
+                      ? `${getFrequencyLabel(selectedRule.frequency)} · ${getTemplateStartTime(selectedRule)}`
+                      : t('tasks.rule_new_name')}
+                  </p>
+                </div>
                 {selectedRuleId && (
                   <button
                     type="button"
@@ -1615,15 +1523,8 @@ export const Tasks: React.FC = () => {
                 )}
               </div>
 
-              <div>
-                <label
-                  style={{
-                    fontSize: '11px',
-                    color: 'var(--text-muted)',
-                    display: 'block',
-                    marginBottom: '4px',
-                  }}
-                >
+              <div className="task-form-section">
+                <label>
                   {t('tasks.rule_name_label')}
                 </label>
                 <input
@@ -1633,15 +1534,8 @@ export const Tasks: React.FC = () => {
                 />
               </div>
 
-              <div>
-                <label
-                  style={{
-                    fontSize: '11px',
-                    color: 'var(--text-muted)',
-                    display: 'block',
-                    marginBottom: '4px',
-                  }}
-                >
+              <div className="task-form-section">
+                <label>
                   {t('tasks.details_label_desc')}
                 </label>
                 <textarea
@@ -1653,15 +1547,8 @@ export const Tasks: React.FC = () => {
               </div>
 
               <div className="task-rule-schedule-grid">
-                <div>
-                  <label
-                    style={{
-                      fontSize: '11px',
-                      color: 'var(--text-muted)',
-                      display: 'block',
-                      marginBottom: '4px',
-                    }}
-                  >
+                <div className="task-form-section">
+                  <label>
                     {t('tasks.freq_label')}
                   </label>
                   <select
@@ -1677,15 +1564,8 @@ export const Tasks: React.FC = () => {
                     <option value="cron">{t('tasks.freq_cron')}</option>
                   </select>
                 </div>
-                <div>
-                  <label
-                    style={{
-                      fontSize: '11px',
-                      color: 'var(--text-muted)',
-                      display: 'block',
-                      marginBottom: '4px',
-                    }}
-                  >
+                <div className="task-form-section">
+                  <label>
                     {t('tasks.interval_label')}
                   </label>
                   <input
@@ -1696,15 +1576,8 @@ export const Tasks: React.FC = () => {
                     onChange={(e) => setRuleInterval(Math.max(1, parseInt(e.target.value) || 1))}
                   />
                 </div>
-                <div>
-                  <label
-                    style={{
-                      fontSize: '11px',
-                      color: 'var(--text-muted)',
-                      display: 'block',
-                      marginBottom: '4px',
-                    }}
-                  >
+                <div className="task-form-section">
+                  <label>
                     {t('tasks.rule_start_date_label')}
                   </label>
                   <input
@@ -1714,15 +1587,8 @@ export const Tasks: React.FC = () => {
                     onChange={(e) => setRuleStartDate(e.target.value)}
                   />
                 </div>
-                <div>
-                  <label
-                    style={{
-                      fontSize: '11px',
-                      color: 'var(--text-muted)',
-                      display: 'block',
-                      marginBottom: '4px',
-                    }}
-                  >
+                <div className="task-form-section">
+                  <label>
                     {t('tasks.time_label')}
                   </label>
                   <input
@@ -1732,15 +1598,8 @@ export const Tasks: React.FC = () => {
                     onChange={(e) => setRuleTime(e.target.value)}
                   />
                 </div>
-                <div>
-                  <label
-                    style={{
-                      fontSize: '11px',
-                      color: 'var(--text-muted)',
-                      display: 'block',
-                      marginBottom: '4px',
-                    }}
-                  >
+                <div className="task-form-section">
+                  <label>
                     {t('tasks.template_priority_label')}
                   </label>
                   <select
@@ -1756,18 +1615,11 @@ export const Tasks: React.FC = () => {
               </div>
 
               {ruleFreq === 'weekly' && (
-                <div>
-                  <label
-                    style={{
-                      fontSize: '11px',
-                      color: 'var(--text-muted)',
-                      display: 'block',
-                      marginBottom: '6px',
-                    }}
-                  >
+                <div className="task-form-section">
+                  <label>
                     {t('tasks.days_of_week_label')}
                   </label>
-                  <div style={{ display: 'flex', gap: '6px' }}>
+                  <div className="task-weekday-picker">
                     {[1, 2, 3, 4, 5, 6, 7].map((d) => {
                       const isActive = ruleWeekDays.includes(d)
                       const names = t('tasks.weekdays_short').split(',')
@@ -1799,45 +1651,24 @@ export const Tasks: React.FC = () => {
               )}
 
               {ruleFreq === 'cron' && (
-                <div>
-                  <label
-                    style={{
-                      fontSize: '11px',
-                      color: 'var(--text-muted)',
-                      display: 'block',
-                      marginBottom: '4px',
-                    }}
-                  >
+                <div className="task-form-section">
+                  <label>
                     {t('tasks.freq_cron')}
-                </label>
-                <input
-                  className="form-field"
-                  value={ruleCron}
-                  onChange={(e) => setRuleCron(e.target.value)}
-                  placeholder={t('tasks.cron_placeholder')}
-                />
-                  <span
-                    style={{
-                      fontSize: '10.5px',
-                      color: 'var(--text-muted)',
-                      marginTop: '4px',
-                      display: 'block',
-                    }}
-                  >
+                  </label>
+                  <input
+                    className="form-field"
+                    value={ruleCron}
+                    onChange={(e) => setRuleCron(e.target.value)}
+                    placeholder={t('tasks.cron_placeholder')}
+                  />
+                  <span className="task-form-hint">
                     {t('tasks.cron_hint')}
                   </span>
                 </div>
               )}
 
-              <div>
-                <label
-                  style={{
-                    fontSize: '11px',
-                    color: 'var(--text-muted)',
-                    display: 'block',
-                    marginBottom: '4px',
-                  }}
-                >
+              <div className="task-form-section">
+                <label>
                   {t('tasks.holiday_strategy_label')}
                 </label>
                 <select
@@ -1851,53 +1682,15 @@ export const Tasks: React.FC = () => {
                 </select>
               </div>
 
-              {/* Next 8 triggers preview mockup */}
-              <div>
-                <label
-                  style={{
-                    fontSize: '11px',
-                    color: 'var(--text-muted)',
-                    display: 'block',
-                    marginBottom: '6px',
-                  }}
-                >
+              <div className="task-form-section task-preview-section">
+                <label>
                   {t('tasks.future_triggers_label')}
                 </label>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {getNextTemplateOccurrences(
-                    {
-                      id: selectedRuleId || 0,
-                      title: ruleName,
-                      description: ruleDesc,
-                      frequency: ruleFreq,
-                      interval: ruleInterval,
-                      week_days: ruleWeekDays.join(','),
-                      month_days: ruleMonthDays.join(','),
-                      cron: ruleCron,
-                      start_date: ruleStartDate,
-                      start_time: ruleTime,
-                    },
-                    new Date(),
-                    5,
-                  ).length === 0 ? (
+                <div className="task-preview-pills">
+                  {rulePreviewOccurrences.length === 0 ? (
                     <span className="pill blue">{t('tasks.future_triggers_empty')}</span>
                   ) : (
-                    getNextTemplateOccurrences(
-                      {
-                        id: selectedRuleId || 0,
-                        title: ruleName,
-                        description: ruleDesc,
-                        frequency: ruleFreq,
-                        interval: ruleInterval,
-                        week_days: ruleWeekDays.join(','),
-                        month_days: ruleMonthDays.join(','),
-                        cron: ruleCron,
-                        start_date: ruleStartDate,
-                        start_time: ruleTime,
-                      },
-                      new Date(),
-                      5,
-                    ).map((occurrence) => (
+                    rulePreviewOccurrences.map((occurrence) => (
                       <span key={occurrence.instanceKey} className="pill blue">
                         {occurrence.dateKey} {occurrence.time}
                       </span>
@@ -1908,53 +1701,33 @@ export const Tasks: React.FC = () => {
 
               <button
                 type="button"
-                className="btn primary"
+                className="btn primary task-template-save"
                 onClick={handleSaveRule}
-                style={{ width: 'max-content', alignSelf: 'flex-end', marginTop: 'auto' }}
               >
                 {t('tasks.btn_save_rule')}
               </button>
-            </div>
+            </section>
           </div>
         )}
 
         {/* TAB: TEMPLATES */}
         {taskTab === 'templates' && (
-          <div
-            className="task-template-grid"
-            style={{
-              display: 'grid',
-              gap: '16px',
-              overflowY: 'auto',
-              height: '100%',
-            }}
-          >
+          <div className="task-template-library">
             {templates.map((tpl) => (
               <div
                 key={tpl.id}
-                className="card"
-                style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
+                className="task-template-card"
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '20px' }}>{tpl.icon}</span>
-                  <h3 style={{ fontSize: '14px', fontWeight: 700 }}>{tpl.title}</h3>
+                <div className="task-template-card__header">
+                  <span>{tpl.icon}</span>
+                  <h3>{tpl.title}</h3>
                 </div>
-                <ul
-                  style={{
-                    paddingLeft: '18px',
-                    fontSize: '12px',
-                    color: 'var(--text-muted)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '4px',
-                    flexGrow: 1,
-                  }}
-                >
+                <ul>
                   {tpl.subtasks.map((st: string) => (
                     <li key={st}>{st}</li>
                   ))}
                 </ul>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', margin: '8px 0' }}>
+                <div className="task-template-card__tags">
                   {tpl.tags.map((t: string) => (
                     <span key={t} className="pill">
                       {t}
@@ -1965,7 +1738,6 @@ export const Tasks: React.FC = () => {
                   type="button"
                   className="btn primary sm"
                   onClick={() => handleUseTemplate(tpl)}
-                  style={{ width: 'max-content' }}
                 >
                   {t('tasks.btn_use_template')}
                 </button>
