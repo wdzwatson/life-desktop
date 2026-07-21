@@ -42,6 +42,7 @@ import { hasBilibiliLoginCookie, writeBilibiliCookieFile } from './video/bilibil
 import { handleVideoProtocolRequest } from './video/protocol'
 import { classifyVideoDownloadFailure } from './video/downloadState'
 import { normalizeBulkVideoTagPayload } from '../src/views/videoStateUtils'
+import { getDueTemplateOccurrence, toLocalDateKey } from '../src/views/taskScheduleUtils'
 import { VaultService, serializeVaultError } from './vault/service'
 import { getDirectDbAccessError } from './db/accessPolicy'
 import {
@@ -646,6 +647,12 @@ function switchUserSession(userId: string) {
 function startScheduler() {
   if (schedulerInterval) clearInterval(schedulerInterval)
 
+  try {
+    runSchedulerCycle()
+  } catch (err) {
+    console.error('Scheduler error:', err)
+  }
+
   // Scan every minute
   schedulerInterval = setInterval(() => {
     try {
@@ -656,68 +663,89 @@ function startScheduler() {
   }, 60000)
 }
 
-function runSchedulerCycle() {
+function runSchedulerCycle(options: { notify?: boolean } = {}) {
+  const notify = options.notify !== false
   const db = getUserDb('tasks')
   const now = new Date()
-  const currentYMD = now.toISOString().slice(0, 10) // YYYY-MM-DD
-  const dayOfWeek = now.getDay() // 0-6 (Sun-Sat)
-  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
+  const currentYMD = toLocalDateKey(now)
+  let generatedCount = 0
+  let overdueCount = 0
 
-  // 1. Scan recurring rules and auto-generate tasks
+  // 1. Scan task templates and auto-generate due instances.
   const rules = db.prepare('SELECT * FROM recurring_rules').all() as any[]
 
   rules.forEach((rule) => {
-    let shouldTrigger = false
+    const occurrence = getDueTemplateOccurrence(rule, now)
+    if (!occurrence) return
 
-    // Check execution policies
-    if (rule.frequency === 'daily') {
-      shouldTrigger = true
-    } else if (rule.frequency === 'weekday' && !isWeekend) {
-      shouldTrigger = true
-    } else if (rule.frequency === 'weekly') {
-      const days = (rule.week_days || '').split(',').map((x: string) => parseInt(x))
-      // JS: 0=Sun, 1=Mon... In our visual builder: 1=Mon, 7=Sun
-      const adjustedJSWeekDay = dayOfWeek === 0 ? 7 : dayOfWeek
-      if (days.includes(adjustedJSWeekDay)) {
-        shouldTrigger = true
-      }
-    } else if (rule.frequency === 'monthly') {
-      const days = (rule.month_days || '').split(',').map((x: string) => parseInt(x))
-      const dateNum = now.getDate()
-      if (days.includes(dateNum)) {
-        shouldTrigger = true
-      }
-    }
+    const existing = db
+      .prepare(
+        `
+        SELECT id FROM tasks
+        WHERE recur_rule_id = ? AND instance_key = ? AND parent_id IS NULL
+        LIMIT 1
+      `,
+      )
+      .get(rule.id, occurrence.instanceKey) as { id?: number } | undefined
 
-    // Evaluate if trigger matches local time hour/minute
-    if (shouldTrigger) {
-      // Find last trigger date to prevent double triggers on the same day
-      const lastTriggerYMD = rule.last_trigger_time ? rule.last_trigger_time.slice(0, 10) : ''
-      if (lastTriggerYMD !== currentYMD) {
-        // Generate task
-        const title = rule.title
-        const desc = rule.description || '由周期规则自动生成'
-
-        db.prepare(
-          `
-          INSERT INTO tasks (title, description, priority, status, due_date, recur_rule_id, progress)
-          VALUES (?, ?, 'mid', '待处理', ?, ?, 0)
-        `,
-        ).run(title, desc, currentYMD, rule.id)
-
+    if (existing?.id) {
+      if (rule.frequency === 'custom' && !rule.last_trigger_time) {
         db.prepare('UPDATE recurring_rules SET last_trigger_time = ? WHERE id = ?').run(
           now.toISOString(),
           rule.id,
         )
-
-        // Push notification in active window
-        if (mainWindow) {
-          mainWindow.webContents.send('scheduler:notif', {
-            title: `任务已自动生成`,
-            body: title,
-          })
-        }
       }
+      return
+    }
+
+    const title = rule.title
+    const desc = rule.description || '由任务模板自动生成'
+    const priority = rule.priority || 'mid'
+
+    const inserted = db.prepare(
+      `
+      INSERT INTO tasks (
+        title, description, priority, status, due_date, recur_rule_id, instance_key, progress
+      )
+      VALUES (?, ?, ?, '待处理', ?, ?, ?, 0)
+    `,
+    ).run(title, desc, priority, occurrence.dateKey, rule.id, occurrence.instanceKey)
+    const parentId = Number(inserted.lastInsertRowid)
+
+    const steps = db
+      .prepare('SELECT * FROM recurring_rule_steps WHERE rule_id = ? ORDER BY sort_order ASC, id ASC')
+      .all(rule.id) as any[]
+    const insertStep = db.prepare(
+      `
+      INSERT INTO tasks (
+        title, description, priority, status, due_date, recur_rule_id, instance_key, parent_id, progress
+      )
+      VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, 0)
+    `,
+    )
+    for (const step of steps) {
+      insertStep.run(
+        step.title,
+        step.description || '',
+        step.priority || priority,
+        occurrence.dateKey,
+        rule.id,
+        occurrence.instanceKey,
+        parentId,
+      )
+    }
+
+    db.prepare('UPDATE recurring_rules SET last_trigger_time = ? WHERE id = ?').run(
+      now.toISOString(),
+      rule.id,
+    )
+    generatedCount += 1
+
+    if (notify && mainWindow) {
+      mainWindow.webContents.send('scheduler:notif', {
+        title: `任务实例已生成`,
+        body: title,
+      })
     }
   })
 
@@ -734,13 +762,16 @@ function runSchedulerCycle() {
 
   overdueTasks.forEach((task) => {
     db.prepare("UPDATE tasks SET status = '已逾期' WHERE id = ?").run(task.id)
-    if (mainWindow) {
+    overdueCount += 1
+    if (notify && mainWindow) {
       mainWindow.webContents.send('scheduler:overdue', {
         taskId: task.id,
         title: task.title,
       })
     }
   })
+
+  return { generatedCount, overdueCount }
 }
 
 // Electron window creation
@@ -2012,6 +2043,15 @@ ipcMain.handle('db:transaction', async (_, { dbName, statements }) => {
   } catch (err: any) {
     console.error(`DB Transaction Error (${dbName}):`, err)
     return { success: false, error: err.message }
+  }
+})
+
+ipcMain.handle('tasks:runScheduler', async () => {
+  try {
+    return { success: true, data: runSchedulerCycle({ notify: false }) }
+  } catch (err: any) {
+    console.error('Task scheduler manual run error:', err)
+    return { success: false, error: err?.message || String(err) }
   }
 })
 

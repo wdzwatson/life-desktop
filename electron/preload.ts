@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('db:query', { dbName, sql, params }),
   dbTransaction: (dbName: string, statements: Array<{ sql: string; params?: unknown[] }>) =>
     ipcRenderer.invoke('db:transaction', { dbName, statements }),
+  runTaskScheduler: () => ipcRenderer.invoke('tasks:runScheduler'),
 
   // AI configuration. Full credentials remain in the main process.
   listAIProviders: (filters?: unknown) => ipcRenderer.invoke('ai:providers:list', filters),

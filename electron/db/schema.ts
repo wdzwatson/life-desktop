@@ -148,9 +148,11 @@ export function initializeUserDatabase(userDbDir: string) {
         FOREIGN KEY (rule_id) REFERENCES recurring_rules(id) ON DELETE CASCADE
       );
 
-      CREATE UNIQUE INDEX IF NOT EXISTS tasks_recur_instance_parent_idx
-        ON tasks (recur_rule_id, instance_key, COALESCE(parent_id, -1))
-        WHERE recur_rule_id IS NOT NULL AND instance_key IS NOT NULL;
+      DROP INDEX IF EXISTS tasks_recur_instance_parent_idx;
+
+      CREATE UNIQUE INDEX tasks_recur_instance_parent_idx
+        ON tasks (recur_rule_id, instance_key)
+        WHERE recur_rule_id IS NOT NULL AND instance_key IS NOT NULL AND parent_id IS NULL;
     `)
   } catch (err) {
     console.error('Failed to migrate task template schema:', err)
