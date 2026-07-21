@@ -28,6 +28,7 @@ import {
   getTemplateStartTime,
   toLocalDateKey,
 } from './taskScheduleUtils'
+import { projectCalendarOccurrences } from './taskOccurrenceProjection'
 import './Tasks.css'
 
 const getCurrentTimeValue = () => {
@@ -189,7 +190,6 @@ export const Tasks: React.FC = () => {
     [rules, t],
   )
 
-  const calendarTasksByDate = useMemo(() => groupTasksByDueDate(tasks), [tasks])
   const boardLanes = useMemo(
     () => [
       { key: 'lane_inbox', dbVal: '待收集' },
@@ -208,6 +208,14 @@ export const Tasks: React.FC = () => {
       : calendarMode === 'week'
         ? calendarWeekDays
         : calendarMonthDays.filter((day) => day.getMonth() === calendarDate.getMonth())
+  const calendarTasks = useMemo(() => {
+    const start = new Date(calendarVisibleDays[0])
+    start.setHours(0, 0, 0, 0)
+    const end = new Date(calendarVisibleDays[calendarVisibleDays.length - 1])
+    end.setHours(23, 59, 59, 999)
+    return projectCalendarOccurrences(tasks, rules, start, end)
+  }, [calendarVisibleDays, rules, tasks])
+  const calendarTasksByDate = useMemo(() => groupTasksByDueDate(calendarTasks), [calendarTasks])
   const calendarVisibleTasks = calendarVisibleDays.flatMap(
     (day) => calendarTasksByDate.get(toCalendarDateKey(day)) ?? [],
   )
@@ -237,7 +245,24 @@ export const Tasks: React.FC = () => {
     }).format(calendarDate)
   }, [calendarDate, calendarMode, calendarWeekDays, i18n.language])
 
-  const openCalendarTask = (task: any) => {
+  const openCalendarTask = async (task: any) => {
+    if (task.is_virtual && api) {
+      await api.dbQuery(
+        'tasks',
+        `INSERT OR IGNORE INTO tasks (title, description, priority, status, due_date, recur_rule_id, instance_key, progress)
+         VALUES (?, ?, ?, '待处理', ?, ?, ?, 0)`,
+        [task.title, task.description || '', task.priority, task.due_date, task.recur_rule_id, task.instance_key],
+      )
+      const result = await api.dbQuery(
+        'tasks',
+        'SELECT * FROM tasks WHERE recur_rule_id = ? AND instance_key = ? AND parent_id IS NULL LIMIT 1',
+        [task.recur_rule_id, task.instance_key],
+      )
+      const materialized = result?.data?.[0]
+      await loadData()
+      if (materialized) selectTaskForDetails(materialized)
+      return
+    }
     selectTaskForDetails(task)
   }
 
