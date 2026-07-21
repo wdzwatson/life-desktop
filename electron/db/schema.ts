@@ -100,6 +100,14 @@ export function initializeUserDatabase(userDbDir: string) {
       FOREIGN KEY (rule_id) REFERENCES recurring_rules(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS recurring_rule_occurrence_exceptions (
+      recur_rule_id INTEGER NOT NULL,
+      instance_key TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (recur_rule_id, instance_key),
+      FOREIGN KEY (recur_rule_id) REFERENCES recurring_rules(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS translations (
       entity_type TEXT NOT NULL,
       entity_id TEXT NOT NULL,
@@ -146,6 +154,14 @@ export function initializeUserDatabase(userDbDir: string) {
         sort_order INTEGER DEFAULT 0,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (rule_id) REFERENCES recurring_rules(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS recurring_rule_occurrence_exceptions (
+        recur_rule_id INTEGER NOT NULL,
+        instance_key TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (recur_rule_id, instance_key),
+        FOREIGN KEY (recur_rule_id) REFERENCES recurring_rules(id) ON DELETE CASCADE
       );
 
       DROP INDEX IF EXISTS tasks_recur_instance_parent_idx;

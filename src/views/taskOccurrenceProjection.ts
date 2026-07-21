@@ -20,6 +20,7 @@ export const projectCalendarOccurrences = (
   rules: TaskTemplateRule[],
   start: Date,
   end: Date,
+  skippedKeys = new Set<string>(),
 ) => {
   const realKeys = new Set(tasks.map((task) => `${task.recur_rule_id ?? ''}:${task.instance_key ?? ''}`))
   const projected = [...tasks]
@@ -30,6 +31,7 @@ export const projectCalendarOccurrences = (
     if (rule.frequency === 'custom') continue
     for (const occurrence of getNextTemplateOccurrences(rule, start, 370)) {
       if (occurrence.dateKey < startKey || occurrence.dateKey > endKey) continue
+      if (skippedKeys.has(`${rule.id}:${occurrence.instanceKey}`)) continue
       if (realKeys.has(`${rule.id}:${occurrence.instanceKey}`)) continue
       projected.push({
         id: -Number(`${rule.id}${occurrence.dateKey.replaceAll('-', '')}${occurrence.time.replace(':', '')}`),

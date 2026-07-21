@@ -109,6 +109,8 @@
     "drawer_close": "关闭",
     "repeat_label": "重复安排",
     "repeat_none": "不重复",
+    "skip_occurrence": "跳过本次",
+    "toast_occurrence_skipped": "已跳过本次安排",
     "quick_add_placeholder": "新建任务，回车提交（输入 #标签 标记标签）",
     "quick_token_priority_high": "高",
     "quick_token_priority_mid": "中",

@@ -11,3 +11,13 @@ test('calendar projects future repeated occurrences while real tasks win', () =>
   assert.equal(projected.filter((item) => item.due_date === '2026-07-22').length, 1)
   assert.deepEqual(projected.filter((item) => item.is_virtual).map((item) => item.due_date), ['2026-07-21', '2026-07-23'])
 })
+
+test('calendar omits a skipped recurring occurrence', () => {
+  const projected = projectCalendarOccurrences(
+    [],
+    [{ id: 1, title: 'Review', frequency: 'daily', start_date: '2026-07-21', start_time: '09:00' }],
+    new Date(2026, 6, 21), new Date(2026, 6, 23),
+    new Set(['1:2026-07-22T09:00']),
+  )
+  assert.deepEqual(projected.map((item) => item.due_date), ['2026-07-21', '2026-07-23'])
+})

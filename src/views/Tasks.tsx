@@ -104,6 +104,7 @@ export const Tasks: React.FC = () => {
 
   // Recurring Rules States
   const [rules, setRules] = useState<any[]>([])
+  const [skippedOccurrences, setSkippedOccurrences] = useState<Set<string>>(new Set())
   const [selectedRuleId, setSelectedRuleId] = useState<number | null>(null)
   const [ruleName, setRuleName] = useState('')
   const [ruleDesc, setRuleDesc] = useState('')
@@ -213,8 +214,8 @@ export const Tasks: React.FC = () => {
     start.setHours(0, 0, 0, 0)
     const end = new Date(calendarVisibleDays[calendarVisibleDays.length - 1])
     end.setHours(23, 59, 59, 999)
-    return projectCalendarOccurrences(tasks, rules, start, end)
-  }, [calendarVisibleDays, rules, tasks])
+    return projectCalendarOccurrences(tasks, rules, start, end, skippedOccurrences)
+  }, [calendarVisibleDays, rules, skippedOccurrences, tasks])
   const calendarTasksByDate = useMemo(() => groupTasksByDueDate(calendarTasks), [calendarTasks])
   const calendarVisibleTasks = calendarVisibleDays.flatMap(
     (day) => calendarTasksByDate.get(toCalendarDateKey(day)) ?? [],
@@ -587,6 +588,16 @@ export const Tasks: React.FC = () => {
         await runDueTaskGeneration()
         showToast(t('tasks.toast_task_added'))
       }
+
+      const skippedRes = await api.dbQuery(
+        'tasks',
+        'SELECT recur_rule_id, instance_key FROM recurring_rule_occurrence_exceptions',
+      )
+      if (skippedRes?.success) {
+        setSkippedOccurrences(
+          new Set(skippedRes.data.map((item: any) => `${item.recur_rule_id}:${item.instance_key}`)),
+        )
+      }
     } else if (activeTask) {
       await api.dbQuery(
         'tasks',
@@ -604,6 +615,20 @@ export const Tasks: React.FC = () => {
     }
 
     setDrawerMode(null)
+    await loadData()
+  }
+
+  const handleSkipOccurrence = async () => {
+    if (!api || !activeTask?.recur_rule_id || !activeTask.instance_key) return
+    await api.dbQuery(
+      'tasks',
+      'INSERT OR IGNORE INTO recurring_rule_occurrence_exceptions (recur_rule_id, instance_key) VALUES (?, ?)',
+      [activeTask.recur_rule_id, activeTask.instance_key],
+    )
+    await api.dbQuery('tasks', 'DELETE FROM tasks WHERE parent_id = ?', [activeTask.id])
+    await api.dbQuery('tasks', 'DELETE FROM tasks WHERE id = ?', [activeTask.id])
+    setDrawerMode(null)
+    showToast(t('tasks.toast_occurrence_skipped'))
     await loadData()
   }
 
@@ -1817,7 +1842,13 @@ export const Tasks: React.FC = () => {
                 <label className="task-form-section"><span>{t('tasks.repeat_label')}</span><select className="form-field" value={taskDraft.repeat} onChange={(event) => setTaskDraft({ ...taskDraft, repeat: event.target.value })}><option value="none">{t('tasks.repeat_none')}</option><option value="daily">{t('tasks.freq_daily')}</option><option value="weekday">{t('tasks.freq_weekday')}</option><option value="weekly">{t('tasks.freq_weekly')}</option><option value="monthly">{t('tasks.freq_monthly')}</option></select></label>
               </div>
             </div>
-            <footer className="task-drawer__footer"><button type="button" className="btn" onClick={() => setDrawerMode(null)}>{t('common.cancel')}</button><button type="button" className="btn primary" onClick={handleSaveDrawer}>{t('tasks.btn_save_changes')}</button></footer>
+            <footer className="task-drawer__footer">
+              {drawerMode === 'edit' && activeTask?.recur_rule_id && activeTask.instance_key && (
+                <button type="button" className="btn" onClick={handleSkipOccurrence}>{t('tasks.skip_occurrence')}</button>
+              )}
+              <button type="button" className="btn" onClick={() => setDrawerMode(null)}>{t('common.cancel')}</button>
+              <button type="button" className="btn primary" onClick={handleSaveDrawer}>{t('tasks.btn_save_changes')}</button>
+            </footer>
           </aside>
         </div>
       )}

@@ -117,6 +117,9 @@ test('task schema creates template scheduling and step columns on a fresh databa
         .prepare('PRAGMA table_info(recurring_rule_steps)')
         .all()
         .map((column) => column.name)
+      const exceptionTable = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recurring_rule_occurrence_exceptions'")
+        .get()
 
       assert.ok(taskColumns.includes('instance_key'))
       assert.ok(ruleColumns.includes('start_date'))
@@ -124,6 +127,7 @@ test('task schema creates template scheduling and step columns on a fresh databa
       assert.ok(ruleColumns.includes('priority'))
       assert.ok(stepColumns.includes('rule_id'))
       assert.ok(stepColumns.includes('sort_order'))
+      assert.equal(exceptionTable?.name, 'recurring_rule_occurrence_exceptions')
     } finally {
       db.close()
     }
