@@ -7,17 +7,14 @@ const localeDirectory = join(process.cwd(), 'src', 'locales')
 const requiredKeys = [
   'navigation_label',
   'view_modes_label',
-  'workflow_tools_label',
   'workspace_label',
   'overview_label',
   'stat_open',
   'stat_today',
   'stat_overdue',
-  'stat_templates',
-  'instances_group_label',
-  'automation_group_label',
-  'instance_panel_title',
-  'instance_panel_desc',
+  'tab_kanban',
+  'tab_list',
+  'tab_calendar',
 ]
 const configuredLocales = readdirSync(localeDirectory)
   .filter((filename) => filename.endsWith('.json'))
@@ -32,3 +29,10 @@ for (const locale of configuredLocales) {
     }
   })
 }
+
+test('task workspace navigation exposes only execution views', () => {
+  const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
+
+  assert.match(tasksView, /task-navigation__views/)
+  assert.doesNotMatch(tasksView, /task-navigation__tools/)
+})

@@ -83,7 +83,7 @@ const saveMockSettings = (settings: any) => {
 
 export const useAppStore = create<AppState>((set, get) => ({
   activeScreen: 'dashboard',
-  taskTab: 'kanban',
+  taskTab: 'list',
   settingsMenu: 'appearance',
   theme: 'Minimal',
   language: 'zh-CN',

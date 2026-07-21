@@ -8,12 +8,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
-  Clock3,
   Kanban,
-  LayoutTemplate,
   ListChecks,
   ListTodo,
-  Repeat2,
   Trash2,
   Plus,
 } from 'lucide-react'
@@ -120,6 +117,12 @@ export const Tasks: React.FC = () => {
 
   // Templates
   const [templates, setTemplates] = useState<any[]>([])
+
+  useEffect(() => {
+    if (!['list', 'kanban', 'calendar'].includes(taskTab)) {
+      setTaskTab('list')
+    }
+  }, [setTaskTab, taskTab])
 
   useEffect(() => {
     setTemplates([
@@ -810,11 +813,6 @@ export const Tasks: React.FC = () => {
             <span>{t('tasks.stat_overdue')}</span>
             <strong>{overdueTaskCount}</strong>
           </div>
-          <div className="task-stat">
-            <Repeat2 aria-hidden="true" />
-            <span>{t('tasks.stat_templates')}</span>
-            <strong>{rules.length}</strong>
-          </div>
         </div>
       </header>
 
@@ -824,16 +822,6 @@ export const Tasks: React.FC = () => {
           role="group"
           aria-label={t('tasks.view_modes_label')}
         >
-          <span className="task-navigation__group-label">{t('tasks.instances_group_label')}</span>
-          <button
-            type="button"
-            className={`task-navigation__view ${taskTab === 'kanban' ? 'active' : ''}`}
-            aria-pressed={taskTab === 'kanban'}
-            onClick={() => setTaskTab('kanban')}
-          >
-            <Kanban aria-hidden="true" />
-            <span>{t('tasks.tab_kanban')}</span>
-          </button>
           <button
             type="button"
             className={`task-navigation__view ${taskTab === 'list' ? 'active' : ''}`}
@@ -842,6 +830,15 @@ export const Tasks: React.FC = () => {
           >
             <ListChecks aria-hidden="true" />
             <span>{t('tasks.tab_list')}</span>
+          </button>
+          <button
+            type="button"
+            className={`task-navigation__view ${taskTab === 'kanban' ? 'active' : ''}`}
+            aria-pressed={taskTab === 'kanban'}
+            onClick={() => setTaskTab('kanban')}
+          >
+            <Kanban aria-hidden="true" />
+            <span>{t('tasks.tab_kanban')}</span>
           </button>
           <button
             type="button"
@@ -854,40 +851,6 @@ export const Tasks: React.FC = () => {
           </button>
         </div>
 
-        <div
-          className="task-navigation__tools"
-          role="group"
-          aria-label={t('tasks.workflow_tools_label')}
-        >
-          <span className="task-navigation__group-label">{t('tasks.automation_group_label')}</span>
-          <button
-            type="button"
-            className={`task-navigation__tool ${taskTab === 'recurring' ? 'active' : ''}`}
-            aria-pressed={taskTab === 'recurring'}
-            onClick={() => setTaskTab('recurring')}
-          >
-            <Repeat2 aria-hidden="true" />
-            <span>{t('tasks.tab_recurring')}</span>
-          </button>
-          <button
-            type="button"
-            className={`task-navigation__tool ${taskTab === 'templates' ? 'active' : ''}`}
-            aria-pressed={taskTab === 'templates'}
-            onClick={() => setTaskTab('templates')}
-          >
-            <LayoutTemplate aria-hidden="true" />
-            <span>{t('tasks.tab_templates')}</span>
-          </button>
-          <button
-            type="button"
-            className={`task-navigation__tool ${taskTab === 'scheduled' ? 'active' : ''}`}
-            aria-pressed={taskTab === 'scheduled'}
-            onClick={() => setTaskTab('scheduled')}
-          >
-            <Clock3 aria-hidden="true" />
-            <span>{t('tasks.tab_scheduled')}</span>
-          </button>
-        </div>
       </nav>
 
       <div className="task-content">
