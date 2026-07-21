@@ -432,6 +432,12 @@ export const Tasks: React.FC = () => {
     loadData()
   }, [userId, taskTab])
 
+  useEffect(() => {
+    return api?.onTaskSchedulerChanged?.(() => {
+      void loadData()
+    })
+  }, [api, userId])
+
   // Select a rule and map to inputs
   const selectRule = (rule: any) => {
     setSelectedRuleId(rule.id)

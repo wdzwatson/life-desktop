@@ -212,6 +212,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('video:download-finished', subscription)
     }
   },
+  onTaskSchedulerChanged: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on('scheduler:notif', subscription)
+    ipcRenderer.on('scheduler:overdue', subscription)
+    return () => {
+      ipcRenderer.removeListener('scheduler:notif', subscription)
+      ipcRenderer.removeListener('scheduler:overdue', subscription)
+    }
+  },
   onDownloadFailed: (callback: (data: any) => void) => {
     const subscription = (_event: any, data: any) => callback(data)
     ipcRenderer.on('video:download-failed', subscription)
