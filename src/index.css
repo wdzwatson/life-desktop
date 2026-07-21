@@ -242,6 +242,7 @@ body.theme-dense .nav-item.active {
 /* Main content workspace */
 .main-workspace {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 56px 1fr;
   min-width: 0;
   min-height: 0;
