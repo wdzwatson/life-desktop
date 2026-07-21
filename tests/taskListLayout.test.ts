@@ -26,6 +26,7 @@ test('list groups parent tasks with their subtasks in a responsive grid', () => 
   assert.match(css, /\.task-row\s*\{[\s\S]*height:\s*112px/)
   assert.match(tasksView, /getRepeatSummary\(task\)/)
   assert.match(tasksView, /<Flag size=\{13\} aria-hidden="true" \/>/)
+  assert.match(css, /\.task-row\.is-completed \.task-row__priority\s*\{[\s\S]*color:\s*var\(--text-muted\)/)
   assert.match(css, /\.task-expanded-group\s*\{[\s\S]*border:\s*1px solid var\(--color-border\)/)
   assert.match(css, /\.task-row--child\s*\{[\s\S]*border-left:\s*2px solid var\(--color-border\)/)
   assert.match(css, /@media \(max-width:\s*720px\)\s*\{[\s\S]*\.task-list\s*\{[\s\S]*grid-template-columns:\s*1fr/)

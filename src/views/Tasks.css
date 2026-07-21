@@ -896,6 +896,10 @@
   color: var(--text-muted);
 }
 
+.task-row.is-completed .task-row__priority {
+  color: var(--text-muted);
+}
+
 .task-row.is-completed .task-row__title {
   color: var(--text-muted);
   text-decoration: line-through;
