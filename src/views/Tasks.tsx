@@ -634,6 +634,13 @@ export const Tasks: React.FC = () => {
 
   const handleDeleteTask = async () => {
     if (!api || !activeTask || !window.confirm(t('tasks.prompt_delete_task_confirm'))) return
+    if (activeTask.recur_rule_id && activeTask.instance_key) {
+      await api.dbQuery(
+        'tasks',
+        'INSERT OR IGNORE INTO recurring_rule_occurrence_exceptions (recur_rule_id, instance_key) VALUES (?, ?)',
+        [activeTask.recur_rule_id, activeTask.instance_key],
+      )
+    }
     await api.dbQuery('tasks', 'DELETE FROM tasks WHERE parent_id = ?', [activeTask.id])
     await api.dbQuery('tasks', 'DELETE FROM tasks WHERE id = ?', [activeTask.id])
     setSelectedTaskId(null)

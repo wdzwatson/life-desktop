@@ -6,6 +6,8 @@ import { join } from 'node:path'
 test('drawer distinguishes deleting a task from cancelling future repeats', () => {
   const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
   assert.match(tasksView, /const handleDeleteTask/)
+  assert.match(tasksView, /activeTask\.recur_rule_id && activeTask\.instance_key/)
+  assert.match(tasksView, /recurring_rule_occurrence_exceptions/)
   assert.match(tasksView, /DELETE FROM tasks WHERE id = \?/) 
   assert.match(tasksView, /const handleCancelRepeat/)
   assert.match(tasksView, /DELETE FROM recurring_rules WHERE id = \?/) 
