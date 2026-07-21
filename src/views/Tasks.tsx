@@ -7,7 +7,10 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Circle,
+  Flag,
   X,
   Kanban,
   ListChecks,
@@ -86,6 +89,7 @@ export const Tasks: React.FC = () => {
   const [tasks, setTasks] = useState<any[]>([])
   const [translations, setTranslations] = useState<any[]>([])
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
+  const [expandedTaskGroupId, setExpandedTaskGroupId] = useState<number | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<string | null>(null)
 
   const [drawerMode, setDrawerMode] = useState<'create' | 'edit' | null>(null)
@@ -362,6 +366,24 @@ export const Tasks: React.FC = () => {
     }
   }
 
+  const getRepeatSummary = (task: any) => {
+    if (!task.recur_rule_id) return null
+
+    const frequency = rules.find((rule) => rule.id === task.recur_rule_id)?.frequency
+    switch (frequency) {
+      case 'daily':
+        return t('tasks.repeat_summary_daily')
+      case 'weekday':
+        return t('tasks.repeat_summary_weekday')
+      case 'weekly':
+        return t('tasks.repeat_summary_weekly')
+      case 'monthly':
+        return t('tasks.repeat_summary_monthly')
+      default:
+        return t('tasks.repeat_summary_source')
+    }
+  }
+
   const runDueTaskGeneration = async () => {
     if (api?.runTaskScheduler) {
       await api.runTaskScheduler()
@@ -556,19 +578,29 @@ export const Tasks: React.FC = () => {
                 <Circle size={14} color="var(--text-muted)" />
               )}
             </button>
-            <span className="task-row__date">
-              {formatDue(child)}
+            <span className={`task-row__date ${child.status === '已逾期' ? 'is-overdue-date' : ''}`}>
+              <span
+                className={`task-row__priority is-${child.priority}`}
+                role="img"
+                aria-label={getPriorityLabel(child.priority)}
+                title={getPriorityLabel(child.priority)}
+              >
+                <Flag size={13} aria-hidden="true" />
+              </span>
+              <span className="task-row__date-content">
+                {child.status === '已逾期' && <strong>{t('common.overdue')}</strong>}
+                <time>{formatDue(child)}</time>
+              </span>
             </span>
             <span className="task-row__title">{child.title}</span>
-            <span
-              className={`pill ${child.priority === 'high' ? 'red' : child.priority === 'mid' ? 'yellow' : 'green'}`}
-            >
-              {getPriorityLabel(child.priority)}
-            </span>
           </div>,
           ...renderSubtaskRows(child.id, depth + 1, nextVisited),
         ]
       })
+
+  const toggleTaskGroup = (taskId: number) => {
+    setExpandedTaskGroupId((current) => (current === taskId ? null : taskId))
+  }
 
   const handleSaveDrawer = async () => {
     if (!api || !taskDraft.title.trim()) return
@@ -821,6 +853,10 @@ export const Tasks: React.FC = () => {
     () => executionTasks.filter((task) => !task.parent_id),
     [executionTasks],
   )
+  const expandedTaskGroup =
+    expandedTaskGroupId === null
+      ? null
+      : rootTasks.find((task) => task.id === expandedTaskGroupId) ?? null
   const openTaskCount = tasks.filter(
     (task) => task.is_completed !== 1 && task.status !== '已关闭',
   ).length
@@ -1092,10 +1128,6 @@ export const Tasks: React.FC = () => {
                   <strong>{t('tasks.instance_panel_title')}</strong>
                   <p>{t('tasks.instance_panel_desc')}</p>
                   </div>
-                  <button type="button" className="btn primary" onClick={openCreateDrawer}>
-                    <Plus size={16} aria-hidden="true" />
-                    {t('tasks.drawer_create_title')}
-                  </button>
                 </div>
               </div>
 
@@ -1111,9 +1143,18 @@ export const Tasks: React.FC = () => {
                   rootTasks.map((task) => {
                     const isSelected = selectedTaskId === task.id
                     const isOverdue = task.status === '已逾期'
+                    const directSubtasks = tasks.filter((candidate) => candidate.parent_id === task.id)
+                    const completedSubtaskCount = directSubtasks.filter(
+                      (subtask) => subtask.is_completed === 1,
+                    ).length
+                    const isTaskGroupExpanded = expandedTaskGroup?.id === task.id
+                    const repeatSummary = getRepeatSummary(task)
 
                     return (
-                      <div key={task.id} className="task-row-group">
+                      <div
+                        key={task.id}
+                        className={`task-row-group ${isTaskGroupExpanded ? 'is-expanded' : ''}`}
+                      >
                         <div
                           className={`task-row ${isSelected ? 'is-selected' : ''} ${isOverdue ? 'is-overdue' : ''} ${
                             task.is_completed === 1 ? 'is-completed' : ''
@@ -1160,19 +1201,11 @@ export const Tasks: React.FC = () => {
                               />
                             )}
                           </button>
-                          <span className={`task-row__date ${isOverdue ? 'is-overdue-date' : ''}`}>
-                            {isOverdue ? (
-                              <>
-                                <strong>{t('common.overdue')}</strong>
-                                <time>{formatDue(task)}</time>
-                              </>
-                            ) : formatDue(task)}
-                          </span>
                           <div className="task-row__main">
                             <span className="task-row__title">{task.title}</span>
                             <span className="task-row__meta">
                               {getStatusLabel(task.status)}
-                              {task.recur_rule_id ? ` · ${t('tasks.details_template_prefix')}` : ''}
+                              {repeatSummary ? ` · ${repeatSummary}` : ''}
                             </span>
                             {task.progress > 0 && task.progress < 100 && (
                               <div className="task-row__progress">
@@ -1180,19 +1213,90 @@ export const Tasks: React.FC = () => {
                               </div>
                             )}
                           </div>
-                          <span
-                            className={`pill ${task.priority === 'high' ? 'red' : task.priority === 'mid' ? 'yellow' : 'green'}`}
-                          >
-                            {getPriorityLabel(task.priority)}
-                          </span>
+                          <div className="task-row__footer">
+                            <span className={`task-row__date ${isOverdue ? 'is-overdue-date' : ''}`}>
+                              <span
+                                className={`task-row__priority is-${task.priority}`}
+                                role="img"
+                                aria-label={getPriorityLabel(task.priority)}
+                                title={getPriorityLabel(task.priority)}
+                              >
+                                <Flag size={13} aria-hidden="true" />
+                              </span>
+                              <span className="task-row__date-content">
+                                {isOverdue && <strong>{t('common.overdue')}</strong>}
+                                <time>{formatDue(task)}</time>
+                              </span>
+                            </span>
+                            {directSubtasks.length > 0 && (
+                              <button
+                                type="button"
+                                className="task-row__subtask-toggle"
+                                aria-expanded={isTaskGroupExpanded}
+                                aria-controls={`task-subtasks-${task.id}`}
+                                aria-label={`${t('tasks.subtask_progress_summary', {
+                                  completed: completedSubtaskCount,
+                                  total: directSubtasks.length,
+                                })} · ${
+                                  isTaskGroupExpanded
+                                    ? t('tasks.subtask_collapse')
+                                    : t('tasks.subtask_expand', { count: directSubtasks.length })
+                                }`}
+                                title={
+                                  isTaskGroupExpanded
+                                    ? t('tasks.subtask_collapse')
+                                    : t('tasks.subtask_expand', { count: directSubtasks.length })
+                                }
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  toggleTaskGroup(task.id)
+                                }}
+                              >
+                                {t('tasks.subtask_progress_compact', {
+                                  completed: completedSubtaskCount,
+                                  total: directSubtasks.length,
+                                })}
+                                {isTaskGroupExpanded ? (
+                                  <ChevronUp aria-hidden="true" />
+                                ) : (
+                                  <ChevronDown aria-hidden="true" />
+                                )}
+                              </button>
+                            )}
+                          </div>
                         </div>
 
-                        {renderSubtaskRows(task.id)}
                       </div>
                     )
                   })
                 )}
               </div>
+
+              {expandedTaskGroup && (
+                <section
+                  id={`task-subtasks-${expandedTaskGroup.id}`}
+                  className="task-expanded-group"
+                  aria-label={t('tasks.subtask_detail_region')}
+                >
+                  <header className="task-expanded-group__header">
+                    <div>
+                      <span>{t('tasks.subtask_detail_region')}</span>
+                      <strong>{expandedTaskGroup.title}</strong>
+                    </div>
+                    <button
+                      type="button"
+                      className="task-expanded-group__close"
+                      onClick={() => toggleTaskGroup(expandedTaskGroup.id)}
+                    >
+                      <ChevronUp aria-hidden="true" />
+                      {t('tasks.subtask_collapse')}
+                    </button>
+                  </header>
+                  <div className="task-subtask-list">
+                    {renderSubtaskRows(expandedTaskGroup.id)}
+                  </div>
+                </section>
+              )}
             </section>
 
             {/* Right details panel */}

@@ -753,9 +753,9 @@
 .task-list {
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
-  gap: 12px;
+  gap: 14px;
   overflow-y: auto;
 }
 
@@ -763,22 +763,106 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-
-.task-row {
-  min-height: 104px;
-  padding: 12px;
-  display: grid;
-  grid-template-areas:
-    'check main priority'
-    'date date date';
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 8px 10px;
+  overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background-color: var(--bg-surface);
+}
+
+.task-row-group:has(> .task-row.is-overdue) {
+  border-color: color-mix(in srgb, var(--color-danger) 52%, var(--color-border));
+}
+
+.task-row-group.is-expanded {
+  border-color: color-mix(in srgb, var(--color-accent) 56%, var(--color-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+.task-subtask-list {
+  padding: 6px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--color-border);
+}
+
+.task-expanded-group {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background-color: var(--bg-surface);
+}
+
+.task-expanded-group__header {
+  padding: 11px 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background-color: color-mix(in srgb, var(--color-accent) 4%, var(--bg-surface));
+}
+
+.task-expanded-group__header > div {
+  min-width: 0;
+}
+
+.task-expanded-group__header span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.task-expanded-group__header strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--text-main);
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-expanded-group__close {
+  flex: 0 0 auto;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.task-expanded-group__close svg {
+  width: 13px;
+  height: 13px;
+}
+
+.task-expanded-group .task-subtask-list {
+  padding: 8px;
+}
+
+.task-row {
+  height: 112px;
+  padding: 12px;
+  display: grid;
+  grid-template-areas:
+    'check main'
+    'footer footer';
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px 10px;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
   cursor: pointer;
   transition:
     border-color 120ms ease,
@@ -800,7 +884,7 @@
 }
 
 .task-row.is-overdue {
-  border-color: color-mix(in srgb, var(--color-danger) 52%, var(--color-border));
+  background-color: color-mix(in srgb, var(--color-danger) 4%, var(--bg-surface));
 }
 
 .task-row.is-completed {
@@ -818,14 +902,16 @@
 }
 
 .task-row--child {
-  margin-left: 16px;
-  min-height: 64px;
-  padding: 9px 10px;
+  margin-left: 0;
+  height: auto;
+  min-height: 54px;
+  padding: 8px 9px;
   grid-template-areas:
-    'check main priority'
-    'date date date';
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  border-left-width: 3px;
+    'check main'
+    'date date';
+  grid-template-columns: auto minmax(0, 1fr);
+  border-left: 2px solid var(--color-border);
+  border-radius: 6px;
   background-color: color-mix(in srgb, var(--text-main) 2%, var(--bg-surface));
 }
 
@@ -845,13 +931,29 @@
 }
 
 .task-row__date {
-  grid-area: date;
   overflow: hidden;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.task-row--child .task-row__date {
+  grid-area: date;
+}
+
+.task-row__footer {
+  grid-area: footer;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .task-row.is-overdue .task-row__date {
@@ -860,20 +962,32 @@
 }
 
 .task-row__date.is-overdue-date {
+  align-items: flex-start;
+  white-space: normal;
+}
+
+.task-row__date-content {
   min-width: 0;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-row__date.is-overdue-date .task-row__date-content {
   display: flex;
   flex-direction: column;
   gap: 1px;
   white-space: normal;
 }
 
-.task-row__date.is-overdue-date strong {
+.task-row__date.is-overdue-date .task-row__date-content strong {
   font-family: var(--font-sans);
   font-size: 9px;
   line-height: 1.1;
 }
 
-.task-row__date.is-overdue-date time {
+.task-row__date.is-overdue-date .task-row__date-content time {
   overflow: visible;
   font-size: 10px;
   line-height: 1.2;
@@ -914,6 +1028,37 @@
   white-space: nowrap;
 }
 
+.task-row__subtask-toggle {
+  min-width: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 0;
+  background: transparent;
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.task-row__subtask-toggle:hover {
+  color: color-mix(in srgb, var(--color-accent) 72%, var(--text-main));
+}
+
+.task-row__subtask-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 58%, transparent);
+  outline-offset: 2px;
+}
+
+.task-row__subtask-toggle svg {
+  width: 13px;
+  height: 13px;
+}
+
 .task-row__progress {
   width: 96px;
   height: 4px;
@@ -929,9 +1074,22 @@
   background-color: var(--color-accent);
 }
 
-.task-row .pill {
-  grid-area: priority;
-  font-size: 9.5px;
+.task-row__priority {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-success);
+}
+
+.task-row__priority.is-mid {
+  color: var(--color-warn);
+}
+
+.task-row__priority.is-high {
+  color: var(--color-danger);
 }
 
 .task-list-empty {
