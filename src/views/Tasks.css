@@ -723,8 +723,12 @@
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(360px, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
+}
+
+.task-list-layout > .task-details-panel {
+  display: none;
 }
 
 .task-panel--list,
