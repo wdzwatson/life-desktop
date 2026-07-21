@@ -25,6 +25,22 @@ test('task template occurrence waits until local start time', () => {
   })
 })
 
+test('scheduler can create the daily task at the beginning of its scheduled date', () => {
+  const occurrence = getDueTemplateOccurrence(
+    {
+      id: 1,
+      title: 'Morning review',
+      frequency: 'daily',
+      start_date: '2026-07-21',
+      start_time: '09:00',
+    },
+    new Date(2026, 6, 22, 0, 1),
+    { ignoreStartTime: true },
+  )
+
+  assert.equal(occurrence?.instanceKey, '2026-07-22T09:00')
+})
+
 test('one-time templates only occur on the configured start date before triggering', () => {
   assert.deepEqual(
     getDueTemplateOccurrence(

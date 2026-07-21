@@ -84,6 +84,7 @@ export const getTemplateStartTime = (rule: TaskTemplateRule) => parseTime(rule.s
 export const getDueTemplateOccurrence = (
   rule: TaskTemplateRule,
   now = new Date(),
+  options: { ignoreStartTime?: boolean } = {},
 ): TaskTemplateOccurrence | null => {
   const dateKey = toLocalDateKey(now)
   const startDateKey = getTemplateStartDateKey(rule, now)
@@ -92,7 +93,7 @@ export const getDueTemplateOccurrence = (
   const time = getTemplateStartTime(rule)
   const [hour, minute] = time.split(':').map(Number)
   const scheduledAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute)
-  if (now.getTime() < scheduledAt.getTime()) return null
+  if (!options.ignoreStartTime && now.getTime() < scheduledAt.getTime()) return null
 
   const frequency = rule.frequency || 'daily'
   const interval = Math.max(1, Number(rule.interval) || 1)

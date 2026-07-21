@@ -766,7 +766,7 @@
   min-height: 48px;
   padding: 10px 11px;
   display: grid;
-  grid-template-columns: auto 78px minmax(0, 1fr) auto auto;
+  grid-template-columns: auto 78px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   border: 1px solid var(--color-border);
@@ -813,7 +813,7 @@
 .task-row--child {
   margin-left: 16px;
   min-height: 40px;
-  grid-template-columns: auto 74px minmax(0, 1fr) auto auto;
+  grid-template-columns: auto 74px minmax(0, 1fr) auto;
   border-left-width: 3px;
   background-color: color-mix(in srgb, var(--text-main) 2%, var(--bg-surface));
 }

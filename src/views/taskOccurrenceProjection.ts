@@ -28,7 +28,6 @@ export const projectCalendarOccurrences = (
   const endKey = toLocalDateKey(end)
 
   for (const rule of rules) {
-    if (rule.frequency === 'custom') continue
     for (const occurrence of getNextTemplateOccurrences(rule, start, 370)) {
       if (occurrence.dateKey < startKey || occurrence.dateKey > endKey) continue
       if (skippedKeys.has(`${rule.id}:${occurrence.instanceKey}`)) continue

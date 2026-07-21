@@ -21,3 +21,12 @@ test('calendar omits a skipped recurring occurrence', () => {
   )
   assert.deepEqual(projected.map((item) => item.due_date), ['2026-07-21', '2026-07-23'])
 })
+
+test('calendar includes a future one-time task before it is materialized', () => {
+  const projected = projectCalendarOccurrences(
+    [],
+    [{ id: 9, title: 'Submit form', frequency: 'custom', start_date: '2026-07-23', start_time: '09:00' }],
+    new Date(2026, 6, 21), new Date(2026, 6, 24),
+  )
+  assert.deepEqual(projected.map((item) => item.due_date), ['2026-07-23'])
+})

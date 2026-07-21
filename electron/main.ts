@@ -675,8 +675,17 @@ function runSchedulerCycle(options: { notify?: boolean } = {}) {
   const rules = db.prepare('SELECT * FROM recurring_rules').all() as any[]
 
   rules.forEach((rule) => {
-    const occurrence = getDueTemplateOccurrence(rule, now)
+    // Tasks become actionable at the beginning of their scheduled day. The stored time
+    // remains available to the UI and reminders without delaying the day's task instance.
+    const occurrence = getDueTemplateOccurrence(rule, now, { ignoreStartTime: true })
     if (!occurrence) return
+
+    const skipped = db
+      .prepare(
+        'SELECT 1 FROM recurring_rule_occurrence_exceptions WHERE recur_rule_id = ? AND instance_key = ? LIMIT 1',
+      )
+      .get(rule.id, occurrence.instanceKey)
+    if (skipped) return
 
     const existing = db
       .prepare(

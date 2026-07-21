@@ -554,18 +554,6 @@ export const Tasks: React.FC = () => {
             >
               {getPriorityLabel(child.priority)}
             </span>
-            <button
-              type="button"
-              className="btn sm task-row__subtask-action"
-              onClick={(e) => {
-                e.stopPropagation()
-                handleAddSubtask(child.id)
-              }}
-              title={t('tasks.add_subtask_tooltip')}
-              aria-label={t('tasks.add_subtask_tooltip')}
-            >
-              <Plus size={13} aria-hidden="true" />
-            </button>
           </div>,
           ...renderSubtaskRows(child.id, depth + 1, nextVisited),
         ]
@@ -1194,18 +1182,6 @@ export const Tasks: React.FC = () => {
                           >
                             {getPriorityLabel(task.priority)}
                           </span>
-                          <button
-                            type="button"
-                            className="btn sm task-row__subtask-action"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleAddSubtask(task.id)
-                            }}
-                            title={t('tasks.add_subtask_tooltip')}
-                            aria-label={t('tasks.add_subtask_tooltip')}
-                          >
-                            <Plus size={13} aria-hidden="true" />
-                          </button>
                         </div>
 
                         {renderSubtaskRows(task.id)}
