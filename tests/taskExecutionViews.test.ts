@@ -10,3 +10,9 @@ test('list and kanban use the execution task set rather than future tasks', () =
   assert.match(tasksView, /const rootTasks[\s\S]*executionTasks\.filter/)
   assert.match(tasksView, /const laneTasks = executionTasks\.filter/)
 })
+
+test('execution views include today recurring projections regardless of scheduler timing', () => {
+  const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
+  assert.match(tasksView, /const todayProjectedTasks = useMemo/)
+  assert.match(tasksView, /todayProjectedTasks\.filter\(\(task\) => task\.is_virtual\)/)
+})

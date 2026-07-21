@@ -798,9 +798,19 @@ export const Tasks: React.FC = () => {
     ? rules.find((rule) => rule.id === activeTask.recur_rule_id)
     : null
   const todayKey = toLocalDateKey(new Date())
+  const todayProjectedTasks = useMemo(() => {
+    const start = new Date()
+    start.setHours(0, 0, 0, 0)
+    const end = new Date(start)
+    end.setHours(23, 59, 59, 999)
+    return projectCalendarOccurrences(tasks, rules, start, end, skippedOccurrences)
+  }, [rules, skippedOccurrences, tasks])
   const executionTasks = useMemo(
-    () => tasks.filter((task) => !task.due_date || task.due_date <= todayKey),
-    [tasks, todayKey],
+    () => [
+      ...tasks.filter((task) => !task.due_date || task.due_date <= todayKey),
+      ...todayProjectedTasks.filter((task) => task.is_virtual),
+    ],
+    [tasks, todayKey, todayProjectedTasks],
   )
   const rootTasks = useMemo(
     () => executionTasks.filter((task) => !task.parent_id),
@@ -809,7 +819,7 @@ export const Tasks: React.FC = () => {
   const openTaskCount = tasks.filter(
     (task) => task.is_completed !== 1 && task.status !== '已关闭',
   ).length
-  const todayTaskCount = tasks.filter((task) => task.due_date === todayKey).length
+  const todayTaskCount = executionTasks.filter((task) => task.due_date === todayKey).length
   const overdueTaskCount = tasks.filter((task) => task.status === '已逾期').length
   const selectedRule = selectedRuleId
     ? rules.find((rule) => rule.id === selectedRuleId)
@@ -1022,7 +1032,7 @@ export const Tasks: React.FC = () => {
                                 : 'var(--shadow-app)',
                           }}
                           onClick={() => {
-                            selectTaskForDetails(task)
+                            void openCalendarTask(task)
                           }}
                         >
                           <h4
@@ -1106,11 +1116,11 @@ export const Tasks: React.FC = () => {
                           role="button"
                           tabIndex={0}
                           aria-label={task.title}
-                          onClick={() => selectTaskForDetails(task)}
+                          onClick={() => void openCalendarTask(task)}
                           onKeyDown={(event) => {
                             if (event.key === 'Enter' || event.key === ' ') {
                               event.preventDefault()
-                              selectTaskForDetails(task)
+                              void openCalendarTask(task)
                             }
                           }}
                         >
@@ -1128,7 +1138,11 @@ export const Tasks: React.FC = () => {
                             }
                             onClick={(e) => {
                               e.stopPropagation()
-                              toggleTaskDone(task)
+                              if (task.is_virtual) {
+                                void openCalendarTask(task)
+                                return
+                              }
+                              void toggleTaskDone(task)
                             }}
                             className="task-row__check"
                           >
