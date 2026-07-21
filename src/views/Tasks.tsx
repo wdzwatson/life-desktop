@@ -632,6 +632,26 @@ export const Tasks: React.FC = () => {
     await loadData()
   }
 
+  const handleDeleteTask = async () => {
+    if (!api || !activeTask || !window.confirm(t('tasks.prompt_delete_task_confirm'))) return
+    await api.dbQuery('tasks', 'DELETE FROM tasks WHERE parent_id = ?', [activeTask.id])
+    await api.dbQuery('tasks', 'DELETE FROM tasks WHERE id = ?', [activeTask.id])
+    setSelectedTaskId(null)
+    setDrawerMode(null)
+    showToast(t('tasks.toast_task_deleted'))
+    await loadData()
+  }
+
+  const handleCancelRepeat = async () => {
+    if (!api || !activeTask?.recur_rule_id || !window.confirm(t('tasks.prompt_cancel_repeat_confirm'))) return
+    await api.dbQuery('tasks', 'DELETE FROM recurring_rule_steps WHERE rule_id = ?', [activeTask.recur_rule_id])
+    await api.dbQuery('tasks', 'DELETE FROM recurring_rule_occurrence_exceptions WHERE recur_rule_id = ?', [activeTask.recur_rule_id])
+    await api.dbQuery('tasks', 'DELETE FROM recurring_rules WHERE id = ?', [activeTask.recur_rule_id])
+    setDrawerMode(null)
+    showToast(t('tasks.toast_repeat_cancelled'))
+    await loadData()
+  }
+
   // Subtask creation
   const handleAddSubtask = async (parentId: number) => {
     if (!api) return
@@ -1843,8 +1863,14 @@ export const Tasks: React.FC = () => {
               </div>
             </div>
             <footer className="task-drawer__footer">
+              {drawerMode === 'edit' && activeTask && (
+                <button type="button" className="btn" onClick={handleDeleteTask}>{t('tasks.delete_task')}</button>
+              )}
               {drawerMode === 'edit' && activeTask?.recur_rule_id && activeTask.instance_key && (
                 <button type="button" className="btn" onClick={handleSkipOccurrence}>{t('tasks.skip_occurrence')}</button>
+              )}
+              {drawerMode === 'edit' && activeTask?.recur_rule_id && (
+                <button type="button" className="btn" onClick={handleCancelRepeat}>{t('tasks.cancel_repeat')}</button>
               )}
               <button type="button" className="btn" onClick={() => setDrawerMode(null)}>{t('common.cancel')}</button>
               <button type="button" className="btn primary" onClick={handleSaveDrawer}>{t('tasks.btn_save_changes')}</button>
