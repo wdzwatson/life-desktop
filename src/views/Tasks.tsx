@@ -1156,7 +1156,9 @@ export const Tasks: React.FC = () => {
                             )}
                           </button>
                           <span className="task-row__date">
-                            {isOverdue ? t('common.overdue') : task.due_date}
+                            {isOverdue
+                              ? t('tasks.overdue_due_date', { date: task.due_date })
+                              : task.due_date}
                           </span>
                           <div className="task-row__main">
                             <span className="task-row__title">{task.title}</span>

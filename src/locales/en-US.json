@@ -75,6 +75,7 @@
     "stat_open": "Open",
     "stat_today": "Today",
     "stat_overdue": "Overdue",
+    "overdue_due_date": "Overdue · {{date}}",
     "stat_templates": "Repeating plans",
     "instances_group_label": "Work",
     "automation_group_label": "Automation",

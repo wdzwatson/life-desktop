@@ -75,6 +75,7 @@
     "stat_open": "待完成",
     "stat_today": "今日",
     "stat_overdue": "逾期",
+    "overdue_due_date": "逾期 · {{date}}",
     "stat_templates": "重复安排",
     "instances_group_label": "执行",
     "automation_group_label": "自动化",
