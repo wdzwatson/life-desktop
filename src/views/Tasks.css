@@ -766,7 +766,7 @@
   min-height: 48px;
   padding: 10px 11px;
   display: grid;
-  grid-template-columns: auto 78px minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(108px, auto) minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   border: 1px solid var(--color-border);
@@ -813,7 +813,7 @@
 .task-row--child {
   margin-left: 16px;
   min-height: 40px;
-  grid-template-columns: auto 74px minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(108px, auto) minmax(0, 1fr) auto;
   border-left-width: 3px;
   background-color: color-mix(in srgb, var(--text-main) 2%, var(--bg-surface));
 }
@@ -843,6 +843,27 @@
 .task-row.is-overdue .task-row__date {
   color: var(--color-danger);
   font-weight: 700;
+}
+
+.task-row__date.is-overdue-date {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  white-space: normal;
+}
+
+.task-row__date.is-overdue-date strong {
+  font-family: var(--font-sans);
+  font-size: 9px;
+  line-height: 1.1;
+}
+
+.task-row__date.is-overdue-date time {
+  overflow: visible;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .task-row__main {

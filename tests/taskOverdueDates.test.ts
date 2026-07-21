@@ -5,7 +5,9 @@ import { join } from 'node:path'
 
 test('overdue list rows retain their original due date', () => {
   const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
-  assert.match(tasksView, /t\('tasks\.overdue_due_date', \{ date: task\.due_date \}\)/)
+  assert.match(tasksView, /<time>\{formatDue\(task\)\}<\/time>/)
+  const css = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.css'), 'utf8')
+  assert.match(css, /\.task-row__date\.is-overdue-date time[\s\S]*white-space:\s*nowrap/)
 })
 
 for (const locale of ['zh-CN', 'en-US']) {

@@ -10,5 +10,5 @@ test('task instances persist and display an optional due time', () => {
   assert.match(schema, /due_time TEXT/)
   assert.match(scheduler, /due_date, due_time, recur_rule_id/)
   assert.match(tasksView, /const formatDue/)
-  assert.match(tasksView, /overdue_due_datetime/)
+  assert.match(tasksView, /<time>\{formatDue\(task\)\}<\/time>/)
 })
