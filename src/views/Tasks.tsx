@@ -23,7 +23,18 @@ import {
   shiftCalendarDate,
   toCalendarDateKey,
 } from './taskCalendarUtils'
+import {
+  getNextTemplateOccurrences,
+  getTemplateStartDateKey,
+  getTemplateStartTime,
+  toLocalDateKey,
+} from './taskScheduleUtils'
 import './Tasks.css'
+
+const getCurrentTimeValue = () => {
+  const now = new Date()
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+}
 
 export const Tasks: React.FC = () => {
   const { t, i18n } = useTranslation()
@@ -94,7 +105,9 @@ export const Tasks: React.FC = () => {
   const [ruleDesc, setRuleDesc] = useState('')
   const [ruleFreq, setRuleFreq] = useState('daily')
   const [ruleInterval, setRuleInterval] = useState(1)
+  const [ruleStartDate, setRuleStartDate] = useState(() => toLocalDateKey(new Date()))
   const [ruleTime, setRuleTime] = useState('09:00')
+  const [rulePriority, setRulePriority] = useState('mid')
   const [ruleWeekDays, setRuleWeekDays] = useState<number[]>([]) // 1=Mon...7=Sun
   const [ruleMonthDays, setRuleMonthDays] = useState<number[]>([])
   const [ruleCron, setRuleCron] = useState('')
@@ -151,14 +164,19 @@ export const Tasks: React.FC = () => {
 
   const scheduledLogs = useMemo(
     () =>
-      rules.map((rule) => ({
-        id: rule.id,
-        name: rule.title,
-        action: t('tasks.log_rule_action'),
-        trigger: rule.cron || rule.frequency,
-        status: t('tasks.log_rule_status_active'),
-        nextRun: t('tasks.log_rule_next_calculated'),
-      })),
+      rules.map((rule) => {
+        const nextOccurrence = getNextTemplateOccurrences(rule, new Date(), 1)[0]
+        return {
+          id: rule.id,
+          name: rule.title,
+          action: t('tasks.log_rule_action'),
+          trigger: `${rule.cron || rule.frequency} · ${getTemplateStartTime(rule)}`,
+          status: t('tasks.log_rule_status_active'),
+          nextRun: nextOccurrence
+            ? `${nextOccurrence.dateKey} ${nextOccurrence.time}`
+            : t('tasks.log_rule_next_calculated'),
+        }
+      }),
     [rules, t],
   )
 
@@ -235,6 +253,12 @@ export const Tasks: React.FC = () => {
     setTimeout(() => quickTitleInputRef.current?.focus(), 0)
   }
 
+  const runDueTaskGeneration = async () => {
+    if (api?.runTaskScheduler) {
+      await api.runTaskScheduler()
+    }
+  }
+
   const handleStartFirstTask = () => {
     setTaskTab('list')
     focusQuickAddInput()
@@ -264,7 +288,10 @@ export const Tasks: React.FC = () => {
   const loadData = async () => {
     if (api) {
       // Load Tasks
-      const res = await api.dbQuery('tasks', 'SELECT * FROM tasks')
+      const res = await api.dbQuery(
+        'tasks',
+        'SELECT * FROM tasks ORDER BY COALESCE(due_date, created_at) ASC, id ASC',
+      )
       if (res?.success) {
         setTasks(res.data)
         if (res.data.length > 0 && selectedTaskId === null) {
@@ -284,7 +311,10 @@ export const Tasks: React.FC = () => {
       }
 
       // Load Recurring Rules
-      const rulesRes = await api.dbQuery('tasks', 'SELECT * FROM recurring_rules')
+      const rulesRes = await api.dbQuery(
+        'tasks',
+        'SELECT * FROM recurring_rules ORDER BY COALESCE(start_date, created_at) ASC, start_time ASC, id ASC',
+      )
       if (rulesRes?.success) {
         setRules(rulesRes.data)
         if (rulesRes.data.length > 0 && selectedRuleId === null) {
@@ -305,6 +335,9 @@ export const Tasks: React.FC = () => {
     setRuleDesc(rule.description || '')
     setRuleFreq(rule.frequency)
     setRuleInterval(rule.interval || 1)
+    setRuleStartDate(getTemplateStartDateKey(rule))
+    setRuleTime(getTemplateStartTime(rule))
+    setRulePriority(rule.priority || 'mid')
     setRuleWeekDays(
       (rule.week_days || '')
         .split(',')
@@ -517,19 +550,25 @@ export const Tasks: React.FC = () => {
       finalTitle = finalTitle.replace(dueTokens.today, '').replace(/today/i, '')
     }
 
+    const startTime =
+      extractedDueDate === toLocalDateKey(new Date()) ? getCurrentTimeValue() : '09:00'
     const query = `
-      INSERT INTO tasks (title, description, priority, status, due_date, is_completed, progress)
-      VALUES (?, ?, ?, '待处理', ?, 0, 0)
+      INSERT INTO recurring_rules (
+        title, description, frequency, interval, start_date, start_time, priority, end_condition, missed_policy
+      )
+      VALUES (?, ?, 'custom', 1, ?, ?, ?, 'count:1', 'skip')
     `
     const res = await api.dbQuery('tasks', query, [
       finalTitle.trim(),
       '',
-      extractedPriority,
       extractedDueDate,
+      startTime,
+      extractedPriority,
     ])
 
     if (res?.success) {
-      showToast(t('tasks.toast_task_added'))
+      await runDueTaskGeneration()
+      showToast(t('tasks.toast_template_created'))
       setQuickTitle('')
       loadData()
     }
@@ -540,15 +579,20 @@ export const Tasks: React.FC = () => {
     if (!api) return
     const title = window.prompt(t('tasks.prompt_subtask_title'))
     if (!title?.trim()) return
+    const parentTask = tasks.find((task) => task.id === parentId)
 
     const query = `
-      INSERT INTO tasks (title, description, priority, status, due_date, parent_id, is_completed, progress)
-      VALUES (?, '', 'mid', '待处理', ?, ?, 0, 0)
+      INSERT INTO tasks (
+        title, description, priority, status, due_date, parent_id, recur_rule_id, instance_key, is_completed, progress
+      )
+      VALUES (?, '', 'mid', '待处理', ?, ?, ?, ?, 0, 0)
     `
     const res = await api.dbQuery('tasks', query, [
       title.trim(),
-      new Date().toISOString().slice(0, 10),
+      parentTask?.due_date || toLocalDateKey(new Date()),
       parentId,
+      parentTask?.recur_rule_id || null,
+      parentTask?.instance_key || null,
     ])
 
     if (res?.success) {
@@ -594,7 +638,7 @@ export const Tasks: React.FC = () => {
       // Update
       const query = `
         UPDATE recurring_rules 
-        SET title = ?, description = ?, frequency = ?, interval = ?, week_days = ?, month_days = ?, cron = ?, missed_policy = ?
+        SET title = ?, description = ?, frequency = ?, interval = ?, week_days = ?, month_days = ?, cron = ?, start_date = ?, start_time = ?, priority = ?, missed_policy = ?
         WHERE id = ?
       `
       await api.dbQuery('tasks', query, [
@@ -605,6 +649,9 @@ export const Tasks: React.FC = () => {
         weekDaysStr,
         monthDaysStr,
         ruleCron,
+        ruleStartDate,
+        ruleTime,
+        rulePriority,
         ruleHolidayPolicy,
         selectedRuleId,
       ])
@@ -612,8 +659,10 @@ export const Tasks: React.FC = () => {
     } else {
       // Create new
       const query = `
-        INSERT INTO recurring_rules (title, description, frequency, interval, week_days, month_days, cron, missed_policy)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO recurring_rules (
+          title, description, frequency, interval, week_days, month_days, cron, start_date, start_time, priority, missed_policy
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
       await api.dbQuery('tasks', query, [
         ruleName,
@@ -623,10 +672,14 @@ export const Tasks: React.FC = () => {
         weekDaysStr,
         monthDaysStr,
         ruleCron,
+        ruleStartDate,
+        ruleTime,
+        rulePriority,
         ruleHolidayPolicy,
       ])
       showToast(t('tasks.toast_rule_created'))
     }
+    await runDueTaskGeneration()
     loadData()
   }
 
@@ -636,6 +689,9 @@ export const Tasks: React.FC = () => {
     setRuleDesc('')
     setRuleFreq('daily')
     setRuleInterval(1)
+    setRuleStartDate(toLocalDateKey(new Date()))
+    setRuleTime('09:00')
+    setRulePriority('mid')
     setRuleWeekDays([])
     setRuleMonthDays([])
     setRuleCron('')
@@ -643,6 +699,7 @@ export const Tasks: React.FC = () => {
 
   const handleDeleteRule = async (id: number) => {
     if (!api || !window.confirm(t('tasks.prompt_delete_rule_confirm'))) return
+    await api.dbQuery('tasks', 'DELETE FROM recurring_rule_steps WHERE rule_id = ?', [id])
     await api.dbQuery('tasks', 'DELETE FROM recurring_rules WHERE id = ?', [id])
     setSelectedRuleId(null)
     showToast(t('tasks.toast_rule_deleted'))
@@ -651,32 +708,33 @@ export const Tasks: React.FC = () => {
 
   const handleUseTemplate = async (template: any) => {
     if (!api) return
-    const todayYMD = new Date().toISOString().slice(0, 10)
+    const todayYMD = toLocalDateKey(new Date())
+    const startTime = getCurrentTimeValue()
 
-    // 1. Create parent task
-    const parentRes = await api.dbQuery(
+    const templateRes = await api.dbQuery(
       'tasks',
       `
-      INSERT INTO tasks (title, description, priority, status, due_date, is_completed, progress)
-      VALUES (?, ?, 'mid', '待处理', ?, 0, 0)
+      INSERT INTO recurring_rules (
+        title, description, frequency, interval, start_date, start_time, priority, end_condition, missed_policy
+      )
+      VALUES (?, ?, 'custom', 1, ?, ?, 'mid', 'count:1', 'skip')
     `,
-      [template.title, t('tasks.template_created_desc'), todayYMD],
+      [template.title, t('tasks.template_created_desc'), todayYMD, startTime],
     )
 
-    if (parentRes?.success) {
-      const parentId = parentRes.data.insertId
-
-      // 2. Create child tasks
-      for (const sub of template.subtasks) {
+    if (templateRes?.success) {
+      const ruleId = templateRes.data.lastInsertRowid || templateRes.data.insertId
+      for (const [index, sub] of template.subtasks.entries()) {
         await api.dbQuery(
           'tasks',
           `
-          INSERT INTO tasks (title, description, parent_id, is_completed, progress, priority, status, due_date)
-          VALUES (?, '', ?, 0, 0, 'mid', '待处理', ?)
+          INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order)
+          VALUES (?, ?, '', 'mid', ?)
         `,
-          [sub, parentId, todayYMD],
+          [ruleId, sub, index + 1],
         )
       }
+      await runDueTaskGeneration()
       showToast(t('tasks.toast_template_imported'))
       setTaskTab('list')
       loadData()
@@ -684,6 +742,9 @@ export const Tasks: React.FC = () => {
   }
 
   const activeTask = tasks.find((t) => t.id === selectedTaskId)
+  const activeTaskTemplate = activeTask?.recur_rule_id
+    ? rules.find((rule) => rule.id === activeTask.recur_rule_id)
+    : null
 
   return (
     <div
@@ -1196,6 +1257,16 @@ export const Tasks: React.FC = () => {
                         {t('tasks.details_due_prefix')}{' '}
                         {activeTask.due_date || t('tasks.due_date_not_set')}
                       </span>
+                      {activeTaskTemplate && (
+                        <span className="pill blue">
+                          {t('tasks.details_template_prefix')} {activeTaskTemplate.title}
+                        </span>
+                      )}
+                      {activeTask.instance_key && (
+                        <span className="pill blue">
+                          {t('tasks.details_instance_prefix')} {activeTask.instance_key}
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -1511,8 +1582,10 @@ export const Tasks: React.FC = () => {
                               ? t('tasks.freq_weekly')
                               : rule.frequency === 'monthly'
                                 ? t('tasks.freq_monthly')
+                                : rule.frequency === 'custom'
+                                  ? t('tasks.freq_once')
                                 : rule.frequency}{' '}
-                        · {rule.cron || t('tasks.no_cron')}
+                        · {getTemplateStartDateKey(rule)} {getTemplateStartTime(rule)}
                       </div>
                     </div>
                   ))
@@ -1596,6 +1669,7 @@ export const Tasks: React.FC = () => {
                     value={ruleFreq}
                     onChange={(e) => setRuleFreq(e.target.value)}
                   >
+                    <option value="custom">{t('tasks.freq_once')}</option>
                     <option value="daily">{t('tasks.freq_daily')}</option>
                     <option value="weekday">{t('tasks.freq_weekday')}</option>
                     <option value="weekly">{t('tasks.freq_weekly')}</option>
@@ -1617,8 +1691,27 @@ export const Tasks: React.FC = () => {
                   <input
                     className="form-field"
                     type="number"
+                    min={1}
                     value={ruleInterval}
-                    onChange={(e) => setRuleInterval(parseInt(e.target.value))}
+                    onChange={(e) => setRuleInterval(Math.max(1, parseInt(e.target.value) || 1))}
+                  />
+                </div>
+                <div>
+                  <label
+                    style={{
+                      fontSize: '11px',
+                      color: 'var(--text-muted)',
+                      display: 'block',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    {t('tasks.rule_start_date_label')}
+                  </label>
+                  <input
+                    className="form-field"
+                    type="date"
+                    value={ruleStartDate}
+                    onChange={(e) => setRuleStartDate(e.target.value)}
                   />
                 </div>
                 <div>
@@ -1638,6 +1731,27 @@ export const Tasks: React.FC = () => {
                     value={ruleTime}
                     onChange={(e) => setRuleTime(e.target.value)}
                   />
+                </div>
+                <div>
+                  <label
+                    style={{
+                      fontSize: '11px',
+                      color: 'var(--text-muted)',
+                      display: 'block',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    {t('tasks.template_priority_label')}
+                  </label>
+                  <select
+                    className="form-field"
+                    value={rulePriority}
+                    onChange={(e) => setRulePriority(e.target.value)}
+                  >
+                    <option value="high">{t('tasks.priority_high')}</option>
+                    <option value="mid">{t('tasks.priority_mid')}</option>
+                    <option value="low">{t('tasks.priority_low')}</option>
+                  </select>
                 </div>
               </div>
 
@@ -1695,13 +1809,13 @@ export const Tasks: React.FC = () => {
                     }}
                   >
                     {t('tasks.freq_cron')}
-                  </label>
-                  <input
-                    className="form-field"
-                    value={ruleCron}
-                    onChange={(e) => setRuleCron(e.target.value)}
-                    placeholder={t('tasks.cron_placeholder')}
-                  />
+                </label>
+                <input
+                  className="form-field"
+                  value={ruleCron}
+                  onChange={(e) => setRuleCron(e.target.value)}
+                  placeholder={t('tasks.cron_placeholder')}
+                />
                   <span
                     style={{
                       fontSize: '10.5px',
@@ -1750,13 +1864,45 @@ export const Tasks: React.FC = () => {
                   {t('tasks.future_triggers_label')}
                 </label>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {t('tasks.future_triggers_list')
-                    .split(',')
-                    .map((t) => (
-                      <span key={t} className="pill blue">
-                        {t}
+                  {getNextTemplateOccurrences(
+                    {
+                      id: selectedRuleId || 0,
+                      title: ruleName,
+                      description: ruleDesc,
+                      frequency: ruleFreq,
+                      interval: ruleInterval,
+                      week_days: ruleWeekDays.join(','),
+                      month_days: ruleMonthDays.join(','),
+                      cron: ruleCron,
+                      start_date: ruleStartDate,
+                      start_time: ruleTime,
+                    },
+                    new Date(),
+                    5,
+                  ).length === 0 ? (
+                    <span className="pill blue">{t('tasks.future_triggers_empty')}</span>
+                  ) : (
+                    getNextTemplateOccurrences(
+                      {
+                        id: selectedRuleId || 0,
+                        title: ruleName,
+                        description: ruleDesc,
+                        frequency: ruleFreq,
+                        interval: ruleInterval,
+                        week_days: ruleWeekDays.join(','),
+                        month_days: ruleMonthDays.join(','),
+                        cron: ruleCron,
+                        start_date: ruleStartDate,
+                        start_time: ruleTime,
+                      },
+                      new Date(),
+                      5,
+                    ).map((occurrence) => (
+                      <span key={occurrence.instanceKey} className="pill blue">
+                        {occurrence.dateKey} {occurrence.time}
                       </span>
-                    ))}
+                    ))
+                  )}
                 </div>
               </div>
 
