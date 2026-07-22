@@ -13,6 +13,12 @@
   margin-bottom: 18px;
 }
 
+.desktop-task-note__controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .desktop-task-note__eyebrow {
   margin-bottom: 4px;
   color: var(--color-accent);
@@ -146,6 +152,22 @@
 .desktop-task-note__refresh:hover {
   background: var(--bg-app);
   color: var(--color-accent);
+}
+
+.desktop-task-note__refresh.is-active {
+  color: var(--color-accent);
+}
+
+.desktop-task-note__opacity {
+  display: inline-flex;
+  width: 58px;
+  align-items: center;
+}
+
+.desktop-task-note__opacity input {
+  width: 100%;
+  accent-color: var(--color-accent);
+  cursor: pointer;
 }
 
 .desktop-task-note__refresh:disabled {

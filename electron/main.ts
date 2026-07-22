@@ -87,6 +87,7 @@ function hashPassword(password: string, salt?: string) {
 // Keep global references
 let mainWindow: BrowserWindow | null = null
 let desktopTaskNoteWindow: BrowserWindow | null = null
+let desktopTaskNoteSaveTimer: NodeJS.Timeout | null = null
 let activeUserId = 'guest'
 const openDbs: Map<string, any> = new Map() // dbName -> Database instance
 let schedulerInterval: NodeJS.Timeout | null = null
@@ -153,6 +154,35 @@ function getSettings() {
   } catch {
     return {}
   }
+}
+
+function getDesktopTaskNoteSettings() {
+  const settings = getSettings()
+  return {
+    opacity: typeof settings.desktopTaskNote?.opacity === 'number' ? settings.desktopTaskNote.opacity : 0.96,
+    alwaysOnTop: settings.desktopTaskNote?.alwaysOnTop !== false,
+    bounds: settings.desktopTaskNote?.bounds,
+  }
+}
+
+function saveDesktopTaskNoteSettings(patch: Record<string, unknown>) {
+  const settings = getSettings()
+  settings.desktopTaskNote = {
+    ...getDesktopTaskNoteSettings(),
+    ...settings.desktopTaskNote,
+    ...patch,
+  }
+  saveSettings(settings)
+}
+
+function scheduleDesktopTaskNoteBoundsSave() {
+  if (!desktopTaskNoteWindow || desktopTaskNoteWindow.isDestroyed()) return
+  if (desktopTaskNoteSaveTimer) clearTimeout(desktopTaskNoteSaveTimer)
+  desktopTaskNoteSaveTimer = setTimeout(() => {
+    if (!desktopTaskNoteWindow || desktopTaskNoteWindow.isDestroyed()) return
+    saveDesktopTaskNoteSettings({ bounds: desktopTaskNoteWindow.getBounds() })
+    desktopTaskNoteSaveTimer = null
+  }, 250)
 }
 
 function getVideoToolSettings() {
@@ -886,12 +916,18 @@ function createDesktopTaskNoteWindow() {
     return desktopTaskNoteWindow
   }
 
+  const noteSettings = getDesktopTaskNoteSettings()
+  const bounds = noteSettings.bounds && typeof noteSettings.bounds === 'object' ? noteSettings.bounds : {}
   desktopTaskNoteWindow = new BrowserWindow({
-    width: 360,
-    height: 520,
+    width: Number(bounds.width) || 360,
+    height: Number(bounds.height) || 520,
+    ...(typeof bounds.x === 'number' ? { x: bounds.x } : {}),
+    ...(typeof bounds.y === 'number' ? { y: bounds.y } : {}),
     minWidth: 280,
     minHeight: 280,
     title: 'LifeOS 今日任务',
+    alwaysOnTop: noteSettings.alwaysOnTop,
+    opacity: noteSettings.opacity,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
@@ -908,8 +944,11 @@ function createDesktopTaskNoteWindow() {
   }
 
   desktopTaskNoteWindow.on('closed', () => {
+    if (desktopTaskNoteSaveTimer) clearTimeout(desktopTaskNoteSaveTimer)
     desktopTaskNoteWindow = null
   })
+  desktopTaskNoteWindow.on('move', scheduleDesktopTaskNoteBoundsSave)
+  desktopTaskNoteWindow.on('resize', scheduleDesktopTaskNoteBoundsSave)
 
   return desktopTaskNoteWindow
 }
@@ -2172,6 +2211,23 @@ ipcMain.handle('tasks:runScheduler', async () => {
     return { success: false, error: err?.message || String(err) }
   }
 })
+
+ipcMain.handle('desktopTaskNote:getSettings', async () => getDesktopTaskNoteSettings())
+
+ipcMain.handle(
+  'desktopTaskNote:setSettings',
+  async (_, patch: { opacity?: number; alwaysOnTop?: boolean }) => {
+    const noteSettings = getDesktopTaskNoteSettings()
+    const opacity = Math.min(1, Math.max(0.35, Number(patch.opacity ?? noteSettings.opacity)))
+    const alwaysOnTop = patch.alwaysOnTop ?? noteSettings.alwaysOnTop
+    if (desktopTaskNoteWindow && !desktopTaskNoteWindow.isDestroyed()) {
+      desktopTaskNoteWindow.setOpacity(opacity)
+      desktopTaskNoteWindow.setAlwaysOnTop(alwaysOnTop)
+    }
+    saveDesktopTaskNoteSettings({ opacity, alwaysOnTop })
+    return { success: true, data: { opacity, alwaysOnTop } }
+  },
+)
 
 registerAIConfigIpc(
   { handle: (channel, handler) => ipcMain.handle(channel, handler) },

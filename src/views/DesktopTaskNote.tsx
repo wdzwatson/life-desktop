@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, Circle, RefreshCw, X } from 'lucide-react'
+import { Check, Circle, Pin, RefreshCw, X } from 'lucide-react'
 import {
   getDesktopTasksForDate,
   getUserDateKey,
@@ -32,6 +32,8 @@ export const DesktopTaskNote: React.FC = () => {
   const [taskOrder, setTaskOrder] = useState<DesktopTaskOrder>({ active: [], completed: [] })
   const [storageKey, setStorageKey] = useState('lifeos.desktop-task-note.order.guest')
   const [loadedStorageKey, setLoadedStorageKey] = useState<string | null>(null)
+  const [opacity, setOpacity] = useState(0.96)
+  const [alwaysOnTop, setAlwaysOnTop] = useState(true)
 
   const todayKey = useMemo(() => getUserDateKey(new Date(), getUserTimeZone()), [])
 
@@ -40,6 +42,22 @@ export const DesktopTaskNote: React.FC = () => {
       setStorageKey(`lifeos.desktop-task-note.order.${user?.userId || 'guest'}`)
     })
   }, [api])
+
+  useEffect(() => {
+    void api
+      ?.getDesktopTaskNoteSettings?.()
+      .then((settings: { opacity?: number; alwaysOnTop?: boolean }) => {
+        if (typeof settings?.opacity === 'number') setOpacity(settings.opacity)
+        if (typeof settings?.alwaysOnTop === 'boolean') setAlwaysOnTop(settings.alwaysOnTop)
+      })
+  }, [api])
+
+  const updateAppearance = async (patch: { opacity?: number; alwaysOnTop?: boolean }) => {
+    const result = await api?.setDesktopTaskNoteSettings?.(patch)
+    if (!result?.success) return
+    if (typeof result.data?.opacity === 'number') setOpacity(result.data.opacity)
+    if (typeof result.data?.alwaysOnTop === 'boolean') setAlwaysOnTop(result.data.alwaysOnTop)
+  }
 
   useEffect(() => {
     try {
@@ -195,15 +213,41 @@ export const DesktopTaskNote: React.FC = () => {
           <p className="desktop-task-note__eyebrow">LifeOS</p>
           <h1>今日任务</h1>
         </div>
-        <button
-          type="button"
-          className="desktop-task-note__refresh"
-          aria-label="刷新任务"
-          onClick={() => void loadTasks(true)}
-          disabled={isRefreshing}
-        >
-          <RefreshCw size={16} className={isRefreshing ? 'is-spinning' : ''} aria-hidden="true" />
-        </button>
+        <div className="desktop-task-note__controls">
+          <button
+            type="button"
+            className={`desktop-task-note__refresh ${alwaysOnTop ? 'is-active' : ''}`}
+            aria-label={alwaysOnTop ? '取消置顶' : '始终置顶'}
+            title={alwaysOnTop ? '取消置顶' : '始终置顶'}
+            onClick={() => void updateAppearance({ alwaysOnTop: !alwaysOnTop })}
+          >
+            <Pin size={15} aria-hidden="true" />
+          </button>
+          <label className="desktop-task-note__opacity" title="便签透明度">
+            <span className="sr-only">便签透明度</span>
+            <input
+              type="range"
+              min="0.35"
+              max="1"
+              step="0.05"
+              value={opacity}
+              onChange={(event) => {
+                const nextOpacity = Number(event.target.value)
+                setOpacity(nextOpacity)
+                void updateAppearance({ opacity: nextOpacity })
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            className="desktop-task-note__refresh"
+            aria-label="刷新任务"
+            onClick={() => void loadTasks(true)}
+            disabled={isRefreshing}
+          >
+            <RefreshCw size={16} className={isRefreshing ? 'is-spinning' : ''} aria-hidden="true" />
+          </button>
+        </div>
       </header>
 
       {error && (

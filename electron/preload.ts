@@ -34,6 +34,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbTransaction: (dbName: string, statements: Array<{ sql: string; params?: unknown[] }>) =>
     ipcRenderer.invoke('db:transaction', { dbName, statements }),
   runTaskScheduler: () => ipcRenderer.invoke('tasks:runScheduler'),
+  getDesktopTaskNoteSettings: () => ipcRenderer.invoke('desktopTaskNote:getSettings'),
+  setDesktopTaskNoteSettings: (patch: { opacity?: number; alwaysOnTop?: boolean }) =>
+    ipcRenderer.invoke('desktopTaskNote:setSettings', patch),
 
   // AI configuration. Full credentials remain in the main process.
   listAIProviders: (filters?: unknown) => ipcRenderer.invoke('ai:providers:list', filters),
@@ -58,7 +61,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteAIProvider: (id: number) => ipcRenderer.invoke('ai:providers:delete', { id }),
   listAIModels: () => ipcRenderer.invoke('ai:models:list'),
   createAIModel: (input: unknown) => ipcRenderer.invoke('ai:models:create', input),
-  updateAIModel: (id: number, input: unknown) => ipcRenderer.invoke('ai:models:update', { id, input }),
+  updateAIModel: (id: number, input: unknown) =>
+    ipcRenderer.invoke('ai:models:update', { id, input }),
   deleteAIModel: (id: number) => ipcRenderer.invoke('ai:models:delete', { id }),
   syncAIModels: () => ipcRenderer.invoke('ai:models:sync'),
 
@@ -111,7 +115,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cancelAIVideoGeneration: (conversationId: number) =>
     ipcRenderer.invoke('ai:videos:cancel', { conversationId }),
   getAIStorageUsage: () => ipcRenderer.invoke('ai:storage:usage'),
-  previewAIStorageCleanup: (input: unknown) => ipcRenderer.invoke('ai:storage:previewCleanup', input),
+  previewAIStorageCleanup: (input: unknown) =>
+    ipcRenderer.invoke('ai:storage:previewCleanup', input),
   cleanAIStorage: (input: unknown) => ipcRenderer.invoke('ai:storage:cleanup', input),
   onAIRunEvent: (callback: (data: unknown) => void) => {
     const subscription = (_event: unknown, data: unknown) => callback(data)
@@ -122,10 +127,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   listAIConversations: (filters?: unknown) => ipcRenderer.invoke('ai:conversations:list', filters),
   getAIConversation: (id: number) => ipcRenderer.invoke('ai:conversations:get', { id }),
-  createAIConversation: (title: string, agentId: number, thinkingLevel?: string, selection?: Record<string, unknown>) =>
-    ipcRenderer.invoke('ai:conversations:create', { title, agentId, ...(thinkingLevel ? { thinkingLevel } : {}), ...(selection ?? {}) }),
-  setAIConversationSelection: (conversationId: number, agentId: number, thinkingLevel: string, selection?: Record<string, unknown>) =>
-    ipcRenderer.invoke('ai:conversations:setSelection', { conversationId, agentId, thinkingLevel, ...(selection ?? {}) }),
+  createAIConversation: (
+    title: string,
+    agentId: number,
+    thinkingLevel?: string,
+    selection?: Record<string, unknown>,
+  ) =>
+    ipcRenderer.invoke('ai:conversations:create', {
+      title,
+      agentId,
+      ...(thinkingLevel ? { thinkingLevel } : {}),
+      ...(selection ?? {}),
+    }),
+  setAIConversationSelection: (
+    conversationId: number,
+    agentId: number,
+    thinkingLevel: string,
+    selection?: Record<string, unknown>,
+  ) =>
+    ipcRenderer.invoke('ai:conversations:setSelection', {
+      conversationId,
+      agentId,
+      thinkingLevel,
+      ...(selection ?? {}),
+    }),
   renameAIConversation: (id: number, title: string) =>
     ipcRenderer.invoke('ai:conversations:rename', { id, title }),
   setAIConversationPinned: (id: number, pinned: boolean) =>
@@ -134,14 +159,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('ai:conversations:setArchived', { id, archived }),
   deleteAIConversation: (id: number, deleteUnreferencedMedia = false) =>
     ipcRenderer.invoke('ai:conversations:delete', { id, deleteUnreferencedMedia }),
-  listAIConversationMessages: (conversationId: number, options?: { beforeId?: number; limit?: number }) =>
-    ipcRenderer.invoke('ai:conversations:messages', { conversationId, ...options }),
+  listAIConversationMessages: (
+    conversationId: number,
+    options?: { beforeId?: number; limit?: number },
+  ) => ipcRenderer.invoke('ai:conversations:messages', { conversationId, ...options }),
   listAIConversationEvents: (conversationId: number) =>
     ipcRenderer.invoke('ai:conversations:events', { conversationId }),
   upsertAIModelSwitchEvent: (input: unknown) =>
     ipcRenderer.invoke('ai:conversations:upsertModelSwitchEvent', input),
   deleteAIModelSwitchEvent: (conversationId: number, afterMessageId: number | null) =>
-    ipcRenderer.invoke('ai:conversations:deleteModelSwitchEvent', { conversationId, afterMessageId }),
+    ipcRenderer.invoke('ai:conversations:deleteModelSwitchEvent', {
+      conversationId,
+      afterMessageId,
+    }),
   listAIConversationRuns: (conversationId: number, limit?: number) =>
     ipcRenderer.invoke('ai:conversations:runs', { conversationId, limit }),
   saveAIAsset: (assetId: number) => ipcRenderer.invoke('ai:media:saveAs', { assetId }),
@@ -183,12 +213,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installVideoTool: (tool: 'yt-dlp' | 'ffmpeg') => ipcRenderer.invoke('video:installTool', tool),
   loginBilibili: () => ipcRenderer.invoke('video:loginBilibili'),
   getBilibiliAuthStatus: () => ipcRenderer.invoke('video:getBilibiliAuthStatus'),
-  getVideoCookieAccessStatus: (url: string) => ipcRenderer.invoke('video:getCookieAccessStatus', url),
+  getVideoCookieAccessStatus: (url: string) =>
+    ipcRenderer.invoke('video:getCookieAccessStatus', url),
   verifyVideoCookieAccess: () => ipcRenderer.invoke('video:verifyCookieAccess'),
   selectVideoDownloadDir: () => ipcRenderer.invoke('video:selectDownloadDir'),
   parseVideoUrl: (url: string) => ipcRenderer.invoke('video:parseUrl', url),
-  bulkUpdateVideoTags: (payload: { videoIds: number[]; tagNames: string[]; mode: 'add' | 'remove' }) =>
-    ipcRenderer.invoke('video:bulkUpdateTags', payload),
+  bulkUpdateVideoTags: (payload: {
+    videoIds: number[]
+    tagNames: string[]
+    mode: 'add' | 'remove'
+  }) => ipcRenderer.invoke('video:bulkUpdateTags', payload),
   startDownload: (videoData: any) => ipcRenderer.invoke('video:download', videoData),
   getVideoPlaybackUrl: (localPath: string) => ipcRenderer.invoke('video:getPlaybackUrl', localPath),
   onVideoEngineStatus: (callback: (data: any) => void) => {
