@@ -29,7 +29,13 @@ interface DouyinSyncProgress {
   currentFolderTitle?: string
 }
 
-export function DouyinFavoritesPanel({ showToast }: { showToast: (message: string) => void }) {
+export function DouyinFavoritesPanel({
+  showToast,
+  workspace = false,
+}: {
+  showToast: (message: string) => void
+  workspace?: boolean
+}) {
   const { t } = useTranslation()
   const api = (window as any).electronAPI
   const [auth, setAuth] = useState<DouyinAuthStatus>({ loggedIn: false })
@@ -163,7 +169,11 @@ export function DouyinFavoritesPanel({ showToast }: { showToast: (message: strin
     : ''
 
   return (
-    <section className="card" aria-busy={loading || syncing} style={{ display: 'grid', gap: '10px', minWidth: 0 }}>
+    <section
+      className="card"
+      aria-busy={loading || syncing}
+      style={{ display: 'grid', gap: '10px', minWidth: 0, minHeight: 0, flex: workspace ? 1 : undefined }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
         <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flex: '1 1 160px' }}>
           <Folder size={14} />
@@ -213,7 +223,7 @@ export function DouyinFavoritesPanel({ showToast }: { showToast: (message: strin
       ) : null}
 
       {folders.length > 0 ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(132px, 190px) minmax(0, 1fr)', gap: '10px', minWidth: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 240px) minmax(0, 1fr)', gap: '12px', minWidth: 0, minHeight: 0, flex: workspace ? 1 : undefined }}>
           <nav aria-label={t('videos.douyin_folders')} style={{ display: 'grid', alignContent: 'start', gap: '3px' }}>
             {folders.map((folder) => (
               <button
@@ -229,7 +239,7 @@ export function DouyinFavoritesPanel({ showToast }: { showToast: (message: strin
               </button>
             ))}
           </nav>
-          <div style={{ display: 'grid', gap: '8px', minWidth: 0 }}>
+          <div style={{ display: 'grid', gap: '8px', minWidth: 0, minHeight: 0, gridTemplateRows: workspace ? 'auto minmax(0, 1fr)' : undefined }}>
             <input
               className="form-field"
               value={searchQuery}
@@ -240,7 +250,7 @@ export function DouyinFavoritesPanel({ showToast }: { showToast: (message: strin
             {filteredItems.length === 0 ? (
               <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '12px' }}>{t('videos.douyin_empty_folder')}</p>
             ) : (
-              <div style={{ display: 'grid', gap: '5px', maxHeight: '260px', overflowY: 'auto' }}>
+              <div style={{ display: 'grid', gap: '5px', maxHeight: workspace ? undefined : '260px', minHeight: 0, overflowY: 'auto' }}>
                 {filteredItems.map((item) => (
                   <article
                     key={item.id}

@@ -517,6 +517,9 @@
   },
   "videos": {
     "title": "Videos",
+    "workspace_tabs": "Video workspaces",
+    "workspace_library": "Video library",
+    "workspace_douyin": "Douyin favorites",
     "sidebar_title": "Video Library",
     "all_videos_sidebar": "All Videos",
     "to_organize": "To Organize",

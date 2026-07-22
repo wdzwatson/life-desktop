@@ -8,6 +8,8 @@ import {
   Database,
   Download,
   ExternalLink,
+  Folder,
+  Library,
   MoreVertical,
   Minus,
   Play,
@@ -166,6 +168,7 @@ export const Videos: React.FC = () => {
   const [isBulkMoreMenuOpen, setIsBulkMoreMenuOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [videoSort, setVideoSort] = useState<VideoSortState>({ key: 'default', direction: 'desc' })
+  const [activeVideoWorkspace, setActiveVideoWorkspace] = useState<'library' | 'douyin'>('library')
   const [activeGroupId, setActiveGroupId] = useState<FilterId>('all')
   const [activeTag, setActiveTag] = useState<string | null>(null)
   const [selectedVideo, setSelectedVideo] = useState<any | null>(null)
@@ -1574,30 +1577,59 @@ export const Videos: React.FC = () => {
       </header>
 
       <div
+        role="tablist"
+        aria-label={t('videos.workspace_tabs')}
+        style={{ display: 'flex', gap: '6px', marginBottom: '12px', borderBottom: '1px solid var(--color-border)', paddingBottom: '8px' }}
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeVideoWorkspace === 'library'}
+          className={`btn sm ${activeVideoWorkspace === 'library' ? 'primary' : 'ghost'}`}
+          onClick={() => setActiveVideoWorkspace('library')}
+        >
+          <Library size={14} />
+          {t('videos.workspace_library')}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeVideoWorkspace === 'douyin'}
+          className={`btn sm ${activeVideoWorkspace === 'douyin' ? 'primary' : 'ghost'}`}
+          onClick={() => setActiveVideoWorkspace('douyin')}
+        >
+          <Folder size={14} />
+          {t('videos.workspace_douyin')}
+        </button>
+      </div>
+
+      <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '240px minmax(0, 1fr)',
+          gridTemplateColumns: activeVideoWorkspace === 'library' ? '240px minmax(0, 1fr)' : 'minmax(0, 1fr)',
           gap: '16px',
           minHeight: 0,
           minWidth: 0,
           flexGrow: 1,
         }}
       >
-        <VideoGroupSidebar
-          groups={groups}
-          translations={groupTranslations}
-          videos={localVideos}
-          tags={tags}
-          activeGroupId={activeGroupId}
-          activeTag={activeTag}
-          locale={i18n.language}
-          onSelectGroup={setActiveGroupId}
-          onSelectTag={setActiveTag}
-          onCreateGroup={handleCreateGroup}
-          onRenameGroup={handleRenameGroup}
-          onSaveTranslations={handleSaveGroupTranslations}
-          onDeleteGroup={handleDeleteGroup}
-        />
+        {activeVideoWorkspace === 'library' ? (
+          <VideoGroupSidebar
+            groups={groups}
+            translations={groupTranslations}
+            videos={localVideos}
+            tags={tags}
+            activeGroupId={activeGroupId}
+            activeTag={activeTag}
+            locale={i18n.language}
+            onSelectGroup={setActiveGroupId}
+            onSelectTag={setActiveTag}
+            onCreateGroup={handleCreateGroup}
+            onRenameGroup={handleRenameGroup}
+            onSaveTranslations={handleSaveGroupTranslations}
+            onDeleteGroup={handleDeleteGroup}
+          />
+        ) : null}
 
         <main
           className="video-library-main"
@@ -1609,6 +1641,10 @@ export const Videos: React.FC = () => {
             role="status"
             aria-label="Refreshing video library"
           />
+          {activeVideoWorkspace === 'douyin' ? (
+            <DouyinFavoritesPanel showToast={showToast} workspace />
+          ) : (
+            <>
           <section
             className="card"
             style={{
@@ -1672,8 +1708,6 @@ export const Videos: React.FC = () => {
                   : t('videos.btn_reload_video_engine')}
             </button>
           </section>
-
-          <DouyinFavoritesPanel showToast={showToast} />
 
           <form
             onSubmit={handleParseUrl}
@@ -2274,6 +2308,8 @@ export const Videos: React.FC = () => {
               )}
             </div>
           </section>
+            </>
+          )}
         </main>
       </div>
 

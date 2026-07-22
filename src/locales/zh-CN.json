@@ -517,6 +517,9 @@
   },
   "videos": {
     "title": "视频管理",
+    "workspace_tabs": "视频工作区",
+    "workspace_library": "本地视频",
+    "workspace_douyin": "抖音收藏",
     "sidebar_title": "视频库",
     "all_videos_sidebar": "全部视频",
     "to_organize": "待整理",
