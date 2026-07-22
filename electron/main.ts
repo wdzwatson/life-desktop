@@ -175,6 +175,7 @@ function getDesktopTaskNoteSettings() {
     opacity: typeof settings.desktopTaskNote?.opacity === 'number' ? settings.desktopTaskNote.opacity : 0.96,
     alwaysOnTop: settings.desktopTaskNote?.alwaysOnTop !== false,
     bounds: settings.desktopTaskNote?.bounds,
+    layoutVersion: Number(settings.desktopTaskNote?.layoutVersion) || 0,
   }
 }
 
@@ -937,7 +938,10 @@ function createDesktopTaskNoteWindow() {
   }
 
   const noteSettings = getDesktopTaskNoteSettings()
-  const savedBounds = noteSettings.bounds && typeof noteSettings.bounds === 'object' ? noteSettings.bounds : null
+  const savedBounds =
+    noteSettings.layoutVersion >= 1 && noteSettings.bounds && typeof noteSettings.bounds === 'object'
+      ? noteSettings.bounds
+      : null
   const noteWidth = Number(savedBounds?.width) || 320
   const noteHeight = Number(savedBounds?.height) || 420
   const workArea = screen.getPrimaryDisplay().workArea
@@ -946,6 +950,12 @@ function createDesktopTaskNoteWindow() {
     y: workArea.y + 18,
   }
   const bounds = savedBounds ?? defaultBounds
+  if (noteSettings.layoutVersion < 1) {
+    saveDesktopTaskNoteSettings({
+      layoutVersion: 1,
+      bounds: { ...defaultBounds, width: noteWidth, height: noteHeight },
+    })
+  }
   desktopTaskNoteWindow = new BrowserWindow({
     width: noteWidth,
     height: noteHeight,
