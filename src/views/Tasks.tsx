@@ -547,6 +547,35 @@ export const Tasks: React.FC = () => {
     }
   }
 
+  const getCompletionConfirmationCopy = (task: any) => {
+    const hasSubtasks = tasks.some((candidate) => candidate.parent_id === task.id)
+    if (task.is_completed === 1) {
+      return {
+        title: t('tasks.confirm_reopen_title'),
+        description: t('tasks.confirm_reopen_description', { title: task.title }),
+        action: t('tasks.confirm_reopen_action'),
+      }
+    }
+
+    if (task.status === '已逾期') {
+      return {
+        title: t('tasks.confirm_close_overdue_title'),
+        description: hasSubtasks
+          ? t('tasks.confirm_close_overdue_with_subtasks_description', { title: task.title })
+          : t('tasks.confirm_close_overdue_description', { title: task.title }),
+        action: t('tasks.confirm_close_overdue_action'),
+      }
+    }
+
+    return {
+      title: t('tasks.confirm_complete_title'),
+      description: hasSubtasks
+        ? t('tasks.confirm_complete_with_subtasks_description', { title: task.title })
+        : t('tasks.confirm_complete_description', { title: task.title }),
+      action: t('tasks.confirm_complete_action'),
+    }
+  }
+
   const renderSubtaskRows = (
     parentId: number,
     depth = 1,
@@ -557,6 +586,7 @@ export const Tasks: React.FC = () => {
       .flatMap((child) => {
         const nextVisited = new Set(visited)
         nextVisited.add(child.id)
+        const isChildOverdue = child.status === '已逾期'
         return [
           <div
             key={child.id}
@@ -580,12 +610,16 @@ export const Tasks: React.FC = () => {
               title={
                 child.is_completed === 1
                   ? t('tasks.reopen_task_action')
-                  : t('tasks.complete_task_action')
+                  : isChildOverdue
+                    ? t('tasks.close_overdue_task_action')
+                    : t('tasks.complete_task_action')
               }
               aria-label={
                 child.is_completed === 1
                   ? t('tasks.reopen_task_action')
-                  : t('tasks.complete_task_action')
+                  : isChildOverdue
+                    ? t('tasks.close_overdue_task_action')
+                    : t('tasks.complete_task_action')
               }
               onClick={(e) => {
                 e.stopPropagation()
@@ -595,6 +629,8 @@ export const Tasks: React.FC = () => {
             >
               {child.is_completed === 1 ? (
                 <Check size={14} color="var(--color-success)" />
+              ) : isChildOverdue ? (
+                <X size={14} color="var(--color-danger)" />
               ) : (
                 <Circle size={14} color="var(--text-muted)" />
               )}
@@ -878,6 +914,9 @@ export const Tasks: React.FC = () => {
     expandedTaskGroupId === null
       ? null
       : rootTasks.find((task) => task.id === expandedTaskGroupId) ?? null
+  const completionConfirmationCopy = completionConfirmationTask
+    ? getCompletionConfirmationCopy(completionConfirmationTask)
+    : null
   const openTaskCount = tasks.filter(
     (task) => task.is_completed !== 1 && task.status !== '已关闭',
   ).length
@@ -1196,12 +1235,16 @@ export const Tasks: React.FC = () => {
                             title={
                               task.is_completed === 1
                                 ? t('tasks.reopen_task_action')
-                                : t('tasks.complete_task_action')
+                                : isOverdue
+                                  ? t('tasks.close_overdue_task_action')
+                                  : t('tasks.complete_task_action')
                             }
                             aria-label={
                               task.is_completed === 1
                                 ? t('tasks.reopen_task_action')
-                                : t('tasks.complete_task_action')
+                                : isOverdue
+                                  ? t('tasks.close_overdue_task_action')
+                                  : t('tasks.complete_task_action')
                             }
                             onClick={(e) => {
                               e.stopPropagation()
@@ -1215,6 +1258,8 @@ export const Tasks: React.FC = () => {
                           >
                             {task.is_completed === 1 ? (
                               <Check size={16} color="var(--color-success)" />
+                            ) : isOverdue ? (
+                              <X size={16} color="var(--color-danger)" />
                             ) : (
                               <Circle
                                 size={16}
@@ -1989,13 +2034,9 @@ export const Tasks: React.FC = () => {
           </aside>
         </div>
       )}
-      {completionConfirmationTask && (
+      {completionConfirmationTask && completionConfirmationCopy && (
         <AccessibleDialog
-          title={
-            completionConfirmationTask.is_completed === 1
-              ? t('tasks.confirm_reopen_title')
-              : t('tasks.confirm_complete_title')
-          }
+          title={completionConfirmationCopy.title}
           role="alertdialog"
           onClose={() => {
             if (!isCompletionConfirming) setCompletionConfirmationTask(null)
@@ -2004,15 +2045,7 @@ export const Tasks: React.FC = () => {
           contentClassName="task-completion-confirm"
         >
           <p className="task-completion-confirm__copy">
-            {completionConfirmationTask.is_completed === 1
-              ? t('tasks.confirm_reopen_description', { title: completionConfirmationTask.title })
-              : tasks.some((task) => task.parent_id === completionConfirmationTask.id)
-                ? t('tasks.confirm_complete_with_subtasks_description', {
-                    title: completionConfirmationTask.title,
-                  })
-                : t('tasks.confirm_complete_description', {
-                    title: completionConfirmationTask.title,
-                  })}
+            {completionConfirmationCopy.description}
           </p>
           <div className="task-completion-confirm__actions">
             <button
@@ -2029,9 +2062,7 @@ export const Tasks: React.FC = () => {
               disabled={isCompletionConfirming}
               onClick={() => void confirmTaskCompletionToggle()}
             >
-              {completionConfirmationTask.is_completed === 1
-                ? t('tasks.confirm_reopen_action')
-                : t('tasks.confirm_complete_action')}
+              {completionConfirmationCopy.action}
             </button>
           </div>
         </AccessibleDialog>

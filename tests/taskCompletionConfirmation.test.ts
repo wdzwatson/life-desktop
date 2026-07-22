@@ -12,4 +12,6 @@ test('task completion changes require an explicit confirmation', () => {
   assert.match(tasksView, /<AccessibleDialog[\s\S]*role="alertdialog"/)
   assert.match(tasksView, /await toggleTaskDone\(completionConfirmationTask\)/)
   assert.match(tasksView, /tasks\.confirm_complete_with_subtasks_description/)
+  assert.match(tasksView, /tasks\.close_overdue_task_action/)
+  assert.match(tasksView, /tasks\.confirm_close_overdue_with_subtasks_description/)
 })
