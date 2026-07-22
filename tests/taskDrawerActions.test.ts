@@ -3,12 +3,14 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-test('drawer distinguishes deleting a task from cancelling future repeats', () => {
+test('drawer provides scoped deletion for recurring task roots', () => {
   const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
-  assert.match(tasksView, /const handleDeleteTask/)
-  assert.match(tasksView, /activeTask\.recur_rule_id && activeTask\.instance_key/)
+  assert.match(tasksView, /type TaskDeletionScope = 'single' \| 'end-repeat' \| 'delete-repeat'/)
+  assert.match(tasksView, /const openTaskDeletionConfirmation/)
+  assert.match(tasksView, /isRecurringRootTask\(deletionConfirmationTask\)/)
+  assert.match(tasksView, /name="task-delete-scope"/)
   assert.match(tasksView, /recurring_rule_occurrence_exceptions/)
-  assert.match(tasksView, /DELETE FROM tasks WHERE id = \?/) 
-  assert.match(tasksView, /const handleCancelRepeat/)
+  assert.match(tasksView, /WITH RECURSIVE task_tree/)
+  assert.match(tasksView, /is_completed = 0/)
   assert.match(tasksView, /DELETE FROM recurring_rules WHERE id = \?/) 
 })

@@ -40,6 +40,8 @@ const getCurrentTimeValue = () => {
   return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
 }
 
+type TaskDeletionScope = 'single' | 'end-repeat' | 'delete-repeat'
+
 export const Tasks: React.FC = () => {
   const { t, i18n } = useTranslation()
 
@@ -95,6 +97,11 @@ export const Tasks: React.FC = () => {
   const [completionConfirmationTask, setCompletionConfirmationTask] = useState<any | null>(null)
   const [isCompletionConfirming, setIsCompletionConfirming] = useState(false)
   const completionTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const [deletionConfirmationTask, setDeletionConfirmationTask] = useState<any | null>(null)
+  const [deletionScope, setDeletionScope] = useState<TaskDeletionScope>('single')
+  const [isDeletingTask, setIsDeletingTask] = useState(false)
+  const deletionTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const deletionCancelButtonRef = useRef<HTMLButtonElement | null>(null)
 
   const [drawerMode, setDrawerMode] = useState<'create' | 'edit' | null>(null)
   const [taskDraft, setTaskDraft] = useState({
@@ -706,45 +713,105 @@ export const Tasks: React.FC = () => {
     await loadData()
   }
 
-  const handleSkipOccurrence = async () => {
-    if (!api || !activeTask?.recur_rule_id || !activeTask.instance_key) return
+  const isRecurringRootTask = (task: any) =>
+    Boolean(task?.recur_rule_id && task.instance_key && !task.parent_id)
+
+  const deleteTaskTree = async (taskId: number) => {
+    if (!api) return
     await api.dbQuery(
       'tasks',
-      'INSERT OR IGNORE INTO recurring_rule_occurrence_exceptions (recur_rule_id, instance_key) VALUES (?, ?)',
-      [activeTask.recur_rule_id, activeTask.instance_key],
+      `
+        WITH RECURSIVE task_tree(id) AS (
+          SELECT id FROM tasks WHERE id = ?
+          UNION ALL
+          SELECT tasks.id FROM tasks
+          INNER JOIN task_tree ON tasks.parent_id = task_tree.id
+        )
+        DELETE FROM tasks WHERE id IN (SELECT id FROM task_tree)
+      `,
+      [taskId],
     )
-    await api.dbQuery('tasks', 'DELETE FROM tasks WHERE parent_id = ?', [activeTask.id])
-    await api.dbQuery('tasks', 'DELETE FROM tasks WHERE id = ?', [activeTask.id])
-    setDrawerMode(null)
-    showToast(t('tasks.toast_occurrence_skipped'))
-    await loadData()
   }
 
-  const handleDeleteTask = async () => {
-    if (!api || !activeTask || !window.confirm(t('tasks.prompt_delete_task_confirm'))) return
-    if (activeTask.recur_rule_id && activeTask.instance_key) {
-      await api.dbQuery(
-        'tasks',
-        'INSERT OR IGNORE INTO recurring_rule_occurrence_exceptions (recur_rule_id, instance_key) VALUES (?, ?)',
-        [activeTask.recur_rule_id, activeTask.instance_key],
-      )
+  const deleteUnfinishedRecurringTaskTrees = async (
+    ruleId: number,
+    afterOccurrence?: { due_date?: string | null; instance_key?: string | null },
+  ) => {
+    if (!api) return
+
+    const result = afterOccurrence?.due_date
+      ? await api.dbQuery(
+          'tasks',
+          `
+            SELECT id FROM tasks
+            WHERE recur_rule_id = ?
+              AND parent_id IS NULL
+              AND is_completed = 0
+              AND (due_date > ? OR (due_date = ? AND instance_key > ?))
+          `,
+          [ruleId, afterOccurrence.due_date, afterOccurrence.due_date, afterOccurrence.instance_key || ''],
+        )
+      : await api.dbQuery(
+          'tasks',
+          'SELECT id FROM tasks WHERE recur_rule_id = ? AND parent_id IS NULL AND is_completed = 0',
+          [ruleId],
+        )
+
+    for (const task of result?.data ?? []) {
+      await deleteTaskTree(task.id)
     }
-    await api.dbQuery('tasks', 'DELETE FROM tasks WHERE parent_id = ?', [activeTask.id])
-    await api.dbQuery('tasks', 'DELETE FROM tasks WHERE id = ?', [activeTask.id])
-    setSelectedTaskId(null)
-    setDrawerMode(null)
-    showToast(t('tasks.toast_task_deleted'))
-    await loadData()
   }
 
-  const handleCancelRepeat = async () => {
-    if (!api || !activeTask?.recur_rule_id || !window.confirm(t('tasks.prompt_cancel_repeat_confirm'))) return
-    await api.dbQuery('tasks', 'DELETE FROM recurring_rule_steps WHERE rule_id = ?', [activeTask.recur_rule_id])
-    await api.dbQuery('tasks', 'DELETE FROM recurring_rule_occurrence_exceptions WHERE recur_rule_id = ?', [activeTask.recur_rule_id])
-    await api.dbQuery('tasks', 'DELETE FROM recurring_rules WHERE id = ?', [activeTask.recur_rule_id])
-    setDrawerMode(null)
-    showToast(t('tasks.toast_repeat_cancelled'))
-    await loadData()
+  const deleteRecurringRule = async (ruleId: number) => {
+    if (!api) return
+    await api.dbQuery('tasks', 'DELETE FROM recurring_rule_steps WHERE rule_id = ?', [ruleId])
+    await api.dbQuery('tasks', 'DELETE FROM recurring_rule_occurrence_exceptions WHERE recur_rule_id = ?', [ruleId])
+    await api.dbQuery('tasks', 'DELETE FROM recurring_rules WHERE id = ?', [ruleId])
+  }
+
+  const openTaskDeletionConfirmation = (task: any, trigger: HTMLButtonElement) => {
+    deletionTriggerRef.current = trigger
+    setDeletionScope('single')
+    setDeletionConfirmationTask(task)
+  }
+
+  const confirmTaskDeletion = async () => {
+    if (!api || !deletionConfirmationTask || isDeletingTask) return
+
+    const task = deletionConfirmationTask
+    const canManageRepeat = isRecurringRootTask(task)
+    setIsDeletingTask(true)
+    try {
+      if (canManageRepeat && deletionScope !== 'delete-repeat') {
+        await api.dbQuery(
+          'tasks',
+          'INSERT OR IGNORE INTO recurring_rule_occurrence_exceptions (recur_rule_id, instance_key) VALUES (?, ?)',
+          [task.recur_rule_id, task.instance_key],
+        )
+      }
+
+      await deleteTaskTree(task.id)
+
+      if (canManageRepeat && deletionScope === 'end-repeat') {
+        await deleteUnfinishedRecurringTaskTrees(task.recur_rule_id, task)
+        await deleteRecurringRule(task.recur_rule_id)
+        showToast(t('tasks.toast_repeat_ended'))
+      } else if (canManageRepeat && deletionScope === 'delete-repeat') {
+        await deleteUnfinishedRecurringTaskTrees(task.recur_rule_id)
+        await deleteRecurringRule(task.recur_rule_id)
+        showToast(t('tasks.toast_repeat_deleted'))
+      } else {
+        showToast(t('tasks.toast_task_deleted'))
+      }
+
+      setExpandedTaskGroupId(null)
+      setSelectedTaskId(null)
+      setDrawerMode(null)
+      setDeletionConfirmationTask(null)
+      await loadData()
+    } finally {
+      setIsDeletingTask(false)
+    }
   }
 
   // Save Task Detail modifications
@@ -2020,13 +2087,13 @@ export const Tasks: React.FC = () => {
             </div>
             <footer className="task-drawer__footer">
               {drawerMode === 'edit' && activeTask && (
-                <button type="button" className="btn" onClick={handleDeleteTask}>{t('tasks.delete_task')}</button>
-              )}
-              {drawerMode === 'edit' && activeTask?.recur_rule_id && activeTask.instance_key && (
-                <button type="button" className="btn" onClick={handleSkipOccurrence}>{t('tasks.skip_occurrence')}</button>
-              )}
-              {drawerMode === 'edit' && activeTask?.recur_rule_id && (
-                <button type="button" className="btn" onClick={handleCancelRepeat}>{t('tasks.cancel_repeat')}</button>
+                <button
+                  type="button"
+                  className="btn danger"
+                  onClick={(event) => openTaskDeletionConfirmation(activeTask, event.currentTarget)}
+                >
+                  {t('tasks.delete_task')}
+                </button>
               )}
               <button type="button" className="btn" onClick={() => setDrawerMode(null)}>{t('common.cancel')}</button>
               <button type="button" className="btn primary" onClick={handleSaveDrawer}>{t('tasks.btn_save_changes')}</button>
@@ -2063,6 +2130,88 @@ export const Tasks: React.FC = () => {
               onClick={() => void confirmTaskCompletionToggle()}
             >
               {completionConfirmationCopy.action}
+            </button>
+          </div>
+        </AccessibleDialog>
+      )}
+      {deletionConfirmationTask && (
+        <AccessibleDialog
+          title={t('tasks.delete_dialog_title')}
+          role="alertdialog"
+          onClose={() => {
+            if (!isDeletingTask) setDeletionConfirmationTask(null)
+          }}
+          returnFocus={() => deletionTriggerRef.current?.focus()}
+          initialFocusRef={deletionCancelButtonRef}
+          contentClassName="task-delete-confirm"
+        >
+          <p className="task-delete-confirm__copy">
+            {t('tasks.delete_dialog_description', { title: deletionConfirmationTask.title })}
+          </p>
+          {isRecurringRootTask(deletionConfirmationTask) && (
+            <fieldset className="task-delete-confirm__scopes">
+              <legend>{t('tasks.delete_scope_label')}</legend>
+              <label className="task-delete-confirm__scope">
+                <input
+                  type="radio"
+                  name="task-delete-scope"
+                  value="single"
+                  checked={deletionScope === 'single'}
+                  disabled={isDeletingTask}
+                  onChange={() => setDeletionScope('single')}
+                />
+                <span>
+                  <strong>{t('tasks.delete_scope_single_title')}</strong>
+                  <small>{t('tasks.delete_scope_single_description')}</small>
+                </span>
+              </label>
+              <label className="task-delete-confirm__scope">
+                <input
+                  type="radio"
+                  name="task-delete-scope"
+                  value="end-repeat"
+                  checked={deletionScope === 'end-repeat'}
+                  disabled={isDeletingTask}
+                  onChange={() => setDeletionScope('end-repeat')}
+                />
+                <span>
+                  <strong>{t('tasks.delete_scope_end_repeat_title')}</strong>
+                  <small>{t('tasks.delete_scope_end_repeat_description')}</small>
+                </span>
+              </label>
+              <label className="task-delete-confirm__scope">
+                <input
+                  type="radio"
+                  name="task-delete-scope"
+                  value="delete-repeat"
+                  checked={deletionScope === 'delete-repeat'}
+                  disabled={isDeletingTask}
+                  onChange={() => setDeletionScope('delete-repeat')}
+                />
+                <span>
+                  <strong>{t('tasks.delete_scope_delete_repeat_title')}</strong>
+                  <small>{t('tasks.delete_scope_delete_repeat_description')}</small>
+                </span>
+              </label>
+            </fieldset>
+          )}
+          <div className="task-delete-confirm__actions">
+            <button
+              ref={deletionCancelButtonRef}
+              type="button"
+              className="btn"
+              disabled={isDeletingTask}
+              onClick={() => setDeletionConfirmationTask(null)}
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              type="button"
+              className="btn danger"
+              disabled={isDeletingTask}
+              onClick={() => void confirmTaskDeletion()}
+            >
+              {t('common.delete')}
             </button>
           </div>
         </AccessibleDialog>
