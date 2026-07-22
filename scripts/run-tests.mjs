@@ -37,6 +37,7 @@ const electronNodeTests = new Set([
   'tests/taskSchema.test.mjs',
   'tests/vaultService.test.mjs',
   'tests/videoSchema.test.mjs',
+  'tests/douyinFavorites.test.mjs',
 ])
 const nodeTests = allTests.filter((file) => !electronNodeTests.has(file))
 

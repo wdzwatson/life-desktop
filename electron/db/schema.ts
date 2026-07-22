@@ -581,6 +581,72 @@ export function initializeUserDatabase(userDbDir: string) {
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS douyin_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        remote_user_id TEXT,
+        display_name TEXT,
+        session_partition TEXT NOT NULL UNIQUE,
+        auth_status TEXT NOT NULL DEFAULT 'logged_out'
+          CHECK(auth_status IN ('logged_out', 'syncing', 'authenticated', 'expired', 'error')),
+        last_sync_at TEXT,
+        diagnostic_message TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS douyin_favorite_folders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        remote_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        item_count INTEGER NOT NULL DEFAULT 0,
+        sync_status TEXT NOT NULL DEFAULT 'idle'
+          CHECK(sync_status IN ('idle', 'syncing', 'synced', 'failed')),
+        last_sync_at TEXT,
+        diagnostic_message TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(account_id, remote_id),
+        FOREIGN KEY(account_id) REFERENCES douyin_accounts(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS douyin_favorite_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        remote_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        author_id TEXT,
+        author_name TEXT,
+        source_url TEXT NOT NULL,
+        thumbnail_url TEXT,
+        duration_seconds INTEGER,
+        collected_at TEXT,
+        availability TEXT NOT NULL DEFAULT 'available'
+          CHECK(availability IN ('available', 'unavailable')),
+        last_seen_at TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(account_id, remote_id),
+        FOREIGN KEY(account_id) REFERENCES douyin_accounts(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS douyin_folder_items (
+        folder_id INTEGER NOT NULL,
+        item_id INTEGER NOT NULL,
+        position INTEGER NOT NULL DEFAULT 0,
+        last_seen_at TEXT,
+        PRIMARY KEY(folder_id, item_id),
+        FOREIGN KEY(folder_id) REFERENCES douyin_favorite_folders(id) ON DELETE CASCADE,
+        FOREIGN KEY(item_id) REFERENCES douyin_favorite_items(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS douyin_favorite_folders_account_title_index
+        ON douyin_favorite_folders(account_id, title);
+      CREATE INDEX IF NOT EXISTS douyin_favorite_items_account_collected_index
+        ON douyin_favorite_items(account_id, collected_at DESC);
+      CREATE INDEX IF NOT EXISTS douyin_folder_items_folder_position_index
+        ON douyin_folder_items(folder_id, position);
     `)
 
     ensureVideoGroupSchema(videosDb)
