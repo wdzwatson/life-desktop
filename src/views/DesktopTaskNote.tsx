@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, Circle, RefreshCw, X } from 'lucide-react'
-import { getDesktopTasksForDate, getUserDateKey } from './taskDesktopUtils'
+import {
+  getDesktopTasksForDate,
+  getUserDateKey,
+  moveDesktopTaskId,
+  sortDesktopTasksByOrder,
+  type DesktopTaskOrder,
+} from './taskDesktopUtils'
 import './DesktopTaskNote.css'
 
 type DesktopTaskRecord = {
@@ -23,8 +29,38 @@ export const DesktopTaskNote: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [taskToClose, setTaskToClose] = useState<DesktopTaskRecord | null>(null)
+  const [taskOrder, setTaskOrder] = useState<DesktopTaskOrder>({ active: [], completed: [] })
+  const [storageKey, setStorageKey] = useState('lifeos.desktop-task-note.order.guest')
+  const [loadedStorageKey, setLoadedStorageKey] = useState<string | null>(null)
 
   const todayKey = useMemo(() => getUserDateKey(new Date(), getUserTimeZone()), [])
+
+  useEffect(() => {
+    void api?.getCurrentUser?.().then((user: { userId?: string } | null) => {
+      setStorageKey(`lifeos.desktop-task-note.order.${user?.userId || 'guest'}`)
+    })
+  }, [api])
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(
+        localStorage.getItem(storageKey) || '{}',
+      ) as Partial<DesktopTaskOrder>
+      setTaskOrder({
+        active: Array.isArray(stored.active) ? stored.active : [],
+        completed: Array.isArray(stored.completed) ? stored.completed : [],
+      })
+      setLoadedStorageKey(storageKey)
+    } catch {
+      setTaskOrder({ active: [], completed: [] })
+      setLoadedStorageKey(storageKey)
+    }
+  }, [storageKey])
+
+  useEffect(() => {
+    if (loadedStorageKey !== storageKey) return
+    localStorage.setItem(storageKey, JSON.stringify(taskOrder))
+  }, [loadedStorageKey, storageKey, taskOrder])
 
   const loadTasks = useCallback(
     async (manual = false) => {
@@ -98,11 +134,31 @@ export const DesktopTaskNote: React.FC = () => {
 
   const activeTasks = tasks.filter((task) => task.is_completed !== 1)
   const completedTasks = tasks.filter((task) => task.is_completed === 1)
+  const orderedActiveTasks = sortDesktopTasksByOrder(activeTasks, taskOrder.active)
+  const orderedCompletedTasks = sortDesktopTasksByOrder(completedTasks, taskOrder.completed)
 
-  const renderTask = (task: DesktopTaskRecord) => {
+  const moveTask = (group: 'active' | 'completed', sourceId: number, targetId: number) => {
+    setTaskOrder((current) => ({
+      ...current,
+      [group]: moveDesktopTaskId(current[group], sourceId, targetId),
+    }))
+  }
+
+  const renderTask = (task: DesktopTaskRecord, group: 'active' | 'completed') => {
     const isCompleted = task.is_completed === 1
     return (
-      <li key={task.id} className={`desktop-task-note__task ${isCompleted ? 'is-completed' : ''}`}>
+      <li
+        key={task.id}
+        className={`desktop-task-note__task ${isCompleted ? 'is-completed' : ''}`}
+        draggable
+        onDragStart={(event) => event.dataTransfer.setData('text/plain', String(task.id))}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault()
+          const sourceId = Number(event.dataTransfer.getData('text/plain'))
+          if (sourceId) moveTask(group, sourceId, task.id)
+        }}
+      >
         <button
           type="button"
           className="desktop-task-note__check"
@@ -162,7 +218,9 @@ export const DesktopTaskNote: React.FC = () => {
           <section aria-labelledby="desktop-task-note-active-title">
             <h2 id="desktop-task-note-active-title">待完成 · {activeTasks.length}</h2>
             {activeTasks.length > 0 ? (
-              <ul className="desktop-task-note__list">{activeTasks.map(renderTask)}</ul>
+              <ul className="desktop-task-note__list">
+                {orderedActiveTasks.map((task) => renderTask(task, 'active'))}
+              </ul>
             ) : (
               <p className="desktop-task-note__section-empty">全部完成</p>
             )}
@@ -170,7 +228,9 @@ export const DesktopTaskNote: React.FC = () => {
           <section aria-labelledby="desktop-task-note-completed-title">
             <h2 id="desktop-task-note-completed-title">已完成 · {completedTasks.length}</h2>
             {completedTasks.length > 0 ? (
-              <ul className="desktop-task-note__list">{completedTasks.map(renderTask)}</ul>
+              <ul className="desktop-task-note__list">
+                {orderedCompletedTasks.map((task) => renderTask(task, 'completed'))}
+              </ul>
             ) : (
               <p className="desktop-task-note__section-empty">暂无已完成任务</p>
             )}

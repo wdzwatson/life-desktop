@@ -51,3 +51,31 @@ export const getDesktopTaskDateState = (
 
 export const getDesktopTasksForDate = <Task extends DesktopTask>(tasks: Task[], todayKey: string) =>
   tasks.filter((task) => getDesktopTaskDateState(task, todayKey).isVisible)
+
+export type DesktopTaskOrder = {
+  active: number[]
+  completed: number[]
+}
+
+export const sortDesktopTasksByOrder = <Task extends { id: number }>(
+  tasks: Task[],
+  order: number[],
+) => {
+  const positions = new Map(order.map((id, index) => [id, index]))
+  return [...tasks].sort((left, right) => {
+    const leftPosition = positions.get(left.id)
+    const rightPosition = positions.get(right.id)
+    if (leftPosition === undefined && rightPosition === undefined) return 0
+    if (leftPosition === undefined) return 1
+    if (rightPosition === undefined) return -1
+    return leftPosition - rightPosition
+  })
+}
+
+export const moveDesktopTaskId = (order: number[], sourceId: number, targetId: number) => {
+  if (sourceId === targetId) return order
+  const next = order.filter((id) => id !== sourceId)
+  const targetIndex = next.indexOf(targetId)
+  next.splice(targetIndex < 0 ? next.length : targetIndex, 0, sourceId)
+  return next
+}

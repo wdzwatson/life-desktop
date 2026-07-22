@@ -4,6 +4,8 @@ import {
   getDesktopTaskDateState,
   getDesktopTasksForDate,
   getUserDateKey,
+  moveDesktopTaskId,
+  sortDesktopTasksByOrder,
 } from '../src/views/taskDesktopUtils'
 
 test('uses the requested user timezone when deriving the natural-day key', () => {
@@ -56,5 +58,20 @@ test('completed tasks remain visible when their period is active or overdue', ()
   assert.deepEqual(
     getDesktopTasksForDate(tasks, '2026-07-22').map((task) => task.id),
     [1, 2],
+  )
+})
+
+test('desktop task order is local and can move one task before another', () => {
+  assert.deepEqual(moveDesktopTaskId([1, 2, 3], 3, 1), [3, 1, 2])
+  assert.deepEqual(moveDesktopTaskId([1, 2, 3], 1, 3), [2, 1, 3])
+  assert.deepEqual(moveDesktopTaskId([1, 2, 3], 2, 2), [1, 2, 3])
+})
+
+test('tasks missing from a saved order are appended after ordered tasks', () => {
+  const tasks = [{ id: 3 }, { id: 1 }, { id: 2 }]
+
+  assert.deepEqual(
+    sortDesktopTasksByOrder(tasks, [2, 1]).map((task) => task.id),
+    [2, 1, 3],
   )
 })

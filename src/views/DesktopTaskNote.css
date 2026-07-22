@@ -55,6 +55,11 @@
   padding: 7px 8px;
   border-radius: 7px;
   background: color-mix(in srgb, var(--bg-app) 75%, transparent);
+  cursor: grab;
+}
+
+.desktop-task-note__task:active {
+  cursor: grabbing;
 }
 
 .desktop-task-note__task:hover {
