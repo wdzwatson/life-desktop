@@ -60,6 +60,7 @@ export function initializeUserDatabase(userDbDir: string) {
       description TEXT,
       priority TEXT CHECK(priority IN ('high', 'mid', 'low')) DEFAULT 'mid',
       status TEXT NOT NULL DEFAULT '待收集',
+      closed_from_status TEXT,
       due_date TEXT,
       due_time TEXT,
       recur_rule_id INTEGER,
@@ -160,10 +161,13 @@ export function initializeUserDatabase(userDbDir: string) {
     if (!taskColumnNames.has('template_version')) {
       tasksDb.exec('ALTER TABLE tasks ADD COLUMN template_version INTEGER')
     }
+    if (!taskColumnNames.has('closed_from_status')) {
+      tasksDb.exec('ALTER TABLE tasks ADD COLUMN closed_from_status TEXT')
+    }
 
-    const ruleColumns = tasksDb
-      .prepare('PRAGMA table_info(recurring_rules)')
-      .all() as { name: string }[]
+    const ruleColumns = tasksDb.prepare('PRAGMA table_info(recurring_rules)').all() as {
+      name: string
+    }[]
     const ruleColumnNames = new Set(ruleColumns.map((column) => column.name))
     if (!ruleColumnNames.has('start_date')) {
       tasksDb.exec('ALTER TABLE recurring_rules ADD COLUMN start_date TEXT')
@@ -476,11 +480,15 @@ export function initializeUserDatabase(userDbDir: string) {
       const hasQueuedStatus = createSql.sql.includes("'queued'")
       if (hasStatefulStatuses && hasQueuedStatus) return
 
-      const currentColumns = videosDb.prepare('PRAGMA table_info(videos)').all() as Array<{ name: string }>
+      const currentColumns = videosDb.prepare('PRAGMA table_info(videos)').all() as Array<{
+        name: string
+      }>
       const columnNames = currentColumns
         .map((column) => column.name)
         .filter((name) => VIDEO_COLUMN_DEFINITIONS[name])
-      const columnSql = columnNames.map((name) => `${name} ${VIDEO_COLUMN_DEFINITIONS[name]}`).join(',\n')
+      const columnSql = columnNames
+        .map((name) => `${name} ${VIDEO_COLUMN_DEFINITIONS[name]}`)
+        .join(',\n')
       const insertColumns = columnNames.join(', ')
 
       videosDb.exec(`
@@ -503,7 +511,9 @@ export function initializeUserDatabase(userDbDir: string) {
 
     migrateVideoStatusCheck()
 
-    const videoColumns = videosDb.prepare('PRAGMA table_info(videos)').all() as Array<{ name: string }>
+    const videoColumns = videosDb.prepare('PRAGMA table_info(videos)').all() as Array<{
+      name: string
+    }>
     const videoColumnNames = new Set(videoColumns.map((column) => column.name))
     const addVideoColumn = (name: string, definition: string) => {
       if (!videoColumnNames.has(name)) {

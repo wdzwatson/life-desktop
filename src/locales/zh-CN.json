@@ -153,6 +153,8 @@
     "quick_token_due_today": "今天",
     "complete_task_action": "标记任务完成",
     "reopen_task_action": "重新打开任务",
+    "restore_closed_action": "恢复任务",
+    "toast_task_restored": "任务已恢复",
     "close_overdue_task_action": "关闭逾期任务",
     "confirm_complete_title": "标记为已完成？",
     "confirm_complete_description": "“{{title}}”将被标记为已完成。",

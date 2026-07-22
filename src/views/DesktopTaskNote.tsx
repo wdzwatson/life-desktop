@@ -121,9 +121,11 @@ export const DesktopTaskNote: React.FC = () => {
 
   const closeTask = async () => {
     if (!taskToClose) return
-    const result = await api?.dbQuery('tasks', "UPDATE tasks SET status = '已关闭' WHERE id = ?", [
-      taskToClose.id,
-    ])
+    const result = await api?.dbQuery(
+      'tasks',
+      "UPDATE tasks SET closed_from_status = status, status = '已关闭' WHERE id = ?",
+      [taskToClose.id],
+    )
     if (result?.success) {
       setTasks((current) => current.filter((task) => task.id !== taskToClose.id))
       setTaskToClose(null)

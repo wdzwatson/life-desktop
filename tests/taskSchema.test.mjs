@@ -63,6 +63,7 @@ test('task schema migrates legacy recurring task columns before creating recurre
         .all()
         .map((column) => column.name)
       assert.ok(taskColumns.includes('instance_key'))
+      assert.ok(taskColumns.includes('closed_from_status'))
 
       const ruleColumns = migratedDb
         .prepare('PRAGMA table_info(recurring_rules)')
@@ -108,7 +109,10 @@ test('task schema creates template scheduling and step columns on a fresh databa
     initializeUserDatabase(dir)
     const db = new Database(path.join(dir, 'tasks.db'))
     try {
-      const taskColumns = db.prepare('PRAGMA table_info(tasks)').all().map((column) => column.name)
+      const taskColumns = db
+        .prepare('PRAGMA table_info(tasks)')
+        .all()
+        .map((column) => column.name)
       const ruleColumns = db
         .prepare('PRAGMA table_info(recurring_rules)')
         .all()
@@ -118,10 +122,13 @@ test('task schema creates template scheduling and step columns on a fresh databa
         .all()
         .map((column) => column.name)
       const exceptionTable = db
-        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recurring_rule_occurrence_exceptions'")
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recurring_rule_occurrence_exceptions'",
+        )
         .get()
 
       assert.ok(taskColumns.includes('instance_key'))
+      assert.ok(taskColumns.includes('closed_from_status'))
       assert.ok(taskColumns.includes('due_time'))
       assert.ok(ruleColumns.includes('start_date'))
       assert.ok(ruleColumns.includes('start_time'))

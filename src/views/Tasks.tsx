@@ -684,6 +684,19 @@ export const Tasks: React.FC = () => {
     loadData()
   }
 
+  const restoreClosedTask = async (task: any) => {
+    if (!api || !task || task.status !== '已关闭') return
+    const result = await api.dbQuery(
+      'tasks',
+      "UPDATE tasks SET status = COALESCE(closed_from_status, '待处理'), closed_from_status = NULL WHERE id = ?",
+      [task.id],
+    )
+    if (result?.success) {
+      showToast(t('tasks.toast_task_restored'))
+      await loadData()
+    }
+  }
+
   const requestTaskCompletionToggle = (task: any, trigger: HTMLButtonElement) => {
     completionTriggerRef.current = trigger
     setCompletionConfirmationTask(task)
@@ -1820,6 +1833,20 @@ export const Tasks: React.FC = () => {
                             )}
                           </div>
                           <div className="task-row__footer">
+                            {task.status === '已关闭' && (
+                              <button
+                                type="button"
+                                className="task-row__restore"
+                                title={t('tasks.restore_closed_action')}
+                                aria-label={t('tasks.restore_closed_action')}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void restoreClosedTask(task)
+                                }}
+                              >
+                                {t('tasks.restore_closed_action')}
+                              </button>
+                            )}
                             <span
                               className={`task-row__date ${isOverdue ? 'is-overdue-date' : ''}`}
                             >

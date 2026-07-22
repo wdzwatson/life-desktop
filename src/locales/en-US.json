@@ -153,6 +153,8 @@
     "quick_token_due_today": "today",
     "complete_task_action": "Mark task complete",
     "reopen_task_action": "Reopen task",
+    "restore_closed_action": "Restore task",
+    "toast_task_restored": "Task restored",
     "close_overdue_task_action": "Close overdue task",
     "confirm_complete_title": "Mark as complete?",
     "confirm_complete_description": "\"{{title}}\" will be marked as complete.",

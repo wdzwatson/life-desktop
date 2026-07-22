@@ -8,6 +8,6 @@ test('desktop task note requires confirmation before closing and preserves compl
 
   assert.match(noteView, /setTaskToClose\(task\)/)
   assert.match(noteView, /role="alertdialog"/)
-  assert.match(noteView, /UPDATE tasks SET status = '已关闭' WHERE id = \?/)
+  assert.match(noteView, /closed_from_status = status, status = '已关闭'/)
   assert.doesNotMatch(noteView, /UPDATE tasks SET is_completed = .*已关闭/)
 })
