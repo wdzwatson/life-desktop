@@ -19,6 +19,7 @@ import {
   ListTodo,
   Trash2,
   Plus,
+  RefreshCw,
 } from 'lucide-react'
 import {
   getCalendarMonthDays,
@@ -31,6 +32,7 @@ import {
   getNextTemplateOccurrences,
   getTemplateStartDateKey,
   getTemplateStartTime,
+  getTemplateTimes,
   toLocalDateKey,
 } from './taskScheduleUtils'
 import { projectCalendarOccurrences } from './taskOccurrenceProjection'
@@ -39,6 +41,21 @@ import './Tasks.css'
 const getCurrentTimeValue = () => {
   const now = new Date()
   return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+}
+
+const getDefaultDueTime = () => '23:59:59'
+
+const getDefaultScheduleTime = () => '09:00'
+
+const normalizeScheduleTime = (value: string | null | undefined) => {
+  if (!value) return getDefaultScheduleTime()
+  if (/^\d{2}:\d{2}:\d{2}$/.test(value)) return value.slice(0, 5)
+  return /^\d{2}:\d{2}$/.test(value) ? value : getDefaultScheduleTime()
+}
+
+const normalizeTaskDueTime = (value: string | null | undefined) => {
+  if (!value) return '23:59:59'
+  return /^\d{2}:\d{2}$/.test(value) ? `${value}:00` : value
 }
 
 type TaskDeletionScope = 'single' | 'end-repeat' | 'delete-repeat'
@@ -89,12 +106,14 @@ export const Tasks: React.FC = () => {
   const setTaskTab = useAppStore((state) => state.setTaskTab)
   const showToast = useAppStore((state) => state.showToast)
   const userId = useAppStore((state) => state.userId)
+  const api = (window as any).electronAPI
 
   // DB States
   const [tasks, setTasks] = useState<any[]>([])
   const [translations, setTranslations] = useState<any[]>([])
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
   const [expandedTaskGroupId, setExpandedTaskGroupId] = useState<number | null>(null)
+  const [expandedOccurrenceGroupKey, setExpandedOccurrenceGroupKey] = useState<string | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<string | null>(null)
   const [completionConfirmationTask, setCompletionConfirmationTask] = useState<any | null>(null)
   const [isCompletionConfirming, setIsCompletionConfirming] = useState(false)
@@ -102,6 +121,7 @@ export const Tasks: React.FC = () => {
   const [deletionConfirmationTask, setDeletionConfirmationTask] = useState<any | null>(null)
   const [deletionScope, setDeletionScope] = useState<TaskDeletionScope>('single')
   const [isDeletingTask, setIsDeletingTask] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const deletionTriggerRef = useRef<HTMLButtonElement | null>(null)
   const deletionCancelButtonRef = useRef<HTMLButtonElement | null>(null)
 
@@ -110,7 +130,7 @@ export const Tasks: React.FC = () => {
     title: '',
     description: '',
     dueDate: toLocalDateKey(new Date()),
-    time: getCurrentTimeValue(),
+    time: getDefaultDueTime(),
     priority: 'mid',
     repeat: 'none',
   })
@@ -129,6 +149,7 @@ export const Tasks: React.FC = () => {
   const [ruleInterval, setRuleInterval] = useState(1)
   const [ruleStartDate, setRuleStartDate] = useState(() => toLocalDateKey(new Date()))
   const [ruleTime, setRuleTime] = useState('09:00')
+  const [ruleTimes, setRuleTimes] = useState<string[]>(['09:00'])
   const [rulePriority, setRulePriority] = useState('mid')
   const [ruleWeekDays, setRuleWeekDays] = useState<number[]>([]) // 1=Mon...7=Sun
   const [ruleMonthDays, setRuleMonthDays] = useState<number[]>([])
@@ -141,17 +162,21 @@ export const Tasks: React.FC = () => {
 
   // Templates
   const [templates, setTemplates] = useState<any[]>([])
+  const [templateEditor, setTemplateEditor] = useState<any | null>(null)
+  const [isRulePanelExpanded, setIsRulePanelExpanded] = useState(false)
+  const [editRuleScope, setEditRuleScope] = useState<'single' | 'future' | 'all'>('future')
 
   useEffect(() => {
-    if (!['list', 'kanban', 'calendar'].includes(taskTab)) {
+    if (!['list', 'kanban', 'calendar', 'scheduled'].includes(taskTab)) {
       setTaskTab('list')
     }
   }, [setTaskTab, taskTab])
 
   useEffect(() => {
-    setTemplates([
+    const builtinTemplates = [
       {
         id: 1,
+        templateKey: 'builtin-prd',
         title: t('tasks.template_prd_title'),
         icon: '🚀',
         subtasks: [
@@ -164,6 +189,7 @@ export const Tasks: React.FC = () => {
       },
       {
         id: 2,
+        templateKey: 'builtin-review',
         title: t('tasks.template_review_title'),
         icon: '📝',
         subtasks: [
@@ -175,6 +201,7 @@ export const Tasks: React.FC = () => {
       },
       {
         id: 3,
+        templateKey: 'builtin-study',
         title: t('tasks.template_study_title'),
         icon: '📚',
         subtasks: [
@@ -184,11 +211,43 @@ export const Tasks: React.FC = () => {
         ],
         tags: [t('tasks.template_study_tag_1'), t('tasks.template_study_tag_2')],
       },
-    ])
+    ]
 
-  }, [i18n.language])
+    const loadTemplates = async () => {
+      if (!api?.dbQuery) {
+        setTemplates(builtinTemplates)
+        return
+      }
+      try {
+        const result = await api.dbQuery(
+          'tasks',
+          `SELECT id, template_key AS templateKey, title, description, icon, version FROM task_templates ORDER BY updated_at DESC, id DESC`,
+        )
+        const rows = result?.data ?? []
+        if (rows.length === 0) {
+          setTemplates(builtinTemplates)
+          return
+        }
+        const loaded = await Promise.all(rows.map(async (template: any) => {
+          const stepsResult = await api.dbQuery(
+            'tasks',
+            `SELECT title FROM task_template_steps WHERE template_id = ? ORDER BY sort_order, id`,
+            [template.id],
+          )
+          return {
+            ...template,
+            subtasks: (stepsResult?.data ?? []).map((step: any) => step.title),
+            tags: [t('tasks.template_version_label', { version: template.version || 1 })],
+          }
+        }))
+        setTemplates(loaded)
+      } catch {
+        setTemplates(builtinTemplates)
+      }
+    }
+    void loadTemplates()
 
-  const api = (window as any).electronAPI
+  }, [api, i18n.language, t])
 
   const scheduledLogs = useMemo(
     () =>
@@ -267,9 +326,9 @@ export const Tasks: React.FC = () => {
     if (task.is_virtual && api) {
       await api.dbQuery(
         'tasks',
-        `INSERT OR IGNORE INTO tasks (title, description, priority, status, due_date, due_time, recur_rule_id, instance_key, progress)
-         VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, 0)`,
-        [task.title, task.description || '', task.priority, task.due_date, task.due_time || task.occurrence_time || null, task.recur_rule_id, task.instance_key],
+        `INSERT OR IGNORE INTO tasks (title, description, priority, status, due_date, due_time, recur_rule_id, template_id, template_version, instance_key, progress)
+         VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, 0)`,
+        [task.title, task.description || '', task.priority, task.due_date, task.due_time || task.occurrence_time || null, task.recur_rule_id, task.template_id || null, task.template_version || null, task.instance_key],
       )
       const result = await api.dbQuery(
         'tasks',
@@ -292,9 +351,9 @@ export const Tasks: React.FC = () => {
           for (const step of steps?.data ?? []) {
             await api.dbQuery(
               'tasks',
-              `INSERT INTO tasks (title, description, priority, status, due_date, due_time, recur_rule_id, instance_key, parent_id, progress)
-               VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, 0)`,
-              [step.title, step.description || '', step.priority || task.priority, task.due_date, task.due_time || task.occurrence_time || null, task.recur_rule_id, task.instance_key, materialized.id],
+            `INSERT INTO tasks (title, description, priority, status, due_date, due_time, recur_rule_id, template_id, template_version, instance_key, parent_id, progress)
+             VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, 0)`,
+              [step.title, step.description || '', step.priority || task.priority, task.due_date, task.due_time || task.occurrence_time || null, task.recur_rule_id, task.template_id || null, task.template_version || null, task.instance_key, materialized.id],
             )
           }
         }
@@ -327,11 +386,19 @@ export const Tasks: React.FC = () => {
 
   const openCreateDrawer = () => {
     setSelectedTaskId(null)
+    setIsRulePanelExpanded(false)
+    setEditRuleScope('future')
+    setRuleFreq('daily')
+    setRuleInterval(1)
+    setRuleStartDate(toLocalDateKey(new Date()))
+    setRuleTimes(['09:00'])
+    setRuleWeekDays([])
+    setRuleMonthDays([])
     setTaskDraft({
       title: '',
       description: '',
       dueDate: toLocalDateKey(new Date()),
-      time: getCurrentTimeValue(),
+      time: getDefaultDueTime(),
       priority: 'mid',
       repeat: 'none',
     })
@@ -349,11 +416,23 @@ export const Tasks: React.FC = () => {
     setEditDesc(task.description || '')
     setEditProgress(task.progress || 0)
     const rule = task.recur_rule_id ? rules.find((candidate) => candidate.id === task.recur_rule_id) : null
+    setIsRulePanelExpanded(Boolean(rule && rule.frequency !== 'custom'))
+    setEditRuleScope('future')
+    if (rule) {
+      setRuleFreq(rule.frequency || 'daily')
+      setRuleInterval(Math.max(1, Number(rule.interval || 1)))
+      setRuleStartDate(getTemplateStartDateKey(rule))
+      setRuleTimes(getTemplateTimes(rule))
+      setRuleWeekDays(String(rule.week_days || '').split(',').map(Number).filter(Boolean))
+      setRuleMonthDays(String(rule.month_days || '').split(',').map(Number).filter(Boolean))
+      setRulePriority(rule.priority || task.priority || 'mid')
+      setRuleHolidayPolicy(rule.missed_policy || 'skip')
+    }
     setTaskDraft({
       title: task.title || '',
       description: task.description || '',
       dueDate: task.due_date || toLocalDateKey(new Date()),
-      time: rule ? getTemplateStartTime(rule) : '09:00',
+      time: normalizeTaskDueTime(task.due_time),
       priority: task.priority || 'mid',
       repeat: rule && rule.frequency !== 'custom' ? rule.frequency : 'none',
     })
@@ -478,6 +557,34 @@ export const Tasks: React.FC = () => {
     })
   }, [api, userId])
 
+  const refreshTaskData = async () => {
+    if (!api || isRefreshing) return
+
+    setIsRefreshing(true)
+    try {
+      await api.runTaskScheduler?.()
+      await loadData()
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refreshTaskData()
+    }
+
+    const timer = window.setInterval(refreshWhenVisible, 60_000)
+    window.addEventListener('focus', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [api, userId, taskTab, isRefreshing])
+
   // Select a rule and map to inputs
   const selectRule = (rule: any) => {
     setSelectedRuleId(rule.id)
@@ -487,6 +594,7 @@ export const Tasks: React.FC = () => {
     setRuleInterval(rule.interval || 1)
     setRuleStartDate(getTemplateStartDateKey(rule))
     setRuleTime(getTemplateStartTime(rule))
+    setRuleTimes(getTemplateTimes(rule))
     setRulePriority(rule.priority || 'mid')
     setRuleWeekDays(
       (rule.week_days || '')
@@ -672,14 +780,15 @@ export const Tasks: React.FC = () => {
     if (!api || !taskDraft.title.trim()) return
 
     if (drawerMode === 'create') {
-      const frequency = taskDraft.repeat === 'none' ? 'custom' : taskDraft.repeat
-      const date = new Date(`${taskDraft.dueDate}T12:00:00`)
-      const weekDay = date.getDay() === 0 ? 7 : date.getDay()
+      const effectiveFrequency = taskDraft.repeat === 'none' ? 'custom' : ruleFreq
+      const effectiveTimes = ruleTimes
       const res = await api.dbQuery(
         'tasks',
-        `INSERT INTO recurring_rules (title, description, frequency, interval, week_days, start_date, start_time, priority, end_condition, missed_policy)
-         VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, 'skip')`,
-        [taskDraft.title.trim(), taskDraft.description, frequency, frequency === 'weekly' ? String(weekDay) : '', taskDraft.dueDate, taskDraft.time, taskDraft.priority, frequency === 'custom' ? 'count:1' : 'never'],
+        `INSERT INTO recurring_rules (title, description, frequency, interval, week_days, month_days, start_date, start_time, time_slots, priority, end_condition, missed_policy)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [taskDraft.title.trim(), taskDraft.description, effectiveFrequency, ruleInterval,
+          ruleWeekDays.join(','), ruleMonthDays.join(','), ruleStartDate, effectiveTimes[0], effectiveTimes.join(','),
+          rulePriority, effectiveFrequency === 'custom' ? 'count:1' : 'never', ruleHolidayPolicy],
       )
       if (res?.success) {
         await runDueTaskGeneration()
@@ -696,16 +805,75 @@ export const Tasks: React.FC = () => {
         )
       }
     } else if (activeTask) {
-      await api.dbQuery(
-        'tasks',
-        'UPDATE tasks SET title = ?, description = ?, priority = ?, due_date = ?, due_time = ? WHERE id = ?',
-        [taskDraft.title.trim(), taskDraft.description, taskDraft.priority, taskDraft.dueDate, taskDraft.time || null, activeTask.id],
-      )
-      if (activeTask.recur_rule_id) {
+      const isChangingToNonRecurring = Boolean(activeTask.recur_rule_id && taskDraft.repeat === 'none')
+      const isChangingToRecurring = Boolean(!activeTask.recur_rule_id && taskDraft.repeat !== 'none')
+
+      if (isChangingToNonRecurring && activeTask.recur_rule_id && activeTask.instance_key) {
         await api.dbQuery(
           'tasks',
-          'UPDATE recurring_rules SET title = ?, description = ?, frequency = ?, start_date = ?, start_time = ?, priority = ? WHERE id = ?',
-          [taskDraft.title.trim(), taskDraft.description, taskDraft.repeat === 'none' ? 'custom' : taskDraft.repeat, taskDraft.dueDate, taskDraft.time, taskDraft.priority, activeTask.recur_rule_id],
+          'INSERT OR IGNORE INTO recurring_rule_occurrence_exceptions (recur_rule_id, instance_key) VALUES (?, ?)',
+          [activeTask.recur_rule_id, activeTask.instance_key],
+        )
+      }
+
+      await api.dbQuery(
+        'tasks',
+        `UPDATE tasks
+         SET title = ?, description = ?, priority = ?, due_date = ?, due_time = ?,
+             recur_rule_id = CASE WHEN ? THEN NULL ELSE recur_rule_id END,
+             template_id = CASE WHEN ? THEN NULL ELSE template_id END,
+             template_version = CASE WHEN ? THEN NULL ELSE template_version END,
+             instance_key = CASE WHEN ? THEN NULL ELSE instance_key END
+         WHERE id = ?`,
+        [
+          taskDraft.title.trim(),
+          taskDraft.description,
+          taskDraft.priority,
+          taskDraft.dueDate,
+          normalizeTaskDueTime(taskDraft.time),
+          isChangingToNonRecurring ? 1 : 0,
+          isChangingToNonRecurring ? 1 : 0,
+          isChangingToNonRecurring ? 1 : 0,
+          isChangingToNonRecurring ? 1 : 0,
+          activeTask.id,
+        ],
+      )
+
+      if (isChangingToRecurring) {
+        const effectiveTimes = ruleTimes
+        const ruleResult = await api.dbQuery(
+          'tasks',
+          `INSERT INTO recurring_rules
+           (title, description, frequency, interval, week_days, month_days, start_date, start_time, time_slots, priority, end_condition, missed_policy)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            taskDraft.title.trim(),
+            taskDraft.description,
+            ruleFreq,
+            ruleInterval,
+            ruleWeekDays.join(','),
+            ruleMonthDays.join(','),
+            ruleStartDate,
+            effectiveTimes[0],
+            effectiveTimes.join(','),
+            rulePriority,
+            'never',
+            ruleHolidayPolicy,
+          ],
+        )
+        const ruleId = ruleResult?.data?.lastInsertRowid || ruleResult?.data?.insertId
+        if (ruleId) {
+          await api.dbQuery(
+            'tasks',
+            'UPDATE tasks SET recur_rule_id = ?, instance_key = ? WHERE id = ?',
+            [ruleId, `${taskDraft.dueDate}T${normalizeScheduleTime(effectiveTimes[0])}`, activeTask.id],
+          )
+        }
+      } else if (activeTask.recur_rule_id && !isChangingToNonRecurring && editRuleScope !== 'single') {
+        await api.dbQuery(
+          'tasks',
+          'UPDATE recurring_rules SET title = ?, description = ?, frequency = ?, interval = ?, week_days = ?, month_days = ?, start_date = ?, start_time = ?, time_slots = ?, priority = ?, missed_policy = ? WHERE id = ?',
+          [taskDraft.title.trim(), taskDraft.description, ruleFreq, ruleInterval, ruleWeekDays.join(','), ruleMonthDays.join(','), ruleStartDate, ruleTimes[0], ruleTimes.join(','), rulePriority, ruleHolidayPolicy, activeTask.recur_rule_id],
         )
       }
       showToast(t('tasks.toast_details_updated'))
@@ -846,14 +1014,22 @@ export const Tasks: React.FC = () => {
   const handleSaveRule = async () => {
     if (!api) return
 
+    if (ruleFreq === 'cron') {
+      showToast(t('tasks.legacy_cron_save_blocked'))
+      return
+    }
+
     const weekDaysStr = ruleWeekDays.join(',')
     const monthDaysStr = ruleMonthDays.join(',')
+    const timeSlots = ruleTimes.length > 0 ? ruleTimes : [ruleTime]
+    const primaryTime = timeSlots[0] || '09:00'
+    const timeSlotsStr = timeSlots.join(',')
 
     if (selectedRuleId) {
       // Update
       const query = `
         UPDATE recurring_rules 
-        SET title = ?, description = ?, frequency = ?, interval = ?, week_days = ?, month_days = ?, cron = ?, start_date = ?, start_time = ?, priority = ?, missed_policy = ?
+        SET title = ?, description = ?, frequency = ?, interval = ?, week_days = ?, month_days = ?, cron = ?, start_date = ?, start_time = ?, time_slots = ?, priority = ?, missed_policy = ?
         WHERE id = ?
       `
       await api.dbQuery('tasks', query, [
@@ -865,7 +1041,8 @@ export const Tasks: React.FC = () => {
         monthDaysStr,
         ruleCron,
         ruleStartDate,
-        ruleTime,
+        primaryTime,
+        timeSlotsStr,
         rulePriority,
         ruleHolidayPolicy,
         selectedRuleId,
@@ -875,9 +1052,9 @@ export const Tasks: React.FC = () => {
       // Create new
       const query = `
         INSERT INTO recurring_rules (
-          title, description, frequency, interval, week_days, month_days, cron, start_date, start_time, priority, missed_policy
+          title, description, frequency, interval, week_days, month_days, cron, start_date, start_time, time_slots, priority, missed_policy
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
       await api.dbQuery('tasks', query, [
         ruleName,
@@ -888,7 +1065,8 @@ export const Tasks: React.FC = () => {
         monthDaysStr,
         ruleCron,
         ruleStartDate,
-        ruleTime,
+        primaryTime,
+        timeSlotsStr,
         rulePriority,
         ruleHolidayPolicy,
       ])
@@ -906,6 +1084,7 @@ export const Tasks: React.FC = () => {
     setRuleInterval(1)
     setRuleStartDate(toLocalDateKey(new Date()))
     setRuleTime('09:00')
+    setRuleTimes(['09:00'])
     setRulePriority('mid')
     setRuleWeekDays([])
     setRuleMonthDays([])
@@ -930,20 +1109,121 @@ export const Tasks: React.FC = () => {
     loadData()
   }
 
+  const openTemplateEditor = (template?: any) => {
+    setTemplateEditor(template
+      ? {
+          id: template.id,
+          templateKey: template.templateKey,
+          title: template.title,
+          description: template.description || '',
+          icon: template.icon || '🧩',
+          subtasksText: (template.subtasks || []).join('\n'),
+        }
+      : { id: null, templateKey: '', title: '', description: '', icon: '🧩', subtasksText: '' })
+  }
+
+  const handleSaveTemplate = async () => {
+    if (!api?.dbQuery || !templateEditor?.title.trim()) return
+    const steps = templateEditor.subtasksText
+      .split('\n')
+      .map((step: string) => step.trim())
+      .filter(Boolean)
+    const templateKey = templateEditor.templateKey || `custom-${Date.now()}`
+    if (templateEditor.id) {
+      const current = templates.find((template) => template.id === templateEditor.id)
+      const version = Number(current?.version || 1) + 1
+      await api.dbQuery(
+        'tasks',
+        `UPDATE task_templates SET title = ?, description = ?, icon = ?, version = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [templateEditor.title.trim(), templateEditor.description, templateEditor.icon, version, templateEditor.id],
+      )
+      await api.dbQuery('tasks', 'DELETE FROM task_template_steps WHERE template_id = ?', [templateEditor.id])
+      for (const [index, step] of steps.entries()) {
+        await api.dbQuery(
+          'tasks',
+          `INSERT INTO task_template_steps (template_id, title, description, priority, sort_order) VALUES (?, ?, '', 'mid', ?)`,
+          [templateEditor.id, step, index + 1],
+        )
+      }
+      setTemplates((currentTemplates) => currentTemplates.map((template) => template.id === templateEditor.id
+        ? { ...template, title: templateEditor.title.trim(), description: templateEditor.description, icon: templateEditor.icon, version, subtasks: steps, tags: [t('tasks.template_version_label', { version })] }
+        : template))
+    } else {
+      const result = await api.dbQuery(
+        'tasks',
+        `INSERT INTO task_templates (template_key, title, description, icon, version) VALUES (?, ?, ?, ?, 1)`,
+        [templateKey, templateEditor.title.trim(), templateEditor.description, templateEditor.icon],
+      )
+      const id = result?.data?.lastInsertRowid || result?.data?.insertId
+      if (id) {
+        for (const [index, step] of steps.entries()) {
+          await api.dbQuery(
+            'tasks',
+            `INSERT INTO task_template_steps (template_id, title, description, priority, sort_order) VALUES (?, ?, '', 'mid', ?)`,
+            [id, step, index + 1],
+          )
+        }
+        setTemplates((currentTemplates) => [{ id, templateKey, title: templateEditor.title.trim(), description: templateEditor.description, icon: templateEditor.icon, version: 1, subtasks: steps, tags: [t('tasks.template_version_label', { version: 1 })] }, ...currentTemplates])
+      }
+    }
+    setTemplateEditor(null)
+    showToast(t('tasks.toast_template_saved'))
+  }
+
+  const handleDeleteTemplate = async (template: any) => {
+    if (!api?.dbQuery || !template.id || String(template.templateKey || '').startsWith('builtin-')) return
+    if (!(await confirm({ title: t('tasks.delete_template_title'), description: t('tasks.delete_template_description'), confirmLabel: t('common.delete'), tone: 'danger' }))) return
+    await api.dbQuery('tasks', 'DELETE FROM task_template_steps WHERE template_id = ?', [template.id])
+    await api.dbQuery('tasks', 'DELETE FROM task_templates WHERE id = ?', [template.id])
+    setTemplates((currentTemplates) => currentTemplates.filter((item) => item.id !== template.id))
+    showToast(t('tasks.toast_template_deleted'))
+  }
+
   const handleUseTemplate = async (template: any) => {
     if (!api) return
     const todayYMD = toLocalDateKey(new Date())
     const startTime = getCurrentTimeValue()
 
+    const templateKey = template.templateKey || `builtin-${template.id}`
+    let templateId: number | null
+    const existingTemplate = await api.dbQuery(
+      'tasks',
+      'SELECT id, version FROM task_templates WHERE template_key = ? LIMIT 1',
+      [templateKey],
+    )
+    let templateVersion = Number(template.version || 1)
+    if (existingTemplate?.data?.[0]) {
+      templateId = existingTemplate.data[0].id
+      templateVersion = Number(existingTemplate.data[0].version || templateVersion)
+    } else {
+      const createdTemplate = await api.dbQuery(
+        'tasks',
+        `INSERT INTO task_templates (template_key, title, description, icon, version)
+         VALUES (?, ?, ?, ?, 1)`,
+        [templateKey, template.title, t('tasks.template_created_desc'), template.icon || null],
+      )
+      templateId = createdTemplate?.data?.lastInsertRowid || createdTemplate?.data?.insertId || null
+      if (templateId) {
+        for (const [index, sub] of template.subtasks.entries()) {
+          await api.dbQuery(
+            'tasks',
+            `INSERT INTO task_template_steps (template_id, title, description, priority, sort_order)
+             VALUES (?, ?, '', 'mid', ?)`,
+            [templateId, sub, index + 1],
+          )
+        }
+      }
+    }
+
     const templateRes = await api.dbQuery(
       'tasks',
       `
       INSERT INTO recurring_rules (
-        title, description, frequency, interval, start_date, start_time, priority, end_condition, missed_policy
+        title, description, frequency, interval, start_date, start_time, time_slots, template_id, template_version, priority, end_condition, missed_policy
       )
-      VALUES (?, ?, 'custom', 1, ?, ?, 'mid', 'count:1', 'skip')
+      VALUES (?, ?, 'custom', 1, ?, ?, ?, ?, ?, 'mid', 'count:1', 'skip')
     `,
-      [template.title, t('tasks.template_created_desc'), todayYMD, startTime],
+      [template.title, t('tasks.template_created_desc'), todayYMD, startTime, startTime, templateId, templateVersion],
     )
 
     if (templateRes?.success) {
@@ -969,6 +1249,7 @@ export const Tasks: React.FC = () => {
   const activeTaskTemplate = activeTask?.recur_rule_id
     ? rules.find((rule) => rule.id === activeTask.recur_rule_id)
     : null
+  const activeTaskRule = activeTaskTemplate
   const todayKey = toLocalDateKey(new Date())
   const todayProjectedTasks = useMemo(() => {
     const start = new Date()
@@ -988,10 +1269,20 @@ export const Tasks: React.FC = () => {
     () => executionTasks.filter((task) => !task.parent_id),
     [executionTasks],
   )
+  const displayRootTasks = useMemo(() => {
+    const seen = new Set<string>()
+    return rootTasks.filter((task) => {
+      if (!task.recur_rule_id || !task.due_date) return true
+      const key = `${task.recur_rule_id}:${task.due_date}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [rootTasks])
   const expandedTaskGroup =
     expandedTaskGroupId === null
       ? null
-      : rootTasks.find((task) => task.id === expandedTaskGroupId) ?? null
+      : displayRootTasks.find((task) => task.id === expandedTaskGroupId) ?? null
   const completionConfirmationCopy = completionConfirmationTask
     ? getCompletionConfirmationCopy(completionConfirmationTask)
     : null
@@ -1017,6 +1308,7 @@ export const Tasks: React.FC = () => {
           cron: ruleCron,
           start_date: ruleStartDate,
           start_time: ruleTime,
+          time_slots: ruleTimes.join(','),
         },
         new Date(),
         5,
@@ -1032,6 +1324,7 @@ export const Tasks: React.FC = () => {
       ruleCron,
       ruleStartDate,
       ruleTime,
+      ruleTimes,
     ],
   )
 
@@ -1060,6 +1353,17 @@ export const Tasks: React.FC = () => {
             <strong>{overdueTaskCount}</strong>
           </div>
         </div>
+        <button
+          type="button"
+          className={`btn sm task-header__refresh ${isRefreshing ? 'is-refreshing' : ''}`}
+          onClick={() => void refreshTaskData()}
+          disabled={isRefreshing}
+          aria-label={t('tasks.refresh')}
+          title={t('tasks.refresh')}
+        >
+          <RefreshCw size={15} aria-hidden="true" />
+          <span>{t('tasks.refresh')}</span>
+        </button>
       </header>
 
       <nav className="task-navigation" aria-label={t('tasks.navigation_label')}>
@@ -1278,7 +1582,7 @@ export const Tasks: React.FC = () => {
                     <p>{t('tasks.board_empty_description')}</p>
                   </div>
                 ) : (
-                  rootTasks.map((task) => {
+                  displayRootTasks.map((task) => {
                     const isSelected = selectedTaskId === task.id
                     const isOverdue = task.status === '已逾期'
                     const directSubtasks = tasks.filter((candidate) => candidate.parent_id === task.id)
@@ -1287,6 +1591,20 @@ export const Tasks: React.FC = () => {
                     ).length
                     const isTaskGroupExpanded = expandedTaskGroup?.id === task.id
                     const repeatSummary = getRepeatSummary(task)
+                    const sameDayOccurrences = task.recur_rule_id
+                      ? rootTasks.filter(
+                          (candidate) =>
+                            candidate.recur_rule_id === task.recur_rule_id &&
+                            candidate.due_date === task.due_date,
+                        )
+                      : []
+                    const completedOccurrenceCount = sameDayOccurrences.filter(
+                      (candidate) => candidate.is_completed === 1,
+                    ).length
+                    const occurrenceGroupKey = task.recur_rule_id && task.due_date
+                      ? `${task.recur_rule_id}:${task.due_date}`
+                      : null
+                    const isOccurrenceGroupExpanded = occurrenceGroupKey !== null && expandedOccurrenceGroupKey === occurrenceGroupKey
 
                     return (
                       <div
@@ -1350,6 +1668,12 @@ export const Tasks: React.FC = () => {
                             <span className="task-row__meta">
                               {getStatusLabel(task.status)}
                               {repeatSummary ? ` · ${repeatSummary}` : ''}
+                              {sameDayOccurrences.length > 1
+                                ? ` · ${t('tasks.multi_occurrence_progress', {
+                                    completed: completedOccurrenceCount,
+                                    total: sameDayOccurrences.length,
+                                  })}`
+                                : ''}
                             </span>
                             {task.progress > 0 && task.progress < 100 && (
                               <div className="task-row__progress">
@@ -1407,8 +1731,54 @@ export const Tasks: React.FC = () => {
                                 )}
                               </button>
                             )}
+                            {sameDayOccurrences.length > 1 && (
+                              <button
+                                type="button"
+                                className="task-row__subtask-toggle"
+                                aria-expanded={isOccurrenceGroupExpanded}
+                                aria-label={t('tasks.multi_occurrence_progress', {
+                                  completed: completedOccurrenceCount,
+                                  total: sameDayOccurrences.length,
+                                })}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  setExpandedOccurrenceGroupKey((current) =>
+                                    current === occurrenceGroupKey ? null : occurrenceGroupKey,
+                                  )
+                                }}
+                              >
+                                {t('tasks.multi_occurrence_progress', {
+                                  completed: completedOccurrenceCount,
+                                  total: sameDayOccurrences.length,
+                                })}
+                                {isOccurrenceGroupExpanded ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
+                              </button>
+                            )}
                           </div>
                         </div>
+
+                        {isOccurrenceGroupExpanded && (
+                          <div className="task-occurrence-list" aria-label={t('tasks.multi_occurrence_progress', {
+                            completed: completedOccurrenceCount,
+                            total: sameDayOccurrences.length,
+                          })}>
+                            {sameDayOccurrences.map((occurrence) => (
+                              <button
+                                type="button"
+                                key={occurrence.id}
+                                className={`task-occurrence-row ${occurrence.is_completed === 1 ? 'is-completed' : ''}`}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  requestTaskCompletionToggle(occurrence, event.currentTarget)
+                                }}
+                              >
+                                <span>{occurrence.is_completed === 1 ? <Check size={14} /> : <Circle size={14} />}</span>
+                                <span>{formatDue(occurrence)}</span>
+                                <span>{getStatusLabel(occurrence.status)}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
 
                       </div>
                     )
@@ -1812,7 +2182,11 @@ export const Tasks: React.FC = () => {
                     <option value="weekday">{t('tasks.freq_weekday')}</option>
                     <option value="weekly">{t('tasks.freq_weekly')}</option>
                     <option value="monthly">{t('tasks.freq_monthly')}</option>
-                    <option value="cron">{t('tasks.freq_cron')}</option>
+                    {ruleFreq === 'cron' && (
+                      <option value="cron" disabled>
+                        {t('tasks.legacy_cron_label')}
+                      </option>
+                    )}
                   </select>
                 </div>
                 <div className="task-form-section">
@@ -1840,17 +2214,6 @@ export const Tasks: React.FC = () => {
                 </div>
                 <div className="task-form-section">
                   <label>
-                    {t('tasks.time_label')}
-                  </label>
-                  <input
-                    className="form-field"
-                    type="time"
-                    value={ruleTime}
-                    onChange={(e) => setRuleTime(e.target.value)}
-                  />
-                </div>
-                <div className="task-form-section">
-                  <label>
                     {t('tasks.template_priority_label')}
                   </label>
                   <select
@@ -1863,6 +2226,52 @@ export const Tasks: React.FC = () => {
                     <option value="low">{t('tasks.priority_low')}</option>
                   </select>
                 </div>
+              </div>
+
+              {ruleFreq === 'cron' && (
+                <div className="task-form-warning" role="alert">
+                  {t('tasks.legacy_cron_warning')}
+                </div>
+              )}
+
+              <div className="task-form-section">
+                <label>{t('tasks.execution_times_label')}</label>
+                <div className="task-rule-times">
+                  {ruleTimes.map((time, index) => (
+                    <div className="task-rule-time-row" key={`${index}-${time}`}>
+                      <input
+                        className="form-field"
+                        type="time"
+                        value={time}
+                        onChange={(event) => {
+                          const nextTimes = [...ruleTimes]
+                          nextTimes[index] = event.target.value
+                          setRuleTimes(nextTimes)
+                          if (index === 0) setRuleTime(event.target.value)
+                        }}
+                      />
+                      {ruleTimes.length > 1 && (
+                        <button
+                          type="button"
+                          className="btn sm"
+                          onClick={() => setRuleTimes(ruleTimes.filter((_, timeIndex) => timeIndex !== index))}
+                          aria-label={t('tasks.remove_execution_time')}
+                          title={t('tasks.remove_execution_time')}
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={() => setRuleTimes([...ruleTimes, '18:00'])}
+                  >
+                    <Plus size={13} /> {t('tasks.add_execution_time')}
+                  </button>
+                </div>
+                <span className="task-form-hint">{t('tasks.multiple_times_hint')}</span>
               </div>
 
               {ruleFreq === 'weekly' && (
@@ -1901,20 +2310,23 @@ export const Tasks: React.FC = () => {
                 </div>
               )}
 
-              {ruleFreq === 'cron' && (
+              {ruleFreq === 'monthly' && (
                 <div className="task-form-section">
-                  <label>
-                    {t('tasks.freq_cron')}
-                  </label>
+                  <label>{t('tasks.month_days_label')}</label>
                   <input
                     className="form-field"
-                    value={ruleCron}
-                    onChange={(e) => setRuleCron(e.target.value)}
-                    placeholder={t('tasks.cron_placeholder')}
+                    value={ruleMonthDays.join(',')}
+                    onChange={(event) =>
+                      setRuleMonthDays(
+                        event.target.value
+                          .split(',')
+                          .map((value) => Number(value.trim()))
+                          .filter((value) => Number.isInteger(value) && (value === -1 || (value >= 1 && value <= 31))),
+                      )
+                    }
+                    placeholder={t('tasks.month_days_placeholder')}
                   />
-                  <span className="task-form-hint">
-                    {t('tasks.cron_hint')}
-                  </span>
+                  <span className="task-form-hint">{t('tasks.month_days_hint')}</span>
                 </div>
               )}
 
@@ -1964,6 +2376,15 @@ export const Tasks: React.FC = () => {
         {/* TAB: TEMPLATES */}
         {taskTab === 'templates' && (
           <div className="task-template-library">
+            <div className="task-template-library__toolbar">
+              <div>
+                <strong>{t('tasks.tab_templates')}</strong>
+                <p>{t('tasks.template_library_description')}</p>
+              </div>
+              <button type="button" className="btn primary sm" onClick={() => openTemplateEditor()}>
+                <Plus size={14} aria-hidden="true" /> {t('tasks.new_template')}
+              </button>
+            </div>
             {templates.map((tpl) => (
               <div
                 key={tpl.id}
@@ -1992,8 +2413,27 @@ export const Tasks: React.FC = () => {
                 >
                   {t('tasks.btn_use_template')}
                 </button>
+                {!String(tpl.templateKey || '').startsWith('builtin-') && (
+                  <>
+                    <button type="button" className="btn sm" onClick={() => openTemplateEditor(tpl)}>{t('common.edit')}</button>
+                    <button type="button" className="btn danger sm" onClick={() => void handleDeleteTemplate(tpl)}>{t('common.delete')}</button>
+                  </>
+                )}
               </div>
             ))}
+            {templateEditor && (
+              <div className="task-template-editor-form">
+                <strong>{templateEditor.id ? t('tasks.edit_template') : t('tasks.new_template')}</strong>
+                <input className="form-field" value={templateEditor.title} placeholder={t('tasks.template_title_placeholder')} onChange={(event) => setTemplateEditor({ ...templateEditor, title: event.target.value })} />
+                <input className="form-field" value={templateEditor.icon} placeholder={t('tasks.template_icon_placeholder')} onChange={(event) => setTemplateEditor({ ...templateEditor, icon: event.target.value })} />
+                <textarea className="form-field" rows={2} value={templateEditor.description} placeholder={t('tasks.template_description_placeholder')} onChange={(event) => setTemplateEditor({ ...templateEditor, description: event.target.value })} />
+                <textarea className="form-field" rows={5} value={templateEditor.subtasksText} placeholder={t('tasks.template_steps_placeholder')} onChange={(event) => setTemplateEditor({ ...templateEditor, subtasksText: event.target.value })} />
+                <div className="task-template-editor-form__actions">
+                  <button type="button" className="btn" onClick={() => setTemplateEditor(null)}>{t('common.cancel')}</button>
+                  <button type="button" className="btn primary" onClick={() => void handleSaveTemplate()}>{t('common.save')}</button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -2065,7 +2505,7 @@ export const Tasks: React.FC = () => {
                         onClick={() => {
                           const rule = rules.find((candidate) => candidate.id === log.id)
                           if (rule) selectRule(rule)
-                          setTaskTab('recurring')
+                          setTaskTab('list')
                         }}
                       >
                         {t('tasks.btn_view_rule')}
@@ -2090,11 +2530,63 @@ export const Tasks: React.FC = () => {
               <label className="task-form-section"><span>{t('tasks.details_label_title')}</span><input autoFocus className="form-field" value={taskDraft.title} onChange={(event) => setTaskDraft({ ...taskDraft, title: event.target.value })} /></label>
               <label className="task-form-section"><span>{t('tasks.details_label_desc')}</span><textarea className="form-field" rows={4} value={taskDraft.description} onChange={(event) => setTaskDraft({ ...taskDraft, description: event.target.value })} placeholder={t('tasks.details_desc_placeholder')} /></label>
               <div className="task-drawer__grid">
-                <label className="task-form-section"><span>{t('tasks.details_due_prefix')}</span><input className="form-field" type="date" value={taskDraft.dueDate} onChange={(event) => setTaskDraft({ ...taskDraft, dueDate: event.target.value })} /></label>
-                <label className="task-form-section"><span>{t('tasks.time_label')}</span><input className="form-field" type="time" value={taskDraft.time} onChange={(event) => setTaskDraft({ ...taskDraft, time: event.target.value })} /></label>
+                <div className="task-form-section">
+                  <span>{t('tasks.details_due_prefix')}</span>
+                  <div className="task-due-picker">
+                    <input
+                      className="form-field"
+                      type="datetime-local"
+                      step={1}
+                      value={`${taskDraft.dueDate}T${normalizeTaskDueTime(taskDraft.time)}`}
+                      onChange={(event) => {
+                        const [dueDate, time = '23:59:59'] = event.target.value.split('T')
+                        setTaskDraft({ ...taskDraft, dueDate, time: normalizeTaskDueTime(time) })
+                      }}
+                    />
+                  </div>
+                </div>
                 <label className="task-form-section"><span>{t('tasks.quick_add_priority_label')}</span><select className="form-field" value={taskDraft.priority} onChange={(event) => setTaskDraft({ ...taskDraft, priority: event.target.value })}><option value="high">{t('tasks.priority_high')}</option><option value="mid">{t('tasks.priority_mid')}</option><option value="low">{t('tasks.priority_low')}</option></select></label>
-                <label className="task-form-section"><span>{t('tasks.repeat_label')}</span><select className="form-field" value={taskDraft.repeat} onChange={(event) => setTaskDraft({ ...taskDraft, repeat: event.target.value })}><option value="none">{t('tasks.repeat_none')}</option><option value="daily">{t('tasks.freq_daily')}</option><option value="weekday">{t('tasks.freq_weekday')}</option><option value="weekly">{t('tasks.freq_weekly')}</option><option value="monthly">{t('tasks.freq_monthly')}</option></select></label>
               </div>
+              <label className="task-drawer__recurring-setting">
+                <span className="task-drawer__recurring-copy">
+                  <strong>{t('tasks.recurring_task_checkbox_label')}</strong>
+                  <small>{t('tasks.recurring_task_hint')}</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={taskDraft.repeat !== 'none'}
+                  onChange={(event) => {
+                    const recurring = event.target.checked
+                    setTaskDraft({ ...taskDraft, repeat: recurring ? ruleFreq : 'none' })
+                    if (recurring) setRuleStartDate(taskDraft.dueDate)
+                    setIsRulePanelExpanded(recurring)
+                  }}
+                />
+              </label>
+              {taskDraft.repeat !== 'none' && (
+                <div className="task-drawer__rule-panel">
+                  <button type="button" className="task-drawer__rule-summary" onClick={() => setIsRulePanelExpanded((current) => !current)} aria-expanded={isRulePanelExpanded}>
+                    <span>
+                      <strong>{t('tasks.advanced_repeat_label')}</strong>
+                      <small>{getFrequencyLabel(ruleFreq)} · {ruleTimes.join(', ')}</small>
+                    </span>
+                    {isRulePanelExpanded ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
+                  </button>
+                  {isRulePanelExpanded && (
+                    <div className="task-drawer__rule-editor">
+                      <label className="task-form-section"><span>{t('tasks.freq_label')}</span><select className="form-field" value={ruleFreq} onChange={(event) => setRuleFreq(event.target.value)}><option value="daily">{t('tasks.freq_daily')}</option><option value="weekday">{t('tasks.freq_weekday')}</option><option value="weekly">{t('tasks.freq_weekly')}</option><option value="monthly">{t('tasks.freq_monthly')}</option></select></label>
+                      <label className="task-form-section"><span>{t('tasks.interval_label')}</span><input className="form-field" type="number" min={1} value={ruleInterval} onChange={(event) => setRuleInterval(Math.max(1, Number(event.target.value) || 1))} /></label>
+                      <label className="task-form-section"><span>{t('tasks.rule_start_date_label')}</span><input className="form-field" type="date" value={ruleStartDate} onChange={(event) => setRuleStartDate(event.target.value)} /></label>
+                      <label className="task-form-section"><span>{t('tasks.template_priority_label')}</span><select className="form-field" value={rulePriority} onChange={(event) => setRulePriority(event.target.value)}><option value="high">{t('tasks.priority_high')}</option><option value="mid">{t('tasks.priority_mid')}</option><option value="low">{t('tasks.priority_low')}</option></select></label>
+                      <div className="task-form-section"><span>{t('tasks.schedule_time_label')}</span><div className="task-drawer__times-editor">{ruleTimes.map((time, index) => <div className="task-drawer__time-row" key={`${time}-${index}`}><input className="form-field" type="time" value={time} onChange={(event) => setRuleTimes(ruleTimes.map((current, currentIndex) => currentIndex === index ? event.target.value : current))} />{ruleTimes.length > 1 && <button type="button" className="btn sm" onClick={() => setRuleTimes(ruleTimes.filter((_, currentIndex) => currentIndex !== index))}>{t('common.delete')}</button>}</div>)}<button type="button" className="btn sm" onClick={() => setRuleTimes([...ruleTimes, '09:00'])}>{t('tasks.add_time')}</button></div></div>
+                      {ruleFreq === 'weekly' && <label className="task-form-section"><span>{t('tasks.week_days_label')}</span><input className="form-field" value={ruleWeekDays.join(',')} onChange={(event) => setRuleWeekDays(event.target.value.split(',').map(Number).filter((value) => value >= 1 && value <= 7))} placeholder="1,3,5" /></label>}
+                      {ruleFreq === 'monthly' && <label className="task-form-section"><span>{t('tasks.month_days_label')}</span><input className="form-field" value={ruleMonthDays.join(',')} onChange={(event) => setRuleMonthDays(event.target.value.split(',').map(Number).filter((value) => value === -1 || (value >= 1 && value <= 31)))} placeholder="1,15,-1" /></label>}
+                      <label className="task-form-section"><span>{t('tasks.holiday_strategy_label')}</span><select className="form-field" value={ruleHolidayPolicy} onChange={(event) => setRuleHolidayPolicy(event.target.value)}><option value="skip">{t('tasks.holiday_strategy_skip')}</option><option value="delay">{t('tasks.holiday_strategy_delay')}</option><option value="advance">{t('tasks.holiday_strategy_advance')}</option></select></label>
+                      {drawerMode === 'edit' && activeTaskRule && taskDraft.repeat !== 'none' && <label className="task-form-section"><span>{t('tasks.edit_rule_scope_label')}</span><select className="form-field" value={editRuleScope} onChange={(event) => setEditRuleScope(event.target.value as 'single' | 'future' | 'all')}><option value="single">{t('tasks.edit_rule_scope_single')}</option><option value="future">{t('tasks.edit_rule_scope_future')}</option><option value="all">{t('tasks.edit_rule_scope_all')}</option></select></label>}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <footer className="task-drawer__footer">
               {drawerMode === 'edit' && activeTask && (
