@@ -1,4 +1,14 @@
-import { app, BrowserWindow, ipcMain, shell, dialog, protocol, Menu } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  shell,
+  dialog,
+  protocol,
+  Menu,
+  Tray,
+  nativeImage,
+} from 'electron'
 import path from 'path'
 import fs from 'fs'
 import Database from 'better-sqlite3'
@@ -88,6 +98,8 @@ function hashPassword(password: string, salt?: string) {
 let mainWindow: BrowserWindow | null = null
 let desktopTaskNoteWindow: BrowserWindow | null = null
 let desktopTaskNoteSaveTimer: NodeJS.Timeout | null = null
+let appTray: Tray | null = null
+let isQuitting = false
 let activeUserId = 'guest'
 const openDbs: Map<string, any> = new Map() // dbName -> Database instance
 let schedulerInterval: NodeJS.Timeout | null = null
@@ -904,6 +916,13 @@ function createWindow() {
     mainWindow = null
   })
 
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault()
+      mainWindow?.hide()
+    }
+  })
+
   setupAutoUpdater()
   startScheduler()
   void loadVideoEngine()
@@ -953,23 +972,53 @@ function createDesktopTaskNoteWindow() {
   return desktopTaskNoteWindow
 }
 
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow()
+    return
+  }
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function createAppTray() {
+  if (appTray) return
+  const iconPath = path.join(__dirname, '../build/icon.png')
+  const icon = fs.existsSync(iconPath)
+    ? nativeImage.createFromPath(iconPath)
+    : nativeImage.createEmpty()
+  appTray = new Tray(icon)
+  appTray.setToolTip('LifeOS')
+  appTray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: '打开 LifeOS', click: showMainWindow },
+      { label: '打开今日任务便签', click: () => createDesktopTaskNoteWindow().show() },
+      { type: 'separator' },
+      { label: '退出 LifeOS', click: () => app.quit() },
+    ]),
+  )
+  appTray.on('click', () => createDesktopTaskNoteWindow().show())
+}
+
 app.whenReady().then(() => {
   setupVideoProtocol()
   setupAIMediaProtocol()
   configureApplicationMenu()
   createWindow()
   createDesktopTaskNoteWindow()
+  createAppTray()
 })
 
 app.on('window-all-closed', () => {
   closeUserDbs()
   if (schedulerInterval) clearInterval(schedulerInterval)
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' && isQuitting) {
     app.quit()
   }
 })
 
 app.on('before-quit', () => {
+  isQuitting = true
   closeUserDbs()
 })
 
