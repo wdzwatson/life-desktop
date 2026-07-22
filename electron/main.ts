@@ -6,6 +6,7 @@ import {
   dialog,
   protocol,
   Menu,
+  screen,
   Tray,
   nativeImage,
 } from 'electron'
@@ -936,14 +937,27 @@ function createDesktopTaskNoteWindow() {
   }
 
   const noteSettings = getDesktopTaskNoteSettings()
-  const bounds = noteSettings.bounds && typeof noteSettings.bounds === 'object' ? noteSettings.bounds : {}
+  const savedBounds = noteSettings.bounds && typeof noteSettings.bounds === 'object' ? noteSettings.bounds : null
+  const noteWidth = Number(savedBounds?.width) || 320
+  const noteHeight = Number(savedBounds?.height) || 420
+  const workArea = screen.getPrimaryDisplay().workArea
+  const defaultBounds = {
+    x: workArea.x + workArea.width - noteWidth - 18,
+    y: workArea.y + 18,
+  }
+  const bounds = savedBounds ?? defaultBounds
   desktopTaskNoteWindow = new BrowserWindow({
-    width: Number(bounds.width) || 360,
-    height: Number(bounds.height) || 520,
-    ...(typeof bounds.x === 'number' ? { x: bounds.x } : {}),
-    ...(typeof bounds.y === 'number' ? { y: bounds.y } : {}),
-    minWidth: 280,
-    minHeight: 280,
+    width: noteWidth,
+    height: noteHeight,
+    x: Number(bounds.x),
+    y: Number(bounds.y),
+    minWidth: 260,
+    minHeight: 240,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: true,
+    roundedCorners: true,
     title: 'LifeOS 今日任务',
     alwaysOnTop: noteSettings.alwaysOnTop,
     opacity: noteSettings.opacity,
@@ -2262,6 +2276,11 @@ ipcMain.handle('tasks:runScheduler', async () => {
 })
 
 ipcMain.handle('desktopTaskNote:getSettings', async () => getDesktopTaskNoteSettings())
+
+ipcMain.handle('desktopTaskNote:hide', async () => {
+  if (desktopTaskNoteWindow && !desktopTaskNoteWindow.isDestroyed()) desktopTaskNoteWindow.hide()
+  return { success: true }
+})
 
 ipcMain.handle(
   'desktopTaskNote:setSettings',

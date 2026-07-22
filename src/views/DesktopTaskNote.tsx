@@ -216,14 +216,17 @@ export const DesktopTaskNote: React.FC = () => {
         <div className="desktop-task-note__controls">
           <button
             type="button"
-            className={`desktop-task-note__refresh ${alwaysOnTop ? 'is-active' : ''}`}
+            className={`desktop-task-note__refresh desktop-task-note__drag-exempt ${alwaysOnTop ? 'is-active' : ''}`}
             aria-label={alwaysOnTop ? '取消置顶' : '始终置顶'}
             title={alwaysOnTop ? '取消置顶' : '始终置顶'}
             onClick={() => void updateAppearance({ alwaysOnTop: !alwaysOnTop })}
           >
             <Pin size={15} aria-hidden="true" />
           </button>
-          <label className="desktop-task-note__opacity" title="便签透明度">
+          <label
+            className="desktop-task-note__opacity desktop-task-note__drag-exempt"
+            title="便签透明度"
+          >
             <span className="sr-only">便签透明度</span>
             <input
               type="range"
@@ -240,12 +243,21 @@ export const DesktopTaskNote: React.FC = () => {
           </label>
           <button
             type="button"
-            className="desktop-task-note__refresh"
+            className="desktop-task-note__refresh desktop-task-note__drag-exempt"
             aria-label="刷新任务"
             onClick={() => void loadTasks(true)}
             disabled={isRefreshing}
           >
             <RefreshCw size={16} className={isRefreshing ? 'is-spinning' : ''} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="desktop-task-note__refresh desktop-task-note__drag-exempt"
+            aria-label="关闭便签"
+            title="关闭便签"
+            onClick={() => void api?.hideDesktopTaskNote?.()}
+          >
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
       </header>

@@ -1,9 +1,18 @@
+body:has(.desktop-task-note),
+body:has(.desktop-task-note) #root {
+  background: transparent;
+}
+
 .desktop-task-note {
-  min-height: 100vh;
-  padding: 20px;
-  background: var(--bg-surface);
+  width: 100%;
+  min-height: 100%;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg-surface) 96%, transparent);
   color: var(--text-main);
   overflow: auto;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
 }
 
 .desktop-task-note__header {
@@ -11,6 +20,11 @@
   align-items: flex-start;
   justify-content: space-between;
   margin-bottom: 18px;
+  -webkit-app-region: drag;
+}
+
+.desktop-task-note__drag-exempt {
+  -webkit-app-region: no-drag;
 }
 
 .desktop-task-note__controls {
