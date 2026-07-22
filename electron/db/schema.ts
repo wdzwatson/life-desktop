@@ -604,6 +604,10 @@ export function initializeUserDatabase(userDbDir: string) {
         sync_status TEXT NOT NULL DEFAULT 'idle'
           CHECK(sync_status IN ('idle', 'syncing', 'synced', 'failed')),
         last_sync_at TEXT,
+        incremental_capability TEXT NOT NULL DEFAULT 'unknown'
+          CHECK(incremental_capability IN ('unknown', 'available', 'unavailable')),
+        last_incremental_added_at TEXT,
+        last_incremental_remote_id TEXT,
         diagnostic_message TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -622,6 +626,7 @@ export function initializeUserDatabase(userDbDir: string) {
         thumbnail_url TEXT,
         duration_seconds INTEGER,
         collected_at TEXT,
+        favorite_added_at TEXT,
         availability TEXT NOT NULL DEFAULT 'available'
           CHECK(availability IN ('available', 'unavailable')),
         last_seen_at TEXT,
@@ -648,6 +653,17 @@ export function initializeUserDatabase(userDbDir: string) {
       CREATE INDEX IF NOT EXISTS douyin_folder_items_folder_position_index
         ON douyin_folder_items(folder_id, position);
     `)
+
+    const addDouyinColumn = (table: string, column: string, definition: string) => {
+      const columns = videosDb.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+      if (!columns.some((entry) => entry.name === column)) {
+        videosDb.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+      }
+    }
+    addDouyinColumn('douyin_favorite_folders', 'incremental_capability', "TEXT NOT NULL DEFAULT 'unknown'")
+    addDouyinColumn('douyin_favorite_folders', 'last_incremental_added_at', 'TEXT')
+    addDouyinColumn('douyin_favorite_folders', 'last_incremental_remote_id', 'TEXT')
+    addDouyinColumn('douyin_favorite_items', 'favorite_added_at', 'TEXT')
 
     ensureVideoGroupSchema(videosDb)
 

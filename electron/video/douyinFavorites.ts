@@ -38,12 +38,14 @@ export interface DouyinFavoriteItemInput {
   thumbnailUrl?: string
   durationSeconds?: number
   collectedAt?: string
+  favoriteAddedAt?: string
 }
 
 export interface DouyinPage<T> {
   entries: T[]
   cursor?: string
   hasMore: boolean
+  isNewestFirst?: boolean
 }
 
 export interface DouyinFavoritesClient {
@@ -60,6 +62,8 @@ export interface DouyinSyncResult {
   accountId?: number
   foldersSynced: number
   itemsSynced: number
+  incrementalFolders?: number
+  fullFolders?: number
   error?: { code: DouyinSyncErrorCode; message: string }
 }
 
@@ -90,6 +94,9 @@ export interface DouyinFavoriteFolderRecord {
   item_count: number
   sync_status: string
   last_sync_at: string | null
+  incremental_capability: 'unknown' | 'available' | 'unavailable'
+  last_incremental_added_at: string | null
+  last_incremental_remote_id: string | null
   diagnostic_message: string | null
 }
 
@@ -103,6 +110,7 @@ export interface DouyinFavoriteItemRecord {
   thumbnail_url: string | null
   duration_seconds: number | null
   collected_at: string | null
+  favorite_added_at: string | null
   position: number
 }
 
@@ -160,6 +168,7 @@ export function normalizeDouyinFavoriteItem(input: DouyinFavoriteItemInput): Dou
     ...(text(input.thumbnailUrl) ? { thumbnailUrl: text(input.thumbnailUrl) } : {}),
     ...(durationSeconds !== undefined ? { durationSeconds } : {}),
     ...(text(input.collectedAt) ? { collectedAt: text(input.collectedAt) } : {}),
+    ...(text(input.favoriteAddedAt) ? { favoriteAddedAt: text(input.favoriteAddedAt) } : {}),
   }
 }
 
@@ -238,8 +247,8 @@ function upsertItem(
     `
     INSERT INTO douyin_favorite_items (
       account_id, remote_id, title, author_id, author_name, source_url, thumbnail_url,
-      duration_seconds, collected_at, availability, last_seen_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?)
+      duration_seconds, collected_at, favorite_added_at, availability, last_seen_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?)
     ON CONFLICT(account_id, remote_id) DO UPDATE SET
       title = excluded.title,
       author_id = excluded.author_id,
@@ -248,6 +257,7 @@ function upsertItem(
       thumbnail_url = excluded.thumbnail_url,
       duration_seconds = excluded.duration_seconds,
       collected_at = COALESCE(excluded.collected_at, douyin_favorite_items.collected_at),
+      favorite_added_at = COALESCE(excluded.favorite_added_at, douyin_favorite_items.favorite_added_at),
       availability = 'available',
       last_seen_at = excluded.last_seen_at,
       updated_at = CURRENT_TIMESTAMP
@@ -262,6 +272,7 @@ function upsertItem(
     item.thumbnailUrl || null,
     item.durationSeconds ?? null,
     item.collectedAt || null,
+    item.favoriteAddedAt || null,
     lastSeenAt,
   )
   return Number(
@@ -306,15 +317,79 @@ function updateFolderFailure(db: Database.Database, folderId: number, error: Dou
   ).run(sanitizeDouyinDiagnostic(error.message), folderId)
 }
 
+interface DouyinFolderIncrementalState {
+  incremental_capability: 'unknown' | 'available' | 'unavailable'
+  last_incremental_added_at: string | null
+  last_incremental_remote_id: string | null
+}
+
+function getFolderIncrementalState(db: Database.Database, folderId: number): DouyinFolderIncrementalState {
+  return db
+    .prepare(
+      `
+      SELECT incremental_capability, last_incremental_added_at, last_incremental_remote_id
+      FROM douyin_favorite_folders WHERE id = ?
+      `,
+    )
+    .get(folderId) as DouyinFolderIncrementalState
+}
+
+function updateFolderIncrementalState(
+  db: Database.Database,
+  folderId: number,
+  state: DouyinFolderIncrementalState,
+) {
+  db.prepare(
+    `
+    UPDATE douyin_favorite_folders
+    SET incremental_capability = ?, last_incremental_added_at = ?, last_incremental_remote_id = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+    `,
+  ).run(state.incremental_capability, state.last_incremental_added_at, state.last_incremental_remote_id, folderId)
+}
+
+function canUseIncrementalSync(state: DouyinFolderIncrementalState, mode: 'auto' | 'full') {
+  return mode === 'auto' && state.incremental_capability === 'available' && Boolean(state.last_incremental_added_at)
+}
+
+function canVerifyIncrementalOrder(page: DouyinPage<DouyinFavoriteItemInput>) {
+  return Boolean(page.isNewestFirst) && page.entries.length > 0 && page.entries.every((entry) => text(entry.favoriteAddedAt))
+}
+
+function updateLatestWatermark(
+  current: { addedAt: string | null; remoteId: string | null },
+  entries: DouyinFavoriteItemInput[],
+) {
+  for (const entry of entries) {
+    const addedAt = text(entry.favoriteAddedAt)
+    if (!addedAt) continue
+    if (current.addedAt && current.addedAt > addedAt) continue
+    if (current.addedAt === addedAt && String(current.remoteId || '') >= entry.remoteId) continue
+    current.addedAt = addedAt
+    current.remoteId = entry.remoteId
+  }
+}
+
+function pageIsStrictlyOlderThanWatermark(page: DouyinPage<DouyinFavoriteItemInput>, watermark: string | null) {
+  return Boolean(
+    watermark &&
+      page.entries.length > 0 &&
+      page.entries.every((entry) => text(entry.favoriteAddedAt) && text(entry.favoriteAddedAt) < watermark),
+  )
+}
+
 export async function syncDouyinFavorites(input: {
   db: Database.Database
   sessionPartition: string
   client: DouyinFavoritesClient
+  mode?: 'auto' | 'full'
   onProgress?: (progress: DouyinSyncProgress) => void
 }): Promise<DouyinSyncResult> {
   let accountId: number | undefined
   let foldersSynced = 0
   let itemsSynced = 0
+  let incrementalFolders = 0
+  let fullFolders = 0
   let foldersCompleted = 0
   let pagesLoaded = 0
   const startedAt = Date.now()
@@ -371,10 +446,28 @@ export async function syncDouyinFavorites(input: {
       try {
         let itemCursor: string | undefined
         let position = 0
+        const previousIncrementalState = getFolderIncrementalState(input.db, folderId)
+        const useIncremental = canUseIncrementalSync(previousIncrementalState, input.mode || 'auto')
+        const nextIncrementalState: DouyinFolderIncrementalState = {
+          ...previousIncrementalState,
+          ...(useIncremental ? {} : { last_incremental_added_at: null, last_incremental_remote_id: null }),
+        }
+        const newestSeen = {
+          addedAt: previousIncrementalState.last_incremental_added_at,
+          remoteId: previousIncrementalState.last_incremental_remote_id,
+        }
+        let observedItemPage = false
+        let verifiedOrdering = true
         for (let pageCount = 0; pageCount < MAX_PAGES_PER_SYNC; pageCount += 1) {
           report('loading_items', folder.title)
           const page = await input.client.listFolderItems({ folderRemoteId: folder.remoteId, cursor: itemCursor })
           if (!Array.isArray(page.entries)) throw new DouyinFavoritesError('invalid_response', 'Favorite video response is invalid.')
+          const pageHasVerifiableOrder = canVerifyIncrementalOrder(page)
+          if (page.entries.length > 0) {
+            observedItemPage = true
+            if (!pageHasVerifiableOrder) verifiedOrdering = false
+          }
+          if (pageHasVerifiableOrder) updateLatestWatermark(newestSeen, page.entries)
           const lastSeenAt = new Date().toISOString()
           input.db.transaction(() => {
             for (const entry of page.entries) {
@@ -387,6 +480,9 @@ export async function syncDouyinFavorites(input: {
           })()
           pagesLoaded += 1
           report('writing_items', folder.title)
+          if (useIncremental && pageHasVerifiableOrder && pageIsStrictlyOlderThanWatermark(page, previousIncrementalState.last_incremental_added_at)) {
+            break
+          }
           if (!page.hasMore) break
           if (!text(page.cursor)) throw new DouyinFavoritesError('invalid_response', 'Favorite video pagination is missing a cursor.')
           itemCursor = text(page.cursor)
@@ -395,6 +491,18 @@ export async function syncDouyinFavorites(input: {
           }
         }
         updateFolderSuccess(input.db, folderId)
+        if (observedItemPage && verifiedOrdering && newestSeen.addedAt) {
+          nextIncrementalState.incremental_capability = 'available'
+          nextIncrementalState.last_incremental_added_at = newestSeen.addedAt
+          nextIncrementalState.last_incremental_remote_id = newestSeen.remoteId
+        } else if (observedItemPage && !verifiedOrdering) {
+          nextIncrementalState.incremental_capability = 'unavailable'
+          nextIncrementalState.last_incremental_added_at = null
+          nextIncrementalState.last_incremental_remote_id = null
+        }
+        updateFolderIncrementalState(input.db, folderId, nextIncrementalState)
+        if (useIncremental && nextIncrementalState.incremental_capability === 'available') incrementalFolders += 1
+        else fullFolders += 1
         foldersCompleted += 1
         report('writing_items', folder.title)
       } catch (error) {
@@ -412,7 +520,7 @@ export async function syncDouyinFavorites(input: {
       `,
     ).run(accountId)
     report('completed')
-    return { success: true, accountId, foldersSynced, itemsSynced }
+    return { success: true, accountId, foldersSynced, itemsSynced, incrementalFolders, fullFolders }
   } catch (error) {
     const syncError = toSyncError(error)
     if (accountId) {
@@ -439,7 +547,8 @@ export function listDouyinFavoriteFolders(db: Database.Database): DouyinFavorite
   return db
     .prepare(
       `
-      SELECT id, remote_id, title, item_count, sync_status, last_sync_at, diagnostic_message
+      SELECT id, remote_id, title, item_count, sync_status, last_sync_at, incremental_capability,
+             last_incremental_added_at, last_incremental_remote_id, diagnostic_message
       FROM douyin_favorite_folders
       ORDER BY title COLLATE NOCASE ASC, id ASC
       `,
@@ -455,7 +564,7 @@ export function listDouyinFavoriteItems(
     .prepare(
       `
       SELECT i.id, i.remote_id, i.title, i.author_id, i.author_name, i.source_url,
-             i.thumbnail_url, i.duration_seconds, i.collected_at, fi.position
+             i.thumbnail_url, i.duration_seconds, i.collected_at, i.favorite_added_at, fi.position
       FROM douyin_folder_items fi
       JOIN douyin_favorite_items i ON i.id = fi.item_id
       WHERE fi.folder_id = ?

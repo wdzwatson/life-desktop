@@ -68,6 +68,10 @@ test('Douyin schema creates a local-only normalized favorite mirror', () => {
     .map((column) => column.name)
   assert.equal(accountColumns.includes('cookie'), false)
   assert.equal(accountColumns.includes('token'), false)
+  const folderColumns = db.prepare('PRAGMA table_info(douyin_favorite_folders)').all().map((column) => column.name)
+  const itemColumns = db.prepare('PRAGMA table_info(douyin_favorite_items)').all().map((column) => column.name)
+  assert.equal(folderColumns.includes('last_incremental_added_at'), true)
+  assert.equal(itemColumns.includes('favorite_added_at'), true)
   db.close()
 })
 
@@ -110,6 +114,7 @@ test('favorite synchronization upserts folders and items without duplication', a
       thumbnail_url: 'https://p3.douyinpic.com/cover.jpg',
       duration_seconds: 63,
       collected_at: '2026-07-23T08:00:00.000Z',
+      favorite_added_at: null,
       position: 0,
     },
   ])
@@ -132,6 +137,86 @@ test('favorite synchronization reports page-level progress after local writes', 
   assert.ok(progress.some((event) => event.phase === 'writing_items' && event.itemsSynced === 1))
   assert.equal(progress.at(-1)?.phase, 'completed')
   assert.equal(progress.every((event) => typeof event.startedAt === 'number'), true)
+  db.close()
+})
+
+test('incremental sync stops after reaching a verified per-folder watermark', async () => {
+  const db = createVideoDb()
+  const sessionPartition = 'persist:lifeos-douyin-guest'
+  const firstClient = createClient({
+    listFolderItems: async () => ({
+      entries: [
+        {
+          remoteId: 'aweme-1',
+          title: 'Older favorite',
+          sourceUrl: 'https://www.douyin.com/video/1',
+          favoriteAddedAt: '2026-07-20T00:00:00.000Z',
+        },
+      ],
+      hasMore: false,
+      isNewestFirst: true,
+    }),
+  })
+  const first = await syncDouyinFavorites({ db, sessionPartition, client: firstClient })
+  assert.equal(first.fullFolders, 1)
+
+  const itemRequests = []
+  const secondClient = createClient({
+    listFolderItems: async (input) => {
+      itemRequests.push(input)
+      if (input.cursor) {
+        return {
+          entries: [
+            {
+              remoteId: 'aweme-1',
+              title: 'Older favorite',
+              sourceUrl: 'https://www.douyin.com/video/1',
+              favoriteAddedAt: '2026-07-19T00:00:00.000Z',
+            },
+          ],
+          hasMore: true,
+          cursor: 'should-not-be-requested',
+          isNewestFirst: true,
+        }
+      }
+      return {
+        entries: [
+          {
+            remoteId: 'aweme-2',
+            title: 'New favorite',
+            sourceUrl: 'https://www.douyin.com/video/2',
+            favoriteAddedAt: '2026-07-21T00:00:00.000Z',
+          },
+        ],
+        hasMore: true,
+        cursor: 'older-page',
+        isNewestFirst: true,
+      }
+    },
+  })
+  const second = await syncDouyinFavorites({ db, sessionPartition, client: secondClient })
+
+  assert.equal(second.success, true)
+  assert.equal(second.incrementalFolders, 1)
+  assert.equal(itemRequests.length, 2)
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM douyin_favorite_items').get().count, 2)
+  assert.equal(
+    db.prepare('SELECT incremental_capability FROM douyin_favorite_folders').get().incremental_capability,
+    'available',
+  )
+  db.close()
+})
+
+test('sync keeps scanning fully when the official page does not expose a verifiable favorite time', async () => {
+  const db = createVideoDb()
+  const sessionPartition = 'persist:lifeos-douyin-guest'
+  const result = await syncDouyinFavorites({ db, sessionPartition, client: createClient() })
+
+  assert.equal(result.fullFolders, 1)
+  assert.equal(
+    db.prepare('SELECT incremental_capability FROM douyin_favorite_folders').get().incremental_capability,
+    'unavailable',
+  )
   db.close()
 })
 

@@ -38,6 +38,7 @@ test('normalizes favorite video metadata into a canonical Douyin webpage URL', (
           aweme_id: '1234567890',
           desc: 'Useful video',
           create_time: 1_784_000_000,
+          collect_time: 1_785_000_000,
           author: { uid: 'author-1', nickname: 'Author' },
           video: { duration: 63_800, cover: { url_list: ['https://p3.douyinpic.com/cover.jpg'] } },
         },
@@ -55,9 +56,11 @@ test('normalizes favorite video metadata into a canonical Douyin webpage URL', (
           thumbnailUrl: 'https://p3.douyinpic.com/cover.jpg',
           durationSeconds: 64,
           collectedAt: '2026-07-14T03:33:20.000Z',
+          favoriteAddedAt: '2026-07-25T17:20:00.000Z',
         },
       ],
       hasMore: false,
+      isNewestFirst: true,
     },
   )
 })

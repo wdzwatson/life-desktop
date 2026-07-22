@@ -108,6 +108,17 @@ function toCollectedAt(value: unknown) {
   return new Date(seconds * 1000).toISOString()
 }
 
+function toFavoriteAddedAt(value: unknown) {
+  const numeric = number(value)
+  if (numeric !== undefined && numeric > 0) {
+    return new Date(numeric > 1_000_000_000_000 ? numeric : numeric * 1000).toISOString()
+  }
+  const raw = text(value)
+  if (!raw) return undefined
+  const parsed = Date.parse(raw)
+  return Number.isNaN(parsed) ? undefined : new Date(parsed).toISOString()
+}
+
 export function normalizeDouyinFolderItemPage(body: Record<string, unknown>): DouyinPage<DouyinFavoriteItemInput> {
   const entries = firstArray(body, ['aweme_list', 'item_list', 'list']).map((entry) => {
     const author = record(entry.author)
@@ -124,12 +135,21 @@ export function normalizeDouyinFolderItemPage(body: Record<string, unknown>): Do
       ...(text(urlList[0]) ? { thumbnailUrl: text(urlList[0]) } : {}),
       ...(toDurationSeconds(video.duration) !== undefined ? { durationSeconds: toDurationSeconds(video.duration) } : {}),
       ...(toCollectedAt(entry.create_time) ? { collectedAt: toCollectedAt(entry.create_time) } : {}),
+      ...(toFavoriteAddedAt(entry.collect_time ?? entry.collected_at ?? entry.favorite_time ?? entry.add_time)
+        ? { favoriteAddedAt: toFavoriteAddedAt(entry.collect_time ?? entry.collected_at ?? entry.favorite_time ?? entry.add_time) }
+        : {}),
     }
   })
+  const favoriteAddedAt = entries.map((entry) => entry.favoriteAddedAt)
+  const isNewestFirst =
+    favoriteAddedAt.length > 0 &&
+    favoriteAddedAt.every(Boolean) &&
+    favoriteAddedAt.every((value, index) => index === 0 || String(favoriteAddedAt[index - 1]) >= String(value))
   return {
     entries,
     ...(firstText(body.cursor, body.next_cursor) ? { cursor: firstText(body.cursor, body.next_cursor) } : {}),
     hasMore: body.has_more === true || body.has_more === 1 || body.has_more === '1',
+    ...(isNewestFirst ? { isNewestFirst: true } : {}),
   }
 }
 
