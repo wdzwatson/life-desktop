@@ -215,6 +215,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installVideoTool: (tool: 'yt-dlp' | 'ffmpeg') => ipcRenderer.invoke('video:installTool', tool),
   loginBilibili: () => ipcRenderer.invoke('video:loginBilibili'),
   getBilibiliAuthStatus: () => ipcRenderer.invoke('video:getBilibiliAuthStatus'),
+  loginDouyin: () => ipcRenderer.invoke('video:loginDouyin'),
+  getDouyinAuthStatus: () => ipcRenderer.invoke('video:getDouyinAuthStatus'),
+  logoutDouyin: () => ipcRenderer.invoke('video:logoutDouyin'),
   getVideoCookieAccessStatus: (url: string) =>
     ipcRenderer.invoke('video:getCookieAccessStatus', url),
   verifyVideoCookieAccess: () => ipcRenderer.invoke('video:verifyCookieAccess'),

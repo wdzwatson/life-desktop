@@ -9,6 +9,7 @@ import {
   screen,
   Tray,
   nativeImage,
+  session,
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
@@ -50,6 +51,12 @@ import {
   type VideoEngineStatus,
 } from './video/service'
 import { hasBilibiliLoginCookie, writeBilibiliCookieFile } from './video/bilibiliCookies'
+import {
+  DOUYIN_LOGIN_URL,
+  getDouyinLoginPartition,
+  hasDouyinLoginCookie,
+  summarizeDouyinAuth,
+} from './video/douyinSession'
 import { handleVideoProtocolRequest } from './video/protocol'
 import { classifyVideoDownloadFailure } from './video/downloadState'
 import { normalizeBulkVideoTagPayload } from '../src/views/videoStateUtils'
@@ -330,6 +337,107 @@ async function startBilibiliAccountLogin() {
       loginWindow.loadURL('https://passport.bilibili.com/login')
     },
   )
+}
+
+async function collectDouyinCookies() {
+  const cookieStore = session.fromPartition(getDouyinLoginPartition(activeUserId)).cookies
+  const groups = await Promise.all([
+    cookieStore.get({ url: 'https://www.douyin.com' }),
+    cookieStore.get({ url: 'https://www.iesdouyin.com' }),
+    cookieStore.get({ domain: '.douyin.com' }),
+  ])
+  const seen = new Set<string>()
+  return groups.flat().filter((cookie) => {
+    const key = `${cookie.domain}\t${cookie.path}\t${cookie.name}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+async function getDouyinAuthStatus() {
+  const cookies = await collectDouyinCookies()
+  return { success: true, ...summarizeDouyinAuth(cookies) }
+}
+
+async function logoutDouyinAccount() {
+  const douyinSession = session.fromPartition(getDouyinLoginPartition(activeUserId))
+  await douyinSession.clearStorageData({ storages: ['cookies'] })
+  await douyinSession.clearCache()
+  return { success: true }
+}
+
+async function startDouyinAccountLogin() {
+  if (!mainWindow) return { success: false, error: 'Main window is not available.' }
+
+  const loginWindow = new BrowserWindow({
+    width: 980,
+    height: 740,
+    minWidth: 720,
+    minHeight: 560,
+    parent: mainWindow,
+    title: 'Douyin Login',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      partition: getDouyinLoginPartition(activeUserId),
+    },
+  })
+
+  const cookieStore = loginWindow.webContents.session.cookies
+  return new Promise<{ success: boolean; canceled?: boolean; error?: string }>((resolve) => {
+    let settled = false
+    let checking = false
+    const finish = async (canceled: boolean) => {
+      if (settled || checking || loginWindow.isDestroyed()) return
+      checking = true
+      try {
+        const cookies = await collectDouyinCookies()
+        if (hasDouyinLoginCookie(cookies)) {
+          settled = true
+          cookieStore.removeListener('changed', onCookieChanged)
+          if (!loginWindow.isDestroyed()) loginWindow.close()
+          resolve({ success: true })
+          return
+        }
+        if (canceled) {
+          settled = true
+          cookieStore.removeListener('changed', onCookieChanged)
+          if (!loginWindow.isDestroyed()) loginWindow.close()
+          resolve({ success: false, canceled: true })
+        }
+      } catch (error: any) {
+        settled = true
+        cookieStore.removeListener('changed', onCookieChanged)
+        if (!loginWindow.isDestroyed()) loginWindow.close()
+        resolve({ success: false, error: error?.message || String(error) })
+      } finally {
+        checking = false
+      }
+    }
+    const onCookieChanged = () => {
+      void finish(false)
+    }
+
+    cookieStore.on('changed', onCookieChanged)
+    loginWindow.webContents.on('did-finish-load', () => {
+      void finish(false)
+    })
+    loginWindow.on('close', (event) => {
+      if (settled) return
+      event.preventDefault()
+      const closeAfterCurrentCheck = () => {
+        if (checking) {
+          setTimeout(closeAfterCurrentCheck, 50)
+          return
+        }
+        void finish(true)
+      }
+      closeAfterCurrentCheck()
+    })
+    void loginWindow.loadURL(DOUYIN_LOGIN_URL)
+  })
 }
 
 function emitVideoEngineStatus() {
@@ -2457,6 +2565,18 @@ ipcMain.handle('video:loginBilibili', async () => {
 
 ipcMain.handle('video:getBilibiliAuthStatus', async () => {
   return getBilibiliAuthStatus()
+})
+
+ipcMain.handle('video:loginDouyin', async () => {
+  return startDouyinAccountLogin()
+})
+
+ipcMain.handle('video:getDouyinAuthStatus', async () => {
+  return getDouyinAuthStatus()
+})
+
+ipcMain.handle('video:logoutDouyin', async () => {
+  return logoutDouyinAccount()
 })
 
 ipcMain.handle('video:getCookieAccessStatus', async (_, url: string) => {
