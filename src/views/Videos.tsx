@@ -72,6 +72,7 @@ import {
 } from './videoStateUtils'
 import type { VideoSortState } from './videoStateUtils'
 import { VideoGroupSidebar } from './VideoGroupSidebar'
+import { DouyinFavoritesPanel } from './DouyinFavoritesPanel'
 import type { VideoGroupMutationResult } from './VideoGroupSidebar'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import { getConfiguredLocales } from '../localeRegistry'
@@ -1671,6 +1672,8 @@ export const Videos: React.FC = () => {
                   : t('videos.btn_reload_video_engine')}
             </button>
           </section>
+
+          <DouyinFavoritesPanel showToast={showToast} />
 
           <form
             onSubmit={handleParseUrl}

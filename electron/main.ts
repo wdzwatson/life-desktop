@@ -57,6 +57,13 @@ import {
   hasDouyinLoginCookie,
   summarizeDouyinAuth,
 } from './video/douyinSession'
+import {
+  DouyinFavoritesError,
+  listDouyinFavoriteFolders,
+  listDouyinFavoriteItems,
+  syncDouyinFavorites,
+} from './video/douyinFavorites'
+import { createDouyinWebFavoritesClient } from './video/douyinWebClient'
 import { handleVideoProtocolRequest } from './video/protocol'
 import { classifyVideoDownloadFailure } from './video/downloadState'
 import { normalizeBulkVideoTagPayload } from '../src/views/videoStateUtils'
@@ -438,6 +445,54 @@ async function startDouyinAccountLogin() {
     })
     void loginWindow.loadURL(DOUYIN_LOGIN_URL)
   })
+}
+
+async function withDouyinFavoritesClient<T>(action: (client: ReturnType<typeof createDouyinWebFavoritesClient>) => Promise<T>) {
+  const syncWindow = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      partition: getDouyinLoginPartition(activeUserId),
+    },
+  })
+  try {
+    await syncWindow.loadURL('https://www.douyin.com/user/self/')
+    return await action(createDouyinWebFavoritesClient(syncWindow.webContents))
+  } finally {
+    if (!syncWindow.isDestroyed()) syncWindow.destroy()
+  }
+}
+
+async function synchronizeDouyinFavorites() {
+  const auth = await getDouyinAuthStatus()
+  if (!auth.loggedIn) {
+    return {
+      success: false,
+      foldersSynced: 0,
+      itemsSynced: 0,
+      error: { code: 'auth_required', message: 'Please sign in to Douyin before syncing favorites.' },
+    }
+  }
+  try {
+    return await withDouyinFavoritesClient((client) =>
+      syncDouyinFavorites({
+        db: getUserDb('videos'),
+        sessionPartition: getDouyinLoginPartition(activeUserId),
+        client,
+      }),
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to open the Douyin favorites page.'
+    const syncError = new DouyinFavoritesError('network_error', message)
+    return {
+      success: false,
+      foldersSynced: 0,
+      itemsSynced: 0,
+      error: { code: syncError.code, message: syncError.message },
+    }
+  }
 }
 
 function emitVideoEngineStatus() {
@@ -2577,6 +2632,22 @@ ipcMain.handle('video:getDouyinAuthStatus', async () => {
 
 ipcMain.handle('video:logoutDouyin', async () => {
   return logoutDouyinAccount()
+})
+
+ipcMain.handle('video:syncDouyinFavorites', async () => {
+  return synchronizeDouyinFavorites()
+})
+
+ipcMain.handle('video:listDouyinFavoriteFolders', async () => {
+  return { success: true, data: listDouyinFavoriteFolders(getUserDb('videos')) }
+})
+
+ipcMain.handle('video:listDouyinFavoriteItems', async (_, folderId: unknown) => {
+  const normalizedFolderId = Number(folderId)
+  if (!Number.isSafeInteger(normalizedFolderId) || normalizedFolderId <= 0) {
+    return { success: false, error: 'A valid Douyin favorite folder is required.' }
+  }
+  return { success: true, data: listDouyinFavoriteItems(getUserDb('videos'), normalizedFolderId) }
 })
 
 ipcMain.handle('video:getCookieAccessStatus', async (_, url: string) => {

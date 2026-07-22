@@ -218,6 +218,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loginDouyin: () => ipcRenderer.invoke('video:loginDouyin'),
   getDouyinAuthStatus: () => ipcRenderer.invoke('video:getDouyinAuthStatus'),
   logoutDouyin: () => ipcRenderer.invoke('video:logoutDouyin'),
+  syncDouyinFavorites: () => ipcRenderer.invoke('video:syncDouyinFavorites'),
+  listDouyinFavoriteFolders: () => ipcRenderer.invoke('video:listDouyinFavoriteFolders'),
+  listDouyinFavoriteItems: (folderId: number) =>
+    ipcRenderer.invoke('video:listDouyinFavoriteItems', folderId),
   getVideoCookieAccessStatus: (url: string) =>
     ipcRenderer.invoke('video:getCookieAccessStatus', url),
   verifyVideoCookieAccess: () => ipcRenderer.invoke('video:verifyCookieAccess'),

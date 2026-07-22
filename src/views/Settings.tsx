@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { getConfiguredLocales } from '../localeRegistry'
@@ -12,6 +12,7 @@ import {
   Download,
   FolderOpen,
   KeyRound,
+  LogOut,
 } from 'lucide-react'
 
 interface UpdateInfo {
@@ -78,6 +79,9 @@ export const Settings: React.FC = () => {
   const [installingVideoTool, setInstallingVideoTool] = useState<'yt-dlp' | 'ffmpeg' | null>(null)
   const [verifyingCookieAccess, setVerifyingCookieAccess] = useState(false)
   const [loggingInBilibili, setLoggingInBilibili] = useState(false)
+  const [douyinAuth, setDouyinAuth] = useState({ loggedIn: false })
+  const [loggingInDouyin, setLoggingInDouyin] = useState(false)
+  const [loggingOutDouyin, setLoggingOutDouyin] = useState(false)
 
   // User Profile Form States
   const [editNickname, setEditNickname] = useState(userNickname)
@@ -106,6 +110,12 @@ export const Settings: React.FC = () => {
   const canInstallManagedFfmpeg = api?.managedVideoToolInstallSupport?.ffmpeg ?? isMacPlatform
   const showManualFfmpegInstallNote = !canInstallManagedFfmpeg
 
+  const refreshDouyinAuth = useCallback(async () => {
+    if (!api?.getDouyinAuthStatus) return
+    const result = await api.getDouyinAuthStatus()
+    setDouyinAuth({ loggedIn: Boolean(result?.loggedIn) })
+  }, [api])
+
   useEffect(() => {
     setEditNickname(userNickname)
     setEditAvatar(userAvatar)
@@ -122,6 +132,10 @@ export const Settings: React.FC = () => {
     }
     loadProfileSecurity()
   }, [userId])
+
+  useEffect(() => {
+    void refreshDouyinAuth()
+  }, [refreshDouyinAuth, userId])
 
   // System updates listeners & triggers
   useEffect(() => {
@@ -293,6 +307,38 @@ export const Settings: React.FC = () => {
       }
     } finally {
       setLoggingInBilibili(false)
+    }
+  }
+
+  const handleLoginDouyin = async () => {
+    if (!api?.loginDouyin || loggingInDouyin) return
+    setLoggingInDouyin(true)
+    try {
+      const result = await api.loginDouyin()
+      if (result?.success) {
+        await refreshDouyinAuth()
+        showToast(t('settings.video_douyin_login_success'))
+      } else if (!result?.canceled) {
+        showToast(t('settings.video_douyin_login_failed', { error: result?.error || '' }))
+      }
+    } finally {
+      setLoggingInDouyin(false)
+    }
+  }
+
+  const handleLogoutDouyin = async () => {
+    if (!api?.logoutDouyin || loggingOutDouyin) return
+    setLoggingOutDouyin(true)
+    try {
+      const result = await api.logoutDouyin()
+      if (result?.success) {
+        await refreshDouyinAuth()
+        showToast(t('settings.video_douyin_logout_success'))
+      } else {
+        showToast(t('settings.video_douyin_logout_failed', { error: result?.error || '' }))
+      }
+    } finally {
+      setLoggingOutDouyin(false)
     }
   }
 
@@ -1321,6 +1367,55 @@ export const Settings: React.FC = () => {
                   </button>
                 </div>
               )}
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                  padding: '10px 12px',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--bg-muted)',
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <strong style={{ display: 'block', fontSize: '12px' }}>
+                    {t('settings.video_douyin_title')}
+                  </strong>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                    {douyinAuth.loggedIn
+                      ? t('settings.video_douyin_logged_in')
+                      : t('settings.video_douyin_login_required')}
+                  </span>
+                </div>
+                {douyinAuth.loggedIn ? (
+                  <button
+                    className="btn"
+                    onClick={handleLogoutDouyin}
+                    disabled={loggingOutDouyin}
+                    type="button"
+                  >
+                    <LogOut size={14} />
+                    {loggingOutDouyin
+                      ? t('settings.video_douyin_logging_out')
+                      : t('settings.video_douyin_logout')}
+                  </button>
+                ) : (
+                  <button
+                    className="btn"
+                    onClick={handleLoginDouyin}
+                    disabled={loggingInDouyin}
+                    type="button"
+                  >
+                    <KeyRound size={14} />
+                    {loggingInDouyin
+                      ? t('settings.video_douyin_logging_in')
+                      : t('settings.video_douyin_login')}
+                  </button>
+                )}
+              </div>
 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                 <button className="btn primary" onClick={handleSaveVideoSettings}>
