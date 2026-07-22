@@ -64,6 +64,7 @@ import {
   syncDouyinFavorites,
 } from './video/douyinFavorites'
 import { createDouyinWebFavoritesClient } from './video/douyinWebClient'
+import { DouyinOfficialPageObserver } from './video/douyinOfficialPage'
 import { handleVideoProtocolRequest } from './video/protocol'
 import { classifyVideoDownloadFailure } from './video/downloadState'
 import { normalizeBulkVideoTagPayload } from '../src/views/videoStateUtils'
@@ -457,10 +458,13 @@ async function withDouyinFavoritesClient<T>(action: (client: ReturnType<typeof c
       partition: getDouyinLoginPartition(activeUserId),
     },
   })
+  const officialPage = new DouyinOfficialPageObserver(syncWindow.webContents)
   try {
+    await officialPage.start()
     await syncWindow.loadURL('https://www.douyin.com/user/self/')
-    return await action(createDouyinWebFavoritesClient(syncWindow.webContents))
+    return await action(createDouyinWebFavoritesClient(officialPage))
   } finally {
+    officialPage.stop()
     if (!syncWindow.isDestroyed()) syncWindow.destroy()
   }
 }
@@ -481,6 +485,9 @@ async function synchronizeDouyinFavorites() {
         db: getUserDb('videos'),
         sessionPartition: getDouyinLoginPartition(activeUserId),
         client,
+        onProgress: (progress) => {
+          mainWindow?.webContents.send('video:douyin-sync-progress', progress)
+        },
       }),
     )
   } catch (error) {

@@ -116,6 +116,25 @@ test('favorite synchronization upserts folders and items without duplication', a
   db.close()
 })
 
+test('favorite synchronization reports page-level progress after local writes', async () => {
+  const db = createVideoDb()
+  const progress = []
+  const result = await syncDouyinFavorites({
+    db,
+    sessionPartition: 'persist:lifeos-douyin-guest',
+    client: createClient(),
+    onProgress: (event) => progress.push(event),
+  })
+
+  assert.equal(result.success, true)
+  assert.ok(progress.some((event) => event.phase === 'loading_folders'))
+  assert.ok(progress.some((event) => event.phase === 'writing_folders' && event.foldersDiscovered === 1))
+  assert.ok(progress.some((event) => event.phase === 'writing_items' && event.itemsSynced === 1))
+  assert.equal(progress.at(-1)?.phase, 'completed')
+  assert.equal(progress.every((event) => typeof event.startedAt === 'number'), true)
+  db.close()
+})
+
 test('a failed sync retains the last successful local mirror and redacts diagnostics', async () => {
   const db = createVideoDb()
   const sessionPartition = 'persist:lifeos-douyin-guest'

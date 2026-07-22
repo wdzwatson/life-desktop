@@ -6,16 +6,7 @@ import {
   type DouyinFavoritesClient,
   type DouyinPage,
 } from './douyinFavorites'
-
-export interface DouyinPageExecutor {
-  executeJavaScript(script: string, userGesture?: boolean): Promise<unknown>
-}
-
-interface DouyinWebResponse {
-  ok: boolean
-  status: number
-  body: Record<string, unknown> | null
-}
+import type { DouyinOfficialPageExecutor, DouyinOfficialPageResponse } from './douyinOfficialPage'
 
 function text(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
@@ -48,30 +39,11 @@ function firstArray(body: Record<string, unknown>, keys: string[]) {
   return []
 }
 
-function buildRequestScript(pathname: string, params: Record<string, string | undefined>) {
-  const query = new URLSearchParams()
-  for (const [key, value] of Object.entries(params)) {
-    if (value) query.set(key, value)
-  }
-  const path = `${pathname}${query.size > 0 ? `?${query.toString()}` : ''}`
-  return `
-    (async () => {
-      const response = await fetch(${JSON.stringify(path)}, {
-        credentials: 'include',
-        headers: { accept: 'application/json, text/plain, */*' },
-      })
-      let body = null
-      try { body = await response.json() } catch { /* body is intentionally omitted */ }
-      return { ok: response.ok, status: response.status, body }
-    })()
-  `
-}
-
-function errorFromResponse(response: DouyinWebResponse) {
+export function getDouyinResponseError(response: DouyinOfficialPageResponse) {
   const body = record(response.body)
   const message = firstText(body.status_msg, body.message, body.msg, `Douyin returned HTTP ${response.status}.`)
   const lower = message.toLowerCase()
-  if (response.status === 401 || response.status === 403 || /login|登录|session/.test(lower)) {
+  if (response.status === 401 || /登录已过期|未登录|not logged in|login required|session expired/.test(lower)) {
     return new DouyinFavoritesError('auth_required', 'Douyin login has expired. Please sign in again.')
   }
   if (/captcha|verify|验证|风控|challenge/.test(lower)) {
@@ -80,20 +52,22 @@ function errorFromResponse(response: DouyinWebResponse) {
   if (response.status === 429 || /rate|频繁|too many/.test(lower)) {
     return new DouyinFavoritesError('rate_limited', 'Douyin temporarily limited synchronization. Try again later.')
   }
-  return new DouyinFavoritesError('unsupported', 'Douyin did not return readable favorites data for this session.')
+  return new DouyinFavoritesError(
+    'unsupported',
+    'Douyin did not expose readable favorites data in its official page. Your login is still saved; reopen Douyin only if it asks you to verify it.',
+  )
 }
 
 async function requestDouyinPage(
-  page: DouyinPageExecutor,
+  page: DouyinOfficialPageExecutor,
   pathname: string,
   params: Record<string, string | undefined> = {},
 ) {
-  const raw = await page.executeJavaScript(buildRequestScript(pathname, params), true)
-  const response = record(raw) as unknown as DouyinWebResponse
-  if (!response.ok || !response.body) throw errorFromResponse(response)
+  const response = await page.request(pathname, params)
+  if (!response.ok || !response.body) throw getDouyinResponseError(response)
   const body = record(response.body)
   const statusCode = number(body.status_code)
-  if (statusCode !== undefined && statusCode !== 0) throw errorFromResponse(response)
+  if (statusCode !== undefined && statusCode !== 0) throw getDouyinResponseError(response)
   return body
 }
 
@@ -159,12 +133,13 @@ export function normalizeDouyinFolderItemPage(body: Record<string, unknown>): Do
   }
 }
 
-export function createDouyinWebFavoritesClient(page: DouyinPageExecutor): DouyinFavoritesClient {
+export function createDouyinWebFavoritesClient(page: DouyinOfficialPageExecutor): DouyinFavoritesClient {
   return {
     async getAccountProfile() {
-      return normalizeDouyinAccountProfile(
-        await requestDouyinPage(page, '/aweme/v1/web/user/profile/self/'),
-      )
+      if (!(await page.isLoggedIn())) {
+        throw new DouyinFavoritesError('auth_required', 'Douyin login has expired. Please sign in again.')
+      }
+      return {}
     },
     async listFolders({ cursor }) {
       return normalizeDouyinFolderPage(

@@ -248,6 +248,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('video:download-progress', subscription)
     }
   },
+  onDouyinSyncProgress: (callback: (data: any) => void) => {
+    const subscription = (_event: any, data: any) => callback(data)
+    ipcRenderer.on('video:douyin-sync-progress', subscription)
+    return () => {
+      ipcRenderer.removeListener('video:douyin-sync-progress', subscription)
+    }
+  },
   onDownloadFinished: (callback: (data: any) => void) => {
     const subscription = (_event: any, data: any) => callback(data)
     ipcRenderer.on('video:download-finished', subscription)

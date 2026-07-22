@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   createDouyinWebFavoritesClient,
+  getDouyinResponseError,
   normalizeDouyinAccountProfile,
   normalizeDouyinFolderItemPage,
   normalizeDouyinFolderPage,
@@ -61,11 +62,12 @@ test('normalizes favorite video metadata into a canonical Douyin webpage URL', (
   )
 })
 
-test('web client only executes fixed same-origin favorites requests', async () => {
-  const scripts: string[] = []
+test('web client asks the official page to load favorites data instead of issuing its own request', async () => {
+  const requests: Array<{ pathname: string; params: Record<string, string | undefined> }> = []
   const client = createDouyinWebFavoritesClient({
-    executeJavaScript: async (script) => {
-      scripts.push(script)
+    isLoggedIn: async () => true,
+    request: async (pathname, params = {}) => {
+      requests.push({ pathname, params })
       return {
         ok: true,
         status: 200,
@@ -75,8 +77,13 @@ test('web client only executes fixed same-origin favorites requests', async () =
   })
 
   await client.listFolders({ cursor: 'page-2' })
-  assert.equal(scripts.length, 1)
-  assert.match(scripts[0], /\/aweme\/v1\/web\/collects\/list\//)
-  assert.match(scripts[0], /credentials: 'include'/)
-  assert.doesNotMatch(scripts[0], /sessionid|cookie\s*:/i)
+  assert.deepEqual(requests, [
+    { pathname: '/aweme/v1/web/collects/list/', params: { count: '20', cursor: 'page-2' } },
+  ])
+})
+
+test('a forbidden favorites response does not falsely report that a saved login expired', () => {
+  const error = getDouyinResponseError({ ok: false, status: 403, body: { status_msg: 'request blocked' } })
+  assert.equal(error.code, 'unsupported')
+  assert.doesNotMatch(error.message, /expired/i)
 })

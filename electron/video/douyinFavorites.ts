@@ -63,6 +63,26 @@ export interface DouyinSyncResult {
   error?: { code: DouyinSyncErrorCode; message: string }
 }
 
+export type DouyinSyncPhase =
+  | 'starting'
+  | 'checking_login'
+  | 'loading_folders'
+  | 'writing_folders'
+  | 'loading_items'
+  | 'writing_items'
+  | 'completed'
+  | 'failed'
+
+export interface DouyinSyncProgress {
+  phase: DouyinSyncPhase
+  startedAt: number
+  foldersDiscovered: number
+  foldersCompleted: number
+  itemsSynced: number
+  pagesLoaded: number
+  currentFolderTitle?: string
+}
+
 export interface DouyinFavoriteFolderRecord {
   id: number
   remote_id: string
@@ -290,16 +310,33 @@ export async function syncDouyinFavorites(input: {
   db: Database.Database
   sessionPartition: string
   client: DouyinFavoritesClient
+  onProgress?: (progress: DouyinSyncProgress) => void
 }): Promise<DouyinSyncResult> {
   let accountId: number | undefined
   let foldersSynced = 0
   let itemsSynced = 0
+  let foldersCompleted = 0
+  let pagesLoaded = 0
+  const startedAt = Date.now()
+  const report = (phase: DouyinSyncPhase, currentFolderTitle?: string) => {
+    input.onProgress?.({
+      phase,
+      startedAt,
+      foldersDiscovered: foldersSynced,
+      foldersCompleted,
+      itemsSynced,
+      pagesLoaded,
+      ...(currentFolderTitle ? { currentFolderTitle } : {}),
+    })
+  }
   try {
+    report('starting')
     accountId = upsertAccount(input.db, {
       sessionPartition: input.sessionPartition,
       profile: {},
       authStatus: 'syncing',
     })
+    report('checking_login')
     const profile = await input.client.getAccountProfile()
     accountId = upsertAccount(input.db, {
       sessionPartition: input.sessionPartition,
@@ -309,6 +346,7 @@ export async function syncDouyinFavorites(input: {
     let cursor: string | undefined
     const folders = new Map<string, { folder: DouyinFavoriteFolderInput; folderId: number }>()
     for (let pageCount = 0; pageCount < MAX_PAGES_PER_SYNC; pageCount += 1) {
+      report('loading_folders')
       const page = await input.client.listFolders({ cursor })
       if (!Array.isArray(page.entries)) throw new DouyinFavoritesError('invalid_response', 'Favorite folder response is invalid.')
       input.db.transaction(() => {
@@ -319,6 +357,8 @@ export async function syncDouyinFavorites(input: {
           if (!alreadyKnown) foldersSynced += 1
         }
       })()
+      pagesLoaded += 1
+      report('writing_folders')
       if (!page.hasMore) break
       if (!text(page.cursor)) throw new DouyinFavoritesError('invalid_response', 'Favorite folder pagination is missing a cursor.')
       cursor = text(page.cursor)
@@ -332,6 +372,7 @@ export async function syncDouyinFavorites(input: {
         let itemCursor: string | undefined
         let position = 0
         for (let pageCount = 0; pageCount < MAX_PAGES_PER_SYNC; pageCount += 1) {
+          report('loading_items', folder.title)
           const page = await input.client.listFolderItems({ folderRemoteId: folder.remoteId, cursor: itemCursor })
           if (!Array.isArray(page.entries)) throw new DouyinFavoritesError('invalid_response', 'Favorite video response is invalid.')
           const lastSeenAt = new Date().toISOString()
@@ -344,6 +385,8 @@ export async function syncDouyinFavorites(input: {
               itemsSynced += 1
             }
           })()
+          pagesLoaded += 1
+          report('writing_items', folder.title)
           if (!page.hasMore) break
           if (!text(page.cursor)) throw new DouyinFavoritesError('invalid_response', 'Favorite video pagination is missing a cursor.')
           itemCursor = text(page.cursor)
@@ -352,8 +395,12 @@ export async function syncDouyinFavorites(input: {
           }
         }
         updateFolderSuccess(input.db, folderId)
+        foldersCompleted += 1
+        report('writing_items', folder.title)
       } catch (error) {
         updateFolderFailure(input.db, folderId, toSyncError(error))
+        foldersCompleted += 1
+        report('writing_items', folder.title)
       }
     }
 
@@ -364,6 +411,7 @@ export async function syncDouyinFavorites(input: {
       WHERE id = ?
       `,
     ).run(accountId)
+    report('completed')
     return { success: true, accountId, foldersSynced, itemsSynced }
   } catch (error) {
     const syncError = toSyncError(error)
@@ -376,6 +424,7 @@ export async function syncDouyinFavorites(input: {
         `,
       ).run(syncError.code === 'auth_required' ? 'expired' : 'error', sanitizeDouyinDiagnostic(syncError.message), accountId)
     }
+    report('failed')
     return {
       success: false,
       ...(accountId ? { accountId } : {}),

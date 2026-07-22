@@ -1,5 +1,5 @@
 import { ExternalLink, Folder, KeyRound, RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   filterDouyinFavoriteItems,
@@ -19,6 +19,16 @@ interface DouyinListResponse<T> {
   error?: string
 }
 
+interface DouyinSyncProgress {
+  phase: string
+  startedAt: number
+  foldersDiscovered: number
+  foldersCompleted: number
+  itemsSynced: number
+  pagesLoaded: number
+  currentFolderTitle?: string
+}
+
 export function DouyinFavoritesPanel({ showToast }: { showToast: (message: string) => void }) {
   const { t } = useTranslation()
   const api = (window as any).electronAPI
@@ -29,7 +39,11 @@ export function DouyinFavoritesPanel({ showToast }: { showToast: (message: strin
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [syncProgress, setSyncProgress] = useState<DouyinSyncProgress | null>(null)
+  const [syncNow, setSyncNow] = useState(() => Date.now())
+  const [syncRefreshNonce, setSyncRefreshNonce] = useState(0)
   const [error, setError] = useState('')
+  const lastSyncRefreshAt = useRef(0)
 
   const refreshFolders = useCallback(async () => {
     if (!api) return
@@ -81,7 +95,27 @@ export function DouyinFavoritesPanel({ showToast }: { showToast: (message: strin
     return () => {
       cancelled = true
     }
-  }, [activeFolderId, api, t])
+  }, [activeFolderId, api, syncRefreshNonce, t])
+
+  useEffect(() => {
+    if (!api?.onDouyinSyncProgress) return
+    return api.onDouyinSyncProgress((progress: DouyinSyncProgress) => {
+      setSyncProgress(progress)
+      if (progress.phase !== 'writing_folders' && progress.phase !== 'writing_items') return
+      const now = Date.now()
+      if (now - lastSyncRefreshAt.current < 350) return
+      lastSyncRefreshAt.current = now
+      void refreshFolders()
+      setSyncRefreshNonce((value) => value + 1)
+    })
+  }, [api, refreshFolders])
+
+  useEffect(() => {
+    if (!syncing || !syncProgress) return
+    setSyncNow(Date.now())
+    const timer = window.setInterval(() => setSyncNow(Date.now()), 1_000)
+    return () => window.clearInterval(timer)
+  }, [syncing, syncProgress])
 
   const handleSync = async () => {
     if (!api || syncing) return
@@ -90,6 +124,14 @@ export function DouyinFavoritesPanel({ showToast }: { showToast: (message: strin
       return
     }
     setSyncing(true)
+    setSyncProgress({
+      phase: 'starting',
+      startedAt: Date.now(),
+      foldersDiscovered: 0,
+      foldersCompleted: 0,
+      itemsSynced: 0,
+      pagesLoaded: 0,
+    })
     setError('')
     try {
       const result = await api.syncDouyinFavorites()
@@ -103,10 +145,22 @@ export function DouyinFavoritesPanel({ showToast }: { showToast: (message: strin
       showToast(t('videos.douyin_sync_success', { count: result.itemsSynced || 0 }))
     } finally {
       setSyncing(false)
+      setSyncProgress(null)
     }
   }
 
   const filteredItems = useMemo(() => filterDouyinFavoriteItems(items, searchQuery), [items, searchQuery])
+  const syncElapsedSeconds = syncProgress ? Math.max(0, Math.floor((syncNow - syncProgress.startedAt) / 1_000)) : 0
+  const syncProgressLabel = syncProgress
+    ? t(`videos.douyin_sync_phase_${syncProgress.phase}`, {
+        folder: syncProgress.currentFolderTitle || t('videos.douyin_folders'),
+        completed: syncProgress.foldersCompleted,
+        total: syncProgress.foldersDiscovered,
+        items: syncProgress.itemsSynced,
+        pages: syncProgress.pagesLoaded,
+        seconds: syncElapsedSeconds,
+      })
+    : ''
 
   return (
     <section className="card" aria-busy={loading || syncing} style={{ display: 'grid', gap: '10px', minWidth: 0 }}>
@@ -147,6 +201,12 @@ export function DouyinFavoritesPanel({ showToast }: { showToast: (message: strin
         </p>
       ) : null}
       {error ? <p style={{ margin: 0, color: 'var(--color-danger)', fontSize: '12px' }}>{error}</p> : null}
+      {syncProgress ? (
+        <div style={{ display: 'grid', gap: '3px', color: 'var(--text-muted)', fontSize: '12px' }} aria-live="polite">
+          <span>{syncProgressLabel}</span>
+          <span>{t('videos.douyin_sync_counts', { folders: syncProgress.foldersDiscovered, items: syncProgress.itemsSynced, pages: syncProgress.pagesLoaded })}</span>
+        </div>
+      ) : null}
 
       {folders.length === 0 && !loading ? (
         <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '12px' }}>{t('videos.douyin_empty')}</p>
