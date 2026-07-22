@@ -1,6 +1,7 @@
+html:has(.desktop-task-note),
 body:has(.desktop-task-note),
 body:has(.desktop-task-note) #root {
-  background: transparent;
+  background: transparent !important;
 }
 
 .desktop-task-note {
@@ -11,7 +12,7 @@ body:has(.desktop-task-note) #root {
   border-radius: 16px;
   background: color-mix(in srgb, var(--bg-surface) 96%, transparent);
   color: var(--text-main);
-  overflow: auto;
+  overflow: hidden;
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
 }
 
@@ -57,6 +58,8 @@ body:has(.desktop-task-note) #root {
 }
 
 .desktop-task-note__content {
+  max-height: calc(100vh - 86px);
+  overflow: auto;
   display: grid;
   gap: 18px;
 }

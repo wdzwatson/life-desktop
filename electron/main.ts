@@ -2292,6 +2292,11 @@ ipcMain.handle('desktopTaskNote:hide', async () => {
   return { success: true }
 })
 
+ipcMain.handle('desktopTaskNote:openMainWindow', async () => {
+  showMainWindow()
+  return { success: true }
+})
+
 ipcMain.handle(
   'desktopTaskNote:setSettings',
   async (_, patch: { opacity?: number; alwaysOnTop?: boolean }) => {

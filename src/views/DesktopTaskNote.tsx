@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, Circle, Pin, RefreshCw, X } from 'lucide-react'
+import { Check, Circle, LayoutDashboard, Pin, RefreshCw, X } from 'lucide-react'
 import {
   getDesktopTasksForDate,
   getUserDateKey,
@@ -211,9 +211,18 @@ export const DesktopTaskNote: React.FC = () => {
       <header className="desktop-task-note__header">
         <div>
           <p className="desktop-task-note__eyebrow">LifeOS</p>
-          <h1>今日任务</h1>
+          <h1>任务</h1>
         </div>
         <div className="desktop-task-note__controls">
+          <button
+            type="button"
+            className="desktop-task-note__refresh desktop-task-note__drag-exempt"
+            aria-label="打开主界面"
+            title="打开主界面"
+            onClick={() => void api?.openMainWindow?.()}
+          >
+            <LayoutDashboard size={16} aria-hidden="true" />
+          </button>
           <button
             type="button"
             className={`desktop-task-note__refresh desktop-task-note__drag-exempt ${alwaysOnTop ? 'is-active' : ''}`}

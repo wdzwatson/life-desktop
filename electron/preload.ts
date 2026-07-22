@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setDesktopTaskNoteSettings: (patch: { opacity?: number; alwaysOnTop?: boolean }) =>
     ipcRenderer.invoke('desktopTaskNote:setSettings', patch),
   hideDesktopTaskNote: () => ipcRenderer.invoke('desktopTaskNote:hide'),
+  openMainWindow: () => ipcRenderer.invoke('desktopTaskNote:openMainWindow'),
 
   // AI configuration. Full credentials remain in the main process.
   listAIProviders: (filters?: unknown) => ipcRenderer.invoke('ai:providers:list', filters),
