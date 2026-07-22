@@ -106,6 +106,13 @@ export const DesktopTaskNote: React.FC = () => {
   )
 
   useEffect(() => {
+    const unsubscribe = api?.onTasksChanged?.(() => {
+      void loadTasks()
+    })
+    return unsubscribe
+  }, [api, loadTasks])
+
+  useEffect(() => {
     void loadTasks()
     const timer = window.setInterval(() => void loadTasks(), 60_000)
     return () => window.clearInterval(timer)

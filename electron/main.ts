@@ -729,6 +729,12 @@ function startScheduler() {
   }, 60000)
 }
 
+function emitTaskDataChanged(reason: string) {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send('tasks:changed', { reason })
+  }
+}
+
 function runSchedulerCycle(options: { notify?: boolean } = {}) {
   const result = runTaskSchedulerCore(getUserDb('tasks'))
   if (options.notify !== false && mainWindow) {
@@ -738,6 +744,9 @@ function runSchedulerCycle(options: { notify?: boolean } = {}) {
     for (const task of result.overdueTasks) {
       mainWindow.webContents.send('scheduler:overdue', task)
     }
+  }
+  if (result.generatedTasks.length > 0 || result.overdueTasks.length > 0) {
+    emitTaskDataChanged('scheduler')
   }
   return { generatedCount: result.generatedTasks.length, overdueCount: result.overdueTasks.length }
 
@@ -2250,6 +2259,7 @@ ipcMain.handle('db:query', async (_, { dbName, sql, params = [] }) => {
     } else {
       const stmt = db.prepare(sql)
       const res = stmt.run(...params)
+      if (dbName === 'tasks') emitTaskDataChanged('query')
       return { success: true, data: res }
     }
   } catch (err: any) {
@@ -2269,6 +2279,7 @@ ipcMain.handle('db:transaction', async (_, { dbName, statements }) => {
     }
     const db = getUserDb(dbName)
     const data = runDbTransaction(db, statements)
+    if (dbName === 'tasks') emitTaskDataChanged('transaction')
     return { success: true, data }
   } catch (err: any) {
     console.error(`DB Transaction Error (${dbName}):`, err)

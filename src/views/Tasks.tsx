@@ -591,6 +591,12 @@ export const Tasks: React.FC = () => {
     })
   }, [api, userId])
 
+  useEffect(() => {
+    return api?.onTasksChanged?.(() => {
+      void loadData()
+    })
+  }, [api, userId])
+
   const refreshTaskData = async () => {
     if (!api || isRefreshing) return
 
