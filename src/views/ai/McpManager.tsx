@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Activity, Bot, Copy, Pencil, Plug, Plus, Power, Search, ShieldAlert, ShieldCheck, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
+import { useConfirmation } from '../../components/ConfirmationProvider'
 import { useAppStore } from '../../store/useAppStore'
 import { agentToDraft, buildAgentPayload, type AgentSummary } from './agentUtils'
 import {
@@ -21,6 +22,7 @@ type Props = { onChanged: () => void | Promise<void> }
 
 export function McpManager({ onChanged }: Props) {
   const { t, i18n } = useTranslation()
+  const { confirm } = useConfirmation()
   const showToast = useAppStore((state) => state.showToast)
   const [servers, setServers] = useState<McpServerSummary[]>([])
   const [agents, setAgents] = useState<AgentSummary[]>([])
@@ -180,7 +182,7 @@ export function McpManager({ onChanged }: Props) {
         return
       }
     }
-    if (!window.confirm(t('aiChat.mcp.delete_confirm', { name: server.name }))) return
+    if (!(await confirm({ description: t('aiChat.mcp.delete_confirm', { name: server.name }), confirmLabel: t('common.delete'), tone: 'danger' }))) return
     await runAction(() => api.deleteAIMcpServer(server.id), 'aiChat.mcp.deleted')
   }
 
@@ -189,7 +191,7 @@ export function McpManager({ onChanged }: Props) {
       const dependencyResponse = await api.getAIMcpDependencies(server.id)
       if (dependencyResponse?.success && dependencyResponse.data?.length > 0) {
         const names = dependencyResponse.data.map((item: { agentName: string }) => item.agentName).join(', ')
-        if (!window.confirm(t('aiChat.mcp.disable_confirm_dependencies', { names }))) return
+        if (!(await confirm({ description: t('aiChat.mcp.disable_confirm_dependencies', { names }), confirmLabel: t('common.confirm'), tone: 'danger' }))) return
       }
     }
     await runAction(

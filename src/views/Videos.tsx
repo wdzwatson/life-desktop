@@ -73,6 +73,7 @@ import {
 import type { VideoSortState } from './videoStateUtils'
 import { VideoGroupSidebar } from './VideoGroupSidebar'
 import type { VideoGroupMutationResult } from './VideoGroupSidebar'
+import { useConfirmation } from '../components/ConfirmationProvider'
 import { getConfiguredLocales } from '../localeRegistry'
 import { ViewportPortal } from '../components/ViewportPortal'
 import {
@@ -135,6 +136,7 @@ function replaceVideoGroupTranslationValues(
 
 export const Videos: React.FC = () => {
   const { t, i18n } = useTranslation()
+  const { confirm } = useConfirmation()
   const showToast = useAppStore((state) => state.showToast)
   const setActiveScreen = useAppStore((state) => state.setActiveScreen)
   const setSettingsMenu = useAppStore((state) => state.setSettingsMenu)
@@ -1348,7 +1350,8 @@ export const Videos: React.FC = () => {
   }
 
   const handleDeleteVideo = async (id: number) => {
-    if (!api || !window.confirm(t('videos.confirm_delete'))) return
+    if (!api) return
+    if (!(await confirm({ description: t('videos.confirm_delete'), confirmLabel: t('common.delete'), tone: 'danger' }))) return
     await api.dbQuery('videos', 'DELETE FROM videos WHERE id = ?', [id])
     if (selectedVideo?.id === id) setSelectedVideo(null)
     showToast(t('videos.toast_video_deleted'))
@@ -1476,7 +1479,13 @@ export const Videos: React.FC = () => {
     if (!api) return
     setIsBulkMoreMenuOpen(false)
     setBulkMetadataMode(null)
-    if (!window.confirm(t('videos.confirm_bulk_delete', { count: bulkSelectedVideoIds.length })))
+    if (
+      !(await confirm({
+        description: t('videos.confirm_bulk_delete', { count: bulkSelectedVideoIds.length }),
+        confirmLabel: t('common.delete'),
+        tone: 'danger',
+      }))
+    )
       return
     for (const videoId of bulkSelectedVideoIds) {
       const deleteResult = await api.dbQuery('videos', 'DELETE FROM videos WHERE id = ?', [videoId])

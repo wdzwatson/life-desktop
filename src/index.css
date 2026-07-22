@@ -689,6 +689,23 @@ body.theme-dense .nav-item.active {
   line-height: 1.3;
 }
 
+.app-confirm-dialog {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.app-confirm-dialog__copy {
+  margin: 12px 0 18px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.app-confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .command-palette {
   animation-name: dialog-surface-enter;
 }

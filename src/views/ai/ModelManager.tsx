@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pencil, Plus, Search, Trash2, Type, Image, Video, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
+import { useConfirmation } from '../../components/ConfirmationProvider'
 import { useAppStore } from '../../store/useAppStore'
 
 export type AIModelCatalogItem = {
@@ -26,6 +27,7 @@ function errorMessage(response: any, fallback: string) {
 
 export function ModelManager({ onChanged }: Props) {
   const { t } = useTranslation()
+  const { confirm } = useConfirmation()
   const showToast = useAppStore((state) => state.showToast)
   const api = (window as any).electronAPI
   const triggerRef = useRef<HTMLButtonElement | null>(null)
@@ -113,7 +115,7 @@ export function ModelManager({ onChanged }: Props) {
   }
 
   const remove = async (model: AIModelCatalogItem) => {
-    if (!window.confirm(t('aiChat.models.delete_confirm', { model: model.name }))) return
+    if (!(await confirm({ description: t('aiChat.models.delete_confirm', { model: model.name }), confirmLabel: t('common.delete'), tone: 'danger' }))) return
     setBusy(true)
     setError('')
     try {

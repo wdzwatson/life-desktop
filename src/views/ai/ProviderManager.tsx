@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
+import { useConfirmation } from '../../components/ConfirmationProvider'
 import { useAppStore } from '../../store/useAppStore'
 import {
   PROVIDER_CAPABILITIES,
@@ -33,6 +34,7 @@ const MODEL_CAPABILITIES: ModelCapability[] = ['text', 'image', 'video']
 
 export function ProviderManager({ onChanged }: Props) {
   const { t, i18n } = useTranslation()
+  const { confirm } = useConfirmation()
   const showToast = useAppStore((state) => state.showToast)
   const [providers, setProviders] = useState<ProviderSummary[]>([])
   const [catalogModels, setCatalogModels] = useState<CatalogModel[]>([])
@@ -163,7 +165,7 @@ export function ProviderManager({ onChanged }: Props) {
   }
 
   const deleteProvider = async (provider: ProviderSummary) => {
-    if (!window.confirm(t('aiChat.providers.delete_confirm', { name: provider.name }))) return
+    if (!(await confirm({ description: t('aiChat.providers.delete_confirm', { name: provider.name }), confirmLabel: t('common.delete'), tone: 'danger' }))) return
     await runAction(() => api.deleteAIProvider(provider.id), 'aiChat.providers.deleted')
   }
 

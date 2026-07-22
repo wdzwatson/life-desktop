@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Bot, Check, Copy, Pencil, Plus, Power, Search, ShieldAlert, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
+import { useConfirmation } from '../../components/ConfirmationProvider'
 import { useAppStore } from '../../store/useAppStore'
 import type { ProviderSummary } from './providerUtils'
 import {
@@ -18,6 +19,7 @@ type Props = { onChanged: () => void | Promise<void> }
 
 export function AgentManager({ onChanged }: Props) {
   const { t } = useTranslation()
+  const { confirm } = useConfirmation()
   const showToast = useAppStore((state) => state.showToast)
   const [agents, setAgents] = useState<AgentSummary[]>([])
   const [providers, setProviders] = useState<ProviderSummary[]>([])
@@ -130,7 +132,7 @@ export function AgentManager({ onChanged }: Props) {
   }
 
   const deleteAgent = async (agent: AgentSummary) => {
-    if (!window.confirm(t('aiChat.agents.delete_confirm', { name: agent.name }))) return
+    if (!(await confirm({ description: t('aiChat.agents.delete_confirm', { name: agent.name }), confirmLabel: t('common.delete'), tone: 'danger' }))) return
     await runAction(() => api.deleteAIAgent(agent.id), 'aiChat.agents.deleted')
   }
 

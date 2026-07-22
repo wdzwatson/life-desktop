@@ -3,6 +3,7 @@ import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { Lock, Eye, EyeOff, Copy, Trash2 } from 'lucide-react'
 import { copySecretWithAutoClear } from './toolboxVaultUtils'
+import { useConfirmation } from '../components/ConfirmationProvider'
 
 type VaultStatus =
   | 'not_configured'
@@ -35,6 +36,7 @@ type VaultApiResponse<T> = {
 
 export const Toolbox: React.FC = () => {
   const { t, i18n } = useTranslation()
+  const { confirm } = useConfirmation()
   const showToast = useAppStore((state) => state.showToast)
   const userId = useAppStore((state) => state.userId)
 
@@ -315,9 +317,8 @@ export const Toolbox: React.FC = () => {
   }
 
   const handleDeleteCredential = async (id: number) => {
-    if (!api?.deleteVaultCredential || !window.confirm(t('toolbox.confirm_delete_credential'))) {
-      return
-    }
+    if (!api?.deleteVaultCredential) return
+    if (!(await confirm({ description: t('toolbox.confirm_delete_credential'), confirmLabel: t('common.delete'), tone: 'danger' }))) return
     const res = (await api.deleteVaultCredential(id)) as VaultApiResponse<{ success: boolean }>
     if (res?.success) {
       setRevealedPasswords((prev) => {

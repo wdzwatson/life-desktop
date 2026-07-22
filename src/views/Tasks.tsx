@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../components/AccessibleDialog'
+import { useConfirmation } from '../components/ConfirmationProvider'
 import {
   AlertTriangle,
   CalendarDays,
@@ -44,6 +45,7 @@ type TaskDeletionScope = 'single' | 'end-repeat' | 'delete-repeat'
 
 export const Tasks: React.FC = () => {
   const { t, i18n } = useTranslation()
+  const { confirm } = useConfirmation()
 
   const getPriorityLabel = (priority: string) => {
     switch (priority) {
@@ -911,7 +913,16 @@ export const Tasks: React.FC = () => {
   }
 
   const handleDeleteRule = async (id: number) => {
-    if (!api || !window.confirm(t('tasks.prompt_delete_rule_confirm'))) return
+    if (!api) return
+    if (
+      !(await confirm({
+        title: t('tasks.delete_task'),
+        description: t('tasks.prompt_delete_rule_confirm'),
+        confirmLabel: t('common.delete'),
+        tone: 'danger',
+      }))
+    )
+      return
     await api.dbQuery('tasks', 'DELETE FROM recurring_rule_steps WHERE rule_id = ?', [id])
     await api.dbQuery('tasks', 'DELETE FROM recurring_rules WHERE id = ?', [id])
     setSelectedRuleId(null)

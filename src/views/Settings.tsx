@@ -3,6 +3,7 @@ import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { getConfiguredLocales } from '../localeRegistry'
 import { clampVideoConcurrentDownloads } from './videoLibraryUtils'
+import { useConfirmation } from '../components/ConfirmationProvider'
 import {
   Palette,
   User,
@@ -34,6 +35,7 @@ interface RestoreInspection {
 
 export const Settings: React.FC = () => {
   const { t, i18n } = useTranslation()
+  const { confirm } = useConfirmation()
   const theme = useAppStore((state) => state.theme)
   const setTheme = useAppStore((state) => state.setTheme)
   const language = useAppStore((state) => state.language)
@@ -340,12 +342,8 @@ export const Settings: React.FC = () => {
       payload.securityQuestion = editQuestion
       payload.securityAnswer = editAnswer.trim()
     } else if (hasPassword && editPassword === '' && editConfirmPassword === '') {
-      const confirmClear = window.confirm(t('settings.confirm_clear_password'))
-      if (confirmClear) {
-        payload.password = '' // empty password string tells main process to clear credentials
-      } else {
-        return
-      }
+      if (!(await confirm({ description: t('settings.confirm_clear_password'), confirmLabel: t('common.confirm'), tone: 'danger' }))) return
+      payload.password = '' // empty password string tells main process to clear credentials
     }
 
     const res = await api.updateUserProfile(payload)
@@ -363,11 +361,21 @@ export const Settings: React.FC = () => {
   const handleClearAppData = async () => {
     if (!api) return
 
-    const confirm1 = window.confirm(t('settings.security_clear_confirm_1'))
-    if (!confirm1) return
-
-    const confirm2 = window.confirm(t('settings.security_clear_confirm_2'))
-    if (!confirm2) return
+    if (
+      !(await confirm({
+        description: (
+          <>
+            {t('settings.security_clear_confirm_1')}
+            <br />
+            <br />
+            {t('settings.security_clear_confirm_2')}
+          </>
+        ),
+        confirmLabel: t('common.delete'),
+        tone: 'danger',
+      }))
+    )
+      return
 
     try {
       const res = await api.clearAppData()
@@ -448,13 +456,17 @@ export const Settings: React.FC = () => {
 
   const handleRestoreBackup = async () => {
     if (!api || !restoreInspection || restoreBusy) return
-    const confirmed = window.confirm(
-      t('settings.restore_confirm', {
-        userId: restoreInspection.userId,
-        count: restoreInspection.fileCount,
-      }),
+    if (
+      !(await confirm({
+        description: t('settings.restore_confirm', {
+          userId: restoreInspection.userId,
+          count: restoreInspection.fileCount,
+        }),
+        confirmLabel: t('common.confirm'),
+        tone: 'danger',
+      }))
     )
-    if (!confirmed) return
+      return
 
     setRestoreBusy(true)
     setRestoreError('')

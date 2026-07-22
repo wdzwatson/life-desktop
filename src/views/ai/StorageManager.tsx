@@ -12,6 +12,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useConfirmation } from '../../components/ConfirmationProvider'
 
 type StorageUsage = {
   schemaVersion: number
@@ -70,6 +71,7 @@ function responseError(response: ApiResponse<unknown> | undefined, fallback: str
 
 export function StorageManager() {
   const { t } = useTranslation()
+  const { confirm } = useConfirmation()
   const api = (window as any).electronAPI
   const [usage, setUsage] = useState<StorageUsage | null>(null)
   const [settings, setSettings] = useState<Record<string, unknown>>({})
@@ -132,10 +134,17 @@ export function StorageManager() {
 
   const clean = async () => {
     if (!plan || !api?.cleanAIStorage) return
-    if (!window.confirm(t('aiChat.storage.confirm_cleanup', {
-      count: plan.assetCount,
-      bytes: formatBytes(plan.bytes),
-    }))) return
+    if (
+      !(await confirm({
+        description: t('aiChat.storage.confirm_cleanup', {
+          count: plan.assetCount,
+          bytes: formatBytes(plan.bytes),
+        }),
+        confirmLabel: t('common.delete'),
+        tone: 'danger',
+      }))
+    )
+      return
     setBusy(true)
     const response = await api.cleanAIStorage({ ...cleanupInput(), planHash: plan.planHash }) as ApiResponse<{ usage: StorageUsage }>
     setBusy(false)
