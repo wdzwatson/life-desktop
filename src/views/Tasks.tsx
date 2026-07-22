@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
+import { AccessibleDialog } from '../components/AccessibleDialog'
 import {
   AlertTriangle,
   CalendarDays,
@@ -91,6 +92,9 @@ export const Tasks: React.FC = () => {
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
   const [expandedTaskGroupId, setExpandedTaskGroupId] = useState<number | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<string | null>(null)
+  const [completionConfirmationTask, setCompletionConfirmationTask] = useState<any | null>(null)
+  const [isCompletionConfirming, setIsCompletionConfirming] = useState(false)
+  const completionTriggerRef = useRef<HTMLButtonElement | null>(null)
 
   const [drawerMode, setDrawerMode] = useState<'create' | 'edit' | null>(null)
   const [taskDraft, setTaskDraft] = useState({
@@ -526,6 +530,23 @@ export const Tasks: React.FC = () => {
     loadData()
   }
 
+  const requestTaskCompletionToggle = (task: any, trigger: HTMLButtonElement) => {
+    completionTriggerRef.current = trigger
+    setCompletionConfirmationTask(task)
+  }
+
+  const confirmTaskCompletionToggle = async () => {
+    if (!completionConfirmationTask || isCompletionConfirming) return
+
+    setIsCompletionConfirming(true)
+    try {
+      await toggleTaskDone(completionConfirmationTask)
+      setCompletionConfirmationTask(null)
+    } finally {
+      setIsCompletionConfirming(false)
+    }
+  }
+
   const renderSubtaskRows = (
     parentId: number,
     depth = 1,
@@ -568,7 +589,7 @@ export const Tasks: React.FC = () => {
               }
               onClick={(e) => {
                 e.stopPropagation()
-                toggleTaskDone(child)
+                requestTaskCompletionToggle(child, e.currentTarget)
               }}
               className="task-row__check"
             >
@@ -1188,7 +1209,7 @@ export const Tasks: React.FC = () => {
                                 void openCalendarTask(task)
                                 return
                               }
-                              void toggleTaskDone(task)
+                              requestTaskCompletionToggle(task, e.currentTarget)
                             }}
                             className="task-row__check"
                           >
@@ -1967,6 +1988,53 @@ export const Tasks: React.FC = () => {
             </footer>
           </aside>
         </div>
+      )}
+      {completionConfirmationTask && (
+        <AccessibleDialog
+          title={
+            completionConfirmationTask.is_completed === 1
+              ? t('tasks.confirm_reopen_title')
+              : t('tasks.confirm_complete_title')
+          }
+          role="alertdialog"
+          onClose={() => {
+            if (!isCompletionConfirming) setCompletionConfirmationTask(null)
+          }}
+          returnFocus={() => completionTriggerRef.current?.focus()}
+          contentClassName="task-completion-confirm"
+        >
+          <p className="task-completion-confirm__copy">
+            {completionConfirmationTask.is_completed === 1
+              ? t('tasks.confirm_reopen_description', { title: completionConfirmationTask.title })
+              : tasks.some((task) => task.parent_id === completionConfirmationTask.id)
+                ? t('tasks.confirm_complete_with_subtasks_description', {
+                    title: completionConfirmationTask.title,
+                  })
+                : t('tasks.confirm_complete_description', {
+                    title: completionConfirmationTask.title,
+                  })}
+          </p>
+          <div className="task-completion-confirm__actions">
+            <button
+              type="button"
+              className="btn"
+              disabled={isCompletionConfirming}
+              onClick={() => setCompletionConfirmationTask(null)}
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={isCompletionConfirming}
+              onClick={() => void confirmTaskCompletionToggle()}
+            >
+              {completionConfirmationTask.is_completed === 1
+                ? t('tasks.confirm_reopen_action')
+                : t('tasks.confirm_complete_action')}
+            </button>
+          </div>
+        </AccessibleDialog>
       )}
     </div>
   )

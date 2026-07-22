@@ -27,6 +27,13 @@ const requiredKeys = [
   'details_due_prefix',
   'complete_task_action',
   'reopen_task_action',
+  'confirm_complete_title',
+  'confirm_complete_description',
+  'confirm_complete_with_subtasks_description',
+  'confirm_complete_action',
+  'confirm_reopen_title',
+  'confirm_reopen_description',
+  'confirm_reopen_action',
 ]
 
 for (const locale of configuredLocales) {
