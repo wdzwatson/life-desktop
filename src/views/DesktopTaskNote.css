@@ -107,6 +107,31 @@
   font-size: 11px;
 }
 
+.desktop-task-note__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.desktop-task-note__task:hover .desktop-task-note__close,
+.desktop-task-note__close:focus-visible {
+  opacity: 1;
+}
+
+.desktop-task-note__close:hover {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+}
+
 .desktop-task-note__refresh {
   width: 30px;
   height: 30px;
@@ -129,6 +154,67 @@
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.desktop-task-note__dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.24);
+  backdrop-filter: blur(4px);
+  z-index: 10;
+}
+
+.desktop-task-note__dialog {
+  width: min(320px, 100%);
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-app);
+}
+
+.desktop-task-note__dialog h2 {
+  margin-bottom: 8px;
+  color: var(--text-main);
+  font-size: 16px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.desktop-task-note__dialog p {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.desktop-task-note__dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.desktop-task-note__dialog-actions button {
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.desktop-task-note__dialog-cancel {
+  border: 1px solid var(--color-border);
+  color: var(--text-main);
+  background: var(--bg-surface);
+}
+
+.desktop-task-note__dialog-confirm {
+  border: 1px solid var(--color-danger);
+  color: #fff;
+  background: var(--color-danger);
 }
 
 .desktop-task-note__error {

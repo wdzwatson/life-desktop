@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, Circle, RefreshCw } from 'lucide-react'
+import { Check, Circle, RefreshCw, X } from 'lucide-react'
 import { getDesktopTasksForDate, getUserDateKey } from './taskDesktopUtils'
 import './DesktopTaskNote.css'
 
@@ -22,6 +22,7 @@ export const DesktopTaskNote: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [taskToClose, setTaskToClose] = useState<DesktopTaskRecord | null>(null)
 
   const todayKey = useMemo(() => getUserDateKey(new Date(), getUserTimeZone()), [])
 
@@ -82,6 +83,19 @@ export const DesktopTaskNote: React.FC = () => {
     }
   }
 
+  const closeTask = async () => {
+    if (!taskToClose) return
+    const result = await api?.dbQuery('tasks', "UPDATE tasks SET status = '已关闭' WHERE id = ?", [
+      taskToClose.id,
+    ])
+    if (result?.success) {
+      setTasks((current) => current.filter((task) => task.id !== taskToClose.id))
+      setTaskToClose(null)
+    } else {
+      setError('关闭任务失败，请稍后重试。')
+    }
+  }
+
   const activeTasks = tasks.filter((task) => task.is_completed !== 1)
   const completedTasks = tasks.filter((task) => task.is_completed === 1)
 
@@ -103,6 +117,15 @@ export const DesktopTaskNote: React.FC = () => {
         </button>
         <span className="desktop-task-note__title">{task.title}</span>
         {task.status === '已逾期' && <span className="desktop-task-note__overdue">逾期</span>}
+        <button
+          type="button"
+          className="desktop-task-note__close"
+          aria-label="关闭任务"
+          title="关闭任务"
+          onClick={() => setTaskToClose(task)}
+        >
+          <X size={14} aria-hidden="true" />
+        </button>
       </li>
     )
   }
@@ -151,6 +174,39 @@ export const DesktopTaskNote: React.FC = () => {
             ) : (
               <p className="desktop-task-note__section-empty">暂无已完成任务</p>
             )}
+          </section>
+        </div>
+      )}
+
+      {taskToClose && (
+        <div className="desktop-task-note__dialog-backdrop" role="presentation">
+          <section
+            className="desktop-task-note__dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="desktop-task-note-close-title"
+            aria-describedby="desktop-task-note-close-description"
+          >
+            <h2 id="desktop-task-note-close-title">关闭任务？</h2>
+            <p id="desktop-task-note-close-description">
+              “{taskToClose.title}”关闭后将不再显示在桌面便签中，但仍可在主任务列表中恢复。
+            </p>
+            <div className="desktop-task-note__dialog-actions">
+              <button
+                type="button"
+                className="desktop-task-note__dialog-cancel"
+                onClick={() => setTaskToClose(null)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="desktop-task-note__dialog-confirm"
+                onClick={() => void closeTask()}
+              >
+                确认关闭
+              </button>
+            </div>
           </section>
         </div>
       )}
