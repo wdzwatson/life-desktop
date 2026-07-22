@@ -1,0 +1,147 @@
+.desktop-task-note {
+  min-height: 100vh;
+  padding: 20px;
+  background: var(--bg-surface);
+  color: var(--text-main);
+  overflow: auto;
+}
+
+.desktop-task-note__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.desktop-task-note__eyebrow {
+  margin-bottom: 4px;
+  color: var(--color-accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.desktop-task-note h1 {
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.desktop-task-note h2 {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.desktop-task-note__content {
+  display: grid;
+  gap: 18px;
+}
+
+.desktop-task-note__list {
+  display: grid;
+  gap: 4px;
+  list-style: none;
+}
+
+.desktop-task-note__task {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--bg-app) 75%, transparent);
+}
+
+.desktop-task-note__task:hover {
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--bg-app));
+}
+
+.desktop-task-note__check,
+.desktop-task-note__refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 0;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.desktop-task-note__check {
+  width: 24px;
+  height: 24px;
+}
+
+.desktop-task-note__check:hover {
+  color: var(--color-accent);
+}
+
+.desktop-task-note__task.is-completed .desktop-task-note__check {
+  color: var(--color-success);
+}
+
+.desktop-task-note__title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-task-note__task.is-completed .desktop-task-note__title {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.desktop-task-note__overdue {
+  flex: 0 0 auto;
+  color: var(--color-danger);
+  font-size: 11px;
+}
+
+.desktop-task-note__refresh {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+}
+
+.desktop-task-note__refresh:hover {
+  background: var(--bg-app);
+  color: var(--color-accent);
+}
+
+.desktop-task-note__refresh:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.desktop-task-note__empty,
+.desktop-task-note__section-empty,
+.desktop-task-note__error {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.desktop-task-note__error {
+  margin-bottom: 12px;
+  color: var(--color-danger);
+}
+
+.is-spinning {
+  animation: desktop-task-note-spin 0.8s linear infinite;
+}
+
+@keyframes desktop-task-note-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

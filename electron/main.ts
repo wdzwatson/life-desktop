@@ -86,6 +86,7 @@ function hashPassword(password: string, salt?: string) {
 
 // Keep global references
 let mainWindow: BrowserWindow | null = null
+let desktopTaskNoteWindow: BrowserWindow | null = null
 let activeUserId = 'guest'
 const openDbs: Map<string, any> = new Map() // dbName -> Database instance
 let schedulerInterval: NodeJS.Timeout | null = null
@@ -231,58 +232,60 @@ async function startBilibiliAccountLogin() {
   })
 
   const cookieStore = loginWindow.webContents.session.cookies
-  return new Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>((resolve) => {
-    let settled = false
-    let checking = false
-    const finish = async (canceled: boolean) => {
-      if (settled || checking || loginWindow.isDestroyed()) return
-      checking = true
-      try {
-        const result = await persistBilibiliCookies(loginWindow)
-        if (result.success) {
+  return new Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>(
+    (resolve) => {
+      let settled = false
+      let checking = false
+      const finish = async (canceled: boolean) => {
+        if (settled || checking || loginWindow.isDestroyed()) return
+        checking = true
+        try {
+          const result = await persistBilibiliCookies(loginWindow)
+          if (result.success) {
+            settled = true
+            cookieStore.removeListener('changed', onCookieChanged)
+            if (!loginWindow.isDestroyed()) loginWindow.close()
+            resolve(result)
+            return
+          }
+          if (canceled) {
+            settled = true
+            cookieStore.removeListener('changed', onCookieChanged)
+            if (!loginWindow.isDestroyed()) loginWindow.close()
+            resolve({ success: false, canceled: true, error: result.error })
+          }
+        } catch (error: any) {
           settled = true
           cookieStore.removeListener('changed', onCookieChanged)
           if (!loginWindow.isDestroyed()) loginWindow.close()
-          resolve(result)
-          return
+          resolve({ success: false, error: error?.message || String(error) })
+        } finally {
+          checking = false
         }
-        if (canceled) {
-          settled = true
-          cookieStore.removeListener('changed', onCookieChanged)
-          if (!loginWindow.isDestroyed()) loginWindow.close()
-          resolve({ success: false, canceled: true, error: result.error })
-        }
-      } catch (error: any) {
-        settled = true
-        cookieStore.removeListener('changed', onCookieChanged)
-        if (!loginWindow.isDestroyed()) loginWindow.close()
-        resolve({ success: false, error: error?.message || String(error) })
-      } finally {
-        checking = false
       }
-    }
-    const onCookieChanged = () => {
-      void finish(false)
-    }
+      const onCookieChanged = () => {
+        void finish(false)
+      }
 
-    cookieStore.on('changed', onCookieChanged)
-    loginWindow.webContents.on('did-finish-load', () => {
-      void finish(false)
-    })
-    loginWindow.on('close', (event) => {
-      if (settled) return
-      event.preventDefault()
-      const closeAfterCurrentCheck = () => {
-        if (checking) {
-          setTimeout(closeAfterCurrentCheck, 50)
-          return
+      cookieStore.on('changed', onCookieChanged)
+      loginWindow.webContents.on('did-finish-load', () => {
+        void finish(false)
+      })
+      loginWindow.on('close', (event) => {
+        if (settled) return
+        event.preventDefault()
+        const closeAfterCurrentCheck = () => {
+          if (checking) {
+            setTimeout(closeAfterCurrentCheck, 50)
+            return
+          }
+          void finish(true)
         }
-        void finish(true)
-      }
-      closeAfterCurrentCheck()
-    })
-    loginWindow.loadURL('https://passport.bilibili.com/login')
-  })
+        closeAfterCurrentCheck()
+      })
+      loginWindow.loadURL('https://passport.bilibili.com/login')
+    },
+  )
 }
 
 function emitVideoEngineStatus() {
@@ -368,17 +371,8 @@ function getAIMcpManager() {
 function getAIAgentRuntime() {
   if (aiAgentRuntime) return aiAgentRuntime
   const db = getUserDb('ai')
-  const credentialPath = path.join(
-    BASE_DIR,
-    'users',
-    activeUserId,
-    'config',
-    'ai-credentials.json',
-  )
-  const credentials = new AICredentialService(
-    credentialPath,
-    createSafeStorageCredentialAdapter(),
-  )
+  const credentialPath = path.join(BASE_DIR, 'users', activeUserId, 'config', 'ai-credentials.json')
+  const credentials = new AICredentialService(credentialPath, createSafeStorageCredentialAdapter())
   const conversations = new AIConversationService(db)
   const services = {
     agents: new AIAgentService(db),
@@ -428,26 +422,38 @@ function getAIVideoAssetService() {
     videoTasks,
     probeDurationSeconds: (filePath) => probeVideoDurationSeconds(getVideoToolSettings(), filePath),
     createPlayableAsset: async ({ sourceAsset, filePath, providerId, providerTaskId, signal }) => {
-      if (sourceAsset.mimeType === 'video/mp4' || sourceAsset.mimeType === 'video/webm') return undefined
-      const outputPath = path.join(app.getPath('temp'), `life-ai-video-transcode-${crypto.randomUUID()}.mp4`)
+      if (sourceAsset.mimeType === 'video/mp4' || sourceAsset.mimeType === 'video/webm')
+        return undefined
+      const outputPath = path.join(
+        app.getPath('temp'),
+        `life-ai-video-transcode-${crypto.randomUUID()}.mp4`,
+      )
       try {
         const ffmpegPath = resolveVideoToolPath(getVideoToolSettings(), 'ffmpeg')
-        const result = await runProcess(ffmpegPath, [
-          '-y',
-          '-i',
-          filePath,
-          '-c:v',
-          'libx264',
-          '-pix_fmt',
-          'yuv420p',
-          '-c:a',
-          'aac',
-          '-movflags',
-          '+faststart',
-          outputPath,
-        ], { timeoutMs: 30 * 60 * 1000, signal })
+        const result = await runProcess(
+          ffmpegPath,
+          [
+            '-y',
+            '-i',
+            filePath,
+            '-c:v',
+            'libx264',
+            '-pix_fmt',
+            'yuv420p',
+            '-c:a',
+            'aac',
+            '-movflags',
+            '+faststart',
+            outputPath,
+          ],
+          { timeoutMs: 30 * 60 * 1000, signal },
+        )
         if (signal?.aborted) {
-          throw new AIServiceError({ code: 'cancelled', message: 'Video transcoding was cancelled.', retryable: false })
+          throw new AIServiceError({
+            code: 'cancelled',
+            message: 'Video transcoding was cancelled.',
+            retryable: false,
+          })
         }
         if (result.code !== 0 || !fs.existsSync(outputPath)) {
           throw new AIServiceError({
@@ -471,23 +477,34 @@ function getAIVideoAssetService() {
       }
     },
     createPoster: async ({ filePath, providerId, providerTaskId, signal }) => {
-      const posterPath = path.join(app.getPath('temp'), `life-ai-video-poster-${crypto.randomUUID()}.jpg`)
+      const posterPath = path.join(
+        app.getPath('temp'),
+        `life-ai-video-poster-${crypto.randomUUID()}.jpg`,
+      )
       try {
         const ffmpegPath = resolveVideoToolPath(getVideoToolSettings(), 'ffmpeg')
-        const result = await runProcess(ffmpegPath, [
-          '-y',
-          '-ss',
-          '00:00:01',
-          '-i',
-          filePath,
-          '-frames:v',
-          '1',
-          '-vf',
-          'scale=1280:-1',
-          posterPath,
-        ], { timeoutMs: 30000, signal })
+        const result = await runProcess(
+          ffmpegPath,
+          [
+            '-y',
+            '-ss',
+            '00:00:01',
+            '-i',
+            filePath,
+            '-frames:v',
+            '1',
+            '-vf',
+            'scale=1280:-1',
+            posterPath,
+          ],
+          { timeoutMs: 30000, signal },
+        )
         if (signal?.aborted) {
-          throw new AIServiceError({ code: 'cancelled', message: 'Video poster generation was cancelled.', retryable: false })
+          throw new AIServiceError({
+            code: 'cancelled',
+            message: 'Video poster generation was cancelled.',
+            retryable: false,
+          })
         }
         if (result.code !== 0 || !fs.existsSync(posterPath)) return undefined
         const base64 = await fs.promises.readFile(posterPath, 'base64')
@@ -531,7 +548,8 @@ function getUserDbPath(dbName: string) {
 }
 
 function getVaultService() {
-  if (!vaultService) vaultService = new VaultService(getUserDb('vault'), { dbPath: getUserDbPath('vault') })
+  if (!vaultService)
+    vaultService = new VaultService(getUserDb('vault'), { dbPath: getUserDbPath('vault') })
   return vaultService
 }
 
@@ -573,13 +591,13 @@ function getAIStorageService() {
     credentialPath: path.join(BASE_DIR, 'users', activeUserId, 'config', 'ai-credentials.json'),
     media: getAIMediaService(),
     conversations: new AIConversationService(getUserDb('ai')),
-    clearCredentials: () => new AICredentialService(
-      path.join(BASE_DIR, 'users', activeUserId, 'config', 'ai-credentials.json'),
-      createSafeStorageCredentialAdapter(),
-    ).clear(),
-    capacityLimitBytes: Number.isInteger(configuredLimit) && configuredLimit > 0
-      ? configuredLimit
-      : undefined,
+    clearCredentials: () =>
+      new AICredentialService(
+        path.join(BASE_DIR, 'users', activeUserId, 'config', 'ai-credentials.json'),
+        createSafeStorageCredentialAdapter(),
+      ).clear(),
+    capacityLimitBytes:
+      Number.isInteger(configuredLimit) && configuredLimit > 0 ? configuredLimit : undefined,
   })
 }
 
@@ -592,7 +610,8 @@ function startAIRecovery() {
     conversations: new AIConversationService(getUserDb('ai')),
     resumeVideo: (assetId, signal) => getAIVideoAssetService().resume({ assetId, signal }),
   })
-  void service.recover(controller.signal)
+  void service
+    .recover(controller.signal)
     .then(async () => {
       if (controller.signal.aborted) return
       const settings = getSettings()
@@ -609,11 +628,13 @@ function startAIRecovery() {
 }
 
 function setupAIMediaProtocol() {
-  protocol.handle('life-ai-asset', (request) => handleAIMediaProtocolRequest({
-    request,
-    db: getUserDb('ai'),
-    mediaRoot: getAIMediaRoot(),
-  }))
+  protocol.handle('life-ai-asset', (request) =>
+    handleAIMediaProtocolRequest({
+      request,
+      db: getUserDb('ai'),
+      mediaRoot: getAIMediaRoot(),
+    }),
+  )
 }
 
 // Switch user and initialize
@@ -724,18 +745,22 @@ function runSchedulerCycle(options: { notify?: boolean } = {}) {
     const desc = rule.description || '由任务模板自动生成'
     const priority = rule.priority || 'mid'
 
-    const inserted = db.prepare(
-      `
+    const inserted = db
+      .prepare(
+        `
       INSERT INTO tasks (
         title, description, priority, status, due_date, recur_rule_id, instance_key, progress
       )
       VALUES (?, ?, ?, '待处理', ?, ?, ?, 0)
     `,
-    ).run(title, desc, priority, occurrence.dateKey, rule.id, occurrence.instanceKey)
+      )
+      .run(title, desc, priority, occurrence.dateKey, rule.id, occurrence.instanceKey)
     const parentId = Number(inserted.lastInsertRowid)
 
     const steps = db
-      .prepare('SELECT * FROM recurring_rule_steps WHERE rule_id = ? ORDER BY sort_order ASC, id ASC')
+      .prepare(
+        'SELECT * FROM recurring_rule_steps WHERE rule_id = ? ORDER BY sort_order ASC, id ASC',
+      )
       .all(rule.id) as any[]
     const insertStep = db.prepare(
       `
@@ -854,11 +879,47 @@ function createWindow() {
   void loadVideoEngine()
 }
 
+function createDesktopTaskNoteWindow() {
+  if (desktopTaskNoteWindow && !desktopTaskNoteWindow.isDestroyed()) {
+    desktopTaskNoteWindow.show()
+    desktopTaskNoteWindow.focus()
+    return desktopTaskNoteWindow
+  }
+
+  desktopTaskNoteWindow = new BrowserWindow({
+    width: 360,
+    height: 520,
+    minWidth: 280,
+    minHeight: 280,
+    title: 'LifeOS 今日任务',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  })
+
+  if (process.env.VITE_DEV_SERVER_URL) {
+    desktopTaskNoteWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#desktop-task-note`)
+  } else {
+    desktopTaskNoteWindow.loadFile(path.join(__dirname, '../dist/index.html'), {
+      hash: 'desktop-task-note',
+    })
+  }
+
+  desktopTaskNoteWindow.on('closed', () => {
+    desktopTaskNoteWindow = null
+  })
+
+  return desktopTaskNoteWindow
+}
+
 app.whenReady().then(() => {
   setupVideoProtocol()
   setupAIMediaProtocol()
   configureApplicationMenu()
   createWindow()
+  createDesktopTaskNoteWindow()
 })
 
 app.on('window-all-closed', () => {
@@ -884,11 +945,20 @@ ipcMain.handle('ai:media:saveAs', async (_event, payload: { assetId?: number }) 
     const service = getAIMediaService()
     const asset = service.getAsset(payload?.assetId)
     const options = { defaultPath: asset.originalName || `ai-image-${asset.id}` }
-    const result = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options)
+    const result = mainWindow
+      ? await dialog.showSaveDialog(mainWindow, options)
+      : await dialog.showSaveDialog(options)
     if (result.canceled || !result.filePath) return { success: true, data: { saved: false } }
     return { success: true, data: await service.copyAssetTo(asset.id, result.filePath) }
   } catch {
-    return { success: false, error: { code: 'storage_error', message: 'The AI media file could not be saved.', retryable: false } }
+    return {
+      success: false,
+      error: {
+        code: 'storage_error',
+        message: 'The AI media file could not be saved.',
+        retryable: false,
+      },
+    }
   }
 })
 
@@ -898,7 +968,14 @@ ipcMain.handle('ai:media:reveal', async (_event, payload: { assetId?: number }) 
     shell.showItemInFolder(filePath)
     return { success: true, data: { revealed: true } }
   } catch {
-    return { success: false, error: { code: 'not_found', message: 'The AI media file could not be located.', retryable: false } }
+    return {
+      success: false,
+      error: {
+        code: 'not_found',
+        message: 'The AI media file could not be located.',
+        retryable: false,
+      },
+    }
   }
 })
 
@@ -907,33 +984,49 @@ ipcMain.handle('ai:attachments:select', async () => {
     const options = {
       properties: ['openFile', 'multiSelections'] as Array<'openFile' | 'multiSelections'>,
     }
-    const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options)
     if (result.canceled) return { success: true, data: [] }
     const mimeByExtension: Record<string, string> = {
-      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
-      '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown', '.json': 'application/json',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.pdf': 'application/pdf',
+      '.txt': 'text/plain',
+      '.md': 'text/markdown',
+      '.json': 'application/json',
     }
-    const assets = await Promise.all(result.filePaths.map(async (filePath) => {
-      const extension = path.extname(filePath).toLowerCase()
-      const mediaType = ['.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(extension) ? 'image' : 'file'
-      const asset = await getAIMediaService().storeLocalFile({
-        mediaType,
-        filePath,
-        declaredMimeType: mimeByExtension[extension],
-        originalName: path.basename(filePath),
-      })
-      return {
-        id: asset.id,
-        mediaType: asset.mediaType,
-        mimeType: asset.mimeType,
-        byteSize: asset.byteSize,
-        originalName: asset.originalName,
-        url: asset.url,
-      }
-    }))
+    const assets = await Promise.all(
+      result.filePaths.map(async (filePath) => {
+        const extension = path.extname(filePath).toLowerCase()
+        const mediaType = ['.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(extension)
+          ? 'image'
+          : 'file'
+        const asset = await getAIMediaService().storeLocalFile({
+          mediaType,
+          filePath,
+          declaredMimeType: mimeByExtension[extension],
+          originalName: path.basename(filePath),
+        })
+        return {
+          id: asset.id,
+          mediaType: asset.mediaType,
+          mimeType: asset.mimeType,
+          byteSize: asset.byteSize,
+          originalName: asset.originalName,
+          url: asset.url,
+        }
+      }),
+    )
     return { success: true, data: assets }
   } catch (error) {
-    const detail = error instanceof AIServiceError ? error.detail : { code: 'storage_error', message: 'The attachment could not be added.', retryable: false }
+    const detail =
+      error instanceof AIServiceError
+        ? error.detail
+        : { code: 'storage_error', message: 'The attachment could not be added.', retryable: false }
     return { success: false, error: detail }
   }
 })
@@ -1523,7 +1616,11 @@ ipcMain.handle('book:get-chapters', async (_, relativePath: string) => {
         const tocEntry = zip.getEntry(tocZipPath)
         if (tocEntry) {
           const tocXml = tocEntry.getData().toString('utf8')
-          const stripTags = (s: string) => s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+          const stripTags = (s: string) =>
+            s
+              .replace(/<[^>]+>/g, '')
+              .replace(/\s+/g, ' ')
+              .trim()
 
           if (tocHref.toLowerCase().endsWith('.ncx')) {
             // EPUB2 .ncx: navPoints nest to express hierarchy. Walk tokens and
@@ -1627,8 +1724,7 @@ ipcMain.handle('book:get-chapters', async (_, relativePath: string) => {
         // Parse paragraphs and headings in document order. Headings are kept as
         // addressable blocks so TOC anchors can highlight and render correctly.
         const paragraphs: (
-          | { type: 'paragraph' | 'heading'; text: string; level?: number }
-          | string
+          { type: 'paragraph' | 'heading'; text: string; level?: number } | string
         )[] = []
         const paraOffsets: number[] = []
         const blockRegex = /<(h[1-6]|p)\b[^>]*>([\s\S]*?)<\/\1>/gis
@@ -2100,7 +2196,8 @@ registerAIImageIpc(
   { handle: (channel, handler) => ipcMain.handle(channel, handler) },
   {
     getService: getAIImageGenerationService,
-    isConversationActive: (conversationId) => getAIAgentRuntime().isConversationActive(conversationId),
+    isConversationActive: (conversationId) =>
+      getAIAgentRuntime().isConversationActive(conversationId),
     createAbortScope: () => {
       const controller = new AbortController()
       aiImageControllers.add(controller)
@@ -2117,7 +2214,8 @@ registerAIVideoIpc(
   { handle: (channel, handler) => ipcMain.handle(channel, handler) },
   {
     getService: getAIVideoAssetService,
-    isConversationActive: (conversationId) => getAIAgentRuntime().isConversationActive(conversationId),
+    isConversationActive: (conversationId) =>
+      getAIAgentRuntime().isConversationActive(conversationId),
     createAbortScope: () => {
       const controller = new AbortController()
       aiVideoControllers.add(controller)
@@ -2141,10 +2239,15 @@ registerAIConversationIpc(
     getDb: () => getUserDb('ai'),
     getRuntime: getAIAgentRuntime,
     deleteConversation: async (id, deleteUnreferencedMedia) => {
-      if (!deleteUnreferencedMedia) return new AIConversationService(getUserDb('ai')).deleteConversation(id)
+      if (!deleteUnreferencedMedia)
+        return new AIConversationService(getUserDb('ai')).deleteConversation(id)
       const storage = getAIStorageService()
       const preview = await storage.previewCleanup({ scope: 'conversation', conversationId: id })
-      return storage.cleanup({ scope: 'conversation', conversationId: id, planHash: preview.planHash })
+      return storage.cleanup({
+        scope: 'conversation',
+        conversationId: id,
+        planHash: preview.planHash,
+      })
     },
   },
 )
@@ -2171,9 +2274,7 @@ ipcMain.handle('vault:migrateLegacy', async (_, masterPassword: string) =>
 
 ipcMain.handle('vault:lock', async () => runVaultAction(() => getVaultService().lock()))
 
-ipcMain.handle('vault:list', async () =>
-  runVaultAction(() => getVaultService().listCredentials()),
-)
+ipcMain.handle('vault:list', async () => runVaultAction(() => getVaultService().listCredentials()))
 
 ipcMain.handle('vault:create', async (_, input) =>
   runVaultAction(() => getVaultService().createCredential(input)),
@@ -2224,24 +2325,28 @@ ipcMain.handle('video:bulkUpdateTags', async (_, payload: any) => {
     const db = getUserDb('videos')
     const insertTag = db.prepare('INSERT OR IGNORE INTO video_tags (name) VALUES (?)')
     const selectTag = db.prepare('SELECT id FROM video_tags WHERE name = ?')
-    const linkTag = db.prepare('INSERT OR IGNORE INTO video_tag_links (video_id, tag_id) VALUES (?, ?)')
+    const linkTag = db.prepare(
+      'INSERT OR IGNORE INTO video_tag_links (video_id, tag_id) VALUES (?, ?)',
+    )
     const unlinkTag = db.prepare('DELETE FROM video_tag_links WHERE video_id = ? AND tag_id = ?')
 
-    const updateTags = db.transaction((videoIds: number[], tagNames: string[], mode: 'add' | 'remove') => {
-      for (const tagName of tagNames) {
-        if (mode === 'add') insertTag.run(tagName)
-        const tag = selectTag.get(tagName) as { id?: number } | undefined
-        const tagId = Number(tag?.id)
-        if (!tagId) {
-          if (mode === 'remove') continue
-          throw new Error(`Unable to resolve tag: ${tagName}`)
+    const updateTags = db.transaction(
+      (videoIds: number[], tagNames: string[], mode: 'add' | 'remove') => {
+        for (const tagName of tagNames) {
+          if (mode === 'add') insertTag.run(tagName)
+          const tag = selectTag.get(tagName) as { id?: number } | undefined
+          const tagId = Number(tag?.id)
+          if (!tagId) {
+            if (mode === 'remove') continue
+            throw new Error(`Unable to resolve tag: ${tagName}`)
+          }
+          for (const videoId of videoIds) {
+            if (mode === 'add') linkTag.run(videoId, tagId)
+            else unlinkTag.run(videoId, tagId)
+          }
         }
-        for (const videoId of videoIds) {
-          if (mode === 'add') linkTag.run(videoId, tagId)
-          else unlinkTag.run(videoId, tagId)
-        }
-      }
-    })
+      },
+    )
 
     updateTags(normalized.videoIds, normalized.tagNames, normalized.mode)
     return { success: true }
@@ -2317,7 +2422,13 @@ ipcMain.handle('video:download', async (_, videoData: any) => {
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         `,
-      ).run(failure.status, failure.downloadError, failure.invalidReason, failure.downloadError, videoData.id)
+      ).run(
+        failure.status,
+        failure.downloadError,
+        failure.invalidReason,
+        failure.downloadError,
+        videoData.id,
+      )
     },
   })
 })
