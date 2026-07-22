@@ -9,6 +9,7 @@ export type TaskTemplateRule = {
   cron?: string | null
   start_date?: string | null
   start_time?: string | null
+  time_slots?: string | null
   created_at?: string | null
   last_trigger_time?: string | null
 }
@@ -76,24 +77,51 @@ const numberList = (value: string | null | undefined) =>
     .map((item) => Number(item.trim()))
     .filter((item) => Number.isInteger(item))
 
+const getWorkingDaysSinceStart = (startDateKey: string, currentDateKey: string) => {
+  const [startYear, startMonth, startDay] = startDateKey.split('-').map(Number)
+  const [currentYear, currentMonth, currentDay] = currentDateKey.split('-').map(Number)
+  const cursor = new Date(startYear, startMonth - 1, startDay)
+  const end = new Date(currentYear, currentMonth - 1, currentDay)
+  let workingDays = 0
+
+  while (cursor.getTime() <= end.getTime()) {
+    const day = cursor.getDay()
+    if (day !== 0 && day !== 6) workingDays += 1
+    cursor.setDate(cursor.getDate() + 1)
+  }
+
+  return workingDays
+}
+
 export const getTemplateStartDateKey = (rule: TaskTemplateRule, now = new Date()) =>
   parseDateKey(rule.start_date) ?? parseDateKey(rule.created_at) ?? toLocalDateKey(now)
 
 export const getTemplateStartTime = (rule: TaskTemplateRule) => parseTime(rule.start_time)
 
-export const getDueTemplateOccurrence = (
+export const getTemplateTimes = (rule: TaskTemplateRule) => {
+  const configuredTimes = (rule.time_slots ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map(parseTime)
+
+  return configuredTimes.length > 0 ? configuredTimes : [getTemplateStartTime(rule)]
+}
+
+export const getDueTemplateOccurrences = (
   rule: TaskTemplateRule,
   now = new Date(),
   options: { ignoreStartTime?: boolean } = {},
-): TaskTemplateOccurrence | null => {
+): TaskTemplateOccurrence[] => {
   const dateKey = toLocalDateKey(now)
   const startDateKey = getTemplateStartDateKey(rule, now)
-  if (localDayNumber(dateKey) < localDayNumber(startDateKey)) return null
+  if (localDayNumber(dateKey) < localDayNumber(startDateKey)) return []
 
-  const time = getTemplateStartTime(rule)
-  const [hour, minute] = time.split(':').map(Number)
+  const times = getTemplateTimes(rule)
+  const firstTime = times[0]
+  const [hour, minute] = firstTime.split(':').map(Number)
   const scheduledAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute)
-  if (!options.ignoreStartTime && now.getTime() < scheduledAt.getTime()) return null
+  if (!options.ignoreStartTime && now.getTime() < scheduledAt.getTime()) return []
 
   const frequency = rule.frequency || 'daily'
   const interval = Math.max(1, Number(rule.interval) || 1)
@@ -108,7 +136,12 @@ export const getDueTemplateOccurrence = (
     matches = daysSinceStart % interval === 0
   } else if (frequency === 'weekday') {
     const jsDay = now.getDay()
-    matches = jsDay !== 0 && jsDay !== 6
+    const workingDaysSinceStart = getWorkingDaysSinceStart(startDateKey, dateKey)
+    matches =
+      jsDay !== 0 &&
+      jsDay !== 6 &&
+      workingDaysSinceStart > 0 &&
+      (workingDaysSinceStart - 1) % interval === 0
   } else if (frequency === 'weekly') {
     const selectedDays = numberList(rule.week_days)
     const visualWeekday = now.getDay() === 0 ? 7 : now.getDay()
@@ -131,13 +164,19 @@ export const getDueTemplateOccurrence = (
       effectiveDays.some((day) => (day === -1 ? now.getDate() === lastDayOfMonth : day === now.getDate()))
   }
 
-  if (!matches) return null
-  return {
+  if (!matches) return []
+  return times.map((time) => ({
     dateKey,
     time,
     instanceKey: `${dateKey}T${time}`,
-  }
+  }))
 }
+
+export const getDueTemplateOccurrence = (
+  rule: TaskTemplateRule,
+  now = new Date(),
+  options: { ignoreStartTime?: boolean } = {},
+): TaskTemplateOccurrence | null => getDueTemplateOccurrences(rule, now, options)[0] ?? null
 
 export const getNextTemplateOccurrences = (
   rule: TaskTemplateRule,
@@ -157,17 +196,19 @@ export const getNextTemplateOccurrences = (
       hour,
       minute,
     )
-    const occurrence = getDueTemplateOccurrence(
+    const dueOccurrences = getDueTemplateOccurrences(
       {
         ...rule,
         last_trigger_time: rule.frequency === 'custom' ? null : rule.last_trigger_time,
       },
       candidate,
     )
-    if (!occurrence) continue
-    if (candidate.getTime() < from.getTime()) continue
-    if (occurrences.some((item) => item.instanceKey === occurrence.instanceKey)) continue
-    occurrences.push(occurrence)
+    for (const occurrence of dueOccurrences) {
+      const occurrenceAt = new Date(`${occurrence.dateKey}T${occurrence.time}:00`)
+      if (occurrenceAt.getTime() < from.getTime()) continue
+      if (occurrences.some((item) => item.instanceKey === occurrence.instanceKey)) continue
+      occurrences.push(occurrence)
+    }
   }
 
   return occurrences

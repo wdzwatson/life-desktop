@@ -63,6 +63,8 @@ export function initializeUserDatabase(userDbDir: string) {
       due_date TEXT,
       due_time TEXT,
       recur_rule_id INTEGER,
+      template_id INTEGER,
+      template_version INTEGER,
       instance_key TEXT,
       parent_id INTEGER,
       progress INTEGER DEFAULT 0,
@@ -83,6 +85,9 @@ export function initializeUserDatabase(userDbDir: string) {
       cron TEXT,          -- standard cron string
       start_date TEXT,
       start_time TEXT DEFAULT '09:00',
+      time_slots TEXT,
+      template_id INTEGER,
+      template_version INTEGER,
       priority TEXT CHECK(priority IN ('high', 'mid', 'low')) DEFAULT 'mid',
       end_condition TEXT,  -- 'never' or 'count:X' or 'date:YYYY-MM-DD'
       missed_policy TEXT DEFAULT 'accumulate', -- 'skip', 'accumulate', 'prompt'
@@ -99,6 +104,27 @@ export function initializeUserDatabase(userDbDir: string) {
       sort_order INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (rule_id) REFERENCES recurring_rules(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS task_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      template_key TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      description TEXT,
+      icon TEXT,
+      version INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS task_template_steps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      template_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      priority TEXT CHECK(priority IN ('high', 'mid', 'low')) DEFAULT 'mid',
+      sort_order INTEGER DEFAULT 0,
+      FOREIGN KEY (template_id) REFERENCES task_templates(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS recurring_rule_occurrence_exceptions (
@@ -128,6 +154,12 @@ export function initializeUserDatabase(userDbDir: string) {
     if (!taskColumnNames.has('due_time')) {
       tasksDb.exec('ALTER TABLE tasks ADD COLUMN due_time TEXT')
     }
+    if (!taskColumnNames.has('template_id')) {
+      tasksDb.exec('ALTER TABLE tasks ADD COLUMN template_id INTEGER')
+    }
+    if (!taskColumnNames.has('template_version')) {
+      tasksDb.exec('ALTER TABLE tasks ADD COLUMN template_version INTEGER')
+    }
 
     const ruleColumns = tasksDb
       .prepare('PRAGMA table_info(recurring_rules)')
@@ -142,6 +174,15 @@ export function initializeUserDatabase(userDbDir: string) {
     if (!ruleColumnNames.has('priority')) {
       tasksDb.exec("ALTER TABLE recurring_rules ADD COLUMN priority TEXT DEFAULT 'mid'")
     }
+    if (!ruleColumnNames.has('time_slots')) {
+      tasksDb.exec('ALTER TABLE recurring_rules ADD COLUMN time_slots TEXT')
+    }
+    if (!ruleColumnNames.has('template_id')) {
+      tasksDb.exec('ALTER TABLE recurring_rules ADD COLUMN template_id INTEGER')
+    }
+    if (!ruleColumnNames.has('template_version')) {
+      tasksDb.exec('ALTER TABLE recurring_rules ADD COLUMN template_version INTEGER')
+    }
 
     tasksDb.exec(`
       UPDATE recurring_rules
@@ -152,6 +193,10 @@ export function initializeUserDatabase(userDbDir: string) {
       UPDATE tasks
       SET due_time = substr(instance_key, 12, 5)
       WHERE due_time IS NULL AND instance_key GLOB '????-??-??T??:??';
+
+      UPDATE tasks
+      SET due_time = due_time || ':00'
+      WHERE due_time GLOB '??:??';
 
       CREATE TABLE IF NOT EXISTS recurring_rule_steps (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

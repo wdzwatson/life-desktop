@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   getDueTemplateOccurrence,
+  getDueTemplateOccurrences,
   getNextTemplateOccurrences,
   getTemplateStartTime,
   toLocalDateKey,
@@ -91,6 +92,36 @@ test('weekly templates honor selected visual weekdays and interval', () => {
   assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 21, 9, 0))?.dateKey, '2026-07-21')
 })
 
+test('weekday templates honor the configured working-day interval', () => {
+  const rule = {
+    id: 1,
+    title: 'Every other workday',
+    frequency: 'weekday',
+    interval: 2,
+    start_date: '2026-07-20',
+    start_time: '09:00',
+  }
+
+  assert.ok(getDueTemplateOccurrence(rule, new Date(2026, 6, 20, 9, 0)))
+  assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 21, 9, 0)), null)
+  assert.ok(getDueTemplateOccurrence(rule, new Date(2026, 6, 22, 9, 0)))
+  assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 25, 9, 0)), null)
+})
+
+test('weekday intervals start from the first weekday after a weekend start date', () => {
+  const rule = {
+    id: 1,
+    title: 'Every other workday',
+    frequency: 'weekday',
+    interval: 2,
+    start_date: '2026-07-18',
+    start_time: '09:00',
+  }
+
+  assert.ok(getDueTemplateOccurrence(rule, new Date(2026, 6, 20, 9, 0)))
+  assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 21, 9, 0)), null)
+})
+
 test('monthly templates can target the last day of month', () => {
   const occurrence = getDueTemplateOccurrence(
     {
@@ -125,6 +156,26 @@ test('next template occurrences are future local instances', () => {
   assert.deepEqual(
     occurrences.map((item) => item.instanceKey),
     ['2026-07-23T08:00', '2026-07-25T08:00', '2026-07-27T08:00'],
+  )
+})
+
+test('multi-time templates create one occurrence for each configured time', () => {
+  const occurrences = getDueTemplateOccurrences(
+    {
+      id: 1,
+      title: 'Daily check-in',
+      frequency: 'daily',
+      start_date: '2026-07-21',
+      start_time: '09:00',
+      time_slots: '09:00,13:00,18:00',
+    },
+    new Date(2026, 6, 22, 8, 0),
+    { ignoreStartTime: true },
+  )
+
+  assert.deepEqual(
+    occurrences.map((item) => item.instanceKey),
+    ['2026-07-22T09:00', '2026-07-22T13:00', '2026-07-22T18:00'],
   )
 })
 
