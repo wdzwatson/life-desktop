@@ -142,8 +142,6 @@ export interface DouyinFavoriteItemsPage {
   hasMore: boolean
 }
 
-const MAX_PAGES_PER_SYNC = 100
-
 function text(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -553,7 +551,7 @@ export async function syncDouyinFavorites(input: {
     })
     let cursor: string | undefined
     const folders = new Map<string, { folder: DouyinFavoriteFolderInput; folderId: number }>()
-    for (let pageCount = 0; pageCount < MAX_PAGES_PER_SYNC; pageCount += 1) {
+    for (;;) {
       report('loading_folders')
       const page = await input.client.listFolders({ cursor })
       if (!Array.isArray(page.entries))
@@ -578,12 +576,6 @@ export async function syncDouyinFavorites(input: {
           'Favorite folder pagination is missing a cursor.',
         )
       cursor = text(page.cursor)
-      if (pageCount === MAX_PAGES_PER_SYNC - 1) {
-        throw new DouyinFavoritesError(
-          'invalid_response',
-          'Favorite folder pagination exceeded the safety limit.',
-        )
-      }
     }
 
     for (const { folder, folderId } of folders.values()) {
@@ -606,7 +598,7 @@ export async function syncDouyinFavorites(input: {
         let verifiedOrdering = true
         let folderComplete = false
         let folderStopReason: string | null = null
-        for (let pageCount = 0; pageCount < MAX_PAGES_PER_SYNC; pageCount += 1) {
+        for (;;) {
           report('loading_items', folder.title)
           const page = await input.client.listFolderItems({
             folderRemoteId: folder.remoteId,
@@ -661,12 +653,6 @@ export async function syncDouyinFavorites(input: {
               'Favorite video pagination is missing a cursor.',
             )
           itemCursor = text(page.cursor)
-          if (pageCount === MAX_PAGES_PER_SYNC - 1) {
-            throw new DouyinFavoritesError(
-              'invalid_response',
-              'Favorite video pagination exceeded the safety limit.',
-            )
-          }
         }
         updateFolderSuccess(input.db, folderId)
         updateFolderSyncState(input.db, folderId, folderComplete, folderStopReason)

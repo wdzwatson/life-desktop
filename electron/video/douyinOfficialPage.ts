@@ -470,15 +470,16 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
     for (const entry of entries) ids.add(entry.remoteId)
     if (sourceKey === 'video') this.favoriteVideoPage += 1
     else this.favoriteNotePage += 1
-    const hasMore = result.hasMore
+    const madeProgress = entries.length > 0
+    const hasMore = result.hasMore && madeProgress
     return {
       entries,
       ...(hasMore
         ? { cursor: String(sourceKey === 'video' ? this.favoriteVideoPage : this.favoriteNotePage) }
         : {}),
       hasMore,
-      complete: result.complete,
-      stopReason: result.stopReason,
+      complete: madeProgress ? result.complete : false,
+      stopReason: madeProgress ? result.stopReason : result.hasMore ? 'no_new_items' : result.stopReason,
       isNewestFirst: true,
     }
   }

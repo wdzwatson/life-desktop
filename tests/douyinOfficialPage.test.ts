@@ -116,6 +116,27 @@ test('official page observer treats an unverified end as partial', async () => {
   observer.stop()
 })
 
+test('official page observer stops a source when scrolling produces no new unique works', async () => {
+  const page = {
+    executeJavaScript: async () => ({
+      entries: [{ remoteId: '123', title: 'Useful video', sourceUrl: 'https://www.douyin.com/video/123' }],
+      hasMore: true,
+      complete: false,
+      stopReason: 'round_limit',
+    }),
+  } as unknown as WebContents
+  const observer = new DouyinOfficialPageObserver(page)
+
+  await observer.listFavoriteVideos({})
+  assert.deepEqual(await observer.listFavoriteVideos({ cursor: '1' }), {
+    entries: [],
+    hasMore: false,
+    complete: false,
+    stopReason: 'no_new_items',
+    isNewestFirst: true,
+  })
+})
+
 test('official page observer treats a reached scroll boundary as a complete source end', async () => {
   const page = {
     executeJavaScript: async () => ({
@@ -157,7 +178,9 @@ test('official page observer emits only unseen videos while scrolling', async ()
   const second = await observer.listFavoriteVideos({ cursor: first.cursor })
   assert.equal(first.entries.length, 1)
   assert.equal(second.entries.length, 0)
-  assert.equal(second.hasMore, true)
+  assert.equal(second.hasMore, false)
+  assert.equal(second.complete, false)
+  assert.equal(second.stopReason, 'no_new_items')
   observer.stop()
 })
 

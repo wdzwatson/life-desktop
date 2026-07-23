@@ -315,6 +315,39 @@ test('favorite synchronization reports page-level progress after local writes', 
   db.close()
 })
 
+test('synchronization continues beyond one hundred pages while unique works keep arriving', async () => {
+  const db = createVideoDb()
+  let page = 0
+  const result = await syncDouyinFavorites({
+    db,
+    sessionPartition: 'persist:lifeos-douyin-guest',
+    client: createClient({
+      listFolderItems: async () => {
+        page += 1
+        return {
+          entries: [
+            {
+              remoteId: `work-${page}`,
+              title: `Work ${page}`,
+              sourceUrl: `https://www.douyin.com/video/${page}`,
+            },
+          ],
+          cursor: `cursor-${page}`,
+          hasMore: page < 101,
+          complete: page === 101,
+          stopReason: page === 101 ? 'source_end' : 'round_limit',
+        }
+      },
+    }),
+  })
+
+  assert.equal(result.success, true)
+  assert.equal(result.complete, true)
+  assert.equal(result.itemsSynced, 101)
+  assert.equal(page, 101)
+  db.close()
+})
+
 test('incremental sync stops after a page contains no new videos', async () => {
   const db = createVideoDb()
   const sessionPartition = 'persist:lifeos-douyin-guest'
