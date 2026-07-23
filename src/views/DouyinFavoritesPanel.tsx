@@ -1,6 +1,18 @@
-import { ExternalLink, Folder, KeyRound, RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  CheckSquare,
+  Download,
+  ExternalLink,
+  Folder,
+  KeyRound,
+  Play,
+  RefreshCw,
+  Trash2,
+  X,
+} from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useConfirmation } from '../components/ConfirmationProvider'
+import { ViewportPortal } from '../components/ViewportPortal'
 import {
   filterDouyinFavoriteItems,
   getActiveDouyinFolderId,
@@ -60,6 +72,7 @@ export function DouyinFavoritesPanel({
   workspace?: boolean
 }) {
   const { t } = useTranslation()
+  const { confirm } = useConfirmation()
   const api = (window as any).electronAPI
   const [auth, setAuth] = useState<DouyinAuthStatus>({ loggedIn: false })
   const [folders, setFolders] = useState<DouyinFavoriteFolderView[]>([])
@@ -67,6 +80,9 @@ export function DouyinFavoritesPanel({
   const [itemsTotal, setItemsTotal] = useState(0)
   const [itemsHasMore, setItemsHasMore] = useState(false)
   const [itemsLoading, setItemsLoading] = useState(false)
+  const [selectedItemIds, setSelectedItemIds] = useState<number[]>([])
+  const [playingItem, setPlayingItem] = useState<DouyinFavoriteItemView | null>(null)
+  const [playbackUrl, setPlaybackUrl] = useState('')
   const [activeFolderId, setActiveFolderId] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
@@ -122,8 +138,9 @@ export function DouyinFavoritesPanel({
     let cancelled = false
     setItemsLoading(true)
     setItems([])
+    setSelectedItemIds([])
     void api
-      .listDouyinFavoriteItems(activeFolderId, { offset: 0, limit: 100, query: searchQuery })
+      .listDouyinFavoriteItems(activeFolderId, { offset: 0, limit: 20, query: searchQuery })
       .then((result: DouyinListResponse<DouyinFavoriteItemsPage>) => {
         if (cancelled) return
         if (!result?.success) {
@@ -146,13 +163,65 @@ export function DouyinFavoritesPanel({
     }
   }, [activeFolderId, api, searchQuery, syncRefreshNonce, t])
 
+  useEffect(() => {
+    if (!api?.onDouyinDownloadProgress) return
+    return api.onDouyinDownloadProgress((event: { itemId?: number; progress?: number }) => {
+      if (!event.itemId) return
+      setItems((current) =>
+        current.map((item) =>
+          item.id === event.itemId
+            ? {
+                ...item,
+                download_status: 'downloading',
+                download_progress: Math.max(0, Math.min(100, event.progress || 0)),
+              }
+            : item,
+        ),
+      )
+    })
+  }, [api])
+
+  useEffect(() => {
+    if (!api?.onDouyinDownloadFinished) return
+    return api.onDouyinDownloadFinished((event: { itemId?: number; filePath?: string }) => {
+      if (!event.itemId) return
+      setItems((current) =>
+        current.map((item) =>
+          item.id === event.itemId
+            ? {
+                ...item,
+                download_status: 'downloaded',
+                download_progress: 100,
+                local_path: event.filePath || null,
+                download_error: null,
+              }
+            : item,
+        ),
+      )
+    })
+  }, [api])
+
+  useEffect(() => {
+    if (!api?.onDouyinDownloadFailed) return
+    return api.onDouyinDownloadFailed((event: { itemId?: number; message?: string }) => {
+      if (!event.itemId) return
+      setItems((current) =>
+        current.map((item) =>
+          item.id === event.itemId
+            ? { ...item, download_status: 'failed', download_progress: 0, download_error: event.message || null }
+            : item,
+        ),
+      )
+    })
+  }, [api])
+
   const loadMoreItems = async () => {
     if (!api || !activeFolderId || itemsLoading || !itemsHasMore) return
     setItemsLoading(true)
     try {
       const result = (await api.listDouyinFavoriteItems(activeFolderId, {
         offset: items.length,
-        limit: 100,
+        limit: 20,
         query: searchQuery,
       })) as DouyinListResponse<DouyinFavoriteItemsPage>
       if (!result?.success) {
@@ -166,6 +235,111 @@ export function DouyinFavoritesPanel({
     } finally {
       setItemsLoading(false)
     }
+  }
+
+  const startItemDownload = async (item: DouyinFavoriteItemView) => {
+    if (!api || item.download_status === 'downloading') return
+    if (item.download_status === 'downloaded') {
+      if (
+        !(await confirm({
+          description: t('videos.douyin_confirm_redownload'),
+          confirmLabel: t('videos.douyin_redownload'),
+        }))
+      )
+        return
+    }
+    setItems((current) =>
+      current.map((entry) =>
+        entry.id === item.id
+          ? { ...entry, download_status: 'downloading', download_progress: 0, download_error: null }
+          : entry,
+      ),
+    )
+    try {
+      const result = await api.downloadDouyinFavorite(item.id)
+      if (result?.success) return
+      setItems((current) =>
+        current.map((entry) =>
+          entry.id === item.id
+            ? { ...entry, download_status: 'failed', download_progress: 0, download_error: result?.error || null }
+            : entry,
+        ),
+      )
+      setError(result?.error || t('videos.douyin_download_failed'))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setItems((current) =>
+        current.map((entry) =>
+          entry.id === item.id
+            ? { ...entry, download_status: 'failed', download_progress: 0, download_error: message }
+            : entry,
+        ),
+      )
+      setError(message || t('videos.douyin_download_failed'))
+    }
+  }
+
+  const playDownloadedItem = async (item: DouyinFavoriteItemView) => {
+    if (!api || !item.local_path) return
+    const result = await api.getVideoPlaybackUrl(item.local_path)
+    if (!result?.success) {
+      setError(result?.error || t('videos.toast_playback_failed'))
+      return
+    }
+    setPlayingItem(item)
+    setPlaybackUrl(result.url)
+  }
+
+  const toggleItemSelection = (itemId: number) => {
+    setSelectedItemIds((current) =>
+      current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId],
+    )
+  }
+
+  const selectVisibleItems = () => {
+    setSelectedItemIds((current) => [
+      ...new Set([...current, ...filteredItems.map((item) => item.id)]),
+    ])
+  }
+
+  const deleteSelectedItems = async () => {
+    if (!api || selectedItemIds.length === 0) return
+    if (
+      !(await confirm({
+        description: t('videos.douyin_confirm_delete', { count: selectedItemIds.length }),
+        confirmLabel: t('common.delete'),
+        tone: 'danger',
+      }))
+    )
+      return
+    const result = await api.deleteDouyinFavoriteItems(selectedItemIds)
+    if (!result?.success) {
+      setError(result?.error || t('videos.douyin_load_failed'))
+      return
+    }
+    setSelectedItemIds([])
+    await refreshFolders()
+    setSyncRefreshNonce((value) => value + 1)
+  }
+
+  const clearAllItems = async () => {
+    if (!api || itemsTotal === 0) return
+    if (
+      !(await confirm({
+        description: t('videos.douyin_confirm_clear', { count: itemsTotal }),
+        confirmLabel: t('common.delete'),
+        tone: 'danger',
+      }))
+    )
+      return
+    const result = await api.clearDouyinFavoriteItems()
+    if (!result?.success) {
+      setError(result?.error || t('videos.douyin_load_failed'))
+      return
+    }
+    setSelectedItemIds([])
+    await refreshFolders()
+    setSyncRefreshNonce((value) => value + 1)
   }
 
   useEffect(() => {
@@ -251,10 +425,7 @@ export function DouyinFavoritesPanel({
     }
   }
 
-  const filteredItems = useMemo(
-    () => filterDouyinFavoriteItems(items, searchQuery),
-    [items, searchQuery],
-  )
+  const filteredItems = filterDouyinFavoriteItems(items, searchQuery)
   const isVideoFavoritesOnly =
     folders.length === 1 && folders[0].remote_id === DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID
   const syncElapsedSeconds = syncProgress
@@ -412,6 +583,35 @@ export function DouyinFavoritesPanel({
               placeholder={t('videos.douyin_search_placeholder')}
               style={{ height: '30px' }}
             />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn sm"
+                onClick={selectVisibleItems}
+                disabled={itemsLoading || filteredItems.length === 0}
+              >
+                <CheckSquare size={13} />
+                {t('videos.douyin_select_visible')}
+              </button>
+              <button
+                type="button"
+                className="btn sm"
+                onClick={() => void deleteSelectedItems()}
+                disabled={selectedItemIds.length === 0}
+              >
+                <Trash2 size={13} />
+                {t('videos.douyin_delete_selected', { count: selectedItemIds.length })}
+              </button>
+              <button
+                type="button"
+                className="btn sm"
+                onClick={() => void clearAllItems()}
+                disabled={itemsTotal === 0 || itemsLoading}
+              >
+                <Trash2 size={13} />
+                {t('videos.douyin_clear_all')}
+              </button>
+            </div>
             {itemsLoading && items.length === 0 ? (
               <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '12px' }}>
                 {t('videos.douyin_loading_items')}
@@ -424,7 +624,8 @@ export function DouyinFavoritesPanel({
               <div
                 style={{
                   display: 'grid',
-                  gap: '5px',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))',
+                  gap: '10px',
                   maxHeight: workspace ? undefined : '260px',
                   minHeight: 0,
                   overflowY: 'auto',
@@ -435,76 +636,169 @@ export function DouyinFavoritesPanel({
                     key={item.id}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '40px minmax(0, 1fr) 30px',
-                      alignItems: 'center',
+                      gridTemplateRows: 'auto auto',
                       gap: '8px',
-                      padding: '6px 0',
-                      borderBottom: '1px solid var(--color-border)',
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: '8px',
+                      background: 'var(--bg-muted)',
                     }}
                   >
-                    {item.thumbnail_url ? (
-                      <img
-                        src={item.thumbnail_url}
-                        alt=""
-                        style={{
-                          width: '40px',
-                          height: '40px',
-                          objectFit: 'cover',
-                          borderRadius: '4px',
-                        }}
+                    <div style={{ position: 'relative', aspectRatio: '16 / 9', background: 'var(--color-border)' }}>
+                      {item.thumbnail_url ? (
+                        <img
+                          src={item.thumbnail_url}
+                          alt=""
+                          loading="lazy"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        />
+                      ) : (
+                        <div aria-hidden="true" style={{ width: '100%', height: '100%', background: 'var(--bg-muted)' }} />
+                      )}
+                      <input
+                        type="checkbox"
+                        checked={selectedItemIds.includes(item.id)}
+                        onChange={() => toggleItemSelection(item.id)}
+                        aria-label={item.title}
+                        style={{ position: 'absolute', top: '8px', left: '8px', width: '16px', height: '16px' }}
                       />
-                    ) : (
-                      <div
-                        aria-hidden="true"
-                        style={{
-                          width: '40px',
-                          height: '40px',
-                          borderRadius: '4px',
-                          background: 'var(--bg-muted)',
-                        }}
-                      />
-                    )}
-                    <div style={{ minWidth: 0 }}>
-                      <div
-                        title={item.title}
-                        style={{
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          fontSize: '12px',
-                          fontWeight: 650,
-                        }}
-                      >
-                        {item.title}
+                      {item.download_status === 'downloading' ? (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            display: 'grid',
+                            alignContent: 'center',
+                            gap: '8px',
+                            padding: '12px',
+                            background: 'rgba(8, 12, 18, 0.68)',
+                            color: '#fff',
+                            textAlign: 'center',
+                          }}
+                        >
+                          <strong style={{ fontSize: '13px' }}>
+                            {Math.round(item.download_progress || 0)}%
+                          </strong>
+                          <div
+                            role="progressbar"
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={Math.round(item.download_progress || 0)}
+                            style={{ height: '5px', overflow: 'hidden', borderRadius: '3px', background: 'rgba(255,255,255,0.28)' }}
+                          >
+                            <div
+                              style={{
+                                width: `${Math.max(0, Math.min(100, item.download_progress || 0))}%`,
+                                height: '100%',
+                                background: 'var(--color-accent)',
+                                transition: 'width 180ms ease-out',
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                    <div style={{ display: 'grid', gap: '6px', minWidth: 0, padding: '0 9px 9px' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                        <div
+                          title={item.title}
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            overflow: 'hidden',
+                            display: '-webkit-box',
+                            WebkitBoxOrient: 'vertical',
+                            WebkitLineClamp: 2,
+                            fontSize: '12px',
+                            lineHeight: 1.4,
+                            fontWeight: 650,
+                          }}
+                        >
+                          {item.title}
+                        </div>
+                        {item.download_status === 'downloaded' && item.local_path ? (
+                          <button
+                            type="button"
+                            className="btn sm btn-icon ghost"
+                            title={t('videos.douyin_play')}
+                            aria-label={t('videos.douyin_play')}
+                            onClick={() => void playDownloadedItem(item)}
+                            style={{ width: '28px', height: '28px', minWidth: '28px', padding: 0 }}
+                          >
+                            <Play size={13} />
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="btn sm btn-icon ghost"
+                          title={t('videos.btn_open_external')}
+                          aria-label={t('videos.btn_open_external')}
+                          onClick={() => void api?.openExternal?.(item.source_url)}
+                          style={{ width: '28px', height: '28px', minWidth: '28px', padding: 0 }}
+                        >
+                          <ExternalLink size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn sm btn-icon ghost"
+                          title={
+                            item.download_status === 'downloaded'
+                              ? t('videos.douyin_downloaded')
+                              : t('videos.douyin_download')
+                          }
+                          aria-label={
+                            item.download_status === 'downloaded'
+                              ? t('videos.douyin_downloaded')
+                              : t('videos.douyin_download')
+                          }
+                          onClick={() => void startItemDownload(item)}
+                          disabled={item.download_status === 'downloading'}
+                          style={{ width: '28px', height: '28px', minWidth: '28px', padding: 0 }}
+                        >
+                          <Download size={13} />
+                        </button>
                       </div>
                       <div
                         style={{
-                          color: 'var(--text-muted)',
-                          fontSize: '10.5px',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          width: 'fit-content',
+                          maxWidth: '100%',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          color:
+                            item.download_status === 'downloaded'
+                              ? 'var(--color-success)'
+                              : item.download_status === 'failed'
+                                ? 'var(--color-danger)'
+                                : 'var(--text-muted)',
+                          background: 'var(--bg-subtle)',
+                          fontSize: '10px',
+                          fontWeight: 650,
                         }}
                       >
+                        {item.download_status === 'downloading'
+                          ? t('videos.douyin_status_downloading', {
+                              progress: Math.round(item.download_progress || 0),
+                            })
+                          : item.download_status === 'downloaded'
+                            ? t('videos.douyin_status_downloaded')
+                            : item.download_status === 'failed'
+                              ? t('videos.douyin_status_failed')
+                              : t('videos.douyin_status_not_downloaded')}
+                      </div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '10.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {item.author_name || t('videos.douyin_unknown_author')}
                         {item.duration_seconds ? ` · ${formatDuration(item.duration_seconds)}` : ''}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      className="btn sm btn-icon ghost"
-                      title={t('videos.btn_open_external')}
-                      aria-label={t('videos.btn_open_external')}
-                      onClick={() => void api?.openExternal?.(item.source_url)}
-                      style={{ width: '30px', height: '30px', minWidth: '30px', padding: 0 }}
-                    >
-                      <ExternalLink size={13} />
-                    </button>
                   </article>
                 ))}
                 <div
                   style={{
                     display: 'flex',
+                    gridColumn: '1 / -1',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     gap: '8px',
@@ -531,6 +825,63 @@ export function DouyinFavoritesPanel({
             )}
           </div>
         </div>
+      ) : null}
+      {playingItem && playbackUrl ? (
+        <ViewportPortal>
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 2000,
+              display: 'grid',
+              gridTemplateRows: '48px minmax(0, 1fr)',
+              background: '#000',
+              color: '#fff',
+            }}
+          >
+            <header
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '0 14px',
+                borderBottom: '1px solid rgba(255,255,255,0.14)',
+              }}
+            >
+              <button
+                type="button"
+                className="btn sm"
+                onClick={() => {
+                  setPlayingItem(null)
+                  setPlaybackUrl('')
+                }}
+                style={{ background: '#222', borderColor: '#444', color: '#fff' }}
+              >
+                <X size={14} />
+                {t('common.close')}
+              </button>
+              <span
+                style={{
+                  minWidth: 0,
+                  flex: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  textAlign: 'center',
+                  fontSize: '13px',
+                }}
+              >
+                {playingItem.title}
+              </span>
+            </header>
+            <video
+              src={playbackUrl}
+              controls
+              autoPlay
+              style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
+            />
+          </div>
+        </ViewportPortal>
       ) : null}
     </section>
   )

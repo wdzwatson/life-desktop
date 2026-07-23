@@ -19,6 +19,10 @@ export interface DouyinFavoriteItemView {
   duration_seconds: number | null
   collected_at: string | null
   position: number
+  download_status: 'not_downloaded' | 'downloading' | 'downloaded' | 'failed'
+  download_progress: number
+  local_path: string | null
+  download_error: string | null
 }
 
 export function getActiveDouyinFolderId(

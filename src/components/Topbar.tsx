@@ -1,7 +1,7 @@
 import React from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
-import { Search, Plus, Upload, Globe, Palette } from 'lucide-react'
+import { Search, Plus, Upload, Globe, Palette, StickyNote } from 'lucide-react'
 import { shouldHighlightTopbarNewTask } from './topbarUtils'
 
 export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch }) => {
@@ -42,6 +42,10 @@ export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch })
     }
   }
 
+  const handleShowDesktopTaskNote = () => {
+    void (window as any).electronAPI?.showDesktopTaskNote?.()
+  }
+
   const isMac = navigator.userAgent.includes('Mac')
 
   return (
@@ -67,6 +71,15 @@ export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch })
         <button className="btn" onClick={handleImportFile}>
           <Upload size={14} />
           {t('common.imported')}
+        </button>
+
+        <button
+          className="btn btn-icon"
+          onClick={handleShowDesktopTaskNote}
+          title={t('topbar.show_desktop_task_note')}
+          aria-label={t('topbar.show_desktop_task_note')}
+        >
+          <StickyNote size={16} />
         </button>
 
         {/* Theme and Language Cyclers */}
