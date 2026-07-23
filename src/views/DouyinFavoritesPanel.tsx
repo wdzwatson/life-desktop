@@ -19,6 +19,14 @@ interface DouyinListResponse<T> {
   error?: string
 }
 
+interface DouyinFavoriteItemsPage {
+  items: DouyinFavoriteItemView[]
+  total: number
+  offset: number
+  limit: number
+  hasMore: boolean
+}
+
 interface DouyinSyncProgress {
   phase: string
   startedAt: number
@@ -56,6 +64,9 @@ export function DouyinFavoritesPanel({
   const [auth, setAuth] = useState<DouyinAuthStatus>({ loggedIn: false })
   const [folders, setFolders] = useState<DouyinFavoriteFolderView[]>([])
   const [items, setItems] = useState<DouyinFavoriteItemView[]>([])
+  const [itemsTotal, setItemsTotal] = useState(0)
+  const [itemsHasMore, setItemsHasMore] = useState(false)
+  const [itemsLoading, setItemsLoading] = useState(false)
   const [activeFolderId, setActiveFolderId] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
@@ -104,24 +115,58 @@ export function DouyinFavoritesPanel({
   useEffect(() => {
     if (!api || !activeFolderId) {
       setItems([])
+      setItemsTotal(0)
+      setItemsHasMore(false)
       return
     }
     let cancelled = false
+    setItemsLoading(true)
+    setItems([])
     void api
-      .listDouyinFavoriteItems(activeFolderId)
-      .then((result: DouyinListResponse<DouyinFavoriteItemView[]>) => {
+      .listDouyinFavoriteItems(activeFolderId, { offset: 0, limit: 100, query: searchQuery })
+      .then((result: DouyinListResponse<DouyinFavoriteItemsPage>) => {
         if (cancelled) return
         if (!result?.success) {
           setError(result?.error || t('videos.douyin_load_failed'))
           setItems([])
+          setItemsTotal(0)
+          setItemsHasMore(false)
           return
         }
-        setItems(result.data || [])
+        const page = result.data
+        setItems(page?.items || [])
+        setItemsTotal(page?.total || 0)
+        setItemsHasMore(Boolean(page?.hasMore))
+      })
+      .finally(() => {
+        if (!cancelled) setItemsLoading(false)
       })
     return () => {
       cancelled = true
     }
-  }, [activeFolderId, api, syncRefreshNonce, t])
+  }, [activeFolderId, api, searchQuery, syncRefreshNonce, t])
+
+  const loadMoreItems = async () => {
+    if (!api || !activeFolderId || itemsLoading || !itemsHasMore) return
+    setItemsLoading(true)
+    try {
+      const result = (await api.listDouyinFavoriteItems(activeFolderId, {
+        offset: items.length,
+        limit: 100,
+        query: searchQuery,
+      })) as DouyinListResponse<DouyinFavoriteItemsPage>
+      if (!result?.success) {
+        setError(result?.error || t('videos.douyin_load_failed'))
+        return
+      }
+      const page = result.data
+      setItems((current) => [...current, ...(page?.items || [])])
+      setItemsTotal(page?.total || 0)
+      setItemsHasMore(Boolean(page?.hasMore))
+    } finally {
+      setItemsLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!api?.onDouyinSyncProgress) return
@@ -195,7 +240,11 @@ export function DouyinFavoritesPanel({
         return
       }
       await refresh()
-      showToast(t('videos.douyin_sync_success', { count: result.itemsSynced || 0 }))
+      showToast(
+        result.complete === false
+          ? t('videos.douyin_sync_partial', { count: result.itemsSynced || 0 })
+          : t('videos.douyin_sync_success', { count: result.itemsSynced || 0 }),
+      )
     } finally {
       setSyncing(false)
       setSyncProgress(null)
@@ -363,7 +412,11 @@ export function DouyinFavoritesPanel({
               placeholder={t('videos.douyin_search_placeholder')}
               style={{ height: '30px' }}
             />
-            {filteredItems.length === 0 ? (
+            {itemsLoading && items.length === 0 ? (
+              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '12px' }}>
+                {t('videos.douyin_loading_items')}
+              </p>
+            ) : filteredItems.length === 0 ? (
               <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '12px' }}>
                 {t('videos.douyin_empty_folder')}
               </p>
@@ -449,6 +502,31 @@ export function DouyinFavoritesPanel({
                     </button>
                   </article>
                 ))}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                    paddingTop: '4px',
+                  }}
+                >
+                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                    {t('videos.douyin_loaded_count', { loaded: items.length, total: itemsTotal })}
+                  </span>
+                  {itemsHasMore ? (
+                    <button
+                      type="button"
+                      className="btn sm"
+                      onClick={() => void loadMoreItems()}
+                      disabled={itemsLoading}
+                    >
+                      {itemsLoading
+                        ? t('videos.douyin_loading_items')
+                        : t('videos.douyin_load_more')}
+                    </button>
+                  ) : null}
+                </div>
               </div>
             )}
           </div>

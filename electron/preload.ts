@@ -220,8 +220,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   logoutDouyin: () => ipcRenderer.invoke('video:logoutDouyin'),
   syncDouyinFavorites: () => ipcRenderer.invoke('video:syncDouyinFavorites'),
   listDouyinFavoriteFolders: () => ipcRenderer.invoke('video:listDouyinFavoriteFolders'),
-  listDouyinFavoriteItems: (folderId: number) =>
-    ipcRenderer.invoke('video:listDouyinFavoriteItems', folderId),
+  listDouyinFavoriteItems: (
+    folderId: number,
+    options?: { offset?: number; limit?: number; query?: string },
+  ) => ipcRenderer.invoke('video:listDouyinFavoriteItems', folderId, options),
   getVideoCookieAccessStatus: (url: string) =>
     ipcRenderer.invoke('video:getCookieAccessStatus', url),
   verifyVideoCookieAccess: () => ipcRenderer.invoke('video:verifyCookieAccess'),
