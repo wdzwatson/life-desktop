@@ -62,6 +62,27 @@ test('official page observer treats an unverified end as partial', async () => {
   observer.stop()
 })
 
+test('official page observer treats a reached scroll boundary as a complete source end', async () => {
+  const page = {
+    executeJavaScript: async () => ({
+      entries: [
+        { remoteId: '123', title: 'Useful video', sourceUrl: 'https://www.douyin.com/video/123' },
+      ],
+      hasMore: false,
+      complete: true,
+      stopReason: 'source_end',
+    }),
+  } as unknown as WebContents
+  const observer = new DouyinOfficialPageObserver(page)
+  await observer.start()
+
+  const result = await observer.listFavoriteVideos({})
+  assert.equal(result.complete, true)
+  assert.equal(result.hasMore, false)
+  assert.equal(result.stopReason, 'source_end')
+  observer.stop()
+})
+
 test('official page observer emits only unseen videos while scrolling', async () => {
   let pageCall = 0
   const page = {

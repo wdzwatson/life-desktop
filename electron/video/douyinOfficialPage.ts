@@ -31,12 +31,15 @@ interface FavoriteVideoDomResult {
   entries: DouyinFavoriteVideoEntry[]
   hasMore: boolean
   complete: boolean
-  stopReason: 'explicit_end' | 'round_limit' | 'stalled' | 'source_uncertain'
+  stopReason: 'explicit_end' | 'source_end' | 'round_limit' | 'stalled' | 'source_uncertain'
 }
 
 const PAGE_ACTION_TIMEOUT_MS = 35_000
-const SCROLL_ROUNDS_PER_PAGE = 24
+const SCROLL_ROUNDS_PER_PAGE = 12
 const SCROLL_SETTLE_MS = 700
+const MAX_IDLE_SCROLL_ROUNDS = 2
+const END_STABILITY_MS = 10_000
+const END_POLL_MS = 500
 
 function text(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
@@ -60,8 +63,8 @@ function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult
       ? (value as Record<string, unknown>)
       : {}
   const entries = Array.isArray(source.entries) ? source.entries : []
-  const explicitEnd = source.stopReason === 'explicit_end'
-  const complete = explicitEnd && source.complete !== false
+  const sourceEnded = source.stopReason === 'explicit_end' || source.stopReason === 'source_end'
+  const complete = sourceEnded && source.complete !== false
   const hasMore = source.hasMore === true && !complete
   const unique = new Set<string>()
   return {
@@ -88,7 +91,7 @@ function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult
     hasMore,
     complete,
     stopReason:
-      explicitEnd ||
+      sourceEnded ||
       source.stopReason === 'round_limit' ||
       source.stopReason === 'stalled' ||
       source.stopReason === 'source_uncertain'
@@ -157,37 +160,85 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
               }
               return null
             }
+            const visible = (element) => {
+              const rect = element.getBoundingClientRect()
+              return (
+                rect.width > 0 &&
+                rect.height > 0 &&
+                rect.bottom > 0 &&
+                rect.right > 0 &&
+                rect.top < window.innerHeight &&
+                rect.left < window.innerWidth
+              )
+            }
             const exactTab = (label) => Array.from(document.querySelectorAll('[role="tab"]'))
-              .find((element) => element.textContent?.trim() === label)
-            const activate = async (label) => {
-              const tab = await waitFor(() => exactTab(label), 4000)
+              .find((element) => visible(element) && element.textContent?.trim() === label)
+            const activateTab = async (label) => {
+              const tab = await waitFor(() => exactTab(label), 10_000)
               if (!tab) throw new Error('Douyin did not expose the ' + label + ' tab.')
-              if (tab.getAttribute('aria-selected') !== 'true') {
-                tab.click()
-              }
-              await delay(1000)
+              if (tab.getAttribute('aria-selected') !== 'true') tab.click()
+              const selected = await waitFor(
+                () => tab.getAttribute('aria-selected') === 'true',
+                10_000,
+              )
+              if (!selected) throw new Error('Douyin did not activate the ' + label + ' tab.')
               return tab
             }
-            if (${cursor ? 'false' : 'true'}) {
-              await activate('收藏')
-              await activate('视频')
-              const resetScroll = (node) => {
-                if (!node) return
-                node.scrollTo({ top: 0, behavior: 'auto' })
-              }
-              Array.from(document.querySelectorAll('ul')).forEach((node) => resetScroll(node.parentElement))
-              resetScroll(document.scrollingElement || document.documentElement)
+            const videoContentRoot = () => {
+              const videoTab = exactTab('视频')
+              const controlsId = videoTab?.getAttribute('aria-controls')
+              const controlled = controlsId ? document.getElementById(controlsId) : null
+              if (controlled && visible(controlled)) return controlled
+              const tabId = videoTab?.id
+              const labelledPanel = tabId
+                ? document.querySelector('[role="tabpanel"][aria-labelledby="' + CSS.escape(tabId) + '"]')
+                : null
+              if (labelledPanel && visible(labelledPanel)) return labelledPanel
+              return document
             }
             const favoriteList = () => {
-              const lists = Array.from(document.querySelectorAll('ul'))
+              const contentRoot = videoContentRoot()
+              const lists = Array.from(contentRoot.querySelectorAll('ul'))
               const findVideoLinks = (list) => Array.from(list.querySelectorAll('a[href]')).filter((anchor) => {
                 const rawHref = anchor.getAttribute('href') || ''
                 const url = new URL(rawHref, location.href)
-                return /^\\/(video|note)\\/\\d+$/.test(url.pathname) && anchor.getClientRects().length > 0
+                return /^\\/video\\/\\d+$/.test(url.pathname) && visible(anchor)
               })
               return lists
                 .map((list) => ({ list, count: findVideoLinks(list).length }))
-                .sort((left, right) => right.count - left.count)[0]?.list || document.body
+                .sort((left, right) => right.count - left.count)[0]?.list || contentRoot
+            }
+            const readEntries = (list) => {
+              const root = list || document
+              return Array.from(root.querySelectorAll('a[href]')).filter((anchor) => {
+                const rawHref = anchor.getAttribute('href') || ''
+                const url = new URL(rawHref, location.href)
+                return /^\\/video\\/\\d+$/.test(url.pathname) && visible(anchor)
+              }).flatMap((anchor) => {
+                const rawHref = anchor.getAttribute('href') || ''
+                const url = new URL(rawHref, location.href)
+                const match = url.pathname.match(/^\\/video\\/(\\d+)$/)
+                if (!match || !url.hostname.endsWith('douyin.com')) return []
+                const image = anchor.querySelector('img')
+                const imageLabel = image?.getAttribute('alt')?.trim() || ''
+                const thumbnailUrl = [
+                  image?.getAttribute('data-original'),
+                  image?.getAttribute('data-src'),
+                  image?.getAttribute('src'),
+                  image?.currentSrc,
+                ].find((value) => /^https?:\\/\\//.test(value || '')) || ''
+                const title = anchor.querySelector('p')?.textContent?.trim() ||
+                  imageLabel.split('：').slice(1).join('：').trim() ||
+                  'Douyin video ' + match[1]
+                const authorName = imageLabel.includes('：') ? imageLabel.split('：')[0].trim() : ''
+                return [{
+                  remoteId: match[1],
+                  title,
+                  sourceUrl: 'https://www.douyin.com/video/' + match[1],
+                  ...(authorName ? { authorName } : {}),
+                  ...(thumbnailUrl ? { thumbnailUrl } : {}),
+                }]
+              })
             }
             const getScrollTargets = (list) => {
               const targets = []
@@ -203,75 +254,124 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
               if (!targets.includes(root)) targets.push(root)
               return targets
             }
-            const readEntries = (list) => {
-              const root = list || document
-              return Array.from(root.querySelectorAll('a[href]')).filter((anchor) => {
-                const rawHref = anchor.getAttribute('href') || ''
-                const url = new URL(rawHref, location.href)
-                return /^\\/video\\/\\d+$/.test(url.pathname) && anchor.getClientRects().length > 0
-              }).flatMap((anchor) => {
-              const rawHref = anchor.getAttribute('href') || ''
-              const url = new URL(rawHref, location.href)
-              const match = url.pathname.match(/^\\/video\\/(\\d+)$/)
-              if (!match || !url.hostname.endsWith('douyin.com')) return []
-              const imageLabel = anchor.querySelector('img')?.getAttribute('alt')?.trim() || ''
-              const image = anchor.querySelector('img')
-              const thumbnailUrl = [
-                image?.getAttribute('data-original'),
-                image?.getAttribute('data-src'),
-                image?.getAttribute('src'),
-                image?.currentSrc,
-              ].find((value) => /^https?:\\/\\//.test(value || '')) || ''
-              const title = anchor.querySelector('p')?.textContent?.trim() || imageLabel.split('：').slice(1).join('：').trim() || 'Douyin video ' + match[1]
-              const authorName = imageLabel.includes('：') ? imageLabel.split('：')[0].trim() : ''
-              return [{ remoteId: match[1], title, sourceUrl: 'https://www.douyin.com/video/' + match[1], ...(authorName ? { authorName } : {}), ...(thumbnailUrl ? { thumbnailUrl } : {}) }]
-              })
+            const canScrollFurther = (target) =>
+              target.scrollTop + target.clientHeight < target.scrollHeight - 2
+            if (!${cursor ? 'true' : 'false'}) {
+              await activateTab('收藏')
+              await activateTab('视频')
+              for (const target of getScrollTargets(favoriteList())) {
+                target.scrollTo({ top: 0, behavior: 'auto' })
+              }
             }
-            const listText = (list) => list?.parentElement?.textContent || ''
             const listReady = await waitFor(() => {
               const list = favoriteList()
-              const text = listText(list)
-              return Boolean(list && readEntries(list).length > 0) || text.includes('暂时没有更多') || text.includes('暂无收藏')
-            }, 20000)
-            if (!listReady) throw new Error('Douyin favorite video cards did not appear after the page loaded.')
-            const collected = new Map()
-            let explicitEnd = false
-            let observedScrollProgress = false
+              return Boolean(list && readEntries(list).length > 0)
+            }, 30000)
+            if (!listReady) throw new Error('Douyin favorite video cards did not appear after the 视频 tab loaded.')
+
+            const list = favoriteList()
+            if (!${cursor ? 'true' : 'false'}) {
+              return {
+                entries: readEntries(list),
+                hasMore: true,
+                complete: false,
+                stopReason: 'round_limit',
+              }
+            }
+
+            const collected = new Map(readEntries(list).map((entry) => [entry.remoteId, entry]))
+            let idleRounds = 0
+            let reachedEnd = false
+            const hasEndMarker = () =>
+              (videoContentRoot().innerText || '').includes('暂时没有更多了')
+            const targetHeightSignature = (targets) =>
+              targets.map((target) => target.scrollHeight).join(':')
+            const probeForEndOrResume = async (initialTargets) => {
+              if (hasEndMarker()) {
+                return { sourceEnd: true, reason: 'end_marker', waitedMs: 0, targets: initialTargets }
+              }
+              const startedAt = Date.now()
+              const initialHeightSignature = targetHeightSignature(initialTargets)
+              let latestTargets = initialTargets
+              while (Date.now() - startedAt < ${END_STABILITY_MS}) {
+                await delay(${END_POLL_MS})
+                const observedList = favoriteList()
+                for (const entry of readEntries(observedList)) collected.set(entry.remoteId, entry)
+                latestTargets = getScrollTargets(observedList)
+                if (hasEndMarker()) {
+                  return {
+                    sourceEnd: true,
+                    reason: 'end_marker',
+                    waitedMs: Date.now() - startedAt,
+                    targets: latestTargets,
+                  }
+                }
+                if (
+                  latestTargets.some(canScrollFurther) ||
+                  targetHeightSignature(latestTargets) !== initialHeightSignature
+                ) {
+                  return {
+                    sourceEnd: false,
+                    reason: 'content_changed',
+                    waitedMs: Date.now() - startedAt,
+                    targets: latestTargets,
+                  }
+                }
+              }
+              return {
+                sourceEnd: true,
+                reason: 'height_stable_10s',
+                waitedMs: Date.now() - startedAt,
+                targets: latestTargets,
+              }
+            }
             for (let round = 0; round < ${SCROLL_ROUNDS_PER_PAGE}; round += 1) {
-              const list = favoriteList()
-              const scrollTargets = getScrollTargets(list)
-              const beforeCount = collected.size
-              const beforeScrollState = new Map(scrollTargets.map((target) => [target, {
+              const currentList = favoriteList()
+              const targets = getScrollTargets(currentList)
+              const before = targets.map((target) => ({
+                target,
                 top: target.scrollTop,
                 height: target.scrollHeight,
-              }]))
-              readEntries(list).forEach((entry) => collected.set(entry.remoteId, entry))
-              for (const scrollTarget of scrollTargets) {
-                const step = Math.max(400, Math.floor(scrollTarget.clientHeight * 0.85))
-                scrollTarget.scrollBy({ top: step, behavior: 'auto' })
+              }))
+              const scrollableTargets = targets.filter(canScrollFurther)
+              if (scrollableTargets.length === 0) {
+                const endProbe = await probeForEndOrResume(targets)
+                if (endProbe.sourceEnd) {
+                  reachedEnd = true
+                  break
+                }
+                continue
+              }
+              for (const target of scrollableTargets) {
+                const step = Math.max(400, Math.floor(target.clientHeight * 0.85))
+                target.scrollBy({ top: step, behavior: 'auto' })
               }
               await delay(${SCROLL_SETTLE_MS})
               const nextList = favoriteList()
-              const nextScrollTargets = getScrollTargets(nextList)
-              readEntries(nextList).forEach((entry) => collected.set(entry.remoteId, entry))
-              const text = listText(nextList)
-              explicitEnd = text.includes('暂时没有更多了')
-              const moved = nextScrollTargets.some((target) => {
-                const before = beforeScrollState.get(target)
-                return !before || target.scrollTop !== before.top || target.scrollHeight !== before.height
-              })
-              const addedEntries = collected.size > beforeCount
-              if (addedEntries || moved) observedScrollProgress = true
-              if (explicitEnd) break
+              for (const entry of readEntries(nextList)) collected.set(entry.remoteId, entry)
+              const moved = before.some(({ target, top, height }) =>
+                target.scrollTop !== top || target.scrollHeight !== height,
+              )
+              if (moved) idleRounds = 0
+              else idleRounds += 1
+              const nextTargets = getScrollTargets(nextList)
+              const atBottom = nextTargets.every((target) => !canScrollFurther(target))
+              const endProbe = atBottom ? await probeForEndOrResume(nextTargets) : null
+              if (endProbe?.sourceEnd) {
+                reachedEnd = true
+                break
+              }
+              if (idleRounds >= ${MAX_IDLE_SCROLL_ROUNDS}) break
             }
-            const text = listText(favoriteList())
-            explicitEnd = explicitEnd || text.includes('暂时没有更多了')
-            const stalled = !observedScrollProgress
             return {
               entries: [...collected.values()],
-              hasMore: !explicitEnd && !stalled,
-              complete: explicitEnd,
-              stopReason: explicitEnd ? 'explicit_end' : stalled ? 'stalled' : 'round_limit',
+              hasMore: !reachedEnd && idleRounds < ${MAX_IDLE_SCROLL_ROUNDS},
+              complete: reachedEnd,
+              stopReason: reachedEnd
+                ? 'source_end'
+                : idleRounds >= ${MAX_IDLE_SCROLL_ROUNDS}
+                  ? 'stalled'
+                  : 'round_limit',
             }
           })()
         `),
@@ -308,5 +408,4 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
       if (timer) clearTimeout(timer)
     }
   }
-
 }
