@@ -92,7 +92,7 @@ export function DouyinFavoritesPanel({
   const [playbackUrl, setPlaybackUrl] = useState('')
   const [activeFolderId, setActiveFolderId] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [contentFilter, setContentFilter] = useState<'video' | 'note'>('video')
+  const [contentFilter, setContentFilter] = useState<'all' | 'video' | 'note'>('all')
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [syncProgress, setSyncProgress] = useState<DouyinSyncProgress | null>(null)
@@ -143,6 +143,10 @@ export function DouyinFavoritesPanel({
   }, [refresh])
 
   useEffect(() => {
+    if (contentFilter === 'all') {
+      setActiveFolderId(null)
+      return
+    }
     const remoteId =
       contentFilter === 'video'
         ? DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID
@@ -152,7 +156,7 @@ export function DouyinFavoritesPanel({
   }, [contentFilter, folders])
 
   useEffect(() => {
-    if (!api || !activeFolderId) {
+    if (!api || (contentFilter !== 'all' && !activeFolderId)) {
       setItems([])
       setItemsTotal(0)
       setItemsHasMore(false)
@@ -163,7 +167,7 @@ export function DouyinFavoritesPanel({
     setItems([])
     setSelectedItemIds([])
     void api
-      .listDouyinFavoriteItems(activeFolderId, { offset: 0, limit: 20, query: searchQuery })
+      .listDouyinFavoriteItems(contentFilter === 'all' ? null : activeFolderId, { offset: 0, limit: 20, query: searchQuery })
       .then((result: DouyinListResponse<DouyinFavoriteItemsPage>) => {
         if (cancelled) return
         if (!result?.success) {
@@ -184,7 +188,7 @@ export function DouyinFavoritesPanel({
     return () => {
       cancelled = true
     }
-  }, [activeFolderId, api, searchQuery, syncRefreshNonce, t])
+  }, [activeFolderId, api, contentFilter, searchQuery, syncRefreshNonce, t])
 
   useEffect(() => {
     if (!api?.onDouyinDownloadProgress) return
@@ -239,10 +243,10 @@ export function DouyinFavoritesPanel({
   }, [api])
 
   const loadMoreItems = async () => {
-    if (!api || !activeFolderId || itemsLoading || !itemsHasMore) return
+    if (!api || (contentFilter !== 'all' && !activeFolderId) || itemsLoading || !itemsHasMore) return
     setItemsLoading(true)
     try {
-      const result = (await api.listDouyinFavoriteItems(activeFolderId, {
+      const result = (await api.listDouyinFavoriteItems(contentFilter === 'all' ? null : activeFolderId, {
         offset: items.length,
         limit: 20,
         query: searchQuery,
@@ -584,7 +588,7 @@ export function DouyinFavoritesPanel({
               aria-label={t('videos.douyin_content_filter')}
               style={{ display: 'inline-flex', alignSelf: 'flex-start', gap: '2px' }}
             >
-              {(['video', 'note'] as const).map((type) => (
+              {(['all', 'video', 'note'] as const).map((type) => (
                 <button
                   key={type}
                   type="button"

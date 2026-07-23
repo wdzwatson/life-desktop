@@ -187,6 +187,12 @@ test('favorite synchronization preserves image-text favorites in their own folde
   assert.equal(note.remote_id, 'note-1')
   assert.equal(note.content_type, 'note')
   assert.equal(note.source_url, 'https://www.douyin.com/note/456')
+  const allFavorites = listDouyinFavoriteItems(db, null, { offset: 0, limit: 20 })
+  assert.equal(allFavorites.total, 2)
+  assert.deepEqual(
+    new Set(allFavorites.items.map((item) => item.content_type)),
+    new Set(['video', 'note']),
+  )
   db.close()
 })
 

@@ -2928,8 +2928,9 @@ ipcMain.handle('video:getDouyinSyncStatus', async () => {
 })
 
 ipcMain.handle('video:listDouyinFavoriteItems', async (_, folderId: unknown, options?: unknown) => {
+  const showAll = folderId === null
   const normalizedFolderId = Number(folderId)
-  if (!Number.isSafeInteger(normalizedFolderId) || normalizedFolderId <= 0) {
+  if (!showAll && (!Number.isSafeInteger(normalizedFolderId) || normalizedFolderId <= 0)) {
     return { success: false, error: 'A valid Douyin favorite folder is required.' }
   }
   const input = options && typeof options === 'object' ? (options as Record<string, unknown>) : {}
@@ -2944,7 +2945,7 @@ ipcMain.handle('video:listDouyinFavoriteItems', async (_, folderId: unknown, opt
   }
   return {
     success: true,
-    data: listDouyinFavoriteItems(getUserDb('videos'), normalizedFolderId, normalizedOptions),
+    data: listDouyinFavoriteItems(getUserDb('videos'), showAll ? null : normalizedFolderId, normalizedOptions),
   }
 })
 

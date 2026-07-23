@@ -798,29 +798,37 @@ export function getDouyinAccountSyncStatus(
 
 export function listDouyinFavoriteItems(
   db: Database.Database,
-  folderId: number,
+  folderId: number | null,
   options?: { offset?: number; limit?: number; query?: string },
 ): DouyinFavoriteItemRecord[] | DouyinFavoriteItemsPage {
   const offset = Math.max(0, Math.floor(Number(options?.offset) || 0))
   const limit = Math.min(200, Math.max(1, Math.floor(Number(options?.limit) || 100)))
   const query = typeof options?.query === 'string' ? options.query.trim() : ''
+  const scopedToFolder = Number.isSafeInteger(folderId) && Number(folderId) > 0
   const where = query
-    ? `WHERE fi.folder_id = ? AND (i.title LIKE ? OR i.author_name LIKE ? OR i.remote_id LIKE ?)`
-    : 'WHERE fi.folder_id = ?'
-  const params = query ? [folderId, `%${query}%`, `%${query}%`, `%${query}%`] : [folderId]
-  const base = `
-    FROM douyin_folder_items fi
-    JOIN douyin_favorite_items i ON i.id = fi.item_id
-    ${where}
-  `
+    ? `${scopedToFolder ? 'WHERE fi.folder_id = ? AND ' : 'WHERE '}(i.title LIKE ? OR i.author_name LIKE ? OR i.remote_id LIKE ?)`
+    : scopedToFolder
+      ? 'WHERE fi.folder_id = ?'
+      : ''
+  const params = scopedToFolder
+    ? query
+      ? [folderId, `%${query}%`, `%${query}%`, `%${query}%`]
+      : [folderId]
+    : query
+      ? [`%${query}%`, `%${query}%`, `%${query}%`]
+      : []
+  const base = scopedToFolder
+    ? `FROM douyin_folder_items fi JOIN douyin_favorite_items i ON i.id = fi.item_id ${where}`
+    : `FROM douyin_favorite_items i ${where}`
   const items = db
     .prepare(
       `
       SELECT i.id, i.remote_id, i.title, i.content_type, i.author_id, i.author_name, i.source_url,
-             i.thumbnail_url, i.duration_seconds, i.collected_at, i.favorite_added_at, fi.position,
+             i.thumbnail_url, i.duration_seconds, i.collected_at, i.favorite_added_at,
+             ${scopedToFolder ? 'fi.position' : '0 AS position'},
              i.download_status, i.download_progress, i.local_path, i.download_error
       ${base}
-      ORDER BY fi.position ASC, i.id ASC
+      ORDER BY i.favorite_added_at DESC, i.collected_at DESC, ${scopedToFolder ? 'fi.position ASC,' : ''} i.id ASC
       LIMIT ? OFFSET ?
       `,
     )

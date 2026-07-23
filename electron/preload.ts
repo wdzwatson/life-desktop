@@ -223,7 +223,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDouyinSyncStatus: () => ipcRenderer.invoke('video:getDouyinSyncStatus'),
   listDouyinFavoriteFolders: () => ipcRenderer.invoke('video:listDouyinFavoriteFolders'),
   listDouyinFavoriteItems: (
-    folderId: number,
+    folderId: number | null,
     options?: { offset?: number; limit?: number; query?: string },
   ) => ipcRenderer.invoke('video:listDouyinFavoriteItems', folderId, options),
   deleteDouyinFavoriteItems: (itemIds: number[]) =>
