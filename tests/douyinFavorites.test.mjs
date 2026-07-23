@@ -7,6 +7,7 @@ import Database from 'better-sqlite3'
 import { initializeUserDatabase } from '../electron/db/schema.ts'
 import {
   DouyinFavoritesError,
+  canDownloadDouyinFavorite,
   clearDouyinFavoriteItems,
   deleteDouyinFavoriteItems,
   getDouyinAccountSyncStatus,
@@ -187,6 +188,12 @@ test('favorite synchronization preserves image-text favorites in their own folde
   assert.equal(note.content_type, 'note')
   assert.equal(note.source_url, 'https://www.douyin.com/note/456')
   db.close()
+})
+
+test('only video favorites are eligible for video downloads', () => {
+  assert.equal(canDownloadDouyinFavorite({ content_type: 'video' }), true)
+  assert.equal(canDownloadDouyinFavorite({ content_type: 'note' }), false)
+  assert.equal(canDownloadDouyinFavorite({ content_type: 'unknown' }), false)
 })
 
 test('favorite sync status is scoped to the current Douyin session', async () => {

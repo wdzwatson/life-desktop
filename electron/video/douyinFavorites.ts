@@ -834,7 +834,7 @@ export function getDouyinFavoriteItem(db: Database.Database, itemId: number) {
   return db
     .prepare(
       `
-      SELECT id, title, source_url, duration_seconds, download_status
+      SELECT id, title, content_type, source_url, duration_seconds, download_status
       FROM douyin_favorite_items
       WHERE id = ?
       `,
@@ -843,11 +843,16 @@ export function getDouyinFavoriteItem(db: Database.Database, itemId: number) {
     | {
         id: number
         title: string
+        content_type: DouyinFavoriteContentType
         source_url: string
         duration_seconds: number | null
         download_status: 'not_downloaded' | 'downloading' | 'downloaded' | 'failed'
       }
     | undefined
+}
+
+export function canDownloadDouyinFavorite(item: { content_type: DouyinFavoriteContentType }) {
+  return item.content_type === 'video'
 }
 
 export function updateDouyinFavoriteDownloadState(

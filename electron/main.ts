@@ -60,6 +60,7 @@ import {
 } from './video/douyinSession'
 import {
   DouyinFavoritesError,
+  canDownloadDouyinFavorite,
   clearDouyinFavoriteItems,
   deleteDouyinFavoriteItems,
   getDouyinAccountSyncStatus,
@@ -2981,6 +2982,9 @@ ipcMain.handle('video:downloadDouyinFavorite', async (_, itemId: unknown) => {
   const db = getUserDb('videos')
   const item = getDouyinFavoriteItem(db, normalizedItemId)
   if (!item) return { success: false, error: 'The Douyin favorite video no longer exists.' }
+  if (!canDownloadDouyinFavorite(item)) {
+    return { success: false, error: 'Only Douyin video favorites can be downloaded.' }
+  }
   if (item.download_status === 'downloading') {
     return { success: false, error: 'This Douyin video is already downloading.' }
   }
