@@ -5,6 +5,7 @@ export interface DouyinFavoriteVideoEntry {
   remoteId: string
   title: string
   sourceUrl: string
+  contentType?: 'video' | 'note'
   authorName?: string
   thumbnailUrl?: string
 }
@@ -19,6 +20,7 @@ export interface DouyinFavoriteVideoPage {
 export interface DouyinOfficialPageExecutor {
   isLoggedIn(): Promise<boolean>
   listFavoriteVideos(input: { cursor?: string }): Promise<DouyinFavoriteVideoPage>
+  listFavoriteNotes(input: { cursor?: string }): Promise<DouyinFavoriteVideoPage>
 }
 
 export interface DouyinOfficialPageDiagnostic {
@@ -45,19 +47,22 @@ function text(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function isDouyinVideoUrl(value: string) {
+function isDouyinFavoriteUrl(value: string, contentType: 'video' | 'note') {
   try {
     const url = new URL(value)
     return (
       (url.hostname === 'douyin.com' || url.hostname.endsWith('.douyin.com')) &&
-      /^\/video\/\d+$/.test(url.pathname)
+      new RegExp(`^/${contentType}/\\d+$`).test(url.pathname)
     )
   } catch {
     return false
   }
 }
 
-function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult {
+function normalizeFavoriteVideoDomResult(
+  value: unknown,
+  contentType: 'video' | 'note',
+): FavoriteVideoDomResult {
   const source =
     value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
@@ -76,13 +81,14 @@ function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult
       const remoteId = text(entry.remoteId)
       const title = text(entry.title)
       const sourceUrl = text(entry.sourceUrl)
-      if (!remoteId || !title || !isDouyinVideoUrl(sourceUrl) || unique.has(remoteId)) return []
+      if (!remoteId || !title || !isDouyinFavoriteUrl(sourceUrl, contentType) || unique.has(remoteId)) return []
       unique.add(remoteId)
       return [
         {
           remoteId,
           title,
           sourceUrl,
+          contentType,
           ...(text(entry.authorName) ? { authorName: text(entry.authorName) } : {}),
           ...(text(entry.thumbnailUrl) ? { thumbnailUrl: text(entry.thumbnailUrl) } : {}),
         },
@@ -106,6 +112,8 @@ function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult
 export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
   private readonly favoriteVideoIds = new Set<string>()
   private favoriteVideoPage = 0
+  private readonly favoriteNoteIds = new Set<string>()
+  private favoriteNotePage = 0
 
   constructor(
     private readonly page: WebContents,
@@ -125,6 +133,8 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
   stop() {
     this.favoriteVideoIds.clear()
     this.favoriteVideoPage = 0
+    this.favoriteNoteIds.clear()
+    this.favoriteNotePage = 0
   }
 
   async isLoggedIn() {
@@ -141,15 +151,36 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
   }
 
   async listFavoriteVideos({ cursor }: { cursor?: string }) {
+    return this.listFavoriteItems({ cursor, contentType: 'video', tabLabel: '视频' })
+  }
+
+  async listFavoriteNotes({ cursor }: { cursor?: string }) {
+    return this.listFavoriteItems({ cursor, contentType: 'note', tabLabel: '图文' })
+  }
+
+  private async listFavoriteItems({
+    cursor,
+    contentType,
+    tabLabel,
+  }: {
+    cursor?: string
+    contentType: 'video' | 'note'
+    tabLabel: string
+  }) {
     if (!cursor) {
-      this.favoriteVideoIds.clear()
-      this.favoriteVideoPage = 0
+      const ids = contentType === 'video' ? this.favoriteVideoIds : this.favoriteNoteIds
+      ids.clear()
+      if (contentType === 'video') this.favoriteVideoPage = 0
+      else this.favoriteNotePage = 0
     }
-    this.onDiagnostic?.({ kind: 'triggering', path: '/user/self/favorites/videos' })
+    this.onDiagnostic?.({ kind: 'triggering', path: `/user/self/favorites/${contentType}s` })
     const result = normalizeFavoriteVideoDomResult(
       await this.withTimeout(
         this.page.executeJavaScript(`
           (async () => {
+            const contentType = ${JSON.stringify(contentType)}
+            const tabLabel = ${JSON.stringify(tabLabel)}
+            const itemPath = new RegExp('^/' + contentType + '/\\\\d+$')
             const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
             const waitFor = async (read, timeoutMs) => {
               const startedAt = Date.now()
@@ -185,7 +216,7 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
               return tab
             }
             const videoContentRoot = () => {
-              const videoTab = exactTab('视频')
+              const videoTab = exactTab(tabLabel)
               const controlsId = videoTab?.getAttribute('aria-controls')
               const controlled = controlsId ? document.getElementById(controlsId) : null
               if (controlled && visible(controlled)) return controlled
@@ -202,7 +233,7 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
               const findVideoLinks = (list) => Array.from(list.querySelectorAll('a[href]')).filter((anchor) => {
                 const rawHref = anchor.getAttribute('href') || ''
                 const url = new URL(rawHref, location.href)
-                return /^\\/video\\/\\d+$/.test(url.pathname) && visible(anchor)
+                return itemPath.test(url.pathname) && visible(anchor)
               })
               return lists
                 .map((list) => ({ list, count: findVideoLinks(list).length }))
@@ -213,11 +244,11 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
               return Array.from(root.querySelectorAll('a[href]')).filter((anchor) => {
                 const rawHref = anchor.getAttribute('href') || ''
                 const url = new URL(rawHref, location.href)
-                return /^\\/video\\/\\d+$/.test(url.pathname) && visible(anchor)
+                return itemPath.test(url.pathname) && visible(anchor)
               }).flatMap((anchor) => {
                 const rawHref = anchor.getAttribute('href') || ''
                 const url = new URL(rawHref, location.href)
-                const match = url.pathname.match(/^\\/video\\/(\\d+)$/)
+                const match = url.pathname.match(itemPath)
                 if (!match || !url.hostname.endsWith('douyin.com')) return []
                 const image = anchor.querySelector('img')
                 const imageLabel = image?.getAttribute('alt')?.trim() || ''
@@ -229,12 +260,13 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
                 ].find((value) => /^https?:\\/\\//.test(value || '')) || ''
                 const title = anchor.querySelector('p')?.textContent?.trim() ||
                   imageLabel.split('：').slice(1).join('：').trim() ||
-                  'Douyin video ' + match[1]
+                  'Douyin ' + contentType + ' ' + match[1]
                 const authorName = imageLabel.includes('：') ? imageLabel.split('：')[0].trim() : ''
                 return [{
                   remoteId: match[1],
                   title,
-                  sourceUrl: 'https://www.douyin.com/video/' + match[1],
+                  sourceUrl: 'https://www.douyin.com/' + contentType + '/' + match[1],
+                  contentType,
                   ...(authorName ? { authorName } : {}),
                   ...(thumbnailUrl ? { thumbnailUrl } : {}),
                 }]
@@ -258,7 +290,7 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
               target.scrollTop + target.clientHeight < target.scrollHeight - 2
             if (!${cursor ? 'true' : 'false'}) {
               await activateTab('收藏')
-              await activateTab('视频')
+              await activateTab(tabLabel)
               for (const target of getScrollTargets(favoriteList())) {
                 target.scrollTo({ top: 0, behavior: 'auto' })
               }
@@ -267,7 +299,7 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
               const list = favoriteList()
               return Boolean(list && readEntries(list).length > 0)
             }, 30000)
-            if (!listReady) throw new Error('Douyin favorite video cards did not appear after the 视频 tab loaded.')
+            if (!listReady) throw new Error('Douyin favorite cards did not appear after the ' + tabLabel + ' tab loaded.')
 
             const list = favoriteList()
             if (!${cursor ? 'true' : 'false'}) {
@@ -377,14 +409,19 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
         `),
         'Douyin did not load the visible favorite video list.',
       ),
+      contentType,
     )
-    const entries = result.entries.filter((entry) => !this.favoriteVideoIds.has(entry.remoteId))
-    for (const entry of entries) this.favoriteVideoIds.add(entry.remoteId)
-    this.favoriteVideoPage += 1
+    const ids = contentType === 'video' ? this.favoriteVideoIds : this.favoriteNoteIds
+    const entries = result.entries.filter((entry) => !ids.has(entry.remoteId))
+    for (const entry of entries) ids.add(entry.remoteId)
+    if (contentType === 'video') this.favoriteVideoPage += 1
+    else this.favoriteNotePage += 1
     const hasMore = result.hasMore
     return {
       entries,
-      ...(hasMore ? { cursor: String(this.favoriteVideoPage) } : {}),
+      ...(hasMore
+        ? { cursor: String(contentType === 'video' ? this.favoriteVideoPage : this.favoriteNotePage) }
+        : {}),
       hasMore,
       complete: result.complete,
       stopReason: result.stopReason,

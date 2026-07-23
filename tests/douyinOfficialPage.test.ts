@@ -33,6 +33,7 @@ test('official page observer keeps only visible Douyin video favorites', async (
         authorName: 'Author',
         thumbnailUrl: 'https://p3.douyinpic.com/cover.jpg',
         sourceUrl: 'https://www.douyin.com/video/123',
+        contentType: 'video',
       },
     ],
     hasMore: false,
@@ -41,6 +42,43 @@ test('official page observer keeps only visible Douyin video favorites', async (
     isNewestFirst: true,
   })
   observer.stop()
+})
+
+test('official page observer reads visible Douyin image-text favorites from the 图文 tab', async () => {
+  const page = {
+    executeJavaScript: async () => ({
+      entries: [
+        {
+          remoteId: '456',
+          title: 'Useful image-text post',
+          authorName: 'Author',
+          thumbnailUrl: 'https://p3.douyinpic.com/note-cover.jpg',
+          sourceUrl: 'https://www.douyin.com/note/456',
+        },
+      ],
+      hasMore: false,
+      complete: true,
+      stopReason: 'explicit_end',
+    }),
+  } as unknown as WebContents
+  const observer = new DouyinOfficialPageObserver(page)
+
+  assert.deepEqual(await observer.listFavoriteNotes({}), {
+    entries: [
+      {
+        remoteId: '456',
+        title: 'Useful image-text post',
+        authorName: 'Author',
+        thumbnailUrl: 'https://p3.douyinpic.com/note-cover.jpg',
+        sourceUrl: 'https://www.douyin.com/note/456',
+        contentType: 'note',
+      },
+    ],
+    hasMore: false,
+    complete: true,
+    stopReason: 'explicit_end',
+    isNewestFirst: true,
+  })
 })
 
 test('official page observer treats an unverified end as partial', async () => {

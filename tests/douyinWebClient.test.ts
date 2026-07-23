@@ -2,10 +2,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   createDouyinWebFavoritesClient,
+  DOUYIN_MY_FAVORITE_NOTES_FOLDER_ID,
   DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID,
 } from '../electron/video/douyinWebClient.ts'
 
-test('web client exposes one virtual My favorites videos collection', async () => {
+test('web client exposes virtual My favorites video and image-text collections', async () => {
   const cursors: Array<string | undefined> = []
   const client = createDouyinWebFavoritesClient({
     isLoggedIn: async () => true,
@@ -19,10 +20,17 @@ test('web client exposes one virtual My favorites videos collection', async () =
         isNewestFirst: true,
       }
     },
+    listFavoriteNotes: async () => ({
+      entries: [{ remoteId: '456', title: 'Useful note', sourceUrl: 'https://www.douyin.com/note/456' }],
+      hasMore: false,
+    }),
   })
 
   assert.deepEqual(await client.listFolders({}), {
-    entries: [{ remoteId: DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID, title: 'My favorite videos' }],
+    entries: [
+      { remoteId: DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID, title: 'My favorite videos' },
+      { remoteId: DOUYIN_MY_FAVORITE_NOTES_FOLDER_ID, title: 'My favorite notes' },
+    ],
     hasMore: false,
   })
   assert.deepEqual(await client.listFolders({ cursor: 'ignored' }), { entries: [], hasMore: false })
@@ -40,12 +48,20 @@ test('web client exposes one virtual My favorites videos collection', async () =
     },
   )
   assert.deepEqual(cursors, ['2'])
+  assert.deepEqual(
+    await client.listFolderItems({ folderRemoteId: DOUYIN_MY_FAVORITE_NOTES_FOLDER_ID }),
+    {
+      entries: [{ remoteId: '456', title: 'Useful note', sourceUrl: 'https://www.douyin.com/note/456' }],
+      hasMore: false,
+    },
+  )
 })
 
 test('web client does not synchronize folder tabs or expired logins', async () => {
   const client = createDouyinWebFavoritesClient({
     isLoggedIn: async () => false,
     listFavoriteVideos: async () => ({ entries: [], hasMore: false }),
+    listFavoriteNotes: async () => ({ entries: [], hasMore: false }),
   })
 
   await assert.rejects(

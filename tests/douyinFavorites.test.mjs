@@ -137,6 +137,58 @@ test('favorite synchronization upserts folders and items without duplication', a
   db.close()
 })
 
+test('favorite synchronization preserves image-text favorites in their own folder', async () => {
+  const db = createVideoDb()
+  const result = await syncDouyinFavorites({
+    db,
+    sessionPartition: 'persist:lifeos-douyin-guest',
+    client: createClient({
+      listFolders: async () => ({
+        entries: [
+          { remoteId: 'my-favorite-videos', title: 'My favorite videos' },
+          { remoteId: 'my-favorite-notes', title: 'My favorite notes' },
+        ],
+        hasMore: false,
+      }),
+      listFolderItems: async ({ folderRemoteId }) => ({
+        entries:
+          folderRemoteId === 'my-favorite-notes'
+            ? [
+                {
+                  remoteId: 'note-1',
+                  title: 'Useful image-text post',
+                  authorName: 'Author',
+                  sourceUrl: 'https://www.douyin.com/note/456',
+                  thumbnailUrl: 'https://p3.douyinpic.com/note-cover.jpg',
+                  contentType: 'note',
+                },
+              ]
+            : [
+                {
+                  remoteId: 'video-1',
+                  title: 'Useful video',
+                  sourceUrl: 'https://www.douyin.com/video/123',
+                  contentType: 'video',
+                },
+              ],
+        hasMore: false,
+      }),
+    }),
+  })
+
+  assert.deepEqual(
+    { success: result.success, foldersSynced: result.foldersSynced, itemsSynced: result.itemsSynced },
+    { success: true, foldersSynced: 2, itemsSynced: 2 },
+  )
+  const noteFolder = listDouyinFavoriteFolders(db).find((folder) => folder.remote_id === 'my-favorite-notes')
+  assert.ok(noteFolder)
+  const [note] = listDouyinFavoriteItems(db, noteFolder.id)
+  assert.equal(note.remote_id, 'note-1')
+  assert.equal(note.content_type, 'note')
+  assert.equal(note.source_url, 'https://www.douyin.com/note/456')
+  db.close()
+})
+
 test('favorite sync status is scoped to the current Douyin session', async () => {
   const db = createVideoDb()
   const sessionPartition = 'persist:lifeos-douyin-guest'
