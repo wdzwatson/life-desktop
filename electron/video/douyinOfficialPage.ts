@@ -180,7 +180,7 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
           (async () => {
             const contentType = ${JSON.stringify(contentType)}
             const tabLabel = ${JSON.stringify(tabLabel)}
-            const itemPath = new RegExp('^/' + contentType + '/\\\\d+$')
+            const itemPath = new RegExp('^/' + contentType + '/(\\\\d+)$')
             const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
             const waitFor = async (read, timeoutMs) => {
               const startedAt = Date.now()

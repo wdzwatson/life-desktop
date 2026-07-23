@@ -4,8 +4,11 @@ import type { WebContents } from 'electron'
 import { DouyinOfficialPageObserver } from '../electron/video/douyinOfficialPage.ts'
 
 test('official page observer keeps only visible Douyin video favorites', async () => {
+  let injectedScript = ''
   const page = {
-    executeJavaScript: async () => ({
+    executeJavaScript: async (script: string) => {
+      injectedScript = script
+      return {
       entries: [
         {
           remoteId: '123',
@@ -20,7 +23,8 @@ test('official page observer keeps only visible Douyin video favorites', async (
       hasMore: false,
       complete: true,
       stopReason: 'explicit_end',
-    }),
+      }
+    },
   } as unknown as WebContents
   const observer = new DouyinOfficialPageObserver(page)
   await observer.start()
@@ -41,6 +45,7 @@ test('official page observer keeps only visible Douyin video favorites', async (
     stopReason: 'explicit_end',
     isNewestFirst: true,
   })
+  assert.equal(injectedScript.includes("/(\\\\d+)$"), true)
   observer.stop()
 })
 
