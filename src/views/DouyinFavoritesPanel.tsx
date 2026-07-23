@@ -3,6 +3,7 @@ import {
   Download,
   ExternalLink,
   Folder,
+  Images,
   KeyRound,
   Play,
   RefreshCw,
@@ -90,6 +91,7 @@ export function DouyinFavoritesPanel({
   const [playbackUrl, setPlaybackUrl] = useState('')
   const [activeFolderId, setActiveFolderId] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [contentFilter, setContentFilter] = useState<'all' | 'video' | 'note'>('all')
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [syncProgress, setSyncProgress] = useState<DouyinSyncProgress | null>(null)
@@ -436,7 +438,7 @@ export function DouyinFavoritesPanel({
     }
   }
 
-  const filteredItems = filterDouyinFavoriteItems(items, searchQuery)
+  const filteredItems = filterDouyinFavoriteItems(items, searchQuery, contentFilter)
   const isVideoFavoritesOnly =
     folders.length === 1 && folders[0].remote_id === DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID
   const syncElapsedSeconds = syncProgress
@@ -600,6 +602,23 @@ export function DouyinFavoritesPanel({
               placeholder={t('videos.douyin_search_placeholder')}
               style={{ height: '30px' }}
             />
+            <div
+              role="group"
+              aria-label={t('videos.douyin_content_filter')}
+              style={{ display: 'inline-flex', alignSelf: 'flex-start', gap: '2px' }}
+            >
+              {(['all', 'video', 'note'] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  className={`btn sm ${contentFilter === type ? 'primary' : 'ghost'}`}
+                  onClick={() => setContentFilter(type)}
+                  aria-pressed={contentFilter === type}
+                >
+                  {t(`videos.douyin_filter_${type}`)}
+                </button>
+              ))}
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
               <button
                 type="button"
@@ -649,8 +668,10 @@ export function DouyinFavoritesPanel({
                   overflowY: 'auto',
                 }}
               >
-                {filteredItems.map((item) => (
-                  <article
+                {filteredItems.map((item) => {
+                  const isVideo = item.content_type === 'video'
+                  return (
+                    <article
                     key={item.id}
                     style={{
                       display: 'grid',
@@ -663,7 +684,13 @@ export function DouyinFavoritesPanel({
                       background: 'var(--bg-muted)',
                     }}
                   >
-                    <div style={{ position: 'relative', aspectRatio: '16 / 9', background: 'var(--color-border)' }}>
+                    <div
+                      style={{
+                        position: 'relative',
+                        aspectRatio: isVideo ? '16 / 9' : '1 / 1',
+                        background: 'var(--color-border)',
+                      }}
+                    >
                       {item.thumbnail_url ? (
                         <img
                           src={item.thumbnail_url}
@@ -681,7 +708,28 @@ export function DouyinFavoritesPanel({
                         aria-label={item.title}
                         style={{ position: 'absolute', top: '8px', left: '8px', width: '16px', height: '16px' }}
                       />
-                      {item.download_status === 'downloading' ? (
+                      {!isVideo ? (
+                        <span
+                          style={{
+                            position: 'absolute',
+                            right: '8px',
+                            bottom: '8px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '3px 6px',
+                            borderRadius: '4px',
+                            background: 'rgba(8, 12, 18, 0.72)',
+                            color: '#fff',
+                            fontSize: '10px',
+                            fontWeight: 650,
+                          }}
+                        >
+                          <Images size={11} />
+                          {t('videos.douyin_type_note')}
+                        </span>
+                      ) : null}
+                      {isVideo && item.download_status === 'downloading' ? (
                         <div
                           style={{
                             position: 'absolute',
@@ -735,7 +783,7 @@ export function DouyinFavoritesPanel({
                         >
                           {item.title}
                         </div>
-                        {item.download_status === 'downloaded' && item.local_path ? (
+                        {isVideo && item.download_status === 'downloaded' && item.local_path ? (
                           <button
                             type="button"
                             className="btn sm btn-icon ghost"
@@ -757,7 +805,8 @@ export function DouyinFavoritesPanel({
                         >
                           <ExternalLink size={13} />
                         </button>
-                        <button
+                        {isVideo ? (
+                          <button
                           type="button"
                           className="btn sm btn-icon ghost"
                           title={
@@ -775,9 +824,11 @@ export function DouyinFavoritesPanel({
                           style={{ width: '28px', height: '28px', minWidth: '28px', padding: 0 }}
                         >
                           <Download size={13} />
-                        </button>
+                          </button>
+                        ) : null}
                       </div>
-                      <div
+                      {isVideo ? (
+                        <div
                         style={{
                           display: 'inline-flex',
                           alignItems: 'center',
@@ -805,14 +856,16 @@ export function DouyinFavoritesPanel({
                             : item.download_status === 'failed'
                               ? t('videos.douyin_status_failed')
                               : t('videos.douyin_status_not_downloaded')}
-                      </div>
+                        </div>
+                      ) : null}
                       <div style={{ color: 'var(--text-muted)', fontSize: '10.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {item.author_name || t('videos.douyin_unknown_author')}
-                        {item.duration_seconds ? ` · ${formatDuration(item.duration_seconds)}` : ''}
+                        {isVideo && item.duration_seconds ? ` · ${formatDuration(item.duration_seconds)}` : ''}
                       </div>
                     </div>
                   </article>
-                ))}
+                  )
+                })}
                 <div
                   style={{
                     display: 'flex',

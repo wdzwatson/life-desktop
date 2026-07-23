@@ -12,6 +12,7 @@ export interface DouyinFavoriteItemView {
   id: number
   remote_id: string
   title: string
+  content_type: 'video' | 'note' | 'unknown'
   author_id: string | null
   author_name: string | null
   source_url: string
@@ -32,10 +33,14 @@ export function getActiveDouyinFolderId(
   return folders.some((folder) => folder.id === activeFolderId) ? activeFolderId : (folders[0]?.id ?? null)
 }
 
-export function filterDouyinFavoriteItems(items: DouyinFavoriteItemView[], query: string) {
+export function filterDouyinFavoriteItems(
+  items: DouyinFavoriteItemView[],
+  query: string,
+  contentType: 'all' | 'video' | 'note' = 'all',
+) {
   const normalizedQuery = query.trim().toLocaleLowerCase()
-  if (!normalizedQuery) return items
-  return items.filter((item) =>
-    `${item.title} ${item.author_name || ''}`.toLocaleLowerCase().includes(normalizedQuery),
-  )
+  return items.filter((item) => {
+    if (contentType !== 'all' && item.content_type !== contentType) return false
+    return !normalizedQuery || `${item.title} ${item.author_name || ''}`.toLocaleLowerCase().includes(normalizedQuery)
+  })
 }

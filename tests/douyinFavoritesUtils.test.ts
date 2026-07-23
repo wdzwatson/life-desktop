@@ -24,6 +24,7 @@ const items: DouyinFavoriteItemView[] = [
     id: 1,
     remote_id: 'aweme-1',
     title: 'TypeScript tips',
+    content_type: 'video',
     author_id: 'author-1',
     author_name: 'LifeOS',
     source_url: 'https://www.douyin.com/video/1',
@@ -43,4 +44,10 @@ test('selects the first available Douyin folder when the active folder disappear
 test('filters favorite videos by title and author without changing ordering', () => {
   assert.deepEqual(filterDouyinFavoriteItems(items, 'lifeos'), items)
   assert.deepEqual(filterDouyinFavoriteItems(items, 'missing'), [])
+})
+
+test('filters image-text favorites separately from videos', () => {
+  const imageText = { ...items[0], id: 2, title: 'Image-text guide', content_type: 'note' as const }
+  assert.deepEqual(filterDouyinFavoriteItems([...items, imageText], '', 'note'), [imageText])
+  assert.deepEqual(filterDouyinFavoriteItems([...items, imageText], '', 'video'), items)
 })
