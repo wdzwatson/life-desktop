@@ -35,7 +35,7 @@ interface FavoriteVideoDomResult {
 }
 
 const PAGE_ACTION_TIMEOUT_MS = 35_000
-const SCROLL_ROUNDS_PER_PAGE = 12
+const SCROLL_ROUNDS_PER_PAGE = 4
 const SCROLL_SETTLE_MS = 700
 const MAX_IDLE_SCROLL_ROUNDS = 2
 const END_STABILITY_MS = 10_000
