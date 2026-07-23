@@ -7,6 +7,8 @@ import Database from 'better-sqlite3'
 import { initializeUserDatabase } from '../electron/db/schema.ts'
 import {
   DouyinFavoritesError,
+  clearDouyinFavoriteItems,
+  deleteDouyinFavoriteItems,
   listDouyinFavoriteFolders,
   listDouyinFavoriteItems,
   normalizeDouyinFavoriteItem,
@@ -122,6 +124,10 @@ test('favorite synchronization upserts folders and items without duplication', a
       collected_at: '2026-07-23T08:00:00.000Z',
       favorite_added_at: null,
       position: 0,
+      download_status: 'not_downloaded',
+      download_progress: 0,
+      local_path: null,
+      download_error: null,
     },
   ])
   db.close()
@@ -265,6 +271,82 @@ test('full DOM-style sync continues through known pages without favorite timesta
   assert.equal(result.complete, true)
   assert.equal(result.incrementalFolders, 0)
   assert.equal(requests.length, 3)
+  db.close()
+})
+
+test('explicit end marks ever sync completion and deleting the last item resets it', async () => {
+  const db = createVideoDb()
+  const result = await syncDouyinFavorites({
+    db,
+    sessionPartition: 'persist:lifeos-douyin-guest',
+    client: createClient({
+      listFolderItems: async () => ({
+        entries: [
+          {
+            remoteId: 'ever-1',
+            title: 'Ever synced',
+            sourceUrl: 'https://www.douyin.com/video/1234567890',
+          },
+        ],
+        hasMore: false,
+        complete: true,
+        stopReason: 'explicit_end',
+      }),
+    }),
+  })
+  assert.equal(result.complete, true)
+  assert.equal(db.prepare('SELECT ever_sync_finished FROM douyin_accounts').get().ever_sync_finished, 1)
+  const itemId = db.prepare('SELECT id FROM douyin_favorite_items WHERE remote_id = ?').get('ever-1').id
+  assert.deepEqual(deleteDouyinFavoriteItems(db, [itemId]), { deleted: 1 })
+  assert.equal(db.prepare('SELECT ever_sync_finished FROM douyin_accounts').get().ever_sync_finished, 0)
+  db.close()
+})
+
+test('ever-complete sync stops after five consecutive known videos', async () => {
+  const db = createVideoDb()
+  const sessionPartition = 'persist:lifeos-douyin-guest'
+  await syncDouyinFavorites({
+    db,
+    sessionPartition,
+    client: createClient({
+      listFolderItems: async () => ({
+        entries: [
+          { remoteId: 'known-1', title: 'Known 1', sourceUrl: 'https://www.douyin.com/video/1' },
+          { remoteId: 'known-2', title: 'Known 2', sourceUrl: 'https://www.douyin.com/video/2' },
+          { remoteId: 'known-3', title: 'Known 3', sourceUrl: 'https://www.douyin.com/video/3' },
+          { remoteId: 'known-4', title: 'Known 4', sourceUrl: 'https://www.douyin.com/video/4' },
+          { remoteId: 'known-5', title: 'Known 5', sourceUrl: 'https://www.douyin.com/video/5' },
+        ],
+        hasMore: false,
+        complete: true,
+        stopReason: 'explicit_end',
+      }),
+    }),
+  })
+  const requests = []
+  const result = await syncDouyinFavorites({
+    db,
+    sessionPartition,
+    client: createClient({
+      listFolderItems: async ({ cursor }) => {
+        requests.push(cursor)
+        return {
+          entries: [
+            { remoteId: 'known-1', title: 'Known 1', sourceUrl: 'https://www.douyin.com/video/1' },
+            { remoteId: 'known-2', title: 'Known 2', sourceUrl: 'https://www.douyin.com/video/2' },
+            { remoteId: 'known-3', title: 'Known 3', sourceUrl: 'https://www.douyin.com/video/3' },
+            { remoteId: 'known-4', title: 'Known 4', sourceUrl: 'https://www.douyin.com/video/4' },
+            { remoteId: 'known-5', title: 'Known 5', sourceUrl: 'https://www.douyin.com/video/5' },
+          ],
+          hasMore: true,
+          cursor: `page-${requests.length}`,
+          isNewestFirst: true,
+        }
+      },
+    }),
+  })
+  assert.equal(result.complete, true)
+  assert.deepEqual(requests, [undefined])
   db.close()
 })
 
