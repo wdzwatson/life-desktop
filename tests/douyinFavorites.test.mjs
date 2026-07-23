@@ -219,6 +219,56 @@ test('favorite synchronization upserts folders and items without duplication', a
   db.close()
 })
 
+test('unified favorites list keeps the newest source entries first without favorite timestamps', async () => {
+  const db = createVideoDb()
+  const sessionPartition = 'persist:lifeos-douyin-guest'
+  await syncDouyinFavorites({
+    db,
+    sessionPartition,
+    client: createClient({
+      listFolderItems: async () => ({
+        entries: [
+          {
+            remoteId: 'older',
+            title: 'Older favorite',
+            sourceUrl: 'https://www.douyin.com/video/1',
+          },
+        ],
+        hasMore: false,
+      }),
+    }),
+  })
+
+  await syncDouyinFavorites({
+    db,
+    sessionPartition,
+    client: createClient({
+      listFolderItems: async () => ({
+        entries: [
+          {
+            remoteId: 'newer',
+            title: 'Newer favorite',
+            sourceUrl: 'https://www.douyin.com/video/2',
+          },
+          {
+            remoteId: 'older',
+            title: 'Older favorite',
+            sourceUrl: 'https://www.douyin.com/video/1',
+          },
+        ],
+        hasMore: false,
+      }),
+    }),
+  })
+
+  const page = listDouyinFavoriteItems(db, null, { offset: 0, limit: 20 })
+  assert.deepEqual(
+    page.items.map((item) => item.remote_id),
+    ['newer', 'older'],
+  )
+  db.close()
+})
+
 test('favorite synchronization preserves image-text favorites in their own folder', async () => {
   const db = createVideoDb()
   const result = await syncDouyinFavorites({

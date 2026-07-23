@@ -15,6 +15,7 @@ test('official page observer classifies each visible favorite by its link type',
           title: 'Useful video',
           authorName: 'Author',
           thumbnailUrl: 'https://p3.douyinpic.com/cover.jpg',
+          favoriteAddedAt: '2026-07-24T08:00:00.000Z',
           sourceUrl: 'https://www.douyin.com/video/123',
         },
         { remoteId: '456', title: 'A note', sourceUrl: 'https://www.douyin.com/note/456' },
@@ -37,6 +38,7 @@ test('official page observer classifies each visible favorite by its link type',
         title: 'Useful video',
         authorName: 'Author',
         thumbnailUrl: 'https://p3.douyinpic.com/cover.jpg',
+        favoriteAddedAt: '2026-07-24T08:00:00.000Z',
         sourceUrl: 'https://www.douyin.com/video/123',
         contentType: 'video',
       },
@@ -137,9 +139,7 @@ test('official page observer logs titles for visible cards with unsupported link
 test('official page observer treats an unverified end as partial', async () => {
   const page = {
     executeJavaScript: async () => ({
-      entries: [
-        { remoteId: '123', title: 'Useful video', sourceUrl: 'https://www.douyin.com/video/123' },
-      ],
+      entries: [{ remoteId: '123', title: 'Useful video', sourceUrl: 'https://www.douyin.com/video/123' }],
       hasMore: false,
     }),
   } as unknown as WebContents
@@ -156,7 +156,9 @@ test('official page observer treats an unverified end as partial', async () => {
 test('official page observer stops a source when scrolling produces no new unique works', async () => {
   const page = {
     executeJavaScript: async () => ({
-      entries: [{ remoteId: '123', title: 'Useful video', sourceUrl: 'https://www.douyin.com/video/123' }],
+      entries: [
+        { remoteId: '123', title: 'Useful video', sourceUrl: 'https://www.douyin.com/video/123' },
+      ],
       hasMore: true,
       complete: false,
       stopReason: 'round_limit',

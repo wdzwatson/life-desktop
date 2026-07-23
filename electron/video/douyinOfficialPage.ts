@@ -8,6 +8,7 @@ export interface DouyinFavoriteVideoEntry {
   contentType?: 'video' | 'note' | 'article'
   authorName?: string
   thumbnailUrl?: string
+  favoriteAddedAt?: string
 }
 
 export interface DouyinFavoriteVideoPage {
@@ -124,6 +125,7 @@ function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult
           contentType,
           ...(text(entry.authorName) ? { authorName: text(entry.authorName) } : {}),
           ...(text(entry.thumbnailUrl) ? { thumbnailUrl: text(entry.thumbnailUrl) } : {}),
+          ...(text(entry.favoriteAddedAt) ? { favoriteAddedAt: text(entry.favoriteAddedAt) } : {}),
         },
       ]
     }),
@@ -277,6 +279,26 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
                 element.textContent?.trim().split('\\n').find(Boolean)?.trim() ||
                 fallback
             }
+            const favoriteAddedAt = (anchor) => {
+              const card = anchor.closest('li') || anchor.parentElement
+              if (!card) return ''
+              const explicitValue = [
+                card.getAttribute('data-favorite-added-at'),
+                card.getAttribute('data-favorite-time'),
+                card.querySelector('[data-favorite-added-at]')?.getAttribute('data-favorite-added-at'),
+                card.querySelector('[data-favorite-time]')?.getAttribute('data-favorite-time'),
+              ].find((value) => value?.trim()) || ''
+              const labeledTime = Array.from(card.querySelectorAll('time[datetime]')).find((time) => {
+                const context = [
+                  time.getAttribute('aria-label'),
+                  time.textContent,
+                  time.parentElement?.textContent,
+                ].filter(Boolean).join(' ')
+                return /收藏/.test(context)
+              })?.getAttribute('datetime') || ''
+              const timestamp = Date.parse(explicitValue || labeledTime)
+              return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : ''
+            }
             const readEntries = (list) => {
               const root = list || document
               return Array.from(root.querySelectorAll('a[href]')).filter((anchor) => {
@@ -298,6 +320,7 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
                 ].find((value) => /^https?:\\/\\//.test(value || '')) || ''
                 const title = cardTitle(anchor, 'Douyin ' + match[1] + ' ' + match[2])
                 const authorName = imageLabel.includes('：') ? imageLabel.split('：')[0].trim() : ''
+                const addedAt = favoriteAddedAt(anchor)
                 return [{
                   remoteId: match[2],
                   title,
@@ -305,6 +328,7 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
                   contentType: match[1],
                   ...(authorName ? { authorName } : {}),
                   ...(thumbnailUrl ? { thumbnailUrl } : {}),
+                  ...(addedAt ? { favoriteAddedAt: addedAt } : {}),
                 }]
               })
             }

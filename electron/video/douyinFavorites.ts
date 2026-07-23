@@ -827,7 +827,13 @@ export function listDouyinFavoriteItems(
              ${scopedToFolder ? 'fi.position' : '0 AS position'},
              i.download_status, i.download_progress, i.local_path, i.download_error
       ${base}
-      ORDER BY i.favorite_added_at DESC, i.collected_at DESC, ${scopedToFolder ? 'fi.position ASC,' : ''} i.id ASC
+      ORDER BY i.favorite_added_at DESC, i.collected_at DESC,
+               ${
+                 scopedToFolder
+                   ? 'fi.position ASC'
+                   : 'COALESCE((SELECT MIN(position) FROM douyin_folder_items WHERE item_id = i.id), 2147483647) ASC'
+               },
+               i.created_at DESC, i.id DESC
       LIMIT ? OFFSET ?
       `,
     )
