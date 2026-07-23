@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   CheckSquare,
   Download,
   ExternalLink,
@@ -108,9 +109,7 @@ export function DouyinFavoritesPanel({
     ])
     setAuth(authResult || { loggedIn: false })
     setSyncFinished(
-      Boolean(
-        (syncStatusResult?.data as DouyinSyncStatus | undefined)?.everSyncFinished,
-      ),
+      Boolean((syncStatusResult?.data as DouyinSyncStatus | undefined)?.everSyncFinished),
     )
     if (!foldersResult?.success) {
       setError(foldersResult?.error || t('videos.douyin_load_failed'))
@@ -221,7 +220,12 @@ export function DouyinFavoritesPanel({
       setItems((current) =>
         current.map((item) =>
           item.id === event.itemId
-            ? { ...item, download_status: 'failed', download_progress: 0, download_error: event.message || null }
+            ? {
+                ...item,
+                download_status: 'failed',
+                download_progress: 0,
+                download_error: event.message || null,
+              }
             : item,
         ),
       )
@@ -275,7 +279,12 @@ export function DouyinFavoritesPanel({
       setItems((current) =>
         current.map((entry) =>
           entry.id === item.id
-            ? { ...entry, download_status: 'failed', download_progress: 0, download_error: result?.error || null }
+            ? {
+                ...entry,
+                download_status: 'failed',
+                download_progress: 0,
+                download_error: result?.error || null,
+              }
             : entry,
         ),
       )
@@ -638,114 +647,158 @@ export function DouyinFavoritesPanel({
               >
                 {filteredItems.map((item) => {
                   const isVideo = item.content_type === 'video'
+                  const contentStatusLabel = isVideo
+                    ? item.download_status === 'downloading'
+                      ? t('videos.douyin_status_downloading', {
+                          progress: Math.round(item.download_progress || 0),
+                        })
+                      : item.download_status === 'downloaded'
+                        ? t('videos.douyin_status_downloaded')
+                        : item.download_status === 'failed'
+                          ? t('videos.douyin_status_failed')
+                          : t('videos.douyin_status_not_downloaded')
+                    : item.content_type === 'note'
+                      ? t('videos.douyin_status_note')
+                      : item.content_type === 'article'
+                        ? t('videos.douyin_status_article')
+                        : null
                   return (
                     <article
-                    key={item.id}
-                    style={{
-                      display: 'grid',
-                      gridTemplateRows: 'auto auto',
-                      gap: '8px',
-                      minWidth: 0,
-                      overflow: 'hidden',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: '8px',
-                      background: 'var(--bg-muted)',
-                    }}
-                  >
-                    <div
+                      key={item.id}
                       style={{
-                        position: 'relative',
-                        aspectRatio: isVideo ? '16 / 9' : '1 / 1',
-                        background: 'var(--color-border)',
+                        display: 'grid',
+                        gridTemplateRows: '154px minmax(0, 1fr)',
+                        gap: '8px',
+                        minWidth: 0,
+                        height: '275px',
+                        overflow: 'hidden',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: '8px',
+                        background:
+                          item.content_type === 'note'
+                            ? '#ffeccb'
+                            : item.content_type === 'article'
+                              ? '#ffe6ff'
+                              : 'var(--bg-muted)',
                       }}
                     >
-                      {item.thumbnail_url ? (
-                        <img
-                          src={item.thumbnail_url}
-                          alt=""
-                          loading="lazy"
-                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                        />
-                      ) : (
-                        <div aria-hidden="true" style={{ width: '100%', height: '100%', background: 'var(--bg-muted)' }} />
-                      )}
-                      <input
-                        type="checkbox"
-                        checked={selectedItemIds.includes(item.id)}
-                        onChange={() => toggleItemSelection(item.id)}
-                        aria-label={item.title}
-                        style={{ position: 'absolute', top: '8px', left: '8px', width: '16px', height: '16px' }}
-                      />
-                      {!isVideo ? (
-                        <span
-                          style={{
-                            position: 'absolute',
-                            right: '8px',
-                            bottom: '8px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            padding: '3px 6px',
-                            borderRadius: '4px',
-                            background: 'rgba(8, 12, 18, 0.72)',
-                            color: '#fff',
-                            fontSize: '10px',
-                            fontWeight: 650,
-                          }}
-                        >
-                          <Images size={11} />
-                          {item.content_type === 'article'
-                            ? t('videos.douyin_type_article')
-                            : t('videos.douyin_type_note')}
-                        </span>
-                      ) : null}
-                      {isVideo && item.download_status === 'downloading' ? (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            inset: 0,
-                            display: 'grid',
-                            alignContent: 'center',
-                            gap: '8px',
-                            padding: '12px',
-                            background: 'rgba(8, 12, 18, 0.68)',
-                            color: '#fff',
-                            textAlign: 'center',
-                          }}
-                        >
-                          <strong style={{ fontSize: '13px' }}>
-                            {Math.round(item.download_progress || 0)}%
-                          </strong>
+                      <div
+                        style={{
+                          position: 'relative',
+                          background: 'var(--color-border)',
+                        }}
+                      >
+                        {item.thumbnail_url ? (
+                          <img
+                            src={item.thumbnail_url}
+                            alt=""
+                            loading="lazy"
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                              display: 'block',
+                            }}
+                          />
+                        ) : (
                           <div
-                            role="progressbar"
-                            aria-valuemin={0}
-                            aria-valuemax={100}
-                            aria-valuenow={Math.round(item.download_progress || 0)}
-                            style={{ height: '5px', overflow: 'hidden', borderRadius: '3px', background: 'rgba(255,255,255,0.28)' }}
+                            aria-hidden="true"
+                            style={{ width: '100%', height: '100%', background: 'var(--bg-muted)' }}
+                          />
+                        )}
+                        <input
+                          type="checkbox"
+                          checked={selectedItemIds.includes(item.id)}
+                          onChange={() => toggleItemSelection(item.id)}
+                          aria-label={item.title}
+                          style={{
+                            position: 'absolute',
+                            top: '8px',
+                            left: '8px',
+                            width: '16px',
+                            height: '16px',
+                          }}
+                        />
+                        {!isVideo ? (
+                          <span
+                            style={{
+                              position: 'absolute',
+                              right: '8px',
+                              bottom: '8px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '3px 6px',
+                              borderRadius: '4px',
+                              background: 'rgba(8, 12, 18, 0.72)',
+                              color: '#fff',
+                              fontSize: '10px',
+                              fontWeight: 650,
+                            }}
                           >
+                            <Images size={11} />
+                            {item.content_type === 'article'
+                              ? t('videos.douyin_type_article')
+                              : t('videos.douyin_type_note')}
+                          </span>
+                        ) : null}
+                        {isVideo && item.download_status === 'downloading' ? (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              display: 'grid',
+                              alignContent: 'center',
+                              gap: '8px',
+                              padding: '12px',
+                              background: 'rgba(8, 12, 18, 0.68)',
+                              color: '#fff',
+                              textAlign: 'center',
+                            }}
+                          >
+                            <strong style={{ fontSize: '13px' }}>
+                              {Math.round(item.download_progress || 0)}%
+                            </strong>
                             <div
+                              role="progressbar"
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={Math.round(item.download_progress || 0)}
                               style={{
-                                width: `${Math.max(0, Math.min(100, item.download_progress || 0))}%`,
-                                height: '100%',
-                                background: 'var(--color-accent)',
-                                transition: 'width 180ms ease-out',
+                                height: '5px',
+                                overflow: 'hidden',
+                                borderRadius: '3px',
+                                background: 'rgba(255,255,255,0.28)',
                               }}
-                            />
+                            >
+                              <div
+                                style={{
+                                  width: `${Math.max(0, Math.min(100, item.download_progress || 0))}%`,
+                                  height: '100%',
+                                  background: 'var(--color-accent)',
+                                  transition: 'width 180ms ease-out',
+                                }}
+                              />
+                            </div>
                           </div>
-                        </div>
-                      ) : null}
-                    </div>
-                    <div style={{ display: 'grid', gap: '6px', minWidth: 0, padding: '0 9px 9px' }}>
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                        ) : null}
+                      </div>
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateRows: '50.4px auto auto',
+                          minWidth: 0,
+                          padding: '0 9px 9px',
+                        }}
+                      >
                         <div
                           title={item.title}
                           style={{
-                            flex: 1,
                             minWidth: 0,
                             overflow: 'hidden',
                             display: '-webkit-box',
                             WebkitBoxOrient: 'vertical',
-                            WebkitLineClamp: 2,
+                            WebkitLineClamp: 3,
                             fontSize: '12px',
                             lineHeight: 1.4,
                             fontWeight: 650,
@@ -753,87 +806,134 @@ export function DouyinFavoritesPanel({
                         >
                           {item.title}
                         </div>
-                        {isVideo && item.download_status === 'downloaded' && item.local_path ? (
-                          <button
-                            type="button"
-                            className="btn sm btn-icon ghost"
-                            title={t('videos.douyin_play')}
-                            aria-label={t('videos.douyin_play')}
-                            onClick={() => void playDownloadedItem(item)}
-                            style={{ width: '28px', height: '28px', minWidth: '28px', padding: 0 }}
+                        {contentStatusLabel ? (
+                          <div
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              width: 'fit-content',
+                              maxWidth: '100%',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              color:
+                                item.download_status === 'downloaded'
+                                  ? 'var(--color-success)'
+                                  : item.download_status === 'failed'
+                                    ? 'var(--color-danger)'
+                                    : 'var(--text-muted)',
+                              background: 'var(--bg-subtle)',
+                              fontSize: '10px',
+                              fontWeight: 650,
+                            }}
                           >
-                            <Play size={13} />
-                          </button>
+                            {contentStatusLabel}
+                          </div>
                         ) : null}
-                        <button
-                          type="button"
-                          className="btn sm btn-icon ghost"
-                          title={t('videos.btn_open_external')}
-                          aria-label={t('videos.btn_open_external')}
-                          onClick={() => void api?.openExternal?.(item.source_url)}
-                          style={{ width: '28px', height: '28px', minWidth: '28px', padding: 0 }}
-                        >
-                          <ExternalLink size={13} />
-                        </button>
-                        {isVideo ? (
-                          <button
-                          type="button"
-                          className="btn sm btn-icon ghost"
-                          title={
-                            item.download_status === 'downloaded'
-                              ? t('videos.douyin_downloaded')
-                              : t('videos.douyin_download')
-                          }
-                          aria-label={
-                            item.download_status === 'downloaded'
-                              ? t('videos.douyin_downloaded')
-                              : t('videos.douyin_download')
-                          }
-                          onClick={() => void startItemDownload(item)}
-                          disabled={item.download_status === 'downloading'}
-                          style={{ width: '28px', height: '28px', minWidth: '28px', padding: 0 }}
-                        >
-                          <Download size={13} />
-                          </button>
-                        ) : null}
-                      </div>
-                      {isVideo ? (
                         <div
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          width: 'fit-content',
-                          maxWidth: '100%',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          color:
-                            item.download_status === 'downloaded'
-                              ? 'var(--color-success)'
-                              : item.download_status === 'failed'
-                                ? 'var(--color-danger)'
-                                : 'var(--text-muted)',
-                          background: 'var(--bg-subtle)',
-                          fontSize: '10px',
-                          fontWeight: 650,
-                        }}
-                      >
-                        {item.download_status === 'downloading'
-                          ? t('videos.douyin_status_downloading', {
-                              progress: Math.round(item.download_progress || 0),
-                            })
-                          : item.download_status === 'downloaded'
-                            ? t('videos.douyin_status_downloaded')
-                            : item.download_status === 'failed'
-                              ? t('videos.douyin_status_failed')
-                              : t('videos.douyin_status_not_downloaded')}
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}
+                        >
+                          <div
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              color: 'var(--text-muted)',
+                              fontSize: '10.5px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {item.author_name || t('videos.douyin_unknown_author')}
+                            {isVideo && item.duration_seconds
+                              ? ` · ${formatDuration(item.duration_seconds)}`
+                              : ''}
+                          </div>
+                          <div
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {isVideo && item.download_status === 'downloaded' && item.local_path ? (
+                              <button
+                                type="button"
+                                className="btn sm btn-icon ghost"
+                                title={t('videos.douyin_play')}
+                                aria-label={t('videos.douyin_play')}
+                                onClick={() => void playDownloadedItem(item)}
+                                style={{
+                                  width: '28px',
+                                  height: '28px',
+                                  minWidth: '28px',
+                                  padding: 0,
+                                }}
+                              >
+                                <Play size={13} />
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="btn sm btn-icon ghost"
+                              title={t('videos.btn_open_external')}
+                              aria-label={t('videos.btn_open_external')}
+                              onClick={() => void api?.openExternal?.(item.source_url)}
+                              style={{
+                                width: '28px',
+                                height: '28px',
+                                minWidth: '28px',
+                                padding: 0,
+                              }}
+                            >
+                              <ExternalLink size={13} />
+                            </button>
+                            {isVideo ? (
+                              <button
+                                type="button"
+                                className="btn sm btn-icon ghost"
+                                title={
+                                  item.download_status === 'downloaded'
+                                    ? t('videos.douyin_downloaded')
+                                    : t('videos.douyin_download')
+                                }
+                                aria-label={
+                                  item.download_status === 'downloaded'
+                                    ? t('videos.douyin_downloaded')
+                                    : t('videos.douyin_download')
+                                }
+                                onClick={() => void startItemDownload(item)}
+                                disabled={item.download_status === 'downloading'}
+                                style={{
+                                  width: '28px',
+                                  height: '28px',
+                                  minWidth: '28px',
+                                  padding: 0,
+                                }}
+                              >
+                                <Download size={13} />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn sm btn-icon ghost"
+                                title={t('videos.douyin_read_coming_soon')}
+                                aria-label={t('videos.douyin_read_coming_soon')}
+                                disabled
+                                style={{
+                                  width: '28px',
+                                  height: '28px',
+                                  minWidth: '28px',
+                                  padding: 0,
+                                }}
+                              >
+                                <BookOpen size={13} />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      ) : null}
-                      <div style={{ color: 'var(--text-muted)', fontSize: '10.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {item.author_name || t('videos.douyin_unknown_author')}
-                        {isVideo && item.duration_seconds ? ` · ${formatDuration(item.duration_seconds)}` : ''}
                       </div>
-                    </div>
-                  </article>
+                    </article>
                   )
                 })}
                 <div
