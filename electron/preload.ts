@@ -220,6 +220,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDouyinAuthStatus: () => ipcRenderer.invoke('video:getDouyinAuthStatus'),
   logoutDouyin: () => ipcRenderer.invoke('video:logoutDouyin'),
   syncDouyinFavorites: () => ipcRenderer.invoke('video:syncDouyinFavorites'),
+  getDouyinSyncStatus: () => ipcRenderer.invoke('video:getDouyinSyncStatus'),
   listDouyinFavoriteFolders: () => ipcRenderer.invoke('video:listDouyinFavoriteFolders'),
   listDouyinFavoriteItems: (
     folderId: number,

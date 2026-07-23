@@ -793,6 +793,23 @@ export function listDouyinFavoriteFolders(db: Database.Database): DouyinFavorite
     .all() as DouyinFavoriteFolderRecord[]
 }
 
+export function getDouyinAccountSyncStatus(
+  db: Database.Database,
+  sessionPartition: string,
+): { everSyncFinished: boolean } {
+  const row = db
+    .prepare(
+      `
+      SELECT ever_sync_finished
+      FROM douyin_accounts
+      WHERE session_partition = ?
+      LIMIT 1
+      `,
+    )
+    .get(sessionPartition) as { ever_sync_finished?: number } | undefined
+  return { everSyncFinished: row?.ever_sync_finished === 1 }
+}
+
 export function listDouyinFavoriteItems(
   db: Database.Database,
   folderId: number,

@@ -62,6 +62,7 @@ import {
   DouyinFavoritesError,
   clearDouyinFavoriteItems,
   deleteDouyinFavoriteItems,
+  getDouyinAccountSyncStatus,
   getDouyinFavoriteItem,
   listDouyinFavoriteFolders,
   listDouyinFavoriteItems,
@@ -125,6 +126,8 @@ let mainWindow: BrowserWindow | null = null
 let desktopTaskNoteWindow: BrowserWindow | null = null
 let douyinSyncWindow: BrowserWindow | null = null
 let douyinSyncWindowReady = false
+let douyinSyncPageLoadPromise: Promise<void> | null = null
+let douyinSyncInFlight: Promise<Awaited<ReturnType<typeof synchronizeDouyinFavorites>>> | null = null
 let desktopTaskNoteSaveTimer: NodeJS.Timeout | null = null
 let appTray: Tray | null = null
 let isQuitting = false
@@ -148,12 +151,14 @@ function destroyDouyinSyncWindowForAppQuit() {
   if (!douyinSyncWindow || douyinSyncWindow.isDestroyed()) {
     douyinSyncWindow = null
     douyinSyncWindowReady = false
+    douyinSyncPageLoadPromise = null
     return
   }
   logDouyinSyncWindow('destroy', { reason: 'app_quit' })
   douyinSyncWindow.destroy()
   douyinSyncWindow = null
   douyinSyncWindowReady = false
+  douyinSyncPageLoadPromise = null
 }
 
 // Default Paths
@@ -524,6 +529,7 @@ async function withDouyinFavoritesClient<T>(
           width: 1080,
           height: 760,
           webPreferences: {
+            backgroundThrottling: false,
             nodeIntegration: false,
             contextIsolation: true,
             sandbox: true,
@@ -533,7 +539,33 @@ async function withDouyinFavoritesClient<T>(
   const reusedSyncWindow = douyinSyncWindow === syncWindow && douyinSyncWindowReady
   douyinSyncWindow = syncWindow
   syncWindow.show()
+  syncWindow.focus()
+  syncWindow.webContents.focus()
   logDouyinSyncWindow('opened')
+  const navigationEvents = [
+    'did-start-loading',
+    'did-finish-load',
+    'did-navigate',
+    'did-navigate-in-page',
+    'did-frame-navigate',
+  ] as const
+  const onNavigation = (...args: unknown[]) => {
+    logDouyinSyncWindow('navigation', {
+      event: navigationEvents.find((event) => args.includes(event)),
+      url: syncWindow.webContents.getURL(),
+      loading: syncWindow.webContents.isLoading(),
+    })
+  }
+  const navigationListeners = navigationEvents.map((event) => {
+    const listener = () => onNavigation(event)
+    syncWindow.webContents.on(event, listener)
+    return { event, listener }
+  })
+  const removeNavigationListeners = () => {
+    for (const { event, listener } of navigationListeners) {
+      syncWindow.webContents.removeListener(event, listener)
+    }
+  }
   syncWindow.once('close', () => {
     logDouyinSyncWindow('close_requested', { reason: isQuitting ? 'app_quit' : 'user' })
   })
@@ -543,6 +575,7 @@ async function withDouyinFavoritesClient<T>(
   syncWindow.once('closed', () => {
     if (douyinSyncWindow === syncWindow) douyinSyncWindow = null
     douyinSyncWindowReady = false
+    douyinSyncPageLoadPromise = null
     logDouyinSyncWindow('closed', { reason: isQuitting ? 'app_quit' : 'user' })
   })
   const officialPage = new DouyinOfficialPageObserver(syncWindow.webContents, (event) => {
@@ -552,24 +585,19 @@ async function withDouyinFavoritesClient<T>(
   try {
     await officialPage.start()
     mainWindow?.webContents.send('video:douyin-sync-diagnostic', { kind: 'page_loading' })
-    if (!reusedSyncWindow) {
-      await withDouyinTimeout(
-        loadDouyinFavoritesPage(syncWindow),
-        20_000,
-        'Douyin official page did not finish loading in time.',
-        'page_load',
-      )
-      douyinSyncWindowReady = true
-    } else {
-      logDouyinSyncWindow('reused_page')
-    }
+    if (reusedSyncWindow) logDouyinSyncWindow('reused_page')
+    else await ensureDouyinFavoritesPageLoaded(syncWindow)
+    syncWindow.focus()
+    syncWindow.webContents.focus()
     officialPage.notifyPageReady()
     const result = await action(createDouyinWebFavoritesClient(officialPage))
-    const syncResult = result as { complete?: unknown }
+    const syncResult = result as { success?: unknown; complete?: unknown }
     outcome =
-      result && typeof result === 'object' && syncResult.complete === false
-        ? 'partial'
-        : 'completed'
+      result && typeof result === 'object' && syncResult.success === false
+        ? 'failed'
+        : result && typeof result === 'object' && syncResult.complete === false
+          ? 'partial'
+          : 'completed'
     return result
   } catch (error) {
     logDouyinSyncWindow('sync_failed', {
@@ -580,11 +608,42 @@ async function withDouyinFavoritesClient<T>(
     throw error
   } finally {
     officialPage.stop()
-    if (!syncWindow.isDestroyed()) {
+    removeNavigationListeners()
+    if (!syncWindow.isDestroyed() && outcome === 'completed') {
       logDouyinSyncWindow('closed_after_sync', { reason: outcome })
       syncWindow.close()
+    } else if (!syncWindow.isDestroyed()) {
+      logDouyinSyncWindow('retained_after_sync', { reason: outcome })
+      syncWindow.show()
+      syncWindow.focus()
     }
+    if (!isQuitting && outcome === 'completed') showMainWindow()
   }
+}
+
+function ensureDouyinFavoritesPageLoaded(syncWindow: BrowserWindow) {
+  if (douyinSyncWindowReady && !syncWindow.webContents.isLoading()) return Promise.resolve()
+  if (douyinSyncPageLoadPromise) return douyinSyncPageLoadPromise
+
+  const loadPromise = withDouyinTimeout(
+    loadDouyinFavoritesPage(syncWindow),
+    20_000,
+    'Douyin official page did not finish loading in time.',
+    'page_load',
+  )
+  const trackedPromise = loadPromise
+    .then(() => {
+      douyinSyncWindowReady = true
+    })
+    .catch((error) => {
+      douyinSyncWindowReady = false
+      throw error
+    })
+    .finally(() => {
+      if (douyinSyncPageLoadPromise === trackedPromise) douyinSyncPageLoadPromise = null
+    })
+  douyinSyncPageLoadPromise = trackedPromise
+  return trackedPromise
 }
 
 function loadDouyinFavoritesPage(syncWindow: BrowserWindow) {
@@ -2850,11 +2909,28 @@ ipcMain.handle('video:logoutDouyin', async () => {
 })
 
 ipcMain.handle('video:syncDouyinFavorites', async () => {
-  return synchronizeDouyinFavorites()
+  if (douyinSyncInFlight) return douyinSyncInFlight
+  const syncPromise = synchronizeDouyinFavorites()
+  douyinSyncInFlight = syncPromise
+  try {
+    return await syncPromise
+  } finally {
+    if (douyinSyncInFlight === syncPromise) douyinSyncInFlight = null
+  }
 })
 
 ipcMain.handle('video:listDouyinFavoriteFolders', async () => {
   return { success: true, data: listDouyinFavoriteFolders(getUserDb('videos')) }
+})
+
+ipcMain.handle('video:getDouyinSyncStatus', async () => {
+  return {
+    success: true,
+    data: getDouyinAccountSyncStatus(
+      getUserDb('videos'),
+      getDouyinLoginPartition(activeUserId),
+    ),
+  }
 })
 
 ipcMain.handle('video:listDouyinFavoriteItems', async (_, folderId: unknown, options?: unknown) => {

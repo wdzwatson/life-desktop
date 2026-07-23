@@ -18,6 +18,8 @@ test('official page observer keeps only visible Douyin video favorites', async (
         { remoteId: '123', title: 'Duplicate', sourceUrl: 'https://www.douyin.com/video/123' },
       ],
       hasMore: false,
+      complete: true,
+      stopReason: 'explicit_end',
     }),
   } as unknown as WebContents
   const observer = new DouyinOfficialPageObserver(page)
@@ -35,9 +37,28 @@ test('official page observer keeps only visible Douyin video favorites', async (
     ],
     hasMore: false,
     complete: true,
-    stopReason: 'source_end',
+    stopReason: 'explicit_end',
     isNewestFirst: true,
   })
+  observer.stop()
+})
+
+test('official page observer treats an unverified end as partial', async () => {
+  const page = {
+    executeJavaScript: async () => ({
+      entries: [
+        { remoteId: '123', title: 'Useful video', sourceUrl: 'https://www.douyin.com/video/123' },
+      ],
+      hasMore: false,
+    }),
+  } as unknown as WebContents
+  const observer = new DouyinOfficialPageObserver(page)
+  await observer.start()
+
+  const result = await observer.listFavoriteVideos({})
+  assert.equal(result.complete, false)
+  assert.equal(result.hasMore, false)
+  assert.equal(result.stopReason, 'source_uncertain')
   observer.stop()
 })
 

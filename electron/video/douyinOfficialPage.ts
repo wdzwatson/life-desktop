@@ -31,12 +31,12 @@ interface FavoriteVideoDomResult {
   entries: DouyinFavoriteVideoEntry[]
   hasMore: boolean
   complete: boolean
-  stopReason: 'explicit_end' | 'round_limit' | 'source_end'
+  stopReason: 'explicit_end' | 'round_limit' | 'stalled' | 'source_uncertain'
 }
 
 const PAGE_ACTION_TIMEOUT_MS = 35_000
 const SCROLL_ROUNDS_PER_PAGE = 24
-const SCROLL_SETTLE_MS = 450
+const SCROLL_SETTLE_MS = 700
 
 function text(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
@@ -60,8 +60,9 @@ function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult
       ? (value as Record<string, unknown>)
       : {}
   const entries = Array.isArray(source.entries) ? source.entries : []
-  const hasMore = source.hasMore === true
-  const complete = source.complete === false ? false : !hasMore
+  const explicitEnd = source.stopReason === 'explicit_end'
+  const complete = explicitEnd && source.complete !== false
+  const hasMore = source.hasMore === true && !complete
   const unique = new Set<string>()
   return {
     entries: entries.flatMap((value) => {
@@ -87,13 +88,14 @@ function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult
     hasMore,
     complete,
     stopReason:
-      source.stopReason === 'explicit_end' ||
+      explicitEnd ||
       source.stopReason === 'round_limit' ||
-      source.stopReason === 'source_end'
+      source.stopReason === 'stalled' ||
+      source.stopReason === 'source_uncertain'
         ? source.stopReason
-        : complete
-          ? 'source_end'
-          : 'round_limit',
+        : hasMore
+          ? 'round_limit'
+          : 'source_uncertain',
   }
 }
 
@@ -187,14 +189,19 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
                 .map((list) => ({ list, count: findVideoLinks(list).length }))
                 .sort((left, right) => right.count - left.count)[0]?.list || document.body
             }
-            const getScrollTarget = (list) => {
+            const getScrollTargets = (list) => {
+              const targets = []
               let node = list?.parentElement || null
               while (node && node !== document.body) {
                 const style = getComputedStyle(node)
-                if (node.scrollHeight > node.clientHeight && /(auto|scroll)/.test(style.overflowY)) return node
+                if (node.scrollHeight > node.clientHeight && /(auto|scroll)/.test(style.overflowY)) {
+                  targets.push(node)
+                }
                 node = node.parentElement
               }
-              return document.scrollingElement || document.documentElement
+              const root = document.scrollingElement || document.documentElement
+              if (!targets.includes(root)) targets.push(root)
+              return targets
             }
             const readEntries = (list) => {
               const root = list || document
@@ -227,27 +234,44 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
               return Boolean(list && readEntries(list).length > 0) || text.includes('暂时没有更多') || text.includes('暂无收藏')
             }, 20000)
             if (!listReady) throw new Error('Douyin favorite video cards did not appear after the page loaded.')
-            const list = favoriteList()
-            const scrollTarget = getScrollTarget(list)
             const collected = new Map()
             let explicitEnd = false
+            let observedScrollProgress = false
             for (let round = 0; round < ${SCROLL_ROUNDS_PER_PAGE}; round += 1) {
+              const list = favoriteList()
+              const scrollTargets = getScrollTargets(list)
+              const beforeCount = collected.size
+              const beforeScrollState = new Map(scrollTargets.map((target) => [target, {
+                top: target.scrollTop,
+                height: target.scrollHeight,
+              }]))
               readEntries(list).forEach((entry) => collected.set(entry.remoteId, entry))
-              const step = Math.max(400, Math.floor(scrollTarget.clientHeight * 0.85))
-              scrollTarget.scrollBy({ top: step, behavior: 'auto' })
+              for (const scrollTarget of scrollTargets) {
+                const step = Math.max(400, Math.floor(scrollTarget.clientHeight * 0.85))
+                scrollTarget.scrollBy({ top: step, behavior: 'auto' })
+              }
               await delay(${SCROLL_SETTLE_MS})
-              readEntries(list).forEach((entry) => collected.set(entry.remoteId, entry))
-              const text = listText(list)
-              explicitEnd = text.includes('暂时没有更多') || text.includes('没有更多了')
+              const nextList = favoriteList()
+              const nextScrollTargets = getScrollTargets(nextList)
+              readEntries(nextList).forEach((entry) => collected.set(entry.remoteId, entry))
+              const text = listText(nextList)
+              explicitEnd = text.includes('暂时没有更多了')
+              const moved = nextScrollTargets.some((target) => {
+                const before = beforeScrollState.get(target)
+                return !before || target.scrollTop !== before.top || target.scrollHeight !== before.height
+              })
+              const addedEntries = collected.size > beforeCount
+              if (addedEntries || moved) observedScrollProgress = true
               if (explicitEnd) break
             }
-            const text = listText(list)
-            explicitEnd = explicitEnd || text.includes('暂时没有更多') || text.includes('没有更多了')
+            const text = listText(favoriteList())
+            explicitEnd = explicitEnd || text.includes('暂时没有更多了')
+            const stalled = !observedScrollProgress
             return {
               entries: [...collected.values()],
-              hasMore: !explicitEnd,
+              hasMore: !explicitEnd && !stalled,
               complete: explicitEnd,
-              stopReason: explicitEnd ? 'explicit_end' : 'round_limit',
+              stopReason: explicitEnd ? 'explicit_end' : stalled ? 'stalled' : 'round_limit',
             }
           })()
         `),
