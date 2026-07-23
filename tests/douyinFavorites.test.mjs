@@ -9,6 +9,7 @@ import {
   DouyinFavoritesError,
   clearDouyinFavoriteItems,
   deleteDouyinFavoriteItems,
+  getDouyinAccountSyncStatus,
   listDouyinFavoriteFolders,
   listDouyinFavoriteItems,
   normalizeDouyinFavoriteItem,
@@ -130,6 +131,20 @@ test('favorite synchronization upserts folders and items without duplication', a
       download_error: null,
     },
   ])
+  db.close()
+})
+
+test('favorite sync status is scoped to the current Douyin session', async () => {
+  const db = createVideoDb()
+  const sessionPartition = 'persist:lifeos-douyin-guest'
+
+  assert.deepEqual(getDouyinAccountSyncStatus(db, sessionPartition), { everSyncFinished: false })
+  await syncDouyinFavorites({ db, sessionPartition, client: createClient() })
+
+  assert.deepEqual(getDouyinAccountSyncStatus(db, sessionPartition), { everSyncFinished: true })
+  assert.deepEqual(getDouyinAccountSyncStatus(db, 'persist:lifeos-douyin-other'), {
+    everSyncFinished: false,
+  })
   db.close()
 })
 

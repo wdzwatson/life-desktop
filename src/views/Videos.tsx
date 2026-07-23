@@ -1634,7 +1634,13 @@ export const Videos: React.FC = () => {
         <main
           className="video-library-main"
           aria-busy={isRefreshingData}
-          style={{ display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            minWidth: 0,
+            minHeight: 0,
+          }}
         >
           <div
             className={`video-refresh-indicator ${isRefreshingData ? 'is-visible' : ''}`}

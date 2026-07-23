@@ -581,6 +581,7 @@
     "douyin_refresh": "刷新抖音收藏",
     "douyin_sync": "同步收藏",
     "douyin_syncing": "同步中…",
+    "douyin_sync_finished": "全程同步",
     "douyin_sync_phase_starting": "正在准备抖音官方页面，已等待 {{seconds}} 秒",
     "douyin_sync_phase_checking_login": "正在确认抖音登录状态，已等待 {{seconds}} 秒",
     "douyin_sync_phase_loading_folders": "正在打开抖音我的收藏视频，已等待 {{seconds}} 秒",

@@ -581,6 +581,7 @@
     "douyin_refresh": "Refresh Douyin favorites",
     "douyin_sync": "Sync favorites",
     "douyin_syncing": "Syncing...",
+    "douyin_sync_finished": "Fully synced",
     "douyin_sync_phase_starting": "Preparing the official Douyin page, waiting {{seconds}}s",
     "douyin_sync_phase_checking_login": "Checking the Douyin sign-in, waiting {{seconds}}s",
     "douyin_sync_phase_loading_folders": "Opening Douyin My favorites videos, waiting {{seconds}}s",

@@ -25,6 +25,10 @@ interface DouyinAuthStatus {
   loggedIn?: boolean
 }
 
+interface DouyinSyncStatus {
+  everSyncFinished?: boolean
+}
+
 interface DouyinListResponse<T> {
   success?: boolean
   data?: T
@@ -75,6 +79,7 @@ export function DouyinFavoritesPanel({
   const { confirm } = useConfirmation()
   const api = (window as any).electronAPI
   const [auth, setAuth] = useState<DouyinAuthStatus>({ loggedIn: false })
+  const [syncFinished, setSyncFinished] = useState(false)
   const [folders, setFolders] = useState<DouyinFavoriteFolderView[]>([])
   const [items, setItems] = useState<DouyinFavoriteItemView[]>([])
   const [itemsTotal, setItemsTotal] = useState(0)
@@ -98,11 +103,17 @@ export function DouyinFavoritesPanel({
 
   const refreshFolders = useCallback(async () => {
     if (!api) return
-    const [authResult, foldersResult] = await Promise.all([
+    const [authResult, foldersResult, syncStatusResult] = await Promise.all([
       api.getDouyinAuthStatus(),
       api.listDouyinFavoriteFolders(),
+      api.getDouyinSyncStatus ? api.getDouyinSyncStatus() : Promise.resolve(null),
     ])
     setAuth(authResult || { loggedIn: false })
+    setSyncFinished(
+      Boolean(
+        (syncStatusResult?.data as DouyinSyncStatus | undefined)?.everSyncFinished,
+      ),
+    )
     if (!foldersResult?.success) {
       setError(foldersResult?.error || t('videos.douyin_load_failed'))
       return
@@ -453,11 +464,13 @@ export function DouyinFavoritesPanel({
       className="card"
       aria-busy={loading || syncing}
       style={{
-        display: 'grid',
+        display: workspace ? 'flex' : 'grid',
+        flexDirection: workspace ? 'column' : undefined,
         gap: '10px',
         minWidth: 0,
         minHeight: 0,
         flex: workspace ? 1 : undefined,
+        overflow: workspace ? 'hidden' : undefined,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -470,6 +483,9 @@ export function DouyinFavoritesPanel({
         <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
           {auth.loggedIn ? t('videos.douyin_logged_in') : t('videos.douyin_not_logged_in')}
         </span>
+        {syncFinished ? (
+          <span className="pill green">{t('videos.douyin_sync_finished')}</span>
+        ) : null}
         <button
           type="button"
           className="btn sm btn-icon"
@@ -566,11 +582,12 @@ export function DouyinFavoritesPanel({
           ) : null}
           <div
             style={{
-              display: 'grid',
+              display: workspace ? 'flex' : 'grid',
+              flexDirection: workspace ? 'column' : undefined,
               gap: '8px',
               minWidth: 0,
               minHeight: 0,
-              gridTemplateRows: workspace ? 'auto minmax(0, 1fr)' : undefined,
+              flex: workspace ? 1 : undefined,
             }}
           >
             {isVideoFavoritesOnly ? (
@@ -627,6 +644,7 @@ export function DouyinFavoritesPanel({
                   gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))',
                   gap: '10px',
                   maxHeight: workspace ? undefined : '260px',
+                  flex: workspace ? 1 : undefined,
                   minHeight: 0,
                   overflowY: 'auto',
                 }}
