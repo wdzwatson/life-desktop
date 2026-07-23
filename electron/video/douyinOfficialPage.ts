@@ -151,21 +151,21 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
   }
 
   async listFavoriteVideos({ cursor }: { cursor?: string }) {
-    return this.listFavoriteItems({ cursor, contentType: 'video', tabLabel: '视频' })
+    return this.listFavoriteItems({ cursor, contentType: 'video', tabLabels: ['视频'] })
   }
 
   async listFavoriteNotes({ cursor }: { cursor?: string }) {
-    return this.listFavoriteItems({ cursor, contentType: 'note', tabLabel: '图文' })
+    return this.listFavoriteItems({ cursor, contentType: 'note', tabLabels: ['图文', '笔记'] })
   }
 
   private async listFavoriteItems({
     cursor,
     contentType,
-    tabLabel,
+    tabLabels,
   }: {
     cursor?: string
     contentType: 'video' | 'note'
-    tabLabel: string
+    tabLabels: string[]
   }) {
     if (!cursor) {
       const ids = contentType === 'video' ? this.favoriteVideoIds : this.favoriteNoteIds
@@ -179,7 +179,7 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
         this.page.executeJavaScript(`
           (async () => {
             const contentType = ${JSON.stringify(contentType)}
-            const tabLabel = ${JSON.stringify(tabLabel)}
+            const tabLabels = ${JSON.stringify(tabLabels)}
             const itemPath = new RegExp('^/' + contentType + '/(\\\\d+)$')
             const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
             const waitFor = async (read, timeoutMs) => {
@@ -204,19 +204,24 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
             }
             const exactTab = (label) => Array.from(document.querySelectorAll('[role="tab"]'))
               .find((element) => visible(element) && element.textContent?.trim() === label)
-            const activateTab = async (label) => {
-              const tab = await waitFor(() => exactTab(label), 10_000)
-              if (!tab) throw new Error('Douyin did not expose the ' + label + ' tab.')
+            let activeContentTab = null
+            const activateTab = async (labels) => {
+              const candidates = Array.isArray(labels) ? labels : [labels]
+              const tab = await waitFor(
+                () => candidates.map((label) => exactTab(label)).find(Boolean),
+                10_000,
+              )
+              if (!tab) throw new Error('Douyin did not expose a ' + candidates.join(' or ') + ' tab.')
               if (tab.getAttribute('aria-selected') !== 'true') tab.click()
               const selected = await waitFor(
                 () => tab.getAttribute('aria-selected') === 'true',
                 10_000,
               )
-              if (!selected) throw new Error('Douyin did not activate the ' + label + ' tab.')
+              if (!selected) throw new Error('Douyin did not activate the ' + candidates.join(' or ') + ' tab.')
               return tab
             }
             const videoContentRoot = () => {
-              const videoTab = exactTab(tabLabel)
+              const videoTab = activeContentTab || tabLabels.map((label) => exactTab(label)).find(Boolean)
               const controlsId = videoTab?.getAttribute('aria-controls')
               const controlled = controlsId ? document.getElementById(controlsId) : null
               if (controlled && visible(controlled)) return controlled
@@ -290,18 +295,25 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
               target.scrollTop + target.clientHeight < target.scrollHeight - 2
             if (!${cursor ? 'true' : 'false'}) {
               await activateTab('收藏')
-              await activateTab(tabLabel)
+              activeContentTab = await activateTab(tabLabels)
               for (const target of getScrollTargets(favoriteList())) {
                 target.scrollTo({ top: 0, behavior: 'auto' })
               }
             }
             const listReady = await waitFor(() => {
               const list = favoriteList()
-              return Boolean(list && readEntries(list).length > 0)
+              const pageText = videoContentRoot().innerText || ''
+              return Boolean(
+                list &&
+                  (readEntries(list).length > 0 || /暂时没有更多了|暂无内容|还没有收藏/.test(pageText)),
+              )
             }, 30000)
-            if (!listReady) throw new Error('Douyin favorite cards did not appear after the ' + tabLabel + ' tab loaded.')
+            if (!listReady) throw new Error('Douyin favorite cards did not appear after the ' + tabLabels.join(' or ') + ' tab loaded.')
 
             const list = favoriteList()
+            if (readEntries(list).length === 0) {
+              return { entries: [], hasMore: false, complete: true, stopReason: 'source_end' }
+            }
             if (!${cursor ? 'true' : 'false'}) {
               return {
                 entries: readEntries(list),

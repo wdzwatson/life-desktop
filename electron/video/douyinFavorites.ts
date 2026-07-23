@@ -73,6 +73,7 @@ export interface DouyinSyncResult {
   foldersSynced: number
   itemsSynced: number
   partialFolders?: number
+  failedFolders?: number
   stopReasons?: string[]
   incrementalFolders?: number
   fullFolders?: number
@@ -693,6 +694,9 @@ export async function syncDouyinFavorites(input: {
         report('writing_items', folder.title)
       } catch (error) {
         failedFolders += 1
+        partialFolders += 1
+        syncComplete = false
+        stopReasons.add('folder_failed')
         lastFolderError = error
         updateFolderFailure(input.db, folderId, toSyncError(error))
         foldersCompleted += 1
@@ -729,6 +733,7 @@ export async function syncDouyinFavorites(input: {
       foldersSynced,
       itemsSynced,
       partialFolders,
+      failedFolders,
       stopReasons: [...stopReasons],
       incrementalFolders,
       fullFolders,

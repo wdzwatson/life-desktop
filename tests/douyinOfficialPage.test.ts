@@ -50,8 +50,11 @@ test('official page observer keeps only visible Douyin video favorites', async (
 })
 
 test('official page observer reads visible Douyin image-text favorites from the 图文 tab', async () => {
+  let injectedScript = ''
   const page = {
-    executeJavaScript: async () => ({
+    executeJavaScript: async (script: string) => {
+      injectedScript = script
+      return {
       entries: [
         {
           remoteId: '456',
@@ -64,7 +67,8 @@ test('official page observer reads visible Douyin image-text favorites from the 
       hasMore: false,
       complete: true,
       stopReason: 'explicit_end',
-    }),
+      }
+    },
   } as unknown as WebContents
   const observer = new DouyinOfficialPageObserver(page)
 
@@ -84,6 +88,7 @@ test('official page observer reads visible Douyin image-text favorites from the 
     stopReason: 'explicit_end',
     isNewestFirst: true,
   })
+  assert.equal(injectedScript.includes('"图文","笔记"'), true)
 })
 
 test('official page observer treats an unverified end as partial', async () => {

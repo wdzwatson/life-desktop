@@ -196,6 +196,42 @@ test('favorite synchronization preserves image-text favorites in their own folde
   db.close()
 })
 
+test('a failed image-text reader makes an otherwise successful sync partial', async () => {
+  const db = createVideoDb()
+  const result = await syncDouyinFavorites({
+    db,
+    sessionPartition: 'persist:lifeos-douyin-guest',
+    client: createClient({
+      listFolders: async () => ({
+        entries: [
+          { remoteId: 'my-favorite-videos', title: 'My favorite videos' },
+          { remoteId: 'my-favorite-notes', title: 'My favorite notes' },
+        ],
+        hasMore: false,
+      }),
+      listFolderItems: async ({ folderRemoteId }) => {
+        if (folderRemoteId === 'my-favorite-notes') throw new Error('图文 tab unavailable')
+        return {
+          entries: [
+            { remoteId: 'video-1', title: 'Useful video', sourceUrl: 'https://www.douyin.com/video/123' },
+          ],
+          hasMore: false,
+        }
+      },
+    }),
+  })
+
+  assert.equal(result.success, true)
+  assert.equal(result.complete, false)
+  assert.equal(result.partialFolders, 1)
+  assert.equal(result.failedFolders, 1)
+  assert.deepEqual(result.stopReasons, ['folder_failed'])
+  const noteFolder = listDouyinFavoriteFolders(db).find((folder) => folder.remote_id === 'my-favorite-notes')
+  assert.equal(noteFolder.sync_status, 'failed')
+  assert.match(noteFolder.diagnostic_message, /图文 tab unavailable/)
+  db.close()
+})
+
 test('only video favorites are eligible for video downloads', () => {
   assert.equal(canDownloadDouyinFavorite({ content_type: 'video' }), true)
   assert.equal(canDownloadDouyinFavorite({ content_type: 'note' }), false)
