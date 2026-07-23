@@ -16,7 +16,6 @@ import { useConfirmation } from '../components/ConfirmationProvider'
 import { ViewportPortal } from '../components/ViewportPortal'
 import {
   filterDouyinFavoriteItems,
-  getActiveDouyinFolderId,
   type DouyinFavoriteFolderView,
   type DouyinFavoriteItemView,
 } from './douyinFavoritesUtils'
@@ -67,9 +66,6 @@ interface DouyinSyncDiagnostic {
   status?: number
 }
 
-const DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID = 'my-favorite-videos'
-const DOUYIN_MY_FAVORITE_NOTES_FOLDER_ID = 'my-favorite-notes'
-
 export function DouyinFavoritesPanel({
   showToast,
   workspace = false,
@@ -90,7 +86,6 @@ export function DouyinFavoritesPanel({
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([])
   const [playingItem, setPlayingItem] = useState<DouyinFavoriteItemView | null>(null)
   const [playbackUrl, setPlaybackUrl] = useState('')
-  const [activeFolderId, setActiveFolderId] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [contentFilter, setContentFilter] = useState<'all' | 'video' | 'note'>('all')
   const [loading, setLoading] = useState(true)
@@ -123,7 +118,6 @@ export function DouyinFavoritesPanel({
     }
     const nextFolders = (foldersResult.data || []) as DouyinFavoriteFolderView[]
     setFolders(nextFolders)
-    setActiveFolderId((current) => getActiveDouyinFolderId(nextFolders, current))
   }, [api, t])
 
   const refresh = useCallback(async () => {
@@ -143,20 +137,7 @@ export function DouyinFavoritesPanel({
   }, [refresh])
 
   useEffect(() => {
-    if (contentFilter === 'all') {
-      setActiveFolderId(null)
-      return
-    }
-    const remoteId =
-      contentFilter === 'video'
-        ? DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID
-        : DOUYIN_MY_FAVORITE_NOTES_FOLDER_ID
-    const folder = folders.find((entry) => entry.remote_id === remoteId)
-    if (folder) setActiveFolderId(folder.id)
-  }, [contentFilter, folders])
-
-  useEffect(() => {
-    if (!api || (contentFilter !== 'all' && !activeFolderId)) {
+    if (!api) {
       setItems([])
       setItemsTotal(0)
       setItemsHasMore(false)
@@ -167,7 +148,12 @@ export function DouyinFavoritesPanel({
     setItems([])
     setSelectedItemIds([])
     void api
-      .listDouyinFavoriteItems(contentFilter === 'all' ? null : activeFolderId, { offset: 0, limit: 20, query: searchQuery })
+      .listDouyinFavoriteItems(null, {
+        offset: 0,
+        limit: 20,
+        query: searchQuery,
+        contentType: contentFilter === 'all' ? undefined : contentFilter,
+      })
       .then((result: DouyinListResponse<DouyinFavoriteItemsPage>) => {
         if (cancelled) return
         if (!result?.success) {
@@ -188,7 +174,7 @@ export function DouyinFavoritesPanel({
     return () => {
       cancelled = true
     }
-  }, [activeFolderId, api, contentFilter, searchQuery, syncRefreshNonce, t])
+  }, [api, contentFilter, searchQuery, syncRefreshNonce, t])
 
   useEffect(() => {
     if (!api?.onDouyinDownloadProgress) return
@@ -243,13 +229,14 @@ export function DouyinFavoritesPanel({
   }, [api])
 
   const loadMoreItems = async () => {
-    if (!api || (contentFilter !== 'all' && !activeFolderId) || itemsLoading || !itemsHasMore) return
+    if (!api || itemsLoading || !itemsHasMore) return
     setItemsLoading(true)
     try {
-      const result = (await api.listDouyinFavoriteItems(contentFilter === 'all' ? null : activeFolderId, {
+      const result = (await api.listDouyinFavoriteItems(null, {
         offset: items.length,
         limit: 20,
         query: searchQuery,
+        contentType: contentFilter === 'all' ? undefined : contentFilter,
       })) as DouyinListResponse<DouyinFavoriteItemsPage>
       if (!result?.success) {
         setError(result?.error || t('videos.douyin_load_failed'))

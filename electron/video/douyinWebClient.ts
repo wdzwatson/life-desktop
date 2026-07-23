@@ -7,17 +7,11 @@ import {
 } from './douyinFavorites'
 import type { DouyinOfficialPageExecutor } from './douyinOfficialPage'
 
-export const DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID = 'my-favorite-videos'
-export const DOUYIN_MY_FAVORITE_NOTES_FOLDER_ID = 'my-favorite-notes'
+export const DOUYIN_MY_FAVORITES_FOLDER_ID = 'my-favorites'
 
-const MY_FAVORITE_VIDEOS_FOLDER: DouyinFavoriteFolderInput = {
-  remoteId: DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID,
-  title: 'My favorite videos',
-}
-
-const MY_FAVORITE_NOTES_FOLDER: DouyinFavoriteFolderInput = {
-  remoteId: DOUYIN_MY_FAVORITE_NOTES_FOLDER_ID,
-  title: 'My favorite notes',
+const MY_FAVORITES_FOLDER: DouyinFavoriteFolderInput = {
+  remoteId: DOUYIN_MY_FAVORITES_FOLDER_ID,
+  title: 'My favorites',
 }
 
 /** Adapts the visible My favorites tabs into the local mirror client. */
@@ -36,23 +30,19 @@ export function createDouyinWebFavoritesClient(
     },
     async listFolders({ cursor }) {
       return {
-        entries: cursor ? [] : [MY_FAVORITE_VIDEOS_FOLDER, MY_FAVORITE_NOTES_FOLDER],
+        entries: cursor ? [] : [MY_FAVORITES_FOLDER],
         hasMore: false,
       }
     },
     async listFolderItems({ folderRemoteId, cursor }) {
-      if (folderRemoteId === DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID) {
-        const pageResult = await page.listFavoriteVideos({ cursor })
-        return pageResult as DouyinPage<DouyinFavoriteItemInput>
-      }
-      if (folderRemoteId === DOUYIN_MY_FAVORITE_NOTES_FOLDER_ID) {
-        const pageResult = await page.listFavoriteNotes({ cursor })
+      if (folderRemoteId === DOUYIN_MY_FAVORITES_FOLDER_ID) {
+        const pageResult = await page.listFavoriteItems({ cursor })
         return pageResult as DouyinPage<DouyinFavoriteItemInput>
       }
       {
         throw new DouyinFavoritesError(
           'unsupported',
-          'Only Douyin My favorites videos and notes can be synchronized.',
+          'Only the unified Douyin My favorites collection can be synchronized.',
         )
       }
     },

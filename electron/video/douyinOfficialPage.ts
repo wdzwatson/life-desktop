@@ -19,6 +19,7 @@ export interface DouyinFavoriteVideoPage {
 
 export interface DouyinOfficialPageExecutor {
   isLoggedIn(): Promise<boolean>
+  listFavoriteItems(input: { cursor?: string }): Promise<DouyinFavoriteVideoPage>
   listFavoriteVideos(input: { cursor?: string }): Promise<DouyinFavoriteVideoPage>
   listFavoriteNotes(input: { cursor?: string }): Promise<DouyinFavoriteVideoPage>
 }
@@ -59,10 +60,14 @@ function isDouyinFavoriteUrl(value: string, contentType: 'video' | 'note') {
   }
 }
 
-function normalizeFavoriteVideoDomResult(
-  value: unknown,
-  contentType: 'video' | 'note',
-): FavoriteVideoDomResult {
+function contentTypeFromFavoriteUrl(value: string): 'video' | 'note' | null {
+  for (const contentType of ['video', 'note'] as const) {
+    if (isDouyinFavoriteUrl(value, contentType)) return contentType
+  }
+  return null
+}
+
+function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult {
   const source =
     value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
@@ -81,7 +86,11 @@ function normalizeFavoriteVideoDomResult(
       const remoteId = text(entry.remoteId)
       const title = text(entry.title)
       const sourceUrl = text(entry.sourceUrl)
-      if (!remoteId || !title || !isDouyinFavoriteUrl(sourceUrl, contentType) || unique.has(remoteId)) return []
+      const contentType =
+        entry.contentType === 'video' || entry.contentType === 'note'
+          ? entry.contentType
+          : contentTypeFromFavoriteUrl(sourceUrl)
+      if (!remoteId || !title || !contentType || !isDouyinFavoriteUrl(sourceUrl, contentType) || unique.has(remoteId)) return []
       unique.add(remoteId)
       return [
         {
@@ -151,36 +160,70 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
   }
 
   async listFavoriteVideos({ cursor }: { cursor?: string }) {
-    return this.listFavoriteItems({ cursor, contentType: 'video', tabLabels: ['视频'] })
+    return this.listFavoriteTabItems({ cursor, sourceKey: 'video', tabLabels: ['视频'] })
   }
 
   async listFavoriteNotes({ cursor }: { cursor?: string }) {
-    return this.listFavoriteItems({ cursor, contentType: 'note', tabLabels: ['图文', '笔记'] })
+    return this.listFavoriteTabItems({ cursor, sourceKey: 'note', tabLabels: ['图文', '笔记'] })
   }
 
-  private async listFavoriteItems({
+  async listFavoriteItems({ cursor }: { cursor?: string }) {
+    const sources = [
+      { sourceKey: 'video' as const, tabLabels: ['视频'] },
+      { sourceKey: 'note' as const, tabLabels: ['图文', '笔记'] },
+    ]
+    let sourceIndex = 0
+    let sourceCursor: string | undefined
+    if (cursor) {
+      try {
+        const state = JSON.parse(cursor) as { sourceIndex?: unknown; sourceCursor?: unknown }
+        if (Number.isInteger(state.sourceIndex) && Number(state.sourceIndex) >= 0 && Number(state.sourceIndex) < sources.length) {
+          sourceIndex = Number(state.sourceIndex)
+          sourceCursor = typeof state.sourceCursor === 'string' ? state.sourceCursor : undefined
+        }
+      } catch {
+        // A malformed local cursor restarts from the newest visible source.
+      }
+    }
+    const source = sources[sourceIndex]
+    const page = await this.listFavoriteTabItems({ ...source, cursor: sourceCursor })
+    if (page.hasMore) {
+      return { ...page, cursor: JSON.stringify({ sourceIndex, sourceCursor: page.cursor }) }
+    }
+    if (sourceIndex < sources.length - 1) {
+      return {
+        ...page,
+        hasMore: true,
+        complete: false,
+        cursor: JSON.stringify({ sourceIndex: sourceIndex + 1 }),
+      }
+    }
+    return page
+  }
+
+  private async listFavoriteTabItems({
     cursor,
-    contentType,
+    sourceKey,
     tabLabels,
   }: {
     cursor?: string
-    contentType: 'video' | 'note'
+    sourceKey: 'video' | 'note'
     tabLabels: string[]
   }) {
     if (!cursor) {
-      const ids = contentType === 'video' ? this.favoriteVideoIds : this.favoriteNoteIds
+      const ids = sourceKey === 'video' ? this.favoriteVideoIds : this.favoriteNoteIds
       ids.clear()
-      if (contentType === 'video') this.favoriteVideoPage = 0
+      if (sourceKey === 'video') this.favoriteVideoPage = 0
       else this.favoriteNotePage = 0
     }
-    this.onDiagnostic?.({ kind: 'triggering', path: `/user/self/favorites/${contentType}s` })
+    this.onDiagnostic?.({ kind: 'triggering', path: `/user/self/favorites/${sourceKey}s` })
     const result = normalizeFavoriteVideoDomResult(
       await this.withTimeout(
         this.page.executeJavaScript(`
           (async () => {
-            const contentType = ${JSON.stringify(contentType)}
+            const sourceKey = ${JSON.stringify(sourceKey)}
             const tabLabels = ${JSON.stringify(tabLabels)}
-            const itemPath = new RegExp('^/' + contentType + '/(\\\\d+)$')
+            const itemPath = /^\\/(video|note)\\/(\\d+)$/
             const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
             const waitFor = async (read, timeoutMs) => {
               const startedAt = Date.now()
@@ -265,13 +308,13 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
                 ].find((value) => /^https?:\\/\\//.test(value || '')) || ''
                 const title = anchor.querySelector('p')?.textContent?.trim() ||
                   imageLabel.split('：').slice(1).join('：').trim() ||
-                  'Douyin ' + contentType + ' ' + match[1]
+                  'Douyin ' + match[1] + ' ' + match[2]
                 const authorName = imageLabel.includes('：') ? imageLabel.split('：')[0].trim() : ''
                 return [{
-                  remoteId: match[1],
+                  remoteId: match[2],
                   title,
-                  sourceUrl: 'https://www.douyin.com/' + contentType + '/' + match[1],
-                  contentType,
+                  sourceUrl: 'https://www.douyin.com/' + match[1] + '/' + match[2],
+                  contentType: match[1],
                   ...(authorName ? { authorName } : {}),
                   ...(thumbnailUrl ? { thumbnailUrl } : {}),
                 }]
@@ -421,18 +464,17 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
         `),
         'Douyin did not load the visible favorite video list.',
       ),
-      contentType,
     )
-    const ids = contentType === 'video' ? this.favoriteVideoIds : this.favoriteNoteIds
+    const ids = sourceKey === 'video' ? this.favoriteVideoIds : this.favoriteNoteIds
     const entries = result.entries.filter((entry) => !ids.has(entry.remoteId))
     for (const entry of entries) ids.add(entry.remoteId)
-    if (contentType === 'video') this.favoriteVideoPage += 1
+    if (sourceKey === 'video') this.favoriteVideoPage += 1
     else this.favoriteNotePage += 1
     const hasMore = result.hasMore
     return {
       entries,
       ...(hasMore
-        ? { cursor: String(contentType === 'video' ? this.favoriteVideoPage : this.favoriteNotePage) }
+        ? { cursor: String(sourceKey === 'video' ? this.favoriteVideoPage : this.favoriteNotePage) }
         : {}),
       hasMore,
       complete: result.complete,

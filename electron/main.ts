@@ -2942,6 +2942,10 @@ ipcMain.handle('video:listDouyinFavoriteItems', async (_, folderId: unknown, opt
       ? Math.min(200, Math.max(1, Math.floor(Number(input.limit))))
       : 100,
     query: typeof input.query === 'string' ? input.query.trim().slice(0, 200) : '',
+    contentType:
+      input.contentType === 'video' || input.contentType === 'note' || input.contentType === 'unknown'
+        ? input.contentType
+        : undefined,
   }
   return {
     success: true,

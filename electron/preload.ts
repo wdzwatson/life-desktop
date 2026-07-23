@@ -224,7 +224,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listDouyinFavoriteFolders: () => ipcRenderer.invoke('video:listDouyinFavoriteFolders'),
   listDouyinFavoriteItems: (
     folderId: number | null,
-    options?: { offset?: number; limit?: number; query?: string },
+    options?: { offset?: number; limit?: number; query?: string; contentType?: 'video' | 'note' | 'unknown' },
   ) => ipcRenderer.invoke('video:listDouyinFavoriteItems', folderId, options),
   deleteDouyinFavoriteItems: (itemIds: number[]) =>
     ipcRenderer.invoke('video:deleteDouyinFavoriteItems', itemIds),

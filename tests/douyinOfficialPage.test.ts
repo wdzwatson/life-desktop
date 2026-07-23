@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { WebContents } from 'electron'
 import { DouyinOfficialPageObserver } from '../electron/video/douyinOfficialPage.ts'
 
-test('official page observer keeps only visible Douyin video favorites', async () => {
+test('official page observer classifies each visible favorite by its link type', async () => {
   let injectedScript = ''
   const page = {
     executeJavaScript: async (script: string) => {
@@ -17,7 +17,7 @@ test('official page observer keeps only visible Douyin video favorites', async (
           thumbnailUrl: 'https://p3.douyinpic.com/cover.jpg',
           sourceUrl: 'https://www.douyin.com/video/123',
         },
-        { remoteId: 'note-1', title: 'A note', sourceUrl: 'https://www.douyin.com/note/456' },
+        { remoteId: '456', title: 'A note', sourceUrl: 'https://www.douyin.com/note/456' },
         { remoteId: '123', title: 'Duplicate', sourceUrl: 'https://www.douyin.com/video/123' },
       ],
       hasMore: false,
@@ -39,13 +39,19 @@ test('official page observer keeps only visible Douyin video favorites', async (
         sourceUrl: 'https://www.douyin.com/video/123',
         contentType: 'video',
       },
+      {
+        remoteId: '456',
+        title: 'A note',
+        sourceUrl: 'https://www.douyin.com/note/456',
+        contentType: 'note',
+      },
     ],
     hasMore: false,
     complete: true,
     stopReason: 'explicit_end',
     isNewestFirst: true,
   })
-  assert.equal(injectedScript.includes("/(\\\\d+)$"), true)
+  assert.equal(injectedScript.includes('(video|note)'), true)
   observer.stop()
 })
 

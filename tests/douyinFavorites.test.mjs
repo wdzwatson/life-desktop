@@ -196,6 +196,45 @@ test('favorite synchronization preserves image-text favorites in their own folde
   db.close()
 })
 
+test('a mixed page persists video and image-text entries by each entry type', async () => {
+  const db = createVideoDb()
+  const result = await syncDouyinFavorites({
+    db,
+    sessionPartition: 'persist:lifeos-douyin-guest',
+    client: createClient({
+      listFolders: async () => ({
+        entries: [{ remoteId: 'my-favorites', title: 'My favorites' }],
+        hasMore: false,
+      }),
+      listFolderItems: async () => ({
+        entries: [
+          {
+            remoteId: 'video-1',
+            title: 'Useful video',
+            sourceUrl: 'https://www.douyin.com/video/123',
+          },
+          {
+            remoteId: 'note-1',
+            title: 'Useful image-text post',
+            sourceUrl: 'https://www.douyin.com/note/456',
+          },
+        ],
+        hasMore: false,
+      }),
+    }),
+  })
+
+  assert.equal(result.success, true)
+  const folder = listDouyinFavoriteFolders(db).find((entry) => entry.remote_id === 'my-favorites')
+  assert.ok(folder)
+  const all = listDouyinFavoriteItems(db, folder.id)
+  assert.deepEqual(all.map((item) => [item.remote_id, item.content_type]), [
+    ['video-1', 'video'],
+    ['note-1', 'note'],
+  ])
+  db.close()
+})
+
 test('a failed image-text reader makes an otherwise successful sync partial', async () => {
   const db = createVideoDb()
   const result = await syncDouyinFavorites({

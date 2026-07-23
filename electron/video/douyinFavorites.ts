@@ -804,24 +804,31 @@ export function getDouyinAccountSyncStatus(
 export function listDouyinFavoriteItems(
   db: Database.Database,
   folderId: number | null,
-  options?: { offset?: number; limit?: number; query?: string },
+  options?: { offset?: number; limit?: number; query?: string; contentType?: DouyinFavoriteContentType },
 ): DouyinFavoriteItemRecord[] | DouyinFavoriteItemsPage {
   const offset = Math.max(0, Math.floor(Number(options?.offset) || 0))
   const limit = Math.min(200, Math.max(1, Math.floor(Number(options?.limit) || 100)))
   const query = typeof options?.query === 'string' ? options.query.trim() : ''
+  const contentType =
+    options?.contentType === 'video' || options?.contentType === 'note' || options?.contentType === 'unknown'
+      ? options.contentType
+      : null
   const scopedToFolder = Number.isSafeInteger(folderId) && Number(folderId) > 0
-  const where = query
-    ? `${scopedToFolder ? 'WHERE fi.folder_id = ? AND ' : 'WHERE '}(i.title LIKE ? OR i.author_name LIKE ? OR i.remote_id LIKE ?)`
-    : scopedToFolder
-      ? 'WHERE fi.folder_id = ?'
-      : ''
-  const params = scopedToFolder
-    ? query
-      ? [folderId, `%${query}%`, `%${query}%`, `%${query}%`]
-      : [folderId]
-    : query
-      ? [`%${query}%`, `%${query}%`, `%${query}%`]
-      : []
+  const conditions: string[] = []
+  const params: unknown[] = []
+  if (scopedToFolder) {
+    conditions.push('fi.folder_id = ?')
+    params.push(folderId)
+  }
+  if (query) {
+    conditions.push('(i.title LIKE ? OR i.author_name LIKE ? OR i.remote_id LIKE ?)')
+    params.push(`%${query}%`, `%${query}%`, `%${query}%`)
+  }
+  if (contentType) {
+    conditions.push('i.content_type = ?')
+    params.push(contentType)
+  }
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
   const base = scopedToFolder
     ? `FROM douyin_folder_items fi JOIN douyin_favorite_items i ON i.id = fi.item_id ${where}`
     : `FROM douyin_favorite_items i ${where}`
