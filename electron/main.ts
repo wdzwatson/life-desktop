@@ -127,7 +127,8 @@ let desktopTaskNoteWindow: BrowserWindow | null = null
 let douyinSyncWindow: BrowserWindow | null = null
 let douyinSyncWindowReady = false
 let douyinSyncPageLoadPromise: Promise<void> | null = null
-let douyinSyncInFlight: Promise<Awaited<ReturnType<typeof synchronizeDouyinFavorites>>> | null = null
+let douyinSyncInFlight: Promise<Awaited<ReturnType<typeof synchronizeDouyinFavorites>>> | null =
+  null
 let desktopTaskNoteSaveTimer: NodeJS.Timeout | null = null
 let appTray: Tray | null = null
 let isQuitting = false
@@ -528,6 +529,7 @@ async function withDouyinFavoritesClient<T>(
           title: 'Douyin Favorites Sync',
           width: 1080,
           height: 760,
+          backgroundColor: '#ffffff',
           webPreferences: {
             backgroundThrottling: false,
             nodeIntegration: false,
@@ -1021,9 +1023,10 @@ function removeDouyinFavoriteFiles(db: Database.Database, itemIds?: number[]) {
           )
           .all(...ids) as Array<{ local_path: string | null; download_status: string }>
       })()
-    : (db
-        .prepare('SELECT local_path, download_status FROM douyin_favorite_items')
-        .all() as Array<{ local_path: string | null; download_status: string }>)
+    : (db.prepare('SELECT local_path, download_status FROM douyin_favorite_items').all() as Array<{
+        local_path: string | null
+        download_status: string
+      }>)
   if (rows.some((row) => row.download_status === 'downloading')) {
     throw new Error('A Douyin video is still downloading. Wait for it to finish before deleting.')
   }
@@ -2926,10 +2929,7 @@ ipcMain.handle('video:listDouyinFavoriteFolders', async () => {
 ipcMain.handle('video:getDouyinSyncStatus', async () => {
   return {
     success: true,
-    data: getDouyinAccountSyncStatus(
-      getUserDb('videos'),
-      getDouyinLoginPartition(activeUserId),
-    ),
+    data: getDouyinAccountSyncStatus(getUserDb('videos'), getDouyinLoginPartition(activeUserId)),
   }
 })
 
@@ -2940,8 +2940,12 @@ ipcMain.handle('video:listDouyinFavoriteItems', async (_, folderId: unknown, opt
   }
   const input = options && typeof options === 'object' ? (options as Record<string, unknown>) : {}
   const normalizedOptions = {
-    offset: Number.isFinite(Number(input.offset)) ? Math.max(0, Math.floor(Number(input.offset))) : 0,
-    limit: Number.isFinite(Number(input.limit)) ? Math.min(200, Math.max(1, Math.floor(Number(input.limit)))) : 100,
+    offset: Number.isFinite(Number(input.offset))
+      ? Math.max(0, Math.floor(Number(input.offset)))
+      : 0,
+    limit: Number.isFinite(Number(input.limit))
+      ? Math.min(200, Math.max(1, Math.floor(Number(input.limit))))
+      : 100,
     query: typeof input.query === 'string' ? input.query.trim().slice(0, 200) : '',
   }
   return {
