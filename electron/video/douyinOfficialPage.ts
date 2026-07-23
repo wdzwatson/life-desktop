@@ -1,4 +1,5 @@
 import type { WebContents } from 'electron'
+import { DouyinTimeoutError } from './douyinSyncTimeout'
 
 export interface DouyinFavoriteVideoEntry {
   remoteId: string
@@ -253,7 +254,7 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
         new Promise<T>((_, reject) => {
           timer = setTimeout(() => {
             this.onDiagnostic?.({ kind: 'timeout' })
-            reject(new Error(message))
+            reject(new DouyinTimeoutError('page_action', message))
           }, this.timeouts.actionMs || PAGE_ACTION_TIMEOUT_MS)
         }),
       ])

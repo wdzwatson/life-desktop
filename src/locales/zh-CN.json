@@ -1579,6 +1579,8 @@
     "video_douyin_logging_out": "正在退出…",
     "video_douyin_logout_success": "已退出抖音",
     "video_douyin_logout_failed": "抖音退出失败：{{error}}",
+    "video_douyin_keep_sync_window": "同步完成后保留抖音页面窗口",
+    "video_douyin_keep_sync_window_hint": "用于调试 DOM 滚动和页面加载。关闭此选项时，同步完成后窗口会隐藏，但只有手动关闭或退出应用时才会销毁。",
     "video_install_ytdlp": "安装内置 yt-dlp",
     "video_install_ffmpeg": "安装内置 ffmpeg",
     "video_ffmpeg_manual_install_note": "当前系统不支持安装内置 ffmpeg。请单独安装 ffmpeg，然后在上方填写完整的可执行文件路径。",

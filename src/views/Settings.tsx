@@ -74,6 +74,7 @@ export const Settings: React.FC = () => {
     qualityPreference: 'best',
     videoDownloadDir: '',
     maxDownloads: 3,
+    douyinKeepSyncWindow: false,
   })
   const [videoToolStatus, setVideoToolStatus] = useState<any>(null)
   const [installingVideoTool, setInstallingVideoTool] = useState<'yt-dlp' | 'ffmpeg' | null>(null)
@@ -159,6 +160,7 @@ export const Settings: React.FC = () => {
           qualityPreference: settings.qualityPreference || 'best',
           videoDownloadDir: settings.videoDownloadDir || '',
           maxDownloads: clampVideoConcurrentDownloads(settings.maxDownloads),
+          douyinKeepSyncWindow: settings.douyinKeepSyncWindow === true,
         })
       }
     })
@@ -1416,6 +1418,39 @@ export const Settings: React.FC = () => {
                   </button>
                 )}
               </div>
+
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                  padding: '10px 12px',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--bg-muted)',
+                  fontSize: '11px',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={videoSettings.douyinKeepSyncWindow}
+                  onChange={(e) =>
+                    setVideoSettings({
+                      ...videoSettings,
+                      douyinKeepSyncWindow: e.target.checked,
+                    })
+                  }
+                  style={{ marginTop: '2px' }}
+                />
+                <span>
+                  <strong style={{ display: 'block', fontSize: '12px' }}>
+                    {t('settings.video_douyin_keep_sync_window')}
+                  </strong>
+                  <span style={{ color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                    {t('settings.video_douyin_keep_sync_window_hint')}
+                  </span>
+                </span>
+              </label>
 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                 <button className="btn primary" onClick={handleSaveVideoSettings}>

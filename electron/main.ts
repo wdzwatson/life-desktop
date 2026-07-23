@@ -65,7 +65,11 @@ import {
 } from './video/douyinFavorites'
 import { createDouyinWebFavoritesClient } from './video/douyinWebClient'
 import { DouyinOfficialPageObserver } from './video/douyinOfficialPage'
-import { withDouyinSyncInactivityTimeout, withDouyinTimeout } from './video/douyinSyncTimeout'
+import {
+  DouyinTimeoutError,
+  withDouyinSyncInactivityTimeout,
+  withDouyinTimeout,
+} from './video/douyinSyncTimeout'
 import { handleVideoProtocolRequest } from './video/protocol'
 import { classifyVideoDownloadFailure } from './video/downloadState'
 import { normalizeBulkVideoTagPayload } from '../src/views/videoStateUtils'
@@ -114,6 +118,7 @@ function hashPassword(password: string, salt?: string) {
 // Keep global references
 let mainWindow: BrowserWindow | null = null
 let desktopTaskNoteWindow: BrowserWindow | null = null
+let douyinSyncWindow: BrowserWindow | null = null
 let desktopTaskNoteSaveTimer: NodeJS.Timeout | null = null
 let appTray: Tray | null = null
 let isQuitting = false
@@ -128,6 +133,20 @@ let aiMcpManager: AIMcpManager | null = null
 const aiImageControllers = new Set<AbortController>()
 const aiVideoControllers = new Set<AbortController>()
 let aiRecoveryController: AbortController | null = null
+
+function logDouyinSyncWindow(event: string, details?: Record<string, unknown>) {
+  console.info('[DouyinSyncWindow]', event, details || {})
+}
+
+function destroyDouyinSyncWindowForAppQuit() {
+  if (!douyinSyncWindow || douyinSyncWindow.isDestroyed()) {
+    douyinSyncWindow = null
+    return
+  }
+  logDouyinSyncWindow('destroy', { reason: 'app_quit' })
+  douyinSyncWindow.destroy()
+  douyinSyncWindow = null
+}
 
 // Default Paths
 const BASE_DIR = path.join(app.getPath('home'), 'LifeOS')
@@ -455,22 +474,40 @@ async function startDouyinAccountLogin() {
 async function withDouyinFavoritesClient<T>(
   action: (client: ReturnType<typeof createDouyinWebFavoritesClient>) => Promise<T>,
 ) {
-  const syncWindow = new BrowserWindow({
-    show: true,
-    parent: mainWindow || undefined,
-    title: 'Douyin Favorites Sync',
-    width: 1080,
-    height: 760,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true,
-      partition: getDouyinLoginPartition(activeUserId),
-    },
+  const keepWindowAfterSync = getSettings().douyinKeepSyncWindow === true
+  const syncWindow =
+    douyinSyncWindow && !douyinSyncWindow.isDestroyed()
+      ? douyinSyncWindow
+      : new BrowserWindow({
+          show: true,
+          parent: mainWindow || undefined,
+          title: 'Douyin Favorites Sync',
+          width: 1080,
+          height: 760,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true,
+            partition: getDouyinLoginPartition(activeUserId),
+          },
+        })
+  douyinSyncWindow = syncWindow
+  syncWindow.show()
+  logDouyinSyncWindow('opened', { keepWindowAfterSync })
+  syncWindow.once('close', () => {
+    logDouyinSyncWindow('close_requested', { reason: isQuitting ? 'app_quit' : 'user' })
+  })
+  syncWindow.once('render-process-gone', (_event, details) => {
+    logDouyinSyncWindow('renderer_gone', { reason: details.reason })
+  })
+  syncWindow.once('closed', () => {
+    if (douyinSyncWindow === syncWindow) douyinSyncWindow = null
+    logDouyinSyncWindow('closed', { reason: isQuitting ? 'app_quit' : 'user' })
   })
   const officialPage = new DouyinOfficialPageObserver(syncWindow.webContents, (event) => {
     mainWindow?.webContents.send('video:douyin-sync-diagnostic', event)
   })
+  let outcome: 'completed' | 'failed' = 'failed'
   try {
     await officialPage.start()
     mainWindow?.webContents.send('video:douyin-sync-diagnostic', { kind: 'page_loading' })
@@ -478,15 +515,30 @@ async function withDouyinFavoritesClient<T>(
       loadDouyinFavoritesPage(syncWindow),
       20_000,
       'Douyin official page did not finish loading in time.',
+      'page_load',
     )
     officialPage.notifyPageReady()
-    return await action(createDouyinWebFavoritesClient(officialPage))
+    const result = await action(createDouyinWebFavoritesClient(officialPage))
+    outcome = 'completed'
+    return result
   } catch (error) {
+    logDouyinSyncWindow('sync_failed', {
+      error: error instanceof Error ? error.message : String(error),
+      timeoutKind: error instanceof DouyinTimeoutError ? error.kind : undefined,
+    })
     mainWindow?.webContents.send('video:douyin-sync-diagnostic', { kind: 'page_failed' })
     throw error
   } finally {
     officialPage.stop()
-    if (!syncWindow.isDestroyed()) syncWindow.destroy()
+    if (!syncWindow.isDestroyed()) {
+      if (outcome === 'completed' && !keepWindowAfterSync) {
+        syncWindow.hide()
+        logDouyinSyncWindow('hidden', { reason: 'sync_completed' })
+      } else {
+        syncWindow.show()
+        logDouyinSyncWindow('retained', { reason: outcome })
+      }
+    }
   }
 }
 
@@ -559,6 +611,10 @@ async function synchronizeDouyinFavorites() {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unable to open the Douyin favorites page.'
+    console.error('[DouyinSync] failed', {
+      message,
+      timeoutKind: error instanceof DouyinTimeoutError ? error.kind : undefined,
+    })
     const syncError = new DouyinFavoritesError('network_error', message)
     return {
       success: false,
@@ -1291,6 +1347,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  destroyDouyinSyncWindowForAppQuit()
   closeUserDbs()
 })
 

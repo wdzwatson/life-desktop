@@ -1579,6 +1579,8 @@
     "video_douyin_logging_out": "Logging out...",
     "video_douyin_logout_success": "Logged out of Douyin",
     "video_douyin_logout_failed": "Douyin logout failed: {{error}}",
+    "video_douyin_keep_sync_window": "Keep the Douyin page window after sync",
+    "video_douyin_keep_sync_window_hint": "Useful for debugging DOM scrolling and page loading. When disabled, the window is hidden after sync but is destroyed only when you close it or quit the app.",
     "video_install_ytdlp": "Install bundled yt-dlp",
     "video_install_ffmpeg": "Install bundled ffmpeg",
     "video_ffmpeg_manual_install_note": "Bundled ffmpeg installation is not available on this system. Install ffmpeg separately, then enter its full executable path above.",

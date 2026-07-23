@@ -1,9 +1,26 @@
-export function withDouyinTimeout<T>(operation: Promise<T>, timeoutMs: number, message: string) {
+export type DouyinTimeoutKind = 'page_load' | 'page_action' | 'sync_inactivity'
+
+export class DouyinTimeoutError extends Error {
+  readonly kind: DouyinTimeoutKind
+
+  constructor(kind: DouyinTimeoutKind, message: string) {
+    super(message)
+    this.name = 'DouyinTimeoutError'
+    this.kind = kind
+  }
+}
+
+export function withDouyinTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  message: string,
+  kind: DouyinTimeoutKind = 'page_load',
+) {
   let timer: ReturnType<typeof setTimeout> | undefined
   return Promise.race([
     operation,
     new Promise<T>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(message)), timeoutMs)
+      timer = setTimeout(() => reject(new DouyinTimeoutError(kind, message)), timeoutMs)
     }),
   ]).finally(() => {
     if (timer) clearTimeout(timer)
@@ -27,7 +44,10 @@ export function withDouyinSyncInactivityTimeout<T>(
     const reportActivity = () => {
       if (settled) return
       if (timer) clearTimeout(timer)
-      timer = setTimeout(() => finish(reject, new Error(message)), timeoutMs)
+      timer = setTimeout(
+        () => finish(reject, new DouyinTimeoutError('sync_inactivity', message)),
+        timeoutMs,
+      )
     }
     reportActivity()
     Promise.resolve()
