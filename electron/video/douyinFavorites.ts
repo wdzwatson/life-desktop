@@ -143,20 +143,31 @@ export function sanitizeDouyinDiagnostic(value: unknown) {
 export function normalizeDouyinFolder(input: DouyinFavoriteFolderInput): DouyinFavoriteFolderInput {
   const remoteId = text(input.remoteId)
   const title = text(input.title)
-  if (!remoteId || !title) throw new DouyinFavoritesError('invalid_response', 'A favorite folder is missing its ID or title.')
+  if (!remoteId || !title)
+    throw new DouyinFavoritesError(
+      'invalid_response',
+      'A favorite folder is missing its ID or title.',
+    )
   return {
     remoteId,
     title,
-    ...(positiveInteger(input.itemCount) !== undefined ? { itemCount: positiveInteger(input.itemCount) } : {}),
+    ...(positiveInteger(input.itemCount) !== undefined
+      ? { itemCount: positiveInteger(input.itemCount) }
+      : {}),
   }
 }
 
-export function normalizeDouyinFavoriteItem(input: DouyinFavoriteItemInput): DouyinFavoriteItemInput {
+export function normalizeDouyinFavoriteItem(
+  input: DouyinFavoriteItemInput,
+): DouyinFavoriteItemInput {
   const remoteId = text(input.remoteId)
   const title = text(input.title)
   const sourceUrl = text(input.sourceUrl)
   if (!remoteId || !title || !isDouyinWebUrl(sourceUrl)) {
-    throw new DouyinFavoritesError('invalid_response', 'A favorite video has incomplete or invalid metadata.')
+    throw new DouyinFavoritesError(
+      'invalid_response',
+      'A favorite video has incomplete or invalid metadata.',
+    )
   }
   const durationSeconds = positiveInteger(input.durationSeconds)
   return {
@@ -174,13 +185,22 @@ export function normalizeDouyinFavoriteItem(input: DouyinFavoriteItemInput): Dou
 
 function toSyncError(error: unknown) {
   if (error instanceof DouyinFavoritesError) return error
-  if (error instanceof Error) return new DouyinFavoritesError('unknown', sanitizeDouyinDiagnostic(error.message) || 'Sync failed.')
+  if (error instanceof Error)
+    return new DouyinFavoritesError(
+      'unknown',
+      sanitizeDouyinDiagnostic(error.message) || 'Sync failed.',
+    )
   return new DouyinFavoritesError('unknown', 'Sync failed.')
 }
 
 function upsertAccount(
   db: Database.Database,
-  input: { sessionPartition: string; profile: DouyinAccountProfile; authStatus: string; diagnosticMessage?: string },
+  input: {
+    sessionPartition: string
+    profile: DouyinAccountProfile
+    authStatus: string
+    diagnosticMessage?: string
+  },
 ) {
   const existing = db
     .prepare('SELECT id FROM douyin_accounts WHERE session_partition = ?')
@@ -196,7 +216,13 @@ function upsertAccount(
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
       `,
-    ).run(text(input.profile.remoteUserId) || null, text(input.profile.displayName) || null, input.authStatus, input.diagnosticMessage || null, existing.id)
+    ).run(
+      text(input.profile.remoteUserId) || null,
+      text(input.profile.displayName) || null,
+      input.authStatus,
+      input.diagnosticMessage || null,
+      existing.id,
+    )
     return existing.id
   }
   return Number(
@@ -231,9 +257,11 @@ function upsertFolder(db: Database.Database, accountId: number, folder: DouyinFa
     `,
   ).run(accountId, folder.remoteId, folder.title, folder.itemCount ?? 0)
   return Number(
-    (db
-      .prepare('SELECT id FROM douyin_favorite_folders WHERE account_id = ? AND remote_id = ?')
-      .get(accountId, folder.remoteId) as { id: number }).id,
+    (
+      db
+        .prepare('SELECT id FROM douyin_favorite_folders WHERE account_id = ? AND remote_id = ?')
+        .get(accountId, folder.remoteId) as { id: number }
+    ).id,
   )
 }
 
@@ -276,9 +304,11 @@ function upsertItem(
     lastSeenAt,
   )
   return Number(
-    (db
-      .prepare('SELECT id FROM douyin_favorite_items WHERE account_id = ? AND remote_id = ?')
-      .get(accountId, item.remoteId) as { id: number }).id,
+    (
+      db
+        .prepare('SELECT id FROM douyin_favorite_items WHERE account_id = ? AND remote_id = ?')
+        .get(accountId, item.remoteId) as { id: number }
+    ).id,
   )
 }
 
@@ -323,7 +353,10 @@ interface DouyinFolderIncrementalState {
   last_incremental_remote_id: string | null
 }
 
-function getFolderIncrementalState(db: Database.Database, folderId: number): DouyinFolderIncrementalState {
+function getFolderIncrementalState(
+  db: Database.Database,
+  folderId: number,
+): DouyinFolderIncrementalState {
   return db
     .prepare(
       `
@@ -345,15 +378,28 @@ function updateFolderIncrementalState(
     SET incremental_capability = ?, last_incremental_added_at = ?, last_incremental_remote_id = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
     `,
-  ).run(state.incremental_capability, state.last_incremental_added_at, state.last_incremental_remote_id, folderId)
+  ).run(
+    state.incremental_capability,
+    state.last_incremental_added_at,
+    state.last_incremental_remote_id,
+    folderId,
+  )
 }
 
 function canUseIncrementalSync(state: DouyinFolderIncrementalState, mode: 'auto' | 'full') {
-  return mode === 'auto' && state.incremental_capability === 'available' && Boolean(state.last_incremental_added_at)
+  return (
+    mode === 'auto' &&
+    state.incremental_capability === 'available' &&
+    Boolean(state.last_incremental_added_at)
+  )
 }
 
 function canVerifyIncrementalOrder(page: DouyinPage<DouyinFavoriteItemInput>) {
-  return Boolean(page.isNewestFirst) && page.entries.length > 0 && page.entries.every((entry) => text(entry.favoriteAddedAt))
+  return (
+    Boolean(page.isNewestFirst) &&
+    page.entries.length > 0 &&
+    page.entries.every((entry) => text(entry.favoriteAddedAt))
+  )
 }
 
 function updateLatestWatermark(
@@ -370,11 +416,24 @@ function updateLatestWatermark(
   }
 }
 
-function pageIsStrictlyOlderThanWatermark(page: DouyinPage<DouyinFavoriteItemInput>, watermark: string | null) {
+function pageIsStrictlyOlderThanWatermark(
+  page: DouyinPage<DouyinFavoriteItemInput>,
+  watermark: string | null,
+) {
   return Boolean(
     watermark &&
-      page.entries.length > 0 &&
-      page.entries.every((entry) => text(entry.favoriteAddedAt) && text(entry.favoriteAddedAt) < watermark),
+    page.entries.length > 0 &&
+    page.entries.every(
+      (entry) => text(entry.favoriteAddedAt) && text(entry.favoriteAddedAt) < watermark,
+    ),
+  )
+}
+
+function favoriteItemAlreadyExists(db: Database.Database, accountId: number, remoteId: string) {
+  return Boolean(
+    db
+      .prepare('SELECT 1 FROM douyin_favorite_items WHERE account_id = ? AND remote_id = ?')
+      .get(accountId, remoteId),
   )
 }
 
@@ -392,6 +451,8 @@ export async function syncDouyinFavorites(input: {
   let fullFolders = 0
   let foldersCompleted = 0
   let pagesLoaded = 0
+  let failedFolders = 0
+  let lastFolderError: unknown
   const startedAt = Date.now()
   const report = (phase: DouyinSyncPhase, currentFolderTitle?: string) => {
     input.onProgress?.({
@@ -423,22 +484,33 @@ export async function syncDouyinFavorites(input: {
     for (let pageCount = 0; pageCount < MAX_PAGES_PER_SYNC; pageCount += 1) {
       report('loading_folders')
       const page = await input.client.listFolders({ cursor })
-      if (!Array.isArray(page.entries)) throw new DouyinFavoritesError('invalid_response', 'Favorite folder response is invalid.')
+      if (!Array.isArray(page.entries))
+        throw new DouyinFavoritesError('invalid_response', 'Favorite folder response is invalid.')
       input.db.transaction(() => {
         for (const entry of page.entries) {
           const folder = normalizeDouyinFolder(entry)
           const alreadyKnown = folders.has(folder.remoteId)
-          folders.set(folder.remoteId, { folder, folderId: upsertFolder(input.db, accountId!, folder) })
+          folders.set(folder.remoteId, {
+            folder,
+            folderId: upsertFolder(input.db, accountId!, folder),
+          })
           if (!alreadyKnown) foldersSynced += 1
         }
       })()
       pagesLoaded += 1
       report('writing_folders')
       if (!page.hasMore) break
-      if (!text(page.cursor)) throw new DouyinFavoritesError('invalid_response', 'Favorite folder pagination is missing a cursor.')
+      if (!text(page.cursor))
+        throw new DouyinFavoritesError(
+          'invalid_response',
+          'Favorite folder pagination is missing a cursor.',
+        )
       cursor = text(page.cursor)
       if (pageCount === MAX_PAGES_PER_SYNC - 1) {
-        throw new DouyinFavoritesError('invalid_response', 'Favorite folder pagination exceeded the safety limit.')
+        throw new DouyinFavoritesError(
+          'invalid_response',
+          'Favorite folder pagination exceeded the safety limit.',
+        )
       }
     }
 
@@ -450,7 +522,9 @@ export async function syncDouyinFavorites(input: {
         const useIncremental = canUseIncrementalSync(previousIncrementalState, input.mode || 'auto')
         const nextIncrementalState: DouyinFolderIncrementalState = {
           ...previousIncrementalState,
-          ...(useIncremental ? {} : { last_incremental_added_at: null, last_incremental_remote_id: null }),
+          ...(useIncremental
+            ? {}
+            : { last_incremental_added_at: null, last_incremental_remote_id: null }),
         }
         const newestSeen = {
           addedAt: previousIncrementalState.last_incremental_added_at,
@@ -458,10 +532,26 @@ export async function syncDouyinFavorites(input: {
         }
         let observedItemPage = false
         let verifiedOrdering = true
+        let consecutiveKnownPages = 0
+        let usedKnownItemIncremental = false
         for (let pageCount = 0; pageCount < MAX_PAGES_PER_SYNC; pageCount += 1) {
           report('loading_items', folder.title)
-          const page = await input.client.listFolderItems({ folderRemoteId: folder.remoteId, cursor: itemCursor })
-          if (!Array.isArray(page.entries)) throw new DouyinFavoritesError('invalid_response', 'Favorite video response is invalid.')
+          const page = await input.client.listFolderItems({
+            folderRemoteId: folder.remoteId,
+            cursor: itemCursor,
+          })
+          if (!Array.isArray(page.entries))
+            throw new DouyinFavoritesError(
+              'invalid_response',
+              'Favorite video response is invalid.',
+            )
+          const pageOnlyContainsKnownItems =
+            input.mode !== 'full' &&
+            page.isNewestFirst === true &&
+            page.entries.length > 0 &&
+            page.entries.every((entry) =>
+              favoriteItemAlreadyExists(input.db, accountId!, entry.remoteId),
+            )
           const pageHasVerifiableOrder = canVerifyIncrementalOrder(page)
           if (page.entries.length > 0) {
             observedItemPage = true
@@ -480,14 +570,37 @@ export async function syncDouyinFavorites(input: {
           })()
           pagesLoaded += 1
           report('writing_items', folder.title)
-          if (useIncremental && pageHasVerifiableOrder && pageIsStrictlyOlderThanWatermark(page, previousIncrementalState.last_incremental_added_at)) {
+          if (
+            useIncremental &&
+            pageHasVerifiableOrder &&
+            pageIsStrictlyOlderThanWatermark(
+              page,
+              previousIncrementalState.last_incremental_added_at,
+            )
+          ) {
             break
           }
+          if (pageOnlyContainsKnownItems) {
+            consecutiveKnownPages += 1
+            if (consecutiveKnownPages >= 2) {
+              usedKnownItemIncremental = true
+              break
+            }
+          } else {
+            consecutiveKnownPages = 0
+          }
           if (!page.hasMore) break
-          if (!text(page.cursor)) throw new DouyinFavoritesError('invalid_response', 'Favorite video pagination is missing a cursor.')
+          if (!text(page.cursor))
+            throw new DouyinFavoritesError(
+              'invalid_response',
+              'Favorite video pagination is missing a cursor.',
+            )
           itemCursor = text(page.cursor)
           if (pageCount === MAX_PAGES_PER_SYNC - 1) {
-            throw new DouyinFavoritesError('invalid_response', 'Favorite video pagination exceeded the safety limit.')
+            throw new DouyinFavoritesError(
+              'invalid_response',
+              'Favorite video pagination exceeded the safety limit.',
+            )
           }
         }
         updateFolderSuccess(input.db, folderId)
@@ -501,36 +614,54 @@ export async function syncDouyinFavorites(input: {
           nextIncrementalState.last_incremental_remote_id = null
         }
         updateFolderIncrementalState(input.db, folderId, nextIncrementalState)
-        if (useIncremental && nextIncrementalState.incremental_capability === 'available') incrementalFolders += 1
+        if (
+          (useIncremental && nextIncrementalState.incremental_capability === 'available') ||
+          usedKnownItemIncremental
+        )
+          incrementalFolders += 1
         else fullFolders += 1
         foldersCompleted += 1
         report('writing_items', folder.title)
       } catch (error) {
+        failedFolders += 1
+        lastFolderError = error
         updateFolderFailure(input.db, folderId, toSyncError(error))
         foldersCompleted += 1
         report('writing_items', folder.title)
       }
     }
 
-    input.db.prepare(
-      `
+    if (folders.size > 0 && failedFolders === folders.size) {
+      throw lastFolderError || new DouyinFavoritesError('unknown', 'Favorite video synchronization failed.')
+    }
+
+    input.db
+      .prepare(
+        `
       UPDATE douyin_accounts
       SET auth_status = 'authenticated', last_sync_at = CURRENT_TIMESTAMP, diagnostic_message = NULL, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
       `,
-    ).run(accountId)
+      )
+      .run(accountId)
     report('completed')
     return { success: true, accountId, foldersSynced, itemsSynced, incrementalFolders, fullFolders }
   } catch (error) {
     const syncError = toSyncError(error)
     if (accountId) {
-      input.db.prepare(
-        `
+      input.db
+        .prepare(
+          `
         UPDATE douyin_accounts
         SET auth_status = ?, diagnostic_message = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         `,
-      ).run(syncError.code === 'auth_required' ? 'expired' : 'error', sanitizeDouyinDiagnostic(syncError.message), accountId)
+        )
+        .run(
+          syncError.code === 'auth_required' ? 'expired' : 'error',
+          sanitizeDouyinDiagnostic(syncError.message),
+          accountId,
+        )
     }
     report('failed')
     return {
@@ -538,7 +669,10 @@ export async function syncDouyinFavorites(input: {
       ...(accountId ? { accountId } : {}),
       foldersSynced,
       itemsSynced,
-      error: { code: syncError.code, message: sanitizeDouyinDiagnostic(syncError.message) || 'Sync failed.' },
+      error: {
+        code: syncError.code,
+        message: sanitizeDouyinDiagnostic(syncError.message) || 'Sync failed.',
+      },
     }
   }
 }

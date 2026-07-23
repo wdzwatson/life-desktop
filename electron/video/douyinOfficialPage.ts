@@ -1,202 +1,242 @@
 import type { WebContents } from 'electron'
 
-export interface DouyinOfficialPageResponse {
-  ok: boolean
-  status: number
-  body: Record<string, unknown> | null
+export interface DouyinFavoriteVideoEntry {
+  remoteId: string
+  title: string
+  sourceUrl: string
+  authorName?: string
+}
+
+export interface DouyinFavoriteVideoPage {
+  entries: DouyinFavoriteVideoEntry[]
+  cursor?: string
+  hasMore: boolean
+  isNewestFirst?: boolean
 }
 
 export interface DouyinOfficialPageExecutor {
   isLoggedIn(): Promise<boolean>
-  request(pathname: string, params?: Record<string, string | undefined>): Promise<DouyinOfficialPageResponse>
+  listFavoriteVideos(input: { cursor?: string }): Promise<DouyinFavoriteVideoPage>
 }
 
-interface CapturedResponse extends DouyinOfficialPageResponse {
-  pathname: string
-  params: URLSearchParams
+export interface DouyinOfficialPageDiagnostic {
+  kind: 'page_loading' | 'page_ready' | 'page_failed' | 'triggering' | 'timeout'
+  path?: string
+  status?: number
 }
 
-const RESPONSE_WAIT_TIMEOUT_MS = 15_000
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
+interface FavoriteVideoDomResult {
+  entries: DouyinFavoriteVideoEntry[]
+  hasMore: boolean
 }
 
-function matchesRequest(response: CapturedResponse, pathname: string, params: Record<string, string | undefined>) {
-  if (response.pathname !== pathname) return false
-  return Object.entries(params).every(([key, value]) => !value || response.params.get(key) === value)
+const PAGE_ACTION_TIMEOUT_MS = 35_000
+
+function text(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
 }
 
-function toPageResponse(response: CapturedResponse): DouyinOfficialPageResponse {
-  return { ok: response.ok, status: response.status, body: response.body }
+function isDouyinVideoUrl(value: string) {
+  try {
+    const url = new URL(value)
+    return (
+      (url.hostname === 'douyin.com' || url.hostname.endsWith('.douyin.com')) &&
+      /^\/video\/\d+$/.test(url.pathname)
+    )
+  } catch {
+    return false
+  }
 }
 
-/** Reads responses initiated by Douyin's own signed web client. */
+function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult {
+  const source =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {}
+  const entries = Array.isArray(source.entries) ? source.entries : []
+  const unique = new Set<string>()
+  return {
+    entries: entries.flatMap((value) => {
+      const entry =
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? (value as Record<string, unknown>)
+          : {}
+      const remoteId = text(entry.remoteId)
+      const title = text(entry.title)
+      const sourceUrl = text(entry.sourceUrl)
+      if (!remoteId || !title || !isDouyinVideoUrl(sourceUrl) || unique.has(remoteId)) return []
+      unique.add(remoteId)
+      return [
+        {
+          remoteId,
+          title,
+          sourceUrl,
+          ...(text(entry.authorName) ? { authorName: text(entry.authorName) } : {}),
+        },
+      ]
+    }),
+    hasMore: source.hasMore === true,
+  }
+}
+
+/** Reads the visible favorites video list from Douyin's own authenticated page. */
 export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
-  private readonly responses: CapturedResponse[] = []
-  private readonly folderTitles = new Map<string, string>()
-  private readonly pendingResponses = new Map<string, { url: URL; status: number }>()
-  private readonly waiters = new Set<{
-    pathname: string
-    params: Record<string, string | undefined>
-    resolve: (value: DouyinOfficialPageResponse) => void
-    reject: (reason: Error) => void
-    timer: ReturnType<typeof setTimeout>
-  }>()
-  private attached = false
+  private readonly favoriteVideoIds = new Set<string>()
+  private favoriteVideoPage = 0
+  private emptyFavoriteVideoPages = 0
 
-  constructor(private readonly page: WebContents) {}
+  constructor(
+    private readonly page: WebContents,
+    private readonly onDiagnostic?: (event: DouyinOfficialPageDiagnostic) => void,
+    private readonly timeouts: { actionMs?: number } = {},
+  ) {}
+
+  notifyPageReady() {
+    this.onDiagnostic?.({ kind: 'page_ready' })
+  }
 
   async start() {
-    if (this.attached) return
-    this.page.debugger.attach('1.3')
-    this.attached = true
-    this.page.debugger.on('message', this.handleDebuggerMessage)
-    await this.page.debugger.sendCommand('Network.enable')
+    // The DOM reader does not depend on DevTools network interception. Avoid attaching a
+    // debugger here because that can prevent a page from finishing initialization on some hosts.
   }
 
   stop() {
-    for (const waiter of this.waiters) {
-      clearTimeout(waiter.timer)
-      waiter.reject(new Error('Douyin favorites page was closed before it finished loading.'))
-    }
-    this.waiters.clear()
-    this.responses.length = 0
-    this.folderTitles.clear()
-    this.pendingResponses.clear()
-    if (!this.attached) return
-    this.page.debugger.removeListener('message', this.handleDebuggerMessage)
-    if (this.page.debugger.isAttached()) this.page.debugger.detach()
-    this.attached = false
+    this.favoriteVideoIds.clear()
+    this.favoriteVideoPage = 0
+    this.emptyFavoriteVideoPages = 0
   }
 
   async isLoggedIn() {
-    const loggedOut = await this.page.executeJavaScript(`
-      (() => {
-        const text = document.body?.innerText || ''
-        return text.includes('未登录') || text.includes('登录后')
-      })()
-    `)
+    const loggedOut = await this.withTimeout(
+      this.page.executeJavaScript(`
+        (() => {
+          const pageText = document.body?.innerText || ''
+          return pageText.includes('未登录') || pageText.includes('登录后')
+        })()
+      `),
+      'Douyin official page did not complete the login check.',
+    )
     return !loggedOut
   }
 
-  async request(pathname: string, params: Record<string, string | undefined> = {}) {
-    const captured = this.takeResponse(pathname, params)
-    if (captured) return captured
-    await this.triggerOfficialRequest(pathname, params)
-    const afterTrigger = this.takeResponse(pathname, params)
-    if (afterTrigger) return afterTrigger
-    return new Promise<DouyinOfficialPageResponse>((resolve, reject) => {
-      const waiter = {
-        pathname,
-        params,
-        resolve,
-        reject,
-        timer: setTimeout(() => {
-          this.waiters.delete(waiter)
-          reject(new Error('Douyin did not load readable favorites data in the official page.'))
-        }, RESPONSE_WAIT_TIMEOUT_MS),
-      }
-      this.waiters.add(waiter)
-    })
+  async listFavoriteVideos({ cursor }: { cursor?: string }) {
+    if (!cursor) {
+      this.favoriteVideoIds.clear()
+      this.favoriteVideoPage = 0
+      this.emptyFavoriteVideoPages = 0
+    }
+    this.onDiagnostic?.({ kind: 'triggering', path: '/user/self/favorites/videos' })
+    const result = normalizeFavoriteVideoDomResult(
+      await this.withTimeout(
+        this.page.executeJavaScript(`
+          (async () => {
+            const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+            const waitFor = async (read, timeoutMs) => {
+              const startedAt = Date.now()
+              while (Date.now() - startedAt < timeoutMs) {
+                const value = read()
+                if (value) return value
+                await delay(250)
+              }
+              return null
+            }
+            const exactTab = (label) => Array.from(document.querySelectorAll('[role="tab"]'))
+              .find((element) => element.textContent?.trim() === label)
+            const activate = async (label) => {
+              const tab = await waitFor(() => exactTab(label), 4000)
+              if (!tab) throw new Error('Douyin did not expose the ' + label + ' tab.')
+              if (tab.getAttribute('aria-selected') !== 'true') {
+                tab.click()
+              }
+              await delay(1000)
+              return tab
+            }
+            await activate('收藏')
+            await activate('视频')
+            const cardLinks = () => Array.from(document.querySelectorAll('a[href]')).filter((anchor) => {
+              const rawHref = anchor.getAttribute('href') || ''
+              const url = new URL(rawHref, location.href)
+              return /^\\/(video|note)\\/\\d+$/.test(url.pathname) && Boolean(anchor.closest('li')) && anchor.getClientRects().length > 0
+            })
+            const favoriteList = () => {
+              const lists = Array.from(document.querySelectorAll('ul'))
+              return lists
+                .map((list) => ({ list, count: cardLinks().filter((anchor) => list.contains(anchor)).length }))
+                .sort((left, right) => right.count - left.count)[0]?.list || null
+            }
+            const listText = () => favoriteList()?.parentElement?.textContent || ''
+            const readEntries = () => cardLinks().flatMap((anchor) => {
+              const rawHref = anchor.getAttribute('href') || ''
+              const url = new URL(rawHref, location.href)
+              const match = url.pathname.match(/^\\/video\\/(\\d+)$/)
+              if (!match || !url.hostname.endsWith('douyin.com')) return []
+              const imageLabel = anchor.querySelector('img')?.getAttribute('alt')?.trim() || ''
+              const title = anchor.querySelector('p')?.textContent?.trim() || imageLabel.split('：').slice(1).join('：').trim() || 'Douyin video ' + match[1]
+              const authorName = imageLabel.includes('：') ? imageLabel.split('：')[0].trim() : ''
+              return [{ remoteId: match[1], title, sourceUrl: 'https://www.douyin.com/video/' + match[1], ...(authorName ? { authorName } : {}) }]
+            })
+            const listReady = await waitFor(() => {
+              const text = listText()
+              return cardLinks().length > 0 || text.includes('暂时没有更多') || text.includes('暂无收藏')
+            }, 20000)
+            if (!listReady) throw new Error('Douyin favorite video cards did not appear after the page loaded.')
+            await delay(1000)
+            const before = readEntries().length
+            const list = favoriteList()
+            const scrollTarget = (() => {
+              let node = list?.parentElement || null
+              while (node && node !== document.body) {
+                const style = getComputedStyle(node)
+                if (node.scrollHeight > node.clientHeight && /(auto|scroll)/.test(style.overflowY)) return node
+                node = node.parentElement
+              }
+              return document.scrollingElement || document.documentElement
+            })()
+            scrollTarget.scrollTo({ top: scrollTarget.scrollHeight })
+            for (let elapsed = 0; elapsed < 4000; elapsed += 250) {
+              await delay(250)
+              const text = listText()
+              if (readEntries().length > before || text.includes('暂时没有更多') || text.includes('没有更多了')) break
+            }
+            const text = listText()
+            return {
+              entries: readEntries(),
+              hasMore: !text.includes('暂时没有更多') && !text.includes('没有更多了'),
+            }
+          })()
+        `),
+        'Douyin did not load the visible favorite video list.',
+      ),
+    )
+    const entries = result.entries.filter((entry) => !this.favoriteVideoIds.has(entry.remoteId))
+    for (const entry of entries) this.favoriteVideoIds.add(entry.remoteId)
+    if (entries.length > 0) this.emptyFavoriteVideoPages = 0
+    else this.emptyFavoriteVideoPages += 1
+    this.favoriteVideoPage += 1
+    const hasMore = result.hasMore && this.emptyFavoriteVideoPages < 2
+    return {
+      entries,
+      ...(hasMore ? { cursor: String(this.favoriteVideoPage) } : {}),
+      hasMore,
+      isNewestFirst: true,
+    }
   }
 
-  private takeResponse(pathname: string, params: Record<string, string | undefined>) {
-    const index = this.responses.findIndex((response) => matchesRequest(response, pathname, params))
-    if (index < 0) return undefined
-    return toPageResponse(this.responses.splice(index, 1)[0])
-  }
-
-  private async triggerOfficialRequest(pathname: string, params: Record<string, string | undefined>) {
-    if (params.cursor) {
-      await this.page.executeJavaScript('window.scrollTo(0, document.body.scrollHeight)')
-      return
-    }
-    if (pathname === '/aweme/v1/web/collects/list/') {
-      const clicked = await this.clickExactText('收藏')
-      if (!clicked) throw new Error('Douyin favorites tab is unavailable in the official page.')
-      return
-    }
-    if (pathname === '/aweme/v1/web/collects/video/list/' && params.collects_id) {
-      const clicked = await this.clickExactText(this.folderTitles.get(String(params.collects_id)) || String(params.collects_id))
-      if (!clicked) throw new Error('Douyin did not expose this favorite folder in the official page.')
-    }
-  }
-
-  private async clickExactText(value: string) {
-    return this.page.executeJavaScript(`
-      (() => {
-        const target = ${JSON.stringify(value)}
-        const element = Array.from(document.querySelectorAll('button, a, div, span'))
-          .find((candidate) => candidate.textContent?.trim() === target)
-        if (!element) return false
-        element.click()
-        return true
-      })()
-    `)
-  }
-
-  private readonly handleDebuggerMessage = (_event: Electron.Event, method: string, params: Record<string, unknown>) => {
-    const requestId = typeof params.requestId === 'string' ? params.requestId : ''
-    if (!requestId) return
-    if (method === 'Network.responseReceived') {
-      const response = record(params.response)
-      const responseUrl = typeof response?.url === 'string' ? response.url : ''
-      let url: URL
-      try {
-        url = new URL(responseUrl)
-      } catch {
-        return
-      }
-      if (!url.pathname.startsWith('/aweme/v1/web/collects/')) return
-      this.pendingResponses.set(requestId, { url, status: Number(response?.status) || 0 })
-      return
-    }
-    const response = this.pendingResponses.get(requestId)
-    if (!response) return
-    this.pendingResponses.delete(requestId)
-    if (method === 'Network.loadingFinished') {
-      void this.captureResponse(response.url, requestId, response.status)
-      return
-    }
-    if (method === 'Network.loadingFailed') {
-      this.publishResponse({ ok: false, status: response.status, body: null, pathname: response.url.pathname, params: response.url.searchParams })
-    }
-  }
-
-  private async captureResponse(url: URL, requestId: string, status: number) {
+  private async withTimeout<T>(promise: Promise<T>, message: string) {
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      const result = (await this.page.debugger.sendCommand('Network.getResponseBody', { requestId })) as {
-        body?: string
-        base64Encoded?: boolean
-      }
-      const source = result.base64Encoded ? Buffer.from(result.body || '', 'base64').toString('utf8') : result.body || ''
-      const body = record(JSON.parse(source))
-      this.rememberFolderTitles(body)
-      this.publishResponse({ ok: status >= 200 && status < 300, status, body, pathname: url.pathname, params: url.searchParams })
-    } catch {
-      this.publishResponse({ ok: false, status, body: null, pathname: url.pathname, params: url.searchParams })
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => {
+            this.onDiagnostic?.({ kind: 'timeout' })
+            reject(new Error(message))
+          }, this.timeouts.actionMs || PAGE_ACTION_TIMEOUT_MS)
+        }),
+      ])
+    } finally {
+      if (timer) clearTimeout(timer)
     }
   }
 
-  private rememberFolderTitles(body: Record<string, unknown> | null) {
-    const folders = body && Array.isArray(body.collects_list) ? body.collects_list : []
-    for (const folder of folders) {
-      const entry = record(folder)
-      const id = typeof entry?.collects_id === 'string' ? entry.collects_id : ''
-      const title = typeof entry?.collects_name === 'string' ? entry.collects_name.trim() : ''
-      if (id && title) this.folderTitles.set(id, title)
-    }
-  }
-
-  private publishResponse(response: CapturedResponse) {
-    const waiter = Array.from(this.waiters).find((candidate) => matchesRequest(response, candidate.pathname, candidate.params))
-    if (!waiter) {
-      this.responses.push(response)
-      return
-    }
-    clearTimeout(waiter.timer)
-    this.waiters.delete(waiter)
-    waiter.resolve(toPageResponse(response))
-  }
 }

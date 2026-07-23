@@ -65,6 +65,7 @@ import {
 } from './video/douyinFavorites'
 import { createDouyinWebFavoritesClient } from './video/douyinWebClient'
 import { DouyinOfficialPageObserver } from './video/douyinOfficialPage'
+import { withDouyinSyncInactivityTimeout, withDouyinTimeout } from './video/douyinSyncTimeout'
 import { handleVideoProtocolRequest } from './video/protocol'
 import { classifyVideoDownloadFailure } from './video/downloadState'
 import { normalizeBulkVideoTagPayload } from '../src/views/videoStateUtils'
@@ -187,7 +188,10 @@ function getSettings() {
 function getDesktopTaskNoteSettings() {
   const settings = getSettings()
   return {
-    opacity: typeof settings.desktopTaskNote?.opacity === 'number' ? settings.desktopTaskNote.opacity : 0.96,
+    opacity:
+      typeof settings.desktopTaskNote?.opacity === 'number'
+        ? settings.desktopTaskNote.opacity
+        : 0.96,
     alwaysOnTop: settings.desktopTaskNote?.alwaysOnTop !== false,
     bounds: settings.desktopTaskNote?.bounds,
     layoutVersion: Number(settings.desktopTaskNote?.layoutVersion) || 0,
@@ -448,9 +452,15 @@ async function startDouyinAccountLogin() {
   })
 }
 
-async function withDouyinFavoritesClient<T>(action: (client: ReturnType<typeof createDouyinWebFavoritesClient>) => Promise<T>) {
+async function withDouyinFavoritesClient<T>(
+  action: (client: ReturnType<typeof createDouyinWebFavoritesClient>) => Promise<T>,
+) {
   const syncWindow = new BrowserWindow({
-    show: false,
+    show: true,
+    parent: mainWindow || undefined,
+    title: 'Douyin Favorites Sync',
+    width: 1080,
+    height: 760,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -458,15 +468,62 @@ async function withDouyinFavoritesClient<T>(action: (client: ReturnType<typeof c
       partition: getDouyinLoginPartition(activeUserId),
     },
   })
-  const officialPage = new DouyinOfficialPageObserver(syncWindow.webContents)
+  const officialPage = new DouyinOfficialPageObserver(syncWindow.webContents, (event) => {
+    mainWindow?.webContents.send('video:douyin-sync-diagnostic', event)
+  })
   try {
     await officialPage.start()
-    await syncWindow.loadURL('https://www.douyin.com/user/self/')
+    mainWindow?.webContents.send('video:douyin-sync-diagnostic', { kind: 'page_loading' })
+    await withDouyinTimeout(
+      loadDouyinFavoritesPage(syncWindow),
+      20_000,
+      'Douyin official page did not finish loading in time.',
+    )
+    officialPage.notifyPageReady()
     return await action(createDouyinWebFavoritesClient(officialPage))
+  } catch (error) {
+    mainWindow?.webContents.send('video:douyin-sync-diagnostic', { kind: 'page_failed' })
+    throw error
   } finally {
     officialPage.stop()
     if (!syncWindow.isDestroyed()) syncWindow.destroy()
   }
+}
+
+function loadDouyinFavoritesPage(syncWindow: BrowserWindow) {
+  const { webContents } = syncWindow
+  return new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      webContents.removeListener('did-fail-load', onFailed)
+      webContents.removeListener('render-process-gone', onProcessGone)
+    }
+    const onFailed = (
+      _event: Electron.Event,
+      errorCode: number,
+      errorDescription: string,
+      validatedUrl: string,
+    ) => {
+      if (!validatedUrl.includes('douyin.com')) return
+      cleanup()
+      reject(new Error(`Douyin official page failed to load (${errorCode}): ${errorDescription}`))
+    }
+    const onProcessGone = (_event: Electron.Event, details: Electron.RenderProcessGoneDetails) => {
+      cleanup()
+      reject(new Error(`Douyin official page renderer stopped: ${details.reason}`))
+    }
+    webContents.once('did-fail-load', onFailed)
+    webContents.once('render-process-gone', onProcessGone)
+    void webContents
+      .loadURL('https://www.douyin.com/user/self?showSubTab=video&showTab=favorite_collection')
+      .then(() => {
+        cleanup()
+        resolve()
+      })
+      .catch((error) => {
+        cleanup()
+        reject(error)
+      })
+  })
 }
 
 async function synchronizeDouyinFavorites() {
@@ -476,22 +533,32 @@ async function synchronizeDouyinFavorites() {
       success: false,
       foldersSynced: 0,
       itemsSynced: 0,
-      error: { code: 'auth_required', message: 'Please sign in to Douyin before syncing favorites.' },
+      error: {
+        code: 'auth_required',
+        message: 'Please sign in to Douyin before syncing favorites.',
+      },
     }
   }
   try {
     return await withDouyinFavoritesClient((client) =>
-      syncDouyinFavorites({
-        db: getUserDb('videos'),
-        sessionPartition: getDouyinLoginPartition(activeUserId),
-        client,
-        onProgress: (progress) => {
-          mainWindow?.webContents.send('video:douyin-sync-progress', progress)
-        },
-      }),
+      withDouyinSyncInactivityTimeout(
+        (reportActivity) =>
+          syncDouyinFavorites({
+            db: getUserDb('videos'),
+            sessionPartition: getDouyinLoginPartition(activeUserId),
+            client,
+            onProgress: (progress) => {
+              reportActivity()
+              mainWindow?.webContents.send('video:douyin-sync-progress', progress)
+            },
+          }),
+        60_000,
+        'Douyin favorites synchronization stopped after 60 seconds without progress.',
+      ),
     )
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to open the Douyin favorites page.'
+    const message =
+      error instanceof Error ? error.message : 'Unable to open the Douyin favorites page.'
     const syncError = new DouyinFavoritesError('network_error', message)
     return {
       success: false,
@@ -1118,7 +1185,9 @@ function createDesktopTaskNoteWindow() {
 
   const noteSettings = getDesktopTaskNoteSettings()
   const savedBounds =
-    noteSettings.layoutVersion >= 1 && noteSettings.bounds && typeof noteSettings.bounds === 'object'
+    noteSettings.layoutVersion >= 1 &&
+    noteSettings.bounds &&
+    typeof noteSettings.bounds === 'object'
       ? noteSettings.bounds
       : null
   const noteWidth = Number(savedBounds?.width) || 320

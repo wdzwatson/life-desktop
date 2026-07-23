@@ -29,6 +29,21 @@ interface DouyinSyncProgress {
   currentFolderTitle?: string
 }
 
+interface DouyinSyncDiagnostic {
+  kind:
+    | 'page_loading'
+    | 'page_ready'
+    | 'page_failed'
+    | 'triggering'
+    | 'request_observed'
+    | 'response_observed'
+    | 'timeout'
+  path?: string
+  status?: number
+}
+
+const DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID = 'my-favorite-videos'
+
 export function DouyinFavoritesPanel({
   showToast,
   workspace = false,
@@ -46,10 +61,13 @@ export function DouyinFavoritesPanel({
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [syncProgress, setSyncProgress] = useState<DouyinSyncProgress | null>(null)
+  const [syncDiagnostic, setSyncDiagnostic] = useState<DouyinSyncDiagnostic | null>(null)
   const [syncNow, setSyncNow] = useState(() => Date.now())
   const [syncRefreshNonce, setSyncRefreshNonce] = useState(0)
   const [error, setError] = useState('')
   const lastSyncRefreshAt = useRef(0)
+  const lastSyncActivityAt = useRef(0)
+  const syncTimedOut = useRef(false)
 
   const refreshFolders = useCallback(async () => {
     if (!api) return
@@ -89,15 +107,17 @@ export function DouyinFavoritesPanel({
       return
     }
     let cancelled = false
-    void api.listDouyinFavoriteItems(activeFolderId).then((result: DouyinListResponse<DouyinFavoriteItemView[]>) => {
-      if (cancelled) return
-      if (!result?.success) {
-        setError(result?.error || t('videos.douyin_load_failed'))
-        setItems([])
-        return
-      }
-      setItems(result.data || [])
-    })
+    void api
+      .listDouyinFavoriteItems(activeFolderId)
+      .then((result: DouyinListResponse<DouyinFavoriteItemView[]>) => {
+        if (cancelled) return
+        if (!result?.success) {
+          setError(result?.error || t('videos.douyin_load_failed'))
+          setItems([])
+          return
+        }
+        setItems(result.data || [])
+      })
     return () => {
       cancelled = true
     }
@@ -106,6 +126,7 @@ export function DouyinFavoritesPanel({
   useEffect(() => {
     if (!api?.onDouyinSyncProgress) return
     return api.onDouyinSyncProgress((progress: DouyinSyncProgress) => {
+      lastSyncActivityAt.current = Date.now()
       setSyncProgress(progress)
       if (progress.phase !== 'writing_folders' && progress.phase !== 'writing_items') return
       const now = Date.now()
@@ -117,11 +138,33 @@ export function DouyinFavoritesPanel({
   }, [api, refreshFolders])
 
   useEffect(() => {
+    if (!api?.onDouyinSyncDiagnostic) return
+    return api.onDouyinSyncDiagnostic((event: DouyinSyncDiagnostic) => {
+      lastSyncActivityAt.current = Date.now()
+      setSyncDiagnostic(event)
+    })
+  }, [api])
+
+  useEffect(() => {
     if (!syncing || !syncProgress) return
     setSyncNow(Date.now())
     const timer = window.setInterval(() => setSyncNow(Date.now()), 1_000)
     return () => window.clearInterval(timer)
   }, [syncing, syncProgress])
+
+  useEffect(() => {
+    if (!syncing) return
+    const timer = window.setInterval(() => {
+      if (Date.now() - lastSyncActivityAt.current < 75_000) return
+      syncTimedOut.current = true
+      const message = t('videos.douyin_sync_stalled')
+      setError(message)
+      setSyncing(false)
+      setSyncProgress(null)
+      showToast(message)
+    }, 1_000)
+    return () => window.clearInterval(timer)
+  }, [showToast, syncing, t])
 
   const handleSync = async () => {
     if (!api || syncing) return
@@ -130,6 +173,8 @@ export function DouyinFavoritesPanel({
       return
     }
     setSyncing(true)
+    syncTimedOut.current = false
+    lastSyncActivityAt.current = Date.now()
     setSyncProgress({
       phase: 'starting',
       startedAt: Date.now(),
@@ -138,9 +183,11 @@ export function DouyinFavoritesPanel({
       itemsSynced: 0,
       pagesLoaded: 0,
     })
+    setSyncDiagnostic(null)
     setError('')
     try {
       const result = await api.syncDouyinFavorites()
+      if (syncTimedOut.current) return
       if (!result?.success) {
         const message = result?.error?.message || t('videos.douyin_sync_failed')
         setError(message)
@@ -155,8 +202,15 @@ export function DouyinFavoritesPanel({
     }
   }
 
-  const filteredItems = useMemo(() => filterDouyinFavoriteItems(items, searchQuery), [items, searchQuery])
-  const syncElapsedSeconds = syncProgress ? Math.max(0, Math.floor((syncNow - syncProgress.startedAt) / 1_000)) : 0
+  const filteredItems = useMemo(
+    () => filterDouyinFavoriteItems(items, searchQuery),
+    [items, searchQuery],
+  )
+  const isVideoFavoritesOnly =
+    folders.length === 1 && folders[0].remote_id === DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID
+  const syncElapsedSeconds = syncProgress
+    ? Math.max(0, Math.floor((syncNow - syncProgress.startedAt) / 1_000))
+    : 0
   const syncProgressLabel = syncProgress
     ? t(`videos.douyin_sync_phase_${syncProgress.phase}`, {
         folder: syncProgress.currentFolderTitle || t('videos.douyin_folders'),
@@ -167,15 +221,29 @@ export function DouyinFavoritesPanel({
         seconds: syncElapsedSeconds,
       })
     : ''
+  const syncDiagnosticLabel = syncDiagnostic
+    ? t(`videos.douyin_sync_diagnostic_${syncDiagnostic.kind}`, {
+        path: syncDiagnostic.path || t('videos.douyin_sync_unknown_path'),
+        status: syncDiagnostic.status || '-',
+      })
+    : ''
 
   return (
     <section
       className="card"
       aria-busy={loading || syncing}
-      style={{ display: 'grid', gap: '10px', minWidth: 0, minHeight: 0, flex: workspace ? 1 : undefined }}
+      style={{
+        display: 'grid',
+        gap: '10px',
+        minWidth: 0,
+        minHeight: 0,
+        flex: workspace ? 1 : undefined,
+      }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-        <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flex: '1 1 160px' }}>
+        <strong
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flex: '1 1 160px' }}
+        >
           <Folder size={14} />
           {t('videos.douyin_title')}
         </strong>
@@ -210,36 +278,84 @@ export function DouyinFavoritesPanel({
           {t('videos.douyin_login_hint')}
         </p>
       ) : null}
-      {error ? <p style={{ margin: 0, color: 'var(--color-danger)', fontSize: '12px' }}>{error}</p> : null}
+      {error ? (
+        <p style={{ margin: 0, color: 'var(--color-danger)', fontSize: '12px' }}>{error}</p>
+      ) : null}
       {syncProgress ? (
-        <div style={{ display: 'grid', gap: '3px', color: 'var(--text-muted)', fontSize: '12px' }} aria-live="polite">
+        <div
+          style={{ display: 'grid', gap: '3px', color: 'var(--text-muted)', fontSize: '12px' }}
+          aria-live="polite"
+        >
           <span>{syncProgressLabel}</span>
-          <span>{t('videos.douyin_sync_counts', { folders: syncProgress.foldersDiscovered, items: syncProgress.itemsSynced, pages: syncProgress.pagesLoaded })}</span>
+          <span>
+            {t('videos.douyin_sync_counts', {
+              folders: syncProgress.foldersDiscovered,
+              items: syncProgress.itemsSynced,
+              pages: syncProgress.pagesLoaded,
+            })}
+          </span>
+          {syncDiagnostic ? <span>{syncDiagnosticLabel}</span> : null}
+          <span>{t('videos.douyin_sync_window_hint')}</span>
         </div>
       ) : null}
 
       {folders.length === 0 && !loading ? (
-        <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '12px' }}>{t('videos.douyin_empty')}</p>
+        <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '12px' }}>
+          {t('videos.douyin_empty')}
+        </p>
       ) : null}
 
       {folders.length > 0 ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 240px) minmax(0, 1fr)', gap: '12px', minWidth: 0, minHeight: 0, flex: workspace ? 1 : undefined }}>
-          <nav aria-label={t('videos.douyin_folders')} style={{ display: 'grid', alignContent: 'start', gap: '3px' }}>
-            {folders.map((folder) => (
-              <button
-                key={folder.id}
-                type="button"
-                className={`btn sm ${activeFolderId === folder.id ? 'primary' : 'ghost'}`}
-                onClick={() => setActiveFolderId(folder.id)}
-                title={folder.diagnostic_message || folder.title}
-                style={{ justifyContent: 'space-between', minWidth: 0 }}
-              >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.title}</span>
-                <span aria-label={t('videos.douyin_item_count', { count: folder.item_count })}>{folder.item_count}</span>
-              </button>
-            ))}
-          </nav>
-          <div style={{ display: 'grid', gap: '8px', minWidth: 0, minHeight: 0, gridTemplateRows: workspace ? 'auto minmax(0, 1fr)' : undefined }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isVideoFavoritesOnly
+              ? 'minmax(0, 1fr)'
+              : 'minmax(160px, 240px) minmax(0, 1fr)',
+            gap: '12px',
+            minWidth: 0,
+            minHeight: 0,
+            flex: workspace ? 1 : undefined,
+          }}
+        >
+          {!isVideoFavoritesOnly ? (
+            <nav
+              aria-label={t('videos.douyin_folders')}
+              style={{ display: 'grid', alignContent: 'start', gap: '3px' }}
+            >
+              {folders.map((folder) => (
+                <button
+                  key={folder.id}
+                  type="button"
+                  className={`btn sm ${activeFolderId === folder.id ? 'primary' : 'ghost'}`}
+                  onClick={() => setActiveFolderId(folder.id)}
+                  title={folder.diagnostic_message || folder.title}
+                  style={{ justifyContent: 'space-between', minWidth: 0 }}
+                >
+                  <span
+                    style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  >
+                    {folder.title}
+                  </span>
+                  <span aria-label={t('videos.douyin_item_count', { count: folder.item_count })}>
+                    {folder.item_count}
+                  </span>
+                </button>
+              ))}
+            </nav>
+          ) : null}
+          <div
+            style={{
+              display: 'grid',
+              gap: '8px',
+              minWidth: 0,
+              minHeight: 0,
+              gridTemplateRows: workspace ? 'auto minmax(0, 1fr)' : undefined,
+            }}
+          >
+            {isVideoFavoritesOnly ? (
+              <strong style={{ fontSize: '12px' }}>{t('videos.douyin_my_favorite_videos')}</strong>
+            ) : null}
             <input
               className="form-field"
               value={searchQuery}
@@ -248,22 +364,75 @@ export function DouyinFavoritesPanel({
               style={{ height: '30px' }}
             />
             {filteredItems.length === 0 ? (
-              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '12px' }}>{t('videos.douyin_empty_folder')}</p>
+              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '12px' }}>
+                {t('videos.douyin_empty_folder')}
+              </p>
             ) : (
-              <div style={{ display: 'grid', gap: '5px', maxHeight: workspace ? undefined : '260px', minHeight: 0, overflowY: 'auto' }}>
+              <div
+                style={{
+                  display: 'grid',
+                  gap: '5px',
+                  maxHeight: workspace ? undefined : '260px',
+                  minHeight: 0,
+                  overflowY: 'auto',
+                }}
+              >
                 {filteredItems.map((item) => (
                   <article
                     key={item.id}
-                    style={{ display: 'grid', gridTemplateColumns: '40px minmax(0, 1fr) 30px', alignItems: 'center', gap: '8px', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '40px minmax(0, 1fr) 30px',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '6px 0',
+                      borderBottom: '1px solid var(--color-border)',
+                    }}
                   >
                     {item.thumbnail_url ? (
-                      <img src={item.thumbnail_url} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />
+                      <img
+                        src={item.thumbnail_url}
+                        alt=""
+                        style={{
+                          width: '40px',
+                          height: '40px',
+                          objectFit: 'cover',
+                          borderRadius: '4px',
+                        }}
+                      />
                     ) : (
-                      <div aria-hidden="true" style={{ width: '40px', height: '40px', borderRadius: '4px', background: 'var(--bg-muted)' }} />
+                      <div
+                        aria-hidden="true"
+                        style={{
+                          width: '40px',
+                          height: '40px',
+                          borderRadius: '4px',
+                          background: 'var(--bg-muted)',
+                        }}
+                      />
                     )}
                     <div style={{ minWidth: 0 }}>
-                      <div title={item.title} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '12px', fontWeight: 650 }}>{item.title}</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '10.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div
+                        title={item.title}
+                        style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          fontSize: '12px',
+                          fontWeight: 650,
+                        }}
+                      >
+                        {item.title}
+                      </div>
+                      <div
+                        style={{
+                          color: 'var(--text-muted)',
+                          fontSize: '10.5px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
                         {item.author_name || t('videos.douyin_unknown_author')}
                         {item.duration_seconds ? ` · ${formatDuration(item.duration_seconds)}` : ''}
                       </div>

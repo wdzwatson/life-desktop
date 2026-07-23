@@ -68,8 +68,14 @@ test('Douyin schema creates a local-only normalized favorite mirror', () => {
     .map((column) => column.name)
   assert.equal(accountColumns.includes('cookie'), false)
   assert.equal(accountColumns.includes('token'), false)
-  const folderColumns = db.prepare('PRAGMA table_info(douyin_favorite_folders)').all().map((column) => column.name)
-  const itemColumns = db.prepare('PRAGMA table_info(douyin_favorite_items)').all().map((column) => column.name)
+  const folderColumns = db
+    .prepare('PRAGMA table_info(douyin_favorite_folders)')
+    .all()
+    .map((column) => column.name)
+  const itemColumns = db
+    .prepare('PRAGMA table_info(douyin_favorite_items)')
+    .all()
+    .map((column) => column.name)
   assert.equal(folderColumns.includes('last_incremental_added_at'), true)
   assert.equal(itemColumns.includes('favorite_added_at'), true)
   db.close()
@@ -133,10 +139,15 @@ test('favorite synchronization reports page-level progress after local writes', 
 
   assert.equal(result.success, true)
   assert.ok(progress.some((event) => event.phase === 'loading_folders'))
-  assert.ok(progress.some((event) => event.phase === 'writing_folders' && event.foldersDiscovered === 1))
+  assert.ok(
+    progress.some((event) => event.phase === 'writing_folders' && event.foldersDiscovered === 1),
+  )
   assert.ok(progress.some((event) => event.phase === 'writing_items' && event.itemsSynced === 1))
   assert.equal(progress.at(-1)?.phase, 'completed')
-  assert.equal(progress.every((event) => typeof event.startedAt === 'number'), true)
+  assert.equal(
+    progress.every((event) => typeof event.startedAt === 'number'),
+    true,
+  )
   db.close()
 })
 
@@ -201,7 +212,8 @@ test('incremental sync stops after reaching a verified per-folder watermark', as
   assert.equal(itemRequests.length, 2)
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM douyin_favorite_items').get().count, 2)
   assert.equal(
-    db.prepare('SELECT incremental_capability FROM douyin_favorite_folders').get().incremental_capability,
+    db.prepare('SELECT incremental_capability FROM douyin_favorite_folders').get()
+      .incremental_capability,
     'available',
   )
   db.close()
@@ -214,9 +226,44 @@ test('sync keeps scanning fully when the official page does not expose a verifia
 
   assert.equal(result.fullFolders, 1)
   assert.equal(
-    db.prepare('SELECT incremental_capability FROM douyin_favorite_folders').get().incremental_capability,
+    db.prepare('SELECT incremental_capability FROM douyin_favorite_folders').get()
+      .incremental_capability,
     'unavailable',
   )
+  db.close()
+})
+
+test('incremental sync stops after two fully known newest-first pages without favorite timestamps', async () => {
+  const db = createVideoDb()
+  const sessionPartition = 'persist:lifeos-douyin-guest'
+  await syncDouyinFavorites({ db, sessionPartition, client: createClient() })
+
+  const requests = []
+  const result = await syncDouyinFavorites({
+    db,
+    sessionPartition,
+    client: createClient({
+      listFolderItems: async ({ cursor }) => {
+        requests.push(cursor)
+        return {
+          entries: [
+            {
+              remoteId: 'aweme-1',
+              title: 'Useful video',
+              sourceUrl: 'https://www.douyin.com/video/1234567890',
+            },
+          ],
+          hasMore: true,
+          cursor: `page-${requests.length}`,
+          isNewestFirst: true,
+        }
+      },
+    }),
+  })
+
+  assert.equal(result.success, true)
+  assert.equal(result.incrementalFolders, 1)
+  assert.equal(requests.length, 2)
   db.close()
 })
 
@@ -240,9 +287,29 @@ test('a failed sync retains the last successful local mirror and redacts diagnos
   assert.equal(result.error?.message.includes('private-session'), false)
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM douyin_favorite_items').get().count, 1)
   assert.equal(
-    db.prepare('SELECT diagnostic_message FROM douyin_accounts').get().diagnostic_message.includes('private-session'),
+    db
+      .prepare('SELECT diagnostic_message FROM douyin_accounts')
+      .get()
+      .diagnostic_message.includes('private-session'),
     false,
   )
+  db.close()
+})
+
+test('a failed My favorites video reader does not report an empty synchronization as successful', async () => {
+  const db = createVideoDb()
+  const result = await syncDouyinFavorites({
+    db,
+    sessionPartition: 'persist:lifeos-douyin-guest',
+    client: createClient({
+      listFolderItems: async () => {
+        throw new DouyinFavoritesError('unsupported', 'Favorite video cards did not appear.')
+      },
+    }),
+  })
+
+  assert.equal(result.success, false)
+  assert.equal(result.error?.code, 'unsupported')
   db.close()
 })
 
