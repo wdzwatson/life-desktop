@@ -592,7 +592,7 @@
     "douyin_sync_phase_failed": "Synchronization did not complete",
     "douyin_sync_counts": "Saved {{items}} favorite videos, received {{pages}} pages",
     "douyin_my_favorite_videos": "My favorite videos",
-    "douyin_sync_window_hint": "The official Douyin page is open. Complete any verification there before continuing.",
+    "douyin_sync_window_hint": "Synchronization is running in the background. You can continue using the app.",
     "douyin_sync_unknown_path": "unknown endpoint",
     "douyin_sync_diagnostic_page_loading": "Loading official Douyin page",
     "douyin_sync_diagnostic_page_ready": "Official page loaded",

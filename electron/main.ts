@@ -524,8 +524,11 @@ async function withDouyinFavoritesClient<T>(
     douyinSyncWindow && !douyinSyncWindow.isDestroyed()
       ? douyinSyncWindow
       : new BrowserWindow({
-          show: true,
-          parent: mainWindow || undefined,
+          // The official page is only used as an authenticated data source. Keep it out of the
+          // foreground while retaining an active renderer for page automation.
+          show: false,
+          skipTaskbar: true,
+          focusable: false,
           title: 'Douyin Favorites Sync',
           width: 1080,
           height: 760,
@@ -540,10 +543,7 @@ async function withDouyinFavoritesClient<T>(
         })
   const reusedSyncWindow = douyinSyncWindow === syncWindow && douyinSyncWindowReady
   douyinSyncWindow = syncWindow
-  syncWindow.show()
-  syncWindow.focus()
-  syncWindow.webContents.focus()
-  logDouyinSyncWindow('opened')
+  logDouyinSyncWindow('opened_hidden')
   const navigationEvents = [
     'did-start-loading',
     'did-finish-load',
@@ -589,8 +589,6 @@ async function withDouyinFavoritesClient<T>(
     mainWindow?.webContents.send('video:douyin-sync-diagnostic', { kind: 'page_loading' })
     if (reusedSyncWindow) logDouyinSyncWindow('reused_page')
     else await ensureDouyinFavoritesPageLoaded(syncWindow)
-    syncWindow.focus()
-    syncWindow.webContents.focus()
     officialPage.notifyPageReady()
     const result = await action(createDouyinWebFavoritesClient(officialPage))
     const syncResult = result as { success?: unknown; complete?: unknown }
@@ -611,15 +609,10 @@ async function withDouyinFavoritesClient<T>(
   } finally {
     officialPage.stop()
     removeNavigationListeners()
-    if (!syncWindow.isDestroyed() && outcome === 'completed') {
+    if (!syncWindow.isDestroyed()) {
       logDouyinSyncWindow('closed_after_sync', { reason: outcome })
       syncWindow.close()
-    } else if (!syncWindow.isDestroyed()) {
-      logDouyinSyncWindow('retained_after_sync', { reason: outcome })
-      syncWindow.show()
-      syncWindow.focus()
     }
-    if (!isQuitting && outcome === 'completed') showMainWindow()
   }
 }
 

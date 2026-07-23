@@ -592,7 +592,7 @@
     "douyin_sync_phase_failed": "同步未完成",
     "douyin_sync_counts": "已写入 {{items}} 个收藏视频，已接收 {{pages}} 页数据",
     "douyin_my_favorite_videos": "我的收藏视频",
-    "douyin_sync_window_hint": "已打开抖音官方页面；若页面要求验证，请在该窗口完成验证后再继续。",
+    "douyin_sync_window_hint": "同步正在后台进行，可继续使用应用。",
     "douyin_sync_unknown_path": "未知接口",
     "douyin_sync_diagnostic_page_loading": "正在加载抖音官方页面",
     "douyin_sync_diagnostic_page_ready": "官方页面已加载",
