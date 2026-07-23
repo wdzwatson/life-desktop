@@ -233,7 +233,7 @@ test('sync keeps scanning fully when the official page does not expose a verifia
   db.close()
 })
 
-test('incremental sync stops after two fully known newest-first pages without favorite timestamps', async () => {
+test('full DOM-style sync continues through known pages without favorite timestamps', async () => {
   const db = createVideoDb()
   const sessionPartition = 'persist:lifeos-douyin-guest'
   await syncDouyinFavorites({ db, sessionPartition, client: createClient() })
@@ -253,8 +253,8 @@ test('incremental sync stops after two fully known newest-first pages without fa
               sourceUrl: 'https://www.douyin.com/video/1234567890',
             },
           ],
-          hasMore: true,
-          cursor: `page-${requests.length}`,
+          hasMore: requests.length < 3,
+          ...(requests.length < 3 ? { cursor: `page-${requests.length}` } : {}),
           isNewestFirst: true,
         }
       },
@@ -262,8 +262,9 @@ test('incremental sync stops after two fully known newest-first pages without fa
   })
 
   assert.equal(result.success, true)
-  assert.equal(result.incrementalFolders, 1)
-  assert.equal(requests.length, 2)
+  assert.equal(result.complete, true)
+  assert.equal(result.incrementalFolders, 0)
+  assert.equal(requests.length, 3)
   db.close()
 })
 

@@ -46,6 +46,8 @@ export interface DouyinPage<T> {
   cursor?: string
   hasMore: boolean
   isNewestFirst?: boolean
+  complete?: boolean
+  stopReason?: string
 }
 
 export interface DouyinFavoritesClient {
@@ -59,9 +61,12 @@ export interface DouyinFavoritesClient {
 
 export interface DouyinSyncResult {
   success: boolean
+  complete: boolean
   accountId?: number
   foldersSynced: number
   itemsSynced: number
+  partialFolders?: number
+  stopReasons?: string[]
   incrementalFolders?: number
   fullFolders?: number
   error?: { code: DouyinSyncErrorCode; message: string }
@@ -98,6 +103,8 @@ export interface DouyinFavoriteFolderRecord {
   last_incremental_added_at: string | null
   last_incremental_remote_id: string | null
   diagnostic_message: string | null
+  last_sync_complete: number
+  last_sync_stop_reason: string | null
 }
 
 export interface DouyinFavoriteItemRecord {
@@ -112,6 +119,14 @@ export interface DouyinFavoriteItemRecord {
   collected_at: string | null
   favorite_added_at: string | null
   position: number
+}
+
+export interface DouyinFavoriteItemsPage {
+  items: DouyinFavoriteItemRecord[]
+  total: number
+  offset: number
+  limit: number
+  hasMore: boolean
 }
 
 const MAX_PAGES_PER_SYNC = 100
@@ -337,6 +352,22 @@ function updateFolderSuccess(db: Database.Database, folderId: number) {
   ).run(folderId)
 }
 
+function updateFolderSyncState(
+  db: Database.Database,
+  folderId: number,
+  complete: boolean,
+  stopReason: string | null,
+) {
+  db.prepare(
+    `
+    UPDATE douyin_favorite_folders
+    SET item_count = (SELECT COUNT(*) FROM douyin_folder_items WHERE folder_id = ?),
+        last_sync_complete = ?, last_sync_stop_reason = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+    `,
+  ).run(folderId, complete ? 1 : 0, stopReason, folderId)
+}
+
 function updateFolderFailure(db: Database.Database, folderId: number, error: DouyinFavoritesError) {
   db.prepare(
     `
@@ -429,14 +460,6 @@ function pageIsStrictlyOlderThanWatermark(
   )
 }
 
-function favoriteItemAlreadyExists(db: Database.Database, accountId: number, remoteId: string) {
-  return Boolean(
-    db
-      .prepare('SELECT 1 FROM douyin_favorite_items WHERE account_id = ? AND remote_id = ?')
-      .get(accountId, remoteId),
-  )
-}
-
 export async function syncDouyinFavorites(input: {
   db: Database.Database
   sessionPartition: string
@@ -449,6 +472,9 @@ export async function syncDouyinFavorites(input: {
   let itemsSynced = 0
   let incrementalFolders = 0
   let fullFolders = 0
+  let partialFolders = 0
+  let syncComplete = true
+  const stopReasons = new Set<string>()
   let foldersCompleted = 0
   let pagesLoaded = 0
   let failedFolders = 0
@@ -532,8 +558,8 @@ export async function syncDouyinFavorites(input: {
         }
         let observedItemPage = false
         let verifiedOrdering = true
-        let consecutiveKnownPages = 0
-        let usedKnownItemIncremental = false
+        let folderComplete = false
+        let folderStopReason: string | null = null
         for (let pageCount = 0; pageCount < MAX_PAGES_PER_SYNC; pageCount += 1) {
           report('loading_items', folder.title)
           const page = await input.client.listFolderItems({
@@ -544,13 +570,6 @@ export async function syncDouyinFavorites(input: {
             throw new DouyinFavoritesError(
               'invalid_response',
               'Favorite video response is invalid.',
-            )
-          const pageOnlyContainsKnownItems =
-            input.mode !== 'full' &&
-            page.isNewestFirst === true &&
-            page.entries.length > 0 &&
-            page.entries.every((entry) =>
-              favoriteItemAlreadyExists(input.db, accountId!, entry.remoteId),
             )
           const pageHasVerifiableOrder = canVerifyIncrementalOrder(page)
           if (page.entries.length > 0) {
@@ -578,18 +597,15 @@ export async function syncDouyinFavorites(input: {
               previousIncrementalState.last_incremental_added_at,
             )
           ) {
+            folderComplete = true
+            folderStopReason = 'incremental_watermark'
             break
           }
-          if (pageOnlyContainsKnownItems) {
-            consecutiveKnownPages += 1
-            if (consecutiveKnownPages >= 2) {
-              usedKnownItemIncremental = true
-              break
-            }
-          } else {
-            consecutiveKnownPages = 0
+          if (!page.hasMore) {
+            folderComplete = page.complete !== false
+            folderStopReason = page.stopReason || (folderComplete ? 'source_end' : 'source_uncertain')
+            break
           }
-          if (!page.hasMore) break
           if (!text(page.cursor))
             throw new DouyinFavoritesError(
               'invalid_response',
@@ -604,6 +620,12 @@ export async function syncDouyinFavorites(input: {
           }
         }
         updateFolderSuccess(input.db, folderId)
+        updateFolderSyncState(input.db, folderId, folderComplete, folderStopReason)
+        if (!folderComplete) {
+          partialFolders += 1
+          syncComplete = false
+          if (folderStopReason) stopReasons.add(folderStopReason)
+        }
         if (observedItemPage && verifiedOrdering && newestSeen.addedAt) {
           nextIncrementalState.incremental_capability = 'available'
           nextIncrementalState.last_incremental_added_at = newestSeen.addedAt
@@ -615,8 +637,7 @@ export async function syncDouyinFavorites(input: {
         }
         updateFolderIncrementalState(input.db, folderId, nextIncrementalState)
         if (
-          (useIncremental && nextIncrementalState.incremental_capability === 'available') ||
-          usedKnownItemIncremental
+          useIncremental && nextIncrementalState.incremental_capability === 'available'
         )
           incrementalFolders += 1
         else fullFolders += 1
@@ -645,7 +666,17 @@ export async function syncDouyinFavorites(input: {
       )
       .run(accountId)
     report('completed')
-    return { success: true, accountId, foldersSynced, itemsSynced, incrementalFolders, fullFolders }
+    return {
+      success: true,
+      complete: syncComplete,
+      accountId,
+      foldersSynced,
+      itemsSynced,
+      partialFolders,
+      stopReasons: [...stopReasons],
+      incrementalFolders,
+      fullFolders,
+    }
   } catch (error) {
     const syncError = toSyncError(error)
     if (accountId) {
@@ -666,6 +697,7 @@ export async function syncDouyinFavorites(input: {
     report('failed')
     return {
       success: false,
+      complete: false,
       ...(accountId ? { accountId } : {}),
       foldersSynced,
       itemsSynced,
@@ -682,7 +714,8 @@ export function listDouyinFavoriteFolders(db: Database.Database): DouyinFavorite
     .prepare(
       `
       SELECT id, remote_id, title, item_count, sync_status, last_sync_at, incremental_capability,
-             last_incremental_added_at, last_incremental_remote_id, diagnostic_message
+             last_incremental_added_at, last_incremental_remote_id, last_sync_complete,
+             last_sync_stop_reason, diagnostic_message
       FROM douyin_favorite_folders
       ORDER BY title COLLATE NOCASE ASC, id ASC
       `,
@@ -693,17 +726,32 @@ export function listDouyinFavoriteFolders(db: Database.Database): DouyinFavorite
 export function listDouyinFavoriteItems(
   db: Database.Database,
   folderId: number,
-): DouyinFavoriteItemRecord[] {
-  return db
+  options?: { offset?: number; limit?: number; query?: string },
+): DouyinFavoriteItemRecord[] | DouyinFavoriteItemsPage {
+  const offset = Math.max(0, Math.floor(Number(options?.offset) || 0))
+  const limit = Math.min(200, Math.max(1, Math.floor(Number(options?.limit) || 100)))
+  const query = typeof options?.query === 'string' ? options.query.trim() : ''
+  const where = query
+    ? `WHERE fi.folder_id = ? AND (i.title LIKE ? OR i.author_name LIKE ? OR i.remote_id LIKE ?)`
+    : 'WHERE fi.folder_id = ?'
+  const params = query ? [folderId, `%${query}%`, `%${query}%`, `%${query}%`] : [folderId]
+  const base = `
+    FROM douyin_folder_items fi
+    JOIN douyin_favorite_items i ON i.id = fi.item_id
+    ${where}
+  `
+  const items = db
     .prepare(
       `
       SELECT i.id, i.remote_id, i.title, i.author_id, i.author_name, i.source_url,
              i.thumbnail_url, i.duration_seconds, i.collected_at, i.favorite_added_at, fi.position
-      FROM douyin_folder_items fi
-      JOIN douyin_favorite_items i ON i.id = fi.item_id
-      WHERE fi.folder_id = ?
+      ${base}
       ORDER BY fi.position ASC, i.id ASC
+      LIMIT ? OFFSET ?
       `,
     )
-    .all(folderId) as DouyinFavoriteItemRecord[]
+    .all(...params, limit, offset) as DouyinFavoriteItemRecord[]
+  if (!options) return items
+  const total = Number(db.prepare(`SELECT COUNT(*) AS count ${base}`).get(...params).count)
+  return { items, total, offset, limit, hasMore: offset + items.length < total }
 }

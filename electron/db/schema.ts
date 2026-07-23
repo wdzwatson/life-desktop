@@ -608,6 +608,8 @@ export function initializeUserDatabase(userDbDir: string) {
           CHECK(incremental_capability IN ('unknown', 'available', 'unavailable')),
         last_incremental_added_at TEXT,
         last_incremental_remote_id TEXT,
+        last_sync_complete INTEGER NOT NULL DEFAULT 1,
+        last_sync_stop_reason TEXT,
         diagnostic_message TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -663,6 +665,8 @@ export function initializeUserDatabase(userDbDir: string) {
     addDouyinColumn('douyin_favorite_folders', 'incremental_capability', "TEXT NOT NULL DEFAULT 'unknown'")
     addDouyinColumn('douyin_favorite_folders', 'last_incremental_added_at', 'TEXT')
     addDouyinColumn('douyin_favorite_folders', 'last_incremental_remote_id', 'TEXT')
+    addDouyinColumn('douyin_favorite_folders', 'last_sync_complete', 'INTEGER NOT NULL DEFAULT 1')
+    addDouyinColumn('douyin_favorite_folders', 'last_sync_stop_reason', 'TEXT')
     addDouyinColumn('douyin_favorite_items', 'favorite_added_at', 'TEXT')
 
     ensureVideoGroupSchema(videosDb)
