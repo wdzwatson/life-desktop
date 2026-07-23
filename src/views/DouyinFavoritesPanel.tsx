@@ -87,6 +87,7 @@ export function DouyinFavoritesPanel({
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([])
   const [playingItem, setPlayingItem] = useState<DouyinFavoriteItemView | null>(null)
   const [playbackUrl, setPlaybackUrl] = useState('')
+  const [readingItem, setReadingItem] = useState<DouyinFavoriteItemView | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [contentFilter, setContentFilter] = useState<'all' | 'video' | 'note' | 'article'>('all')
   const [loading, setLoading] = useState(true)
@@ -99,6 +100,19 @@ export function DouyinFavoritesPanel({
   const lastSyncRefreshAt = useRef(0)
   const lastSyncActivityAt = useRef(0)
   const syncTimedOut = useRef(false)
+  const readerContentRef = useRef<HTMLDivElement | null>(null)
+  const readerRequestId = useRef(0)
+
+  const getReaderBounds = useCallback(() => {
+    const rect = readerContentRef.current?.getBoundingClientRect()
+    if (!rect || rect.width < 1 || rect.height < 1) return null
+    return {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    }
+  }, [])
 
   const refreshFolders = useCallback(async () => {
     if (!api) return
@@ -312,6 +326,59 @@ export function DouyinFavoritesPanel({
     setPlayingItem(item)
     setPlaybackUrl(result.url)
   }
+
+  const closeItemReader = () => {
+    readerRequestId.current += 1
+    setReadingItem(null)
+    void api?.closeDouyinFavoriteReader?.()
+  }
+
+  const openItemReader = (item: DouyinFavoriteItemView) => {
+    if (!api?.openDouyinFavoriteReader) return
+    const requestId = readerRequestId.current + 1
+    readerRequestId.current = requestId
+    setReadingItem(item)
+    window.requestAnimationFrame(() => {
+      if (readerRequestId.current !== requestId) return
+      const bounds = getReaderBounds()
+      if (!bounds) {
+        if (readerRequestId.current === requestId) setReadingItem(null)
+        return
+      }
+      void api.openDouyinFavoriteReader(item.id, bounds).then((result: DouyinListResponse<unknown>) => {
+        if (readerRequestId.current !== requestId || result?.success) return
+        const message = result?.error || t('videos.douyin_read_failed')
+        setReadingItem(null)
+        setError(message)
+        showToast(message)
+      })
+    })
+  }
+
+  useEffect(() => {
+    if (!readingItem || !api?.setDouyinFavoriteReaderBounds) return
+    const syncBounds = () => {
+      const bounds = getReaderBounds()
+      if (bounds) void api.setDouyinFavoriteReaderBounds(bounds)
+    }
+    syncBounds()
+    const element = readerContentRef.current
+    if (!element) return
+    const observer = new ResizeObserver(syncBounds)
+    observer.observe(element)
+    window.addEventListener('resize', syncBounds)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', syncBounds)
+    }
+  }, [api, getReaderBounds, readingItem])
+
+  useEffect(() => {
+    return () => {
+      readerRequestId.current += 1
+      void api?.closeDouyinFavoriteReader?.()
+    }
+  }, [api])
 
   const toggleItemSelection = (itemId: number) => {
     setSelectedItemIds((current) =>
@@ -917,9 +984,9 @@ export function DouyinFavoritesPanel({
                               <button
                                 type="button"
                                 className="btn sm btn-icon ghost"
-                                title={t('videos.douyin_read_coming_soon')}
-                                aria-label={t('videos.douyin_read_coming_soon')}
-                                disabled
+                                title={t('videos.douyin_read')}
+                                aria-label={t('videos.douyin_read')}
+                                onClick={() => void openItemReader(item)}
                                 style={{
                                   width: '28px',
                                   height: '28px',
@@ -1021,6 +1088,76 @@ export function DouyinFavoritesPanel({
               autoPlay
               style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
             />
+          </div>
+        </ViewportPortal>
+      ) : null}
+      {readingItem ? (
+        <ViewportPortal>
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 2000,
+              display: 'grid',
+              gridTemplateRows: '48px minmax(0, 1fr)',
+              background: '#fff',
+              color: 'var(--text-primary)',
+            }}
+          >
+            <header
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                minWidth: 0,
+                padding: '0 14px',
+                borderBottom: '1px solid var(--color-border)',
+                background: 'var(--bg-elevated)',
+              }}
+            >
+              <button
+                type="button"
+                className="btn sm btn-icon ghost"
+                title={t('common.close')}
+                aria-label={t('common.close')}
+                onClick={closeItemReader}
+              >
+                <X size={15} />
+              </button>
+              <span
+                style={{
+                  minWidth: 0,
+                  flex: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  textAlign: 'center',
+                  fontSize: '13px',
+                  fontWeight: 650,
+                }}
+              >
+                {readingItem.title}
+              </span>
+              <button
+                type="button"
+                className="btn sm btn-icon ghost"
+                title={t('videos.btn_open_external')}
+                aria-label={t('videos.btn_open_external')}
+                onClick={() => void api?.openExternal?.(readingItem.source_url)}
+              >
+                <ExternalLink size={15} />
+              </button>
+              <button
+                type="button"
+                className="btn sm btn-icon ghost"
+                title={t('videos.douyin_reader_refresh')}
+                aria-label={t('videos.douyin_reader_refresh')}
+                onClick={() => void api?.reloadDouyinFavoriteReader?.()}
+              >
+                <RefreshCw size={15} />
+              </button>
+            </header>
+            <div ref={readerContentRef} style={{ minWidth: 0, minHeight: 0, background: '#fff' }} />
           </div>
         </ViewportPortal>
       ) : null}

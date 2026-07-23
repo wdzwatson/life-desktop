@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  WebContentsView,
   ipcMain,
   shell,
   dialog,
@@ -73,6 +74,11 @@ import {
 import { createDouyinWebFavoritesClient } from './video/douyinWebClient'
 import { DouyinOfficialPageObserver } from './video/douyinOfficialPage'
 import {
+  isDouyinReaderNavigationUrl,
+  isDouyinReaderSourceUrl,
+  normalizeDouyinReaderBounds,
+} from './video/douyinReader'
+import {
   DouyinTimeoutError,
   withDouyinSyncInactivityTimeout,
   withDouyinTimeout,
@@ -126,6 +132,7 @@ function hashPassword(password: string, salt?: string) {
 let mainWindow: BrowserWindow | null = null
 let desktopTaskNoteWindow: BrowserWindow | null = null
 let douyinSyncWindow: BrowserWindow | null = null
+let douyinReaderView: WebContentsView | null = null
 let douyinSyncWindowReady = false
 let douyinSyncPageLoadPromise: Promise<void> | null = null
 let douyinSyncInFlight: Promise<Awaited<ReturnType<typeof synchronizeDouyinFavorites>>> | null =
@@ -161,6 +168,54 @@ function destroyDouyinSyncWindowForAppQuit() {
   douyinSyncWindow = null
   douyinSyncWindowReady = false
   douyinSyncPageLoadPromise = null
+}
+
+function closeDouyinReaderView() {
+  const readerView = douyinReaderView
+  douyinReaderView = null
+  if (!readerView) return
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.contentView.removeChildView(readerView)
+  }
+  if (!readerView.webContents.isDestroyed()) {
+    readerView.webContents.close()
+  }
+}
+
+function setDouyinReaderViewBounds(bounds: unknown) {
+  const normalizedBounds = normalizeDouyinReaderBounds(bounds)
+  if (!normalizedBounds || !douyinReaderView || douyinReaderView.webContents.isDestroyed()) {
+    return { success: false, error: 'The Douyin reader is not available.' }
+  }
+  douyinReaderView.setBounds(normalizedBounds)
+  return { success: true }
+}
+
+function configureDouyinReaderView(readerView: WebContentsView) {
+  readerView.webContents.setWindowOpenHandler(({ url }) => {
+    if (isDouyinReaderNavigationUrl(url)) {
+      void readerView.webContents.loadURL(url)
+    } else if (/^https?:\/\//i.test(url)) {
+      void shell.openExternal(url)
+    }
+    return { action: 'deny' }
+  })
+  readerView.webContents.on('will-navigate', (event, url) => {
+    if (isDouyinReaderNavigationUrl(url)) return
+    event.preventDefault()
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
+  })
+  readerView.webContents.on('destroyed', () => {
+    if (douyinReaderView === readerView) douyinReaderView = null
+  })
+}
+
+function reloadDouyinReaderView() {
+  if (!douyinReaderView || douyinReaderView.webContents.isDestroyed()) {
+    return { success: false, error: 'The Douyin reader is not available.' }
+  }
+  douyinReaderView.webContents.reload()
+  return { success: true }
 }
 
 // Default Paths
@@ -443,6 +498,59 @@ async function logoutDouyinAccount() {
   await douyinSession.clearStorageData({ storages: ['cookies'] })
   await douyinSession.clearCache()
   return { success: true }
+}
+
+async function openDouyinFavoriteReader(itemId: unknown, bounds: unknown) {
+  const normalizedItemId = Number(itemId)
+  if (!Number.isSafeInteger(normalizedItemId) || normalizedItemId <= 0) {
+    return { success: false, error: 'A valid Douyin note or article is required.' }
+  }
+
+  const item = getDouyinFavoriteItem(getUserDb('videos'), normalizedItemId)
+  if (!item) return { success: false, error: 'The Douyin favorite no longer exists.' }
+  if (
+    (item.content_type !== 'note' && item.content_type !== 'article') ||
+    !isDouyinReaderSourceUrl(item.source_url)
+  ) {
+    return { success: false, error: 'Only official Douyin notes and articles can be opened in the reader.' }
+  }
+  const normalizedBounds = normalizeDouyinReaderBounds(bounds)
+  if (!normalizedBounds) return { success: false, error: 'A valid reader area is required.' }
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return { success: false, error: 'The main window is not available.' }
+  }
+
+  const existingView = douyinReaderView
+  if (existingView && !existingView.webContents.isDestroyed()) {
+    existingView.setBounds(normalizedBounds)
+    try {
+      await existingView.webContents.loadURL(item.source_url)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  const readerView = new WebContentsView({
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      partition: getDouyinLoginPartition(activeUserId),
+    },
+  })
+  douyinReaderView = readerView
+  mainWindow.contentView.addChildView(readerView)
+  readerView.setBounds(normalizedBounds)
+  configureDouyinReaderView(readerView)
+
+  try {
+    await readerView.webContents.loadURL(item.source_url)
+    return { success: true }
+  } catch (error) {
+    closeDouyinReaderView()
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 async function startDouyinAccountLogin() {
@@ -1108,6 +1216,7 @@ function setupAIMediaProtocol() {
 
 // Switch user and initialize
 function switchUserSession(userId: string) {
+  closeDouyinReaderView()
   closeUserDbs()
   activeUserId = userId
 
@@ -1349,6 +1458,7 @@ function createWindow() {
   })
 
   mainWindow.on('closed', () => {
+    closeDouyinReaderView()
     mainWindow = null
   })
 
@@ -1481,6 +1591,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   isQuitting = true
   destroyDouyinSyncWindowForAppQuit()
+  closeDouyinReaderView()
   closeUserDbs()
 })
 
@@ -2903,6 +3014,27 @@ ipcMain.handle('video:getDouyinAuthStatus', async () => {
 
 ipcMain.handle('video:logoutDouyin', async () => {
   return logoutDouyinAccount()
+})
+
+ipcMain.handle('video:openDouyinFavoriteReader', async (_, itemId: unknown, bounds: unknown) => {
+  try {
+    return await openDouyinFavoriteReader(itemId, bounds)
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+ipcMain.handle('video:setDouyinFavoriteReaderBounds', async (_, bounds: unknown) => {
+  return setDouyinReaderViewBounds(bounds)
+})
+
+ipcMain.handle('video:reloadDouyinFavoriteReader', async () => {
+  return reloadDouyinReaderView()
+})
+
+ipcMain.handle('video:closeDouyinFavoriteReader', async () => {
+  closeDouyinReaderView()
+  return { success: true }
 })
 
 ipcMain.handle('video:syncDouyinFavorites', async () => {
