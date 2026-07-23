@@ -68,6 +68,7 @@ interface DouyinSyncDiagnostic {
 }
 
 const DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID = 'my-favorite-videos'
+const DOUYIN_MY_FAVORITE_NOTES_FOLDER_ID = 'my-favorite-notes'
 
 export function DouyinFavoritesPanel({
   showToast,
@@ -91,7 +92,7 @@ export function DouyinFavoritesPanel({
   const [playbackUrl, setPlaybackUrl] = useState('')
   const [activeFolderId, setActiveFolderId] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [contentFilter, setContentFilter] = useState<'all' | 'video' | 'note'>('all')
+  const [contentFilter, setContentFilter] = useState<'video' | 'note'>('video')
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [syncProgress, setSyncProgress] = useState<DouyinSyncProgress | null>(null)
@@ -140,6 +141,15 @@ export function DouyinFavoritesPanel({
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  useEffect(() => {
+    const remoteId =
+      contentFilter === 'video'
+        ? DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID
+        : DOUYIN_MY_FAVORITE_NOTES_FOLDER_ID
+    const folder = folders.find((entry) => entry.remote_id === remoteId)
+    if (folder) setActiveFolderId(folder.id)
+  }, [contentFilter, folders])
 
   useEffect(() => {
     if (!api || !activeFolderId) {
@@ -439,8 +449,6 @@ export function DouyinFavoritesPanel({
   }
 
   const filteredItems = filterDouyinFavoriteItems(items, searchQuery, contentFilter)
-  const isVideoFavoritesOnly =
-    folders.length === 1 && folders[0].remote_id === DOUYIN_MY_FAVORITE_VIDEOS_FOLDER_ID
   const syncElapsedSeconds = syncProgress
     ? Math.max(0, Math.floor((syncNow - syncProgress.startedAt) / 1_000))
     : 0
@@ -546,42 +554,14 @@ export function DouyinFavoritesPanel({
       {folders.length > 0 ? (
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: isVideoFavoritesOnly
-              ? 'minmax(0, 1fr)'
-              : 'minmax(160px, 240px) minmax(0, 1fr)',
-            gap: '12px',
+            display: workspace ? 'flex' : 'grid',
+            flexDirection: workspace ? 'column' : undefined,
+            gap: '8px',
             minWidth: 0,
             minHeight: 0,
             flex: workspace ? 1 : undefined,
           }}
         >
-          {!isVideoFavoritesOnly ? (
-            <nav
-              aria-label={t('videos.douyin_folders')}
-              style={{ display: 'grid', alignContent: 'start', gap: '3px' }}
-            >
-              {folders.map((folder) => (
-                <button
-                  key={folder.id}
-                  type="button"
-                  className={`btn sm ${activeFolderId === folder.id ? 'primary' : 'ghost'}`}
-                  onClick={() => setActiveFolderId(folder.id)}
-                  title={folder.diagnostic_message || folder.title}
-                  style={{ justifyContent: 'space-between', minWidth: 0 }}
-                >
-                  <span
-                    style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  >
-                    {folder.title}
-                  </span>
-                  <span aria-label={t('videos.douyin_item_count', { count: folder.item_count })}>
-                    {folder.item_count}
-                  </span>
-                </button>
-              ))}
-            </nav>
-          ) : null}
           <div
             style={{
               display: workspace ? 'flex' : 'grid',
@@ -592,9 +572,6 @@ export function DouyinFavoritesPanel({
               flex: workspace ? 1 : undefined,
             }}
           >
-            {isVideoFavoritesOnly ? (
-              <strong style={{ fontSize: '12px' }}>{t('videos.douyin_my_favorite_videos')}</strong>
-            ) : null}
             <input
               className="form-field"
               value={searchQuery}
@@ -607,7 +584,7 @@ export function DouyinFavoritesPanel({
               aria-label={t('videos.douyin_content_filter')}
               style={{ display: 'inline-flex', alignSelf: 'flex-start', gap: '2px' }}
             >
-              {(['all', 'video', 'note'] as const).map((type) => (
+              {(['video', 'note'] as const).map((type) => (
                 <button
                   key={type}
                   type="button"
