@@ -31,6 +31,8 @@ interface FavoriteVideoDomResult {
 }
 
 const PAGE_ACTION_TIMEOUT_MS = 35_000
+const SCROLL_ROUNDS_PER_PAGE = 24
+const SCROLL_SETTLE_MS = 450
 
 function text(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
@@ -153,19 +155,33 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
             }
             await activate('收藏')
             await activate('视频')
-            const cardLinks = () => Array.from(document.querySelectorAll('a[href]')).filter((anchor) => {
-              const rawHref = anchor.getAttribute('href') || ''
-              const url = new URL(rawHref, location.href)
-              return /^\\/(video|note)\\/\\d+$/.test(url.pathname) && Boolean(anchor.closest('li')) && anchor.getClientRects().length > 0
-            })
             const favoriteList = () => {
               const lists = Array.from(document.querySelectorAll('ul'))
+              const findVideoLinks = (list) => Array.from(list.querySelectorAll('a[href]')).filter((anchor) => {
+                const rawHref = anchor.getAttribute('href') || ''
+                const url = new URL(rawHref, location.href)
+                return /^\\/(video|note)\\/\\d+$/.test(url.pathname) && anchor.getClientRects().length > 0
+              })
               return lists
-                .map((list) => ({ list, count: cardLinks().filter((anchor) => list.contains(anchor)).length }))
-                .sort((left, right) => right.count - left.count)[0]?.list || null
+                .map((list) => ({ list, count: findVideoLinks(list).length }))
+                .sort((left, right) => right.count - left.count)[0]?.list || document.body
             }
-            const listText = () => favoriteList()?.parentElement?.textContent || ''
-            const readEntries = () => cardLinks().flatMap((anchor) => {
+            const getScrollTarget = (list) => {
+              let node = list?.parentElement || null
+              while (node && node !== document.body) {
+                const style = getComputedStyle(node)
+                if (node.scrollHeight > node.clientHeight && /(auto|scroll)/.test(style.overflowY)) return node
+                node = node.parentElement
+              }
+              return document.scrollingElement || document.documentElement
+            }
+            const readEntries = (list) => {
+              const root = list || document
+              return Array.from(root.querySelectorAll('a[href]')).filter((anchor) => {
+                const rawHref = anchor.getAttribute('href') || ''
+                const url = new URL(rawHref, location.href)
+                return /^\\/video\\/\\d+$/.test(url.pathname) && anchor.getClientRects().length > 0
+              }).flatMap((anchor) => {
               const rawHref = anchor.getAttribute('href') || ''
               const url = new URL(rawHref, location.href)
               const match = url.pathname.match(/^\\/video\\/(\\d+)$/)
@@ -174,34 +190,41 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
               const title = anchor.querySelector('p')?.textContent?.trim() || imageLabel.split('：').slice(1).join('：').trim() || 'Douyin video ' + match[1]
               const authorName = imageLabel.includes('：') ? imageLabel.split('：')[0].trim() : ''
               return [{ remoteId: match[1], title, sourceUrl: 'https://www.douyin.com/video/' + match[1], ...(authorName ? { authorName } : {}) }]
-            })
+              })
+            }
+            const listText = (list) => list?.parentElement?.textContent || ''
             const listReady = await waitFor(() => {
-              const text = listText()
-              return cardLinks().length > 0 || text.includes('暂时没有更多') || text.includes('暂无收藏')
+              const list = favoriteList()
+              const text = listText(list)
+              return Boolean(list && readEntries(list).length > 0) || text.includes('暂时没有更多') || text.includes('暂无收藏')
             }, 20000)
             if (!listReady) throw new Error('Douyin favorite video cards did not appear after the page loaded.')
-            await delay(1000)
-            const before = readEntries().length
             const list = favoriteList()
-            const scrollTarget = (() => {
-              let node = list?.parentElement || null
-              while (node && node !== document.body) {
-                const style = getComputedStyle(node)
-                if (node.scrollHeight > node.clientHeight && /(auto|scroll)/.test(style.overflowY)) return node
-                node = node.parentElement
-              }
-              return document.scrollingElement || document.documentElement
-            })()
-            scrollTarget.scrollTo({ top: scrollTarget.scrollHeight })
-            for (let elapsed = 0; elapsed < 4000; elapsed += 250) {
-              await delay(250)
-              const text = listText()
-              if (readEntries().length > before || text.includes('暂时没有更多') || text.includes('没有更多了')) break
+            const scrollTarget = getScrollTarget(list)
+            const collected = new Map()
+            let stableRounds = 0
+            let reachedEnd = false
+            for (let round = 0; round < ${SCROLL_ROUNDS_PER_PAGE}; round += 1) {
+              const beforeCount = collected.size
+              readEntries(list).forEach((entry) => collected.set(entry.remoteId, entry))
+              const beforeTop = scrollTarget.scrollTop
+              const beforeHeight = scrollTarget.scrollHeight
+              const step = Math.max(400, Math.floor(scrollTarget.clientHeight * 0.85))
+              scrollTarget.scrollBy({ top: step, behavior: 'auto' })
+              await delay(${SCROLL_SETTLE_MS})
+              readEntries(list).forEach((entry) => collected.set(entry.remoteId, entry))
+              const text = listText(list)
+              reachedEnd = text.includes('暂时没有更多') || text.includes('没有更多了') ||
+                scrollTarget.scrollTop + scrollTarget.clientHeight >= scrollTarget.scrollHeight - 8
+              const moved = scrollTarget.scrollTop !== beforeTop || scrollTarget.scrollHeight !== beforeHeight
+              if (collected.size === beforeCount && !moved) stableRounds += 1
+              else stableRounds = 0
+              if (reachedEnd && stableRounds >= 2) break
             }
-            const text = listText()
+            const text = listText(list)
             return {
-              entries: readEntries(),
-              hasMore: !text.includes('暂时没有更多') && !text.includes('没有更多了'),
+              entries: [...collected.values()],
+              hasMore: !reachedEnd && !text.includes('暂时没有更多') && !text.includes('没有更多了'),
             }
           })()
         `),
