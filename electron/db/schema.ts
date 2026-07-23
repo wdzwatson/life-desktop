@@ -624,7 +624,7 @@ export function initializeUserDatabase(userDbDir: string) {
         remote_id TEXT NOT NULL,
         title TEXT NOT NULL,
         content_type TEXT NOT NULL DEFAULT 'video'
-          CHECK(content_type IN ('video', 'note', 'unknown')),
+          CHECK(content_type IN ('video', 'note', 'article', 'unknown')),
         author_id TEXT,
         author_name TEXT,
         source_url TEXT NOT NULL,
@@ -682,6 +682,70 @@ export function initializeUserDatabase(userDbDir: string) {
     addDouyinColumn('douyin_favorite_items', 'download_progress', 'REAL NOT NULL DEFAULT 0')
     addDouyinColumn('douyin_favorite_items', 'local_path', 'TEXT')
     addDouyinColumn('douyin_favorite_items', 'download_error', 'TEXT')
+
+    const favoriteItemsSql = String(
+      (videosDb
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'douyin_favorite_items'")
+        .get() as { sql?: string } | undefined)?.sql || '',
+    )
+    if (favoriteItemsSql && !favoriteItemsSql.includes("'article'")) {
+      const foreignKeysEnabled = Number(videosDb.pragma('foreign_keys', { simple: true })) === 1
+      videosDb.pragma('foreign_keys = OFF')
+      try {
+        videosDb.exec(`
+          ALTER TABLE douyin_folder_items RENAME TO douyin_folder_items_legacy;
+          ALTER TABLE douyin_favorite_items RENAME TO douyin_favorite_items_legacy;
+
+          CREATE TABLE douyin_favorite_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            remote_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            content_type TEXT NOT NULL DEFAULT 'video'
+              CHECK(content_type IN ('video', 'note', 'article', 'unknown')),
+            author_id TEXT,
+            author_name TEXT,
+            source_url TEXT NOT NULL,
+            thumbnail_url TEXT,
+            duration_seconds INTEGER,
+            collected_at TEXT,
+            favorite_added_at TEXT,
+            availability TEXT NOT NULL DEFAULT 'available'
+              CHECK(availability IN ('available', 'unavailable')),
+            download_status TEXT NOT NULL DEFAULT 'not_downloaded'
+              CHECK(download_status IN ('not_downloaded', 'downloading', 'downloaded', 'failed')),
+            download_progress REAL NOT NULL DEFAULT 0,
+            local_path TEXT,
+            download_error TEXT,
+            last_seen_at TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(account_id, remote_id),
+            FOREIGN KEY(account_id) REFERENCES douyin_accounts(id) ON DELETE CASCADE
+          );
+          INSERT INTO douyin_favorite_items
+          SELECT * FROM douyin_favorite_items_legacy;
+          CREATE TABLE douyin_folder_items (
+            folder_id INTEGER NOT NULL,
+            item_id INTEGER NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            last_seen_at TEXT,
+            PRIMARY KEY(folder_id, item_id),
+            FOREIGN KEY(folder_id) REFERENCES douyin_favorite_folders(id) ON DELETE CASCADE,
+            FOREIGN KEY(item_id) REFERENCES douyin_favorite_items(id) ON DELETE CASCADE
+          );
+          INSERT INTO douyin_folder_items SELECT * FROM douyin_folder_items_legacy;
+          DROP TABLE douyin_folder_items_legacy;
+          DROP TABLE douyin_favorite_items_legacy;
+          CREATE INDEX IF NOT EXISTS douyin_favorite_items_account_collected_index
+            ON douyin_favorite_items(account_id, collected_at DESC);
+          CREATE INDEX IF NOT EXISTS douyin_folder_items_folder_position_index
+            ON douyin_folder_items(folder_id, position);
+        `)
+      } finally {
+        videosDb.pragma(`foreign_keys = ${foreignKeysEnabled ? 'ON' : 'OFF'}`)
+      }
+    }
 
     ensureVideoGroupSchema(videosDb)
 

@@ -33,7 +33,7 @@ export interface DouyinFavoriteFolderInput {
   itemCount?: number
 }
 
-export type DouyinFavoriteContentType = 'video' | 'note' | 'unknown'
+export type DouyinFavoriteContentType = 'video' | 'note' | 'article' | 'unknown'
 
 export interface DouyinFavoriteItemInput {
   remoteId: string
@@ -161,10 +161,11 @@ function isDouyinWebUrl(value: string) {
 }
 
 function contentType(value: unknown, sourceUrl: string): DouyinFavoriteContentType {
-  if (value === 'video' || value === 'note' || value === 'unknown') return value
+  if (value === 'video' || value === 'note' || value === 'article' || value === 'unknown') return value
   try {
     const path = new URL(sourceUrl).pathname
     if (/^\/note\/\d+$/.test(path)) return 'note'
+    if (/^\/article\/\d+$/.test(path)) return 'article'
   } catch {
     // The URL itself is validated by the caller.
   }
@@ -796,7 +797,7 @@ export function listDouyinFavoriteItems(
   const limit = Math.min(200, Math.max(1, Math.floor(Number(options?.limit) || 100)))
   const query = typeof options?.query === 'string' ? options.query.trim() : ''
   const contentType =
-    options?.contentType === 'video' || options?.contentType === 'note' || options?.contentType === 'unknown'
+    options?.contentType === 'video' || options?.contentType === 'note' || options?.contentType === 'article' || options?.contentType === 'unknown'
       ? options.contentType
       : null
   const scopedToFolder = Number.isSafeInteger(folderId) && Number(folderId) > 0

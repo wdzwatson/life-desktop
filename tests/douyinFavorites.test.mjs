@@ -86,6 +86,87 @@ test('Douyin schema creates a local-only normalized favorite mirror', () => {
   db.close()
 })
 
+test('Douyin schema migrates existing favorite items to allow articles', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-douyin-article-migration-'))
+  initializeUserDatabase(dir)
+  const dbPath = path.join(dir, 'videos.db')
+  const db = new Database(dbPath)
+  const accountId = db
+    .prepare("INSERT INTO douyin_accounts (session_partition) VALUES ('persist:article-migration')")
+    .run().lastInsertRowid
+  const folderId = db
+    .prepare('INSERT INTO douyin_favorite_folders (account_id, remote_id, title) VALUES (?, ?, ?)')
+    .run(accountId, 'my-favorites', 'My favorites').lastInsertRowid
+  const itemId = db
+    .prepare(
+      "INSERT INTO douyin_favorite_items (account_id, remote_id, title, content_type, source_url) VALUES (?, ?, ?, 'note', ?)",
+    )
+    .run(accountId, 'note-1', 'Existing note', 'https://www.douyin.com/note/1').lastInsertRowid
+  db.prepare('INSERT INTO douyin_folder_items (folder_id, item_id) VALUES (?, ?)').run(folderId, itemId)
+  db.pragma('foreign_keys = OFF')
+  db.exec(`
+    ALTER TABLE douyin_folder_items RENAME TO douyin_folder_items_current;
+    ALTER TABLE douyin_favorite_items RENAME TO douyin_favorite_items_current;
+    CREATE TABLE douyin_favorite_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER NOT NULL,
+      remote_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content_type TEXT NOT NULL DEFAULT 'video'
+        CHECK(content_type IN ('video', 'note', 'unknown')),
+      author_id TEXT,
+      author_name TEXT,
+      source_url TEXT NOT NULL,
+      thumbnail_url TEXT,
+      duration_seconds INTEGER,
+      collected_at TEXT,
+      favorite_added_at TEXT,
+      availability TEXT NOT NULL DEFAULT 'available'
+        CHECK(availability IN ('available', 'unavailable')),
+      download_status TEXT NOT NULL DEFAULT 'not_downloaded'
+        CHECK(download_status IN ('not_downloaded', 'downloading', 'downloaded', 'failed')),
+      download_progress REAL NOT NULL DEFAULT 0,
+      local_path TEXT,
+      download_error TEXT,
+      last_seen_at TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(account_id, remote_id),
+      FOREIGN KEY(account_id) REFERENCES douyin_accounts(id) ON DELETE CASCADE
+    );
+    INSERT INTO douyin_favorite_items SELECT * FROM douyin_favorite_items_current;
+    CREATE TABLE douyin_folder_items (
+      folder_id INTEGER NOT NULL,
+      item_id INTEGER NOT NULL,
+      position INTEGER NOT NULL DEFAULT 0,
+      last_seen_at TEXT,
+      PRIMARY KEY(folder_id, item_id),
+      FOREIGN KEY(folder_id) REFERENCES douyin_favorite_folders(id) ON DELETE CASCADE,
+      FOREIGN KEY(item_id) REFERENCES douyin_favorite_items(id) ON DELETE CASCADE
+    );
+    INSERT INTO douyin_folder_items SELECT * FROM douyin_folder_items_current;
+    DROP TABLE douyin_folder_items_current;
+    DROP TABLE douyin_favorite_items_current;
+  `)
+  db.close()
+
+  initializeUserDatabase(dir)
+  const migrated = new Database(dbPath)
+  const itemTableSql = migrated
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'douyin_favorite_items'")
+    .get().sql
+  assert.match(itemTableSql, /'article'/)
+  assert.equal(migrated.prepare('SELECT COUNT(*) AS count FROM douyin_folder_items').get().count, 1)
+  assert.doesNotThrow(() =>
+    migrated
+      .prepare(
+        "INSERT INTO douyin_favorite_items (account_id, remote_id, title, content_type, source_url) VALUES (?, ?, ?, 'article', ?)",
+      )
+      .run(accountId, 'article-2', 'New article', 'https://www.douyin.com/article/2'),
+  )
+  migrated.close()
+})
+
 test('favorite synchronization upserts folders and items without duplication', async () => {
   const db = createVideoDb()
   const client = createClient()
@@ -218,6 +299,11 @@ test('a mixed page persists video and image-text entries by each entry type', as
             title: 'Useful image-text post',
             sourceUrl: 'https://www.douyin.com/note/456',
           },
+          {
+            remoteId: 'article-1',
+            title: 'Useful article',
+            sourceUrl: 'https://www.douyin.com/article/789',
+          },
         ],
         hasMore: false,
       }),
@@ -231,6 +317,7 @@ test('a mixed page persists video and image-text entries by each entry type', as
   assert.deepEqual(all.map((item) => [item.remote_id, item.content_type]), [
     ['video-1', 'video'],
     ['note-1', 'note'],
+    ['article-1', 'article'],
   ])
   db.close()
 })
@@ -274,6 +361,7 @@ test('a failed image-text reader makes an otherwise successful sync partial', as
 test('only video favorites are eligible for video downloads', () => {
   assert.equal(canDownloadDouyinFavorite({ content_type: 'video' }), true)
   assert.equal(canDownloadDouyinFavorite({ content_type: 'note' }), false)
+  assert.equal(canDownloadDouyinFavorite({ content_type: 'article' }), false)
   assert.equal(canDownloadDouyinFavorite({ content_type: 'unknown' }), false)
 })
 

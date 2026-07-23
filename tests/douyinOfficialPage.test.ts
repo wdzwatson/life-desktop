@@ -18,6 +18,7 @@ test('official page observer classifies each visible favorite by its link type',
           sourceUrl: 'https://www.douyin.com/video/123',
         },
         { remoteId: '456', title: 'A note', sourceUrl: 'https://www.douyin.com/note/456' },
+        { remoteId: '789', title: 'An article', sourceUrl: 'https://www.douyin.com/article/789' },
         { remoteId: '123', title: 'Duplicate', sourceUrl: 'https://www.douyin.com/video/123' },
       ],
       hasMore: false,
@@ -45,17 +46,23 @@ test('official page observer classifies each visible favorite by its link type',
         sourceUrl: 'https://www.douyin.com/note/456',
         contentType: 'note',
       },
+      {
+        remoteId: '789',
+        title: 'An article',
+        sourceUrl: 'https://www.douyin.com/article/789',
+        contentType: 'article',
+      },
     ],
     hasMore: false,
     complete: true,
     stopReason: 'explicit_end',
     isNewestFirst: true,
   })
-  assert.equal(injectedScript.includes('(video|note)'), true)
+  assert.equal(injectedScript.includes('(video|note|article)'), true)
   observer.stop()
 })
 
-test('official page observer reads visible Douyin image-text favorites from the 图文 tab', async () => {
+test('official page observer scans only the 视频 tab for the unified collection', async () => {
   let injectedScript = ''
   const page = {
     executeJavaScript: async (script: string) => {
@@ -63,11 +70,11 @@ test('official page observer reads visible Douyin image-text favorites from the 
       return {
       entries: [
         {
-          remoteId: '456',
-          title: 'Useful image-text post',
+          remoteId: '789',
+          title: 'Useful article',
           authorName: 'Author',
           thumbnailUrl: 'https://p3.douyinpic.com/note-cover.jpg',
-          sourceUrl: 'https://www.douyin.com/note/456',
+          sourceUrl: 'https://www.douyin.com/article/789',
         },
       ],
       hasMore: false,
@@ -78,15 +85,15 @@ test('official page observer reads visible Douyin image-text favorites from the 
   } as unknown as WebContents
   const observer = new DouyinOfficialPageObserver(page)
 
-  assert.deepEqual(await observer.listFavoriteNotes({}), {
+  assert.deepEqual(await observer.listFavoriteItems({}), {
     entries: [
       {
-        remoteId: '456',
-        title: 'Useful image-text post',
+        remoteId: '789',
+        title: 'Useful article',
         authorName: 'Author',
         thumbnailUrl: 'https://p3.douyinpic.com/note-cover.jpg',
-        sourceUrl: 'https://www.douyin.com/note/456',
-        contentType: 'note',
+        sourceUrl: 'https://www.douyin.com/article/789',
+        contentType: 'article',
       },
     ],
     hasMore: false,
@@ -94,7 +101,37 @@ test('official page observer reads visible Douyin image-text favorites from the 
     stopReason: 'explicit_end',
     isNewestFirst: true,
   })
-  assert.equal(injectedScript.includes('"图文","笔记"'), true)
+  assert.equal(injectedScript.includes('["视频"]'), true)
+  assert.equal(injectedScript.includes('图文'), false)
+})
+
+test('official page observer logs titles for visible cards with unsupported links', async () => {
+  const page = {
+    executeJavaScript: async () => ({
+      entries: [],
+      skippedCandidates: [{ title: 'Unsupported favorite', reason: 'unsupported_url' }],
+      hasMore: false,
+      complete: true,
+      stopReason: 'source_end',
+    }),
+  } as unknown as WebContents
+  const observer = new DouyinOfficialPageObserver(page)
+  const warning = console.warn
+  const warnings: unknown[][] = []
+  console.warn = (...args: unknown[]) => warnings.push(args)
+  try {
+    await observer.listFavoriteItems({})
+  } finally {
+    console.warn = warning
+    observer.stop()
+  }
+
+  assert.deepEqual(warnings, [
+    [
+      '[DouyinSync] skipped unsynchronized favorite candidate',
+      { title: 'Unsupported favorite', contentType: 'unknown', reason: 'unsupported_url' },
+    ],
+  ])
 })
 
 test('official page observer treats an unverified end as partial', async () => {

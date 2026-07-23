@@ -5,7 +5,7 @@ export interface DouyinFavoriteVideoEntry {
   remoteId: string
   title: string
   sourceUrl: string
-  contentType?: 'video' | 'note'
+  contentType?: 'video' | 'note' | 'article'
   authorName?: string
   thumbnailUrl?: string
 }
@@ -21,7 +21,6 @@ export interface DouyinOfficialPageExecutor {
   isLoggedIn(): Promise<boolean>
   listFavoriteItems(input: { cursor?: string }): Promise<DouyinFavoriteVideoPage>
   listFavoriteVideos(input: { cursor?: string }): Promise<DouyinFavoriteVideoPage>
-  listFavoriteNotes(input: { cursor?: string }): Promise<DouyinFavoriteVideoPage>
 }
 
 export interface DouyinOfficialPageDiagnostic {
@@ -32,6 +31,7 @@ export interface DouyinOfficialPageDiagnostic {
 
 interface FavoriteVideoDomResult {
   entries: DouyinFavoriteVideoEntry[]
+  skippedCandidates: Array<{ title: string; reason: 'unsupported_url' }>
   hasMore: boolean
   complete: boolean
   stopReason: 'explicit_end' | 'source_end' | 'round_limit' | 'stalled' | 'source_uncertain'
@@ -48,7 +48,7 @@ function text(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function isDouyinFavoriteUrl(value: string, contentType: 'video' | 'note') {
+function isDouyinFavoriteUrl(value: string, contentType: 'video' | 'note' | 'article') {
   try {
     const url = new URL(value)
     return (
@@ -60,8 +60,8 @@ function isDouyinFavoriteUrl(value: string, contentType: 'video' | 'note') {
   }
 }
 
-function contentTypeFromFavoriteUrl(value: string): 'video' | 'note' | null {
-  for (const contentType of ['video', 'note'] as const) {
+function contentTypeFromFavoriteUrl(value: string): 'video' | 'note' | 'article' | null {
+  for (const contentType of ['video', 'note', 'article'] as const) {
     if (isDouyinFavoriteUrl(value, contentType)) return contentType
   }
   return null
@@ -73,10 +73,26 @@ function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult
       ? (value as Record<string, unknown>)
       : {}
   const entries = Array.isArray(source.entries) ? source.entries : []
+  const skippedCandidates = Array.isArray(source.skippedCandidates) ? source.skippedCandidates : []
   const sourceEnded = source.stopReason === 'explicit_end' || source.stopReason === 'source_end'
   const complete = sourceEnded && source.complete !== false
   const hasMore = source.hasMore === true && !complete
   const unique = new Set<string>()
+  const reportedSkippedTitles = new Set<string>()
+  for (const value of skippedCandidates) {
+    const candidate =
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {}
+    const title = text(candidate.title) || '(untitled)'
+    if (candidate.reason !== 'unsupported_url' || reportedSkippedTitles.has(title)) continue
+    reportedSkippedTitles.add(title)
+    console.warn('[DouyinSync] skipped unsynchronized favorite candidate', {
+      title,
+      contentType: 'unknown',
+      reason: 'unsupported_url',
+    })
+  }
   return {
     entries: entries.flatMap((value) => {
       const entry =
@@ -87,10 +103,18 @@ function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult
       const title = text(entry.title)
       const sourceUrl = text(entry.sourceUrl)
       const contentType =
-        entry.contentType === 'video' || entry.contentType === 'note'
+        entry.contentType === 'video' || entry.contentType === 'note' || entry.contentType === 'article'
           ? entry.contentType
           : contentTypeFromFavoriteUrl(sourceUrl)
-      if (!remoteId || !title || !contentType || !isDouyinFavoriteUrl(sourceUrl, contentType) || unique.has(remoteId)) return []
+      if (!remoteId || !title || !contentType || !isDouyinFavoriteUrl(sourceUrl, contentType)) {
+        console.warn('[DouyinSync] skipped unsynchronized favorite candidate', {
+          title: title || '(untitled)',
+          contentType: contentType || 'unknown',
+          reason: !contentType ? 'unsupported_url' : 'incomplete_metadata',
+        })
+        return []
+      }
+      if (unique.has(remoteId)) return []
       unique.add(remoteId)
       return [
         {
@@ -103,6 +127,7 @@ function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult
         },
       ]
     }),
+    skippedCandidates: [],
     hasMore,
     complete,
     stopReason:
@@ -121,8 +146,6 @@ function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult
 export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
   private readonly favoriteVideoIds = new Set<string>()
   private favoriteVideoPage = 0
-  private readonly favoriteNoteIds = new Set<string>()
-  private favoriteNotePage = 0
 
   constructor(
     private readonly page: WebContents,
@@ -142,8 +165,6 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
   stop() {
     this.favoriteVideoIds.clear()
     this.favoriteVideoPage = 0
-    this.favoriteNoteIds.clear()
-    this.favoriteNotePage = 0
   }
 
   async isLoggedIn() {
@@ -160,70 +181,31 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
   }
 
   async listFavoriteVideos({ cursor }: { cursor?: string }) {
-    return this.listFavoriteTabItems({ cursor, sourceKey: 'video', tabLabels: ['视频'] })
-  }
-
-  async listFavoriteNotes({ cursor }: { cursor?: string }) {
-    return this.listFavoriteTabItems({ cursor, sourceKey: 'note', tabLabels: ['图文', '笔记'] })
+    return this.listFavoriteTabItems({ cursor, tabLabels: ['视频'] })
   }
 
   async listFavoriteItems({ cursor }: { cursor?: string }) {
-    const sources = [
-      { sourceKey: 'video' as const, tabLabels: ['视频'] },
-      { sourceKey: 'note' as const, tabLabels: ['图文', '笔记'] },
-    ]
-    let sourceIndex = 0
-    let sourceCursor: string | undefined
-    if (cursor) {
-      try {
-        const state = JSON.parse(cursor) as { sourceIndex?: unknown; sourceCursor?: unknown }
-        if (Number.isInteger(state.sourceIndex) && Number(state.sourceIndex) >= 0 && Number(state.sourceIndex) < sources.length) {
-          sourceIndex = Number(state.sourceIndex)
-          sourceCursor = typeof state.sourceCursor === 'string' ? state.sourceCursor : undefined
-        }
-      } catch {
-        // A malformed local cursor restarts from the newest visible source.
-      }
-    }
-    const source = sources[sourceIndex]
-    const page = await this.listFavoriteTabItems({ ...source, cursor: sourceCursor })
-    if (page.hasMore) {
-      return { ...page, cursor: JSON.stringify({ sourceIndex, sourceCursor: page.cursor }) }
-    }
-    if (sourceIndex < sources.length - 1) {
-      return {
-        ...page,
-        hasMore: true,
-        complete: false,
-        cursor: JSON.stringify({ sourceIndex: sourceIndex + 1 }),
-      }
-    }
-    return page
+    return this.listFavoriteTabItems({ cursor, tabLabels: ['视频'] })
   }
 
   private async listFavoriteTabItems({
     cursor,
-    sourceKey,
     tabLabels,
   }: {
     cursor?: string
-    sourceKey: 'video' | 'note'
     tabLabels: string[]
   }) {
     if (!cursor) {
-      const ids = sourceKey === 'video' ? this.favoriteVideoIds : this.favoriteNoteIds
-      ids.clear()
-      if (sourceKey === 'video') this.favoriteVideoPage = 0
-      else this.favoriteNotePage = 0
+      this.favoriteVideoIds.clear()
+      this.favoriteVideoPage = 0
     }
-    this.onDiagnostic?.({ kind: 'triggering', path: `/user/self/favorites/${sourceKey}s` })
+    this.onDiagnostic?.({ kind: 'triggering', path: '/user/self/favorites/videos' })
     const result = normalizeFavoriteVideoDomResult(
       await this.withTimeout(
         this.page.executeJavaScript(`
           (async () => {
-            const sourceKey = ${JSON.stringify(sourceKey)}
             const tabLabels = ${JSON.stringify(tabLabels)}
-            const itemPath = /^\\/(video|note)\\/(\\d+)$/
+            const itemPath = /^\\/(video|note|article)\\/(\\d+)$/
             const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
             const waitFor = async (read, timeoutMs) => {
               const startedAt = Date.now()
@@ -287,6 +269,14 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
                 .map((list) => ({ list, count: findVideoLinks(list).length }))
                 .sort((left, right) => right.count - left.count)[0]?.list || contentRoot
             }
+            const cardTitle = (element, fallback) => {
+              const image = element.querySelector('img')
+              const imageLabel = image?.getAttribute('alt')?.trim() || ''
+              return element.querySelector('p')?.textContent?.trim() ||
+                imageLabel.split('：').slice(1).join('：').trim() ||
+                element.textContent?.trim().split('\\n').find(Boolean)?.trim() ||
+                fallback
+            }
             const readEntries = (list) => {
               const root = list || document
               return Array.from(root.querySelectorAll('a[href]')).filter((anchor) => {
@@ -306,9 +296,7 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
                   image?.getAttribute('src'),
                   image?.currentSrc,
                 ].find((value) => /^https?:\\/\\//.test(value || '')) || ''
-                const title = anchor.querySelector('p')?.textContent?.trim() ||
-                  imageLabel.split('：').slice(1).join('：').trim() ||
-                  'Douyin ' + match[1] + ' ' + match[2]
+                const title = cardTitle(anchor, 'Douyin ' + match[1] + ' ' + match[2])
                 const authorName = imageLabel.includes('：') ? imageLabel.split('：')[0].trim() : ''
                 return [{
                   remoteId: match[2],
@@ -318,6 +306,23 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
                   ...(authorName ? { authorName } : {}),
                   ...(thumbnailUrl ? { thumbnailUrl } : {}),
                 }]
+              })
+            }
+            const readSkippedCandidates = (list) => {
+              const root = list || document
+              const cards = root instanceof HTMLUListElement
+                ? Array.from(root.children).filter((element) => element instanceof HTMLElement && visible(element))
+                : Array.from(root.querySelectorAll('li')).filter(visible)
+              return cards.flatMap((card) => {
+                const links = Array.from(card.querySelectorAll('a[href]')).filter((anchor) => {
+                  const url = new URL(anchor.getAttribute('href') || '', location.href)
+                  return url.hostname.endsWith('douyin.com') && visible(anchor)
+                })
+                if (links.length === 0 || links.some((anchor) => {
+                  const url = new URL(anchor.getAttribute('href') || '', location.href)
+                  return itemPath.test(url.pathname)
+                })) return []
+                return [{ title: cardTitle(card, '(untitled)'), reason: 'unsupported_url' }]
               })
             }
             const getScrollTargets = (list) => {
@@ -348,18 +353,27 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
               const pageText = videoContentRoot().innerText || ''
               return Boolean(
                 list &&
-                  (readEntries(list).length > 0 || /暂时没有更多了|暂无内容|还没有收藏/.test(pageText)),
+                  (readEntries(list).length > 0 ||
+                    readSkippedCandidates(list).length > 0 ||
+                    /暂时没有更多了|暂无内容|还没有收藏/.test(pageText)),
               )
             }, 30000)
             if (!listReady) throw new Error('Douyin favorite cards did not appear after the ' + tabLabels.join(' or ') + ' tab loaded.')
 
             const list = favoriteList()
             if (readEntries(list).length === 0) {
-              return { entries: [], hasMore: false, complete: true, stopReason: 'source_end' }
+              return {
+                entries: [],
+                skippedCandidates: readSkippedCandidates(list),
+                hasMore: false,
+                complete: true,
+                stopReason: 'source_end',
+              }
             }
             if (!${cursor ? 'true' : 'false'}) {
               return {
                 entries: readEntries(list),
+                skippedCandidates: readSkippedCandidates(list),
                 hasMore: true,
                 complete: false,
                 stopReason: 'round_limit',
@@ -452,6 +466,7 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
             }
             return {
               entries: [...collected.values()],
+              skippedCandidates: readSkippedCandidates(favoriteList()),
               hasMore: !reachedEnd && idleRounds < ${MAX_IDLE_SCROLL_ROUNDS},
               complete: reachedEnd,
               stopReason: reachedEnd
@@ -465,17 +480,16 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
         'Douyin did not load the visible favorite video list.',
       ),
     )
-    const ids = sourceKey === 'video' ? this.favoriteVideoIds : this.favoriteNoteIds
+    const ids = this.favoriteVideoIds
     const entries = result.entries.filter((entry) => !ids.has(entry.remoteId))
     for (const entry of entries) ids.add(entry.remoteId)
-    if (sourceKey === 'video') this.favoriteVideoPage += 1
-    else this.favoriteNotePage += 1
+    this.favoriteVideoPage += 1
     const madeProgress = entries.length > 0
     const hasMore = result.hasMore && madeProgress
     return {
       entries,
       ...(hasMore
-        ? { cursor: String(sourceKey === 'video' ? this.favoriteVideoPage : this.favoriteNotePage) }
+        ? { cursor: String(this.favoriteVideoPage) }
         : {}),
       hasMore,
       complete: madeProgress ? result.complete : false,

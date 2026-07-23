@@ -87,7 +87,7 @@ export function DouyinFavoritesPanel({
   const [playingItem, setPlayingItem] = useState<DouyinFavoriteItemView | null>(null)
   const [playbackUrl, setPlaybackUrl] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
-  const [contentFilter, setContentFilter] = useState<'all' | 'video' | 'note'>('all')
+  const [contentFilter, setContentFilter] = useState<'all' | 'video' | 'note' | 'article'>('all')
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [syncProgress, setSyncProgress] = useState<DouyinSyncProgress | null>(null)
@@ -575,7 +575,7 @@ export function DouyinFavoritesPanel({
               aria-label={t('videos.douyin_content_filter')}
               style={{ display: 'inline-flex', alignSelf: 'flex-start', gap: '2px' }}
             >
-              {(['all', 'video', 'note'] as const).map((type) => (
+              {(['all', 'video', 'note', 'article'] as const).map((type) => (
                 <button
                   key={type}
                   type="button"
@@ -694,7 +694,9 @@ export function DouyinFavoritesPanel({
                           }}
                         >
                           <Images size={11} />
-                          {t('videos.douyin_type_note')}
+                          {item.content_type === 'article'
+                            ? t('videos.douyin_type_article')
+                            : t('videos.douyin_type_note')}
                         </span>
                       ) : null}
                       {isVideo && item.download_status === 'downloading' ? (

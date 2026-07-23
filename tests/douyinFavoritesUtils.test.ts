@@ -51,3 +51,8 @@ test('filters image-text favorites separately from videos', () => {
   assert.deepEqual(filterDouyinFavoriteItems([...items, imageText], '', 'note'), [imageText])
   assert.deepEqual(filterDouyinFavoriteItems([...items, imageText], '', 'video'), items)
 })
+
+test('filters article favorites separately from videos and image-text posts', () => {
+  const article = { ...items[0], id: 3, title: 'Article guide', content_type: 'article' as const }
+  assert.deepEqual(filterDouyinFavoriteItems([...items, article], '', 'article'), [article])
+})

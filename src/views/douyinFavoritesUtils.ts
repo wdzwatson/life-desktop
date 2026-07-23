@@ -12,7 +12,7 @@ export interface DouyinFavoriteItemView {
   id: number
   remote_id: string
   title: string
-  content_type: 'video' | 'note' | 'unknown'
+  content_type: 'video' | 'note' | 'article' | 'unknown'
   author_id: string | null
   author_name: string | null
   source_url: string
@@ -36,7 +36,7 @@ export function getActiveDouyinFolderId(
 export function filterDouyinFavoriteItems(
   items: DouyinFavoriteItemView[],
   query: string,
-  contentType: 'all' | 'video' | 'note' = 'all',
+  contentType: 'all' | 'video' | 'note' | 'article' = 'all',
 ) {
   const normalizedQuery = query.trim().toLocaleLowerCase()
   return items.filter((item) => {
