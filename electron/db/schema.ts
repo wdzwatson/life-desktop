@@ -623,6 +623,8 @@ export function initializeUserDatabase(userDbDir: string) {
         account_id INTEGER NOT NULL,
         remote_id TEXT NOT NULL,
         title TEXT NOT NULL,
+        content_type TEXT NOT NULL DEFAULT 'video'
+          CHECK(content_type IN ('video', 'note', 'unknown')),
         author_id TEXT,
         author_name TEXT,
         source_url TEXT NOT NULL,
@@ -674,6 +676,7 @@ export function initializeUserDatabase(userDbDir: string) {
     addDouyinColumn('douyin_favorite_folders', 'last_sync_complete', 'INTEGER NOT NULL DEFAULT 1')
     addDouyinColumn('douyin_favorite_folders', 'last_sync_stop_reason', 'TEXT')
     addDouyinColumn('douyin_favorite_items', 'favorite_added_at', 'TEXT')
+    addDouyinColumn('douyin_favorite_items', 'content_type', "TEXT NOT NULL DEFAULT 'video'")
     addDouyinColumn('douyin_accounts', 'ever_sync_finished', 'INTEGER NOT NULL DEFAULT 0')
     addDouyinColumn('douyin_favorite_items', 'download_status', "TEXT NOT NULL DEFAULT 'not_downloaded'")
     addDouyinColumn('douyin_favorite_items', 'download_progress', 'REAL NOT NULL DEFAULT 0')

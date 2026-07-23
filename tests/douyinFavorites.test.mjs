@@ -81,6 +81,7 @@ test('Douyin schema creates a local-only normalized favorite mirror', () => {
     .map((column) => column.name)
   assert.equal(folderColumns.includes('last_incremental_added_at'), true)
   assert.equal(itemColumns.includes('favorite_added_at'), true)
+  assert.equal(itemColumns.includes('content_type'), true)
   db.close()
 })
 
@@ -118,6 +119,7 @@ test('favorite synchronization upserts folders and items without duplication', a
       id: 1,
       remote_id: 'aweme-1',
       title: 'Useful video',
+      content_type: 'video',
       author_id: 'author-1',
       author_name: 'Author',
       source_url: 'https://www.douyin.com/video/1234567890',

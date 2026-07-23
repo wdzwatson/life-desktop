@@ -33,9 +33,12 @@ export interface DouyinFavoriteFolderInput {
   itemCount?: number
 }
 
+export type DouyinFavoriteContentType = 'video' | 'note' | 'unknown'
+
 export interface DouyinFavoriteItemInput {
   remoteId: string
   title: string
+  contentType?: DouyinFavoriteContentType
   authorId?: string
   authorName?: string
   sourceUrl: string
@@ -115,6 +118,7 @@ export interface DouyinFavoriteItemRecord {
   id: number
   remote_id: string
   title: string
+  content_type: DouyinFavoriteContentType
   author_id: string | null
   author_name: string | null
   source_url: string
@@ -157,6 +161,17 @@ function isDouyinWebUrl(value: string) {
   }
 }
 
+function contentType(value: unknown, sourceUrl: string): DouyinFavoriteContentType {
+  if (value === 'video' || value === 'note' || value === 'unknown') return value
+  try {
+    const path = new URL(sourceUrl).pathname
+    if (/^\/note\/\d+$/.test(path)) return 'note'
+  } catch {
+    // The URL itself is validated by the caller.
+  }
+  return 'video'
+}
+
 export function sanitizeDouyinDiagnostic(value: unknown) {
   return text(value)
     .replace(/(sessionid(?:_ss)?|cookie|token|authorization)\s*[=:]\s*[^\s;,]+/gi, '$1=[REDACTED]')
@@ -197,6 +212,7 @@ export function normalizeDouyinFavoriteItem(
     remoteId,
     title,
     sourceUrl,
+    contentType: contentType(input.contentType, sourceUrl),
     ...(text(input.authorId) ? { authorId: text(input.authorId) } : {}),
     ...(text(input.authorName) ? { authorName: text(input.authorName) } : {}),
     ...(text(input.thumbnailUrl) ? { thumbnailUrl: text(input.thumbnailUrl) } : {}),
@@ -297,11 +313,12 @@ function upsertItem(
   db.prepare(
     `
     INSERT INTO douyin_favorite_items (
-      account_id, remote_id, title, author_id, author_name, source_url, thumbnail_url,
+      account_id, remote_id, title, content_type, author_id, author_name, source_url, thumbnail_url,
       duration_seconds, collected_at, favorite_added_at, availability, last_seen_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?)
     ON CONFLICT(account_id, remote_id) DO UPDATE SET
       title = excluded.title,
+      content_type = excluded.content_type,
       author_id = excluded.author_id,
       author_name = excluded.author_name,
       source_url = excluded.source_url,
@@ -317,6 +334,7 @@ function upsertItem(
     accountId,
     item.remoteId,
     item.title,
+    item.contentType || 'video',
     item.authorId || null,
     item.authorName || null,
     item.sourceUrl,
@@ -798,7 +816,7 @@ export function listDouyinFavoriteItems(
   const items = db
     .prepare(
       `
-      SELECT i.id, i.remote_id, i.title, i.author_id, i.author_name, i.source_url,
+      SELECT i.id, i.remote_id, i.title, i.content_type, i.author_id, i.author_name, i.source_url,
              i.thumbnail_url, i.duration_seconds, i.collected_at, i.favorite_added_at, fi.position,
              i.download_status, i.download_progress, i.local_path, i.download_error
       ${base}
