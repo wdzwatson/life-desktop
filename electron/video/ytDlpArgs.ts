@@ -21,7 +21,7 @@ function appendCookieArgs(args: string[], cookieConfig: VideoCookieConfig) {
   if (cookieConfig.mode === 'browser') {
     args.push('--cookies-from-browser', cookieConfig.browser)
   }
-  if (cookieConfig.mode === 'file' || cookieConfig.mode === 'bilibili') {
+  if (cookieConfig.mode === 'file' || cookieConfig.mode === 'bilibili' || cookieConfig.mode === 'douyin') {
     args.push('--cookies', cookieConfig.cookiesPath)
   }
 }

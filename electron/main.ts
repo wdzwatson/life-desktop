@@ -13,6 +13,7 @@ import {
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import { tmpdir } from 'node:os'
 import Database from 'better-sqlite3'
 import { initializeUserDatabase } from './db/schema'
 import { runDbTransaction } from './db/transaction'
@@ -59,9 +60,13 @@ import {
 } from './video/douyinSession'
 import {
   DouyinFavoritesError,
+  clearDouyinFavoriteItems,
+  deleteDouyinFavoriteItems,
+  getDouyinFavoriteItem,
   listDouyinFavoriteFolders,
   listDouyinFavoriteItems,
   syncDouyinFavorites,
+  updateDouyinFavoriteDownloadState,
 } from './video/douyinFavorites'
 import { createDouyinWebFavoritesClient } from './video/douyinWebClient'
 import { DouyinOfficialPageObserver } from './video/douyinOfficialPage'
@@ -119,6 +124,7 @@ function hashPassword(password: string, salt?: string) {
 let mainWindow: BrowserWindow | null = null
 let desktopTaskNoteWindow: BrowserWindow | null = null
 let douyinSyncWindow: BrowserWindow | null = null
+let douyinSyncWindowReady = false
 let desktopTaskNoteSaveTimer: NodeJS.Timeout | null = null
 let appTray: Tray | null = null
 let isQuitting = false
@@ -141,11 +147,13 @@ function logDouyinSyncWindow(event: string, details?: Record<string, unknown>) {
 function destroyDouyinSyncWindowForAppQuit() {
   if (!douyinSyncWindow || douyinSyncWindow.isDestroyed()) {
     douyinSyncWindow = null
+    douyinSyncWindowReady = false
     return
   }
   logDouyinSyncWindow('destroy', { reason: 'app_quit' })
   douyinSyncWindow.destroy()
   douyinSyncWindow = null
+  douyinSyncWindowReady = false
 }
 
 // Default Paths
@@ -386,6 +394,38 @@ async function collectDouyinCookies() {
   })
 }
 
+async function writeDouyinCookieFile() {
+  const cookies = await collectDouyinCookies()
+  const directory = fs.mkdtempSync(path.join(tmpdir(), 'lifeos-douyin-download-'))
+  const filePath = path.join(directory, 'cookies.txt')
+  const lines = [
+    '# Netscape HTTP Cookie File',
+    '# This file is generated temporarily for a Douyin download.',
+    ...cookies.map((cookie) =>
+      [
+        cookie.domain.startsWith('.') ? cookie.domain : `.${cookie.domain}`,
+        'TRUE',
+        cookie.path || '/',
+        cookie.secure ? 'TRUE' : 'FALSE',
+        cookie.expirationDate ? Math.floor(cookie.expirationDate) : 0,
+        cookie.name.replace(/[\t\r\n]/g, ''),
+        cookie.value.replace(/[\t\r\n]/g, ''),
+      ].join('\t'),
+    ),
+  ]
+  fs.writeFileSync(filePath, `${lines.join('\n')}\n`, 'utf8')
+  return {
+    filePath,
+    cleanup: () => {
+      try {
+        fs.rmSync(directory, { recursive: true, force: true })
+      } catch (error) {
+        console.warn('[DouyinDownload] failed to clean temporary cookies', error)
+      }
+    },
+  }
+}
+
 async function getDouyinAuthStatus() {
   const cookies = await collectDouyinCookies()
   return { success: true, ...summarizeDouyinAuth(cookies) }
@@ -490,6 +530,7 @@ async function withDouyinFavoritesClient<T>(
             partition: getDouyinLoginPartition(activeUserId),
           },
         })
+  const reusedSyncWindow = douyinSyncWindow === syncWindow && douyinSyncWindowReady
   douyinSyncWindow = syncWindow
   syncWindow.show()
   logDouyinSyncWindow('opened')
@@ -501,6 +542,7 @@ async function withDouyinFavoritesClient<T>(
   })
   syncWindow.once('closed', () => {
     if (douyinSyncWindow === syncWindow) douyinSyncWindow = null
+    douyinSyncWindowReady = false
     logDouyinSyncWindow('closed', { reason: isQuitting ? 'app_quit' : 'user' })
   })
   const officialPage = new DouyinOfficialPageObserver(syncWindow.webContents, (event) => {
@@ -510,12 +552,17 @@ async function withDouyinFavoritesClient<T>(
   try {
     await officialPage.start()
     mainWindow?.webContents.send('video:douyin-sync-diagnostic', { kind: 'page_loading' })
-    await withDouyinTimeout(
-      loadDouyinFavoritesPage(syncWindow),
-      20_000,
-      'Douyin official page did not finish loading in time.',
-      'page_load',
-    )
+    if (!reusedSyncWindow) {
+      await withDouyinTimeout(
+        loadDouyinFavoritesPage(syncWindow),
+        20_000,
+        'Douyin official page did not finish loading in time.',
+        'page_load',
+      )
+      douyinSyncWindowReady = true
+    } else {
+      logDouyinSyncWindow('reused_page')
+    }
     officialPage.notifyPageReady()
     const result = await action(createDouyinWebFavoritesClient(officialPage))
     const syncResult = result as { complete?: unknown }
@@ -534,8 +581,8 @@ async function withDouyinFavoritesClient<T>(
   } finally {
     officialPage.stop()
     if (!syncWindow.isDestroyed()) {
-      syncWindow.show()
-      logDouyinSyncWindow('retained', { reason: outcome })
+      logDouyinSyncWindow('closed_after_sync', { reason: outcome })
+      syncWindow.close()
     }
   }
 }
@@ -901,6 +948,37 @@ function getActiveUserVideoDir() {
     getSettings(),
     path.join(BASE_DIR, 'users', activeUserId, 'files', 'videos'),
   )
+}
+
+function removeDouyinFavoriteFiles(db: Database.Database, itemIds?: number[]) {
+  const rows = itemIds
+    ? (() => {
+        const ids = [...new Set(itemIds.filter((id) => Number.isSafeInteger(id) && id > 0))]
+        if (ids.length === 0) return []
+        const placeholders = ids.map(() => '?').join(', ')
+        return db
+          .prepare(
+            `SELECT local_path, download_status FROM douyin_favorite_items WHERE id IN (${placeholders})`,
+          )
+          .all(...ids) as Array<{ local_path: string | null; download_status: string }>
+      })()
+    : (db
+        .prepare('SELECT local_path, download_status FROM douyin_favorite_items')
+        .all() as Array<{ local_path: string | null; download_status: string }>)
+  if (rows.some((row) => row.download_status === 'downloading')) {
+    throw new Error('A Douyin video is still downloading. Wait for it to finish before deleting.')
+  }
+
+  const allowedRoot = path.resolve(getActiveUserVideoDir())
+  for (const row of rows) {
+    if (!row.local_path) continue
+    const filePath = path.resolve(row.local_path)
+    const relative = path.relative(allowedRoot, filePath)
+    if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      throw new Error('The local Douyin video path is outside the video directory.')
+    }
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+  }
 }
 
 function setupVideoProtocol() {
@@ -1270,6 +1348,7 @@ function createDesktopTaskNoteWindow() {
     backgroundColor: '#00000000',
     hasShadow: true,
     roundedCorners: true,
+    skipTaskbar: true,
     title: 'LifeOS 今日任务',
     alwaysOnTop: noteSettings.alwaysOnTop,
     opacity: noteSettings.opacity,
@@ -2592,6 +2671,11 @@ ipcMain.handle('tasks:runScheduler', async () => {
 
 ipcMain.handle('desktopTaskNote:getSettings', async () => getDesktopTaskNoteSettings())
 
+ipcMain.handle('desktopTaskNote:show', async () => {
+  createDesktopTaskNoteWindow().show()
+  return { success: true }
+})
+
 ipcMain.handle('desktopTaskNote:hide', async () => {
   if (desktopTaskNoteWindow && !desktopTaskNoteWindow.isDestroyed()) desktopTaskNoteWindow.hide()
   return { success: true }
@@ -2787,6 +2871,127 @@ ipcMain.handle('video:listDouyinFavoriteItems', async (_, folderId: unknown, opt
   return {
     success: true,
     data: listDouyinFavoriteItems(getUserDb('videos'), normalizedFolderId, normalizedOptions),
+  }
+})
+
+ipcMain.handle('video:deleteDouyinFavoriteItems', async (_, itemIds: unknown) => {
+  if (!Array.isArray(itemIds)) return { success: false, error: 'Video IDs are required.' }
+  try {
+    const db = getUserDb('videos')
+    const normalizedIds = itemIds.map(Number)
+    removeDouyinFavoriteFiles(db, normalizedIds)
+    return { success: true, data: deleteDouyinFavoriteItems(db, normalizedIds) }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+ipcMain.handle('video:clearDouyinFavoriteItems', async () => {
+  try {
+    const db = getUserDb('videos')
+    removeDouyinFavoriteFiles(db)
+    return { success: true, data: clearDouyinFavoriteItems(db) }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+ipcMain.handle('video:downloadDouyinFavorite', async (_, itemId: unknown) => {
+  if (!isVideoEngineReady(videoEngineStatus)) {
+    if (videoEngineStatus.status === 'idle') void loadVideoEngine()
+    throw new Error(videoEngineStatus.message || 'Video download plugin is loading.')
+  }
+  const normalizedItemId = Number(itemId)
+  if (!Number.isSafeInteger(normalizedItemId) || normalizedItemId <= 0) {
+    return { success: false, error: 'A valid Douyin favorite video is required.' }
+  }
+  const db = getUserDb('videos')
+  const item = getDouyinFavoriteItem(db, normalizedItemId)
+  if (!item) return { success: false, error: 'The Douyin favorite video no longer exists.' }
+  if (item.download_status === 'downloading') {
+    return { success: false, error: 'This Douyin video is already downloading.' }
+  }
+
+  const cookieFile = await writeDouyinCookieFile()
+  const updateProgress = (progress: number, message?: string) => {
+    updateDouyinFavoriteDownloadState(db, normalizedItemId, {
+      status: 'downloading',
+      progress,
+    })
+    mainWindow?.webContents.send('video:douyin-download-progress', {
+      itemId: normalizedItemId,
+      progress,
+      message,
+      phase: 'downloading',
+    })
+  }
+  try {
+    updateDouyinFavoriteDownloadState(db, normalizedItemId, {
+      status: 'downloading',
+      progress: 0,
+      error: null,
+    })
+    const result = await startVideoDownload({
+      settings: {
+        ...getVideoToolSettings(),
+        cookieMode: 'douyin',
+        douyinCookiesPath: cookieFile.filePath,
+      },
+      mainWindow,
+      url: item.source_url,
+      title: item.title,
+      videoId: normalizedItemId,
+      source: 'douyin',
+      durationSeconds: item.duration_seconds,
+      outputDir: getActiveUserVideoDir(),
+      onProgress: updateProgress,
+      onFinished: async (filePath) => {
+        try {
+          let durationSeconds = item.duration_seconds
+          if (filePath) {
+            try {
+              durationSeconds = await probeVideoDurationSeconds(getVideoToolSettings(), filePath)
+            } catch (error) {
+              console.warn('[DouyinDownload] failed to probe downloaded duration', error)
+            }
+          }
+          updateDouyinFavoriteDownloadState(db, normalizedItemId, {
+            status: 'downloaded',
+            progress: 100,
+            localPath: filePath || null,
+            error: null,
+          })
+          mainWindow?.webContents.send('video:douyin-download-finished', {
+            itemId: normalizedItemId,
+            filePath,
+            durationSeconds,
+          })
+        } finally {
+          cookieFile.cleanup()
+        }
+      },
+      onFailed: (message) => {
+        updateDouyinFavoriteDownloadState(db, normalizedItemId, {
+          status: 'failed',
+          progress: 0,
+          error: message,
+        })
+        cookieFile.cleanup()
+        mainWindow?.webContents.send('video:douyin-download-failed', {
+          itemId: normalizedItemId,
+          message,
+        })
+      },
+    })
+    return result
+  } catch (error) {
+    cookieFile.cleanup()
+    updateDouyinFavoriteDownloadState(db, normalizedItemId, {
+      status: 'failed',
+      progress: 0,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
   }
 })
 

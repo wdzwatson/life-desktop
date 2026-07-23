@@ -146,6 +146,9 @@ export async function installManagedVideoTool(settings: Record<string, any>, too
 }
 
 export function resolveCookieConfigFromSettings(settings: Record<string, any>): VideoCookieConfig {
+  if (settings.cookieMode === 'douyin' && settings.douyinCookiesPath) {
+    return { mode: 'douyin', cookiesPath: settings.douyinCookiesPath }
+  }
   if (settings.cookieMode === 'browser' && settings.cookieBrowser) {
     return { mode: 'browser', browser: settings.cookieBrowser }
   }
@@ -168,7 +171,17 @@ function isBilibiliUrl(url: string) {
   }
 }
 
+function isDouyinUrl(url: string) {
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    return host === 'douyin.com' || host.endsWith('.douyin.com')
+  } catch {
+    return false
+  }
+}
+
 export function resolveCookieConfigForUrl(settings: Record<string, any>, url: string): VideoCookieConfig {
+  if (isDouyinUrl(url)) return resolveCookieConfigFromSettings(settings)
   if (!isBilibiliUrl(url)) return { mode: 'none' }
   return resolveCookieConfigFromSettings(settings)
 }

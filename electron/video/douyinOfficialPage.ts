@@ -6,6 +6,7 @@ export interface DouyinFavoriteVideoEntry {
   title: string
   sourceUrl: string
   authorName?: string
+  thumbnailUrl?: string
 }
 
 export interface DouyinFavoriteVideoPage {
@@ -79,6 +80,7 @@ function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult
           title,
           sourceUrl,
           ...(text(entry.authorName) ? { authorName: text(entry.authorName) } : {}),
+          ...(text(entry.thumbnailUrl) ? { thumbnailUrl: text(entry.thumbnailUrl) } : {}),
         },
       ]
     }),
@@ -164,8 +166,16 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
               await delay(1000)
               return tab
             }
-            await activate('收藏')
-            await activate('视频')
+            if (${cursor ? 'false' : 'true'}) {
+              await activate('收藏')
+              await activate('视频')
+              const resetScroll = (node) => {
+                if (!node) return
+                node.scrollTo({ top: 0, behavior: 'auto' })
+              }
+              Array.from(document.querySelectorAll('ul')).forEach((node) => resetScroll(node.parentElement))
+              resetScroll(document.scrollingElement || document.documentElement)
+            }
             const favoriteList = () => {
               const lists = Array.from(document.querySelectorAll('ul'))
               const findVideoLinks = (list) => Array.from(list.querySelectorAll('a[href]')).filter((anchor) => {
@@ -198,9 +208,16 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
               const match = url.pathname.match(/^\\/video\\/(\\d+)$/)
               if (!match || !url.hostname.endsWith('douyin.com')) return []
               const imageLabel = anchor.querySelector('img')?.getAttribute('alt')?.trim() || ''
+              const image = anchor.querySelector('img')
+              const thumbnailUrl = [
+                image?.getAttribute('data-original'),
+                image?.getAttribute('data-src'),
+                image?.getAttribute('src'),
+                image?.currentSrc,
+              ].find((value) => /^https?:\\/\\//.test(value || '')) || ''
               const title = anchor.querySelector('p')?.textContent?.trim() || imageLabel.split('：').slice(1).join('：').trim() || 'Douyin video ' + match[1]
               const authorName = imageLabel.includes('：') ? imageLabel.split('：')[0].trim() : ''
-              return [{ remoteId: match[1], title, sourceUrl: 'https://www.douyin.com/video/' + match[1], ...(authorName ? { authorName } : {}) }]
+              return [{ remoteId: match[1], title, sourceUrl: 'https://www.douyin.com/video/' + match[1], ...(authorName ? { authorName } : {}), ...(thumbnailUrl ? { thumbnailUrl } : {}) }]
               })
             }
             const listText = (list) => list?.parentElement?.textContent || ''

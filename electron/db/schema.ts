@@ -589,6 +589,7 @@ export function initializeUserDatabase(userDbDir: string) {
         session_partition TEXT NOT NULL UNIQUE,
         auth_status TEXT NOT NULL DEFAULT 'logged_out'
           CHECK(auth_status IN ('logged_out', 'syncing', 'authenticated', 'expired', 'error')),
+        ever_sync_finished INTEGER NOT NULL DEFAULT 0,
         last_sync_at TEXT,
         diagnostic_message TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -631,6 +632,11 @@ export function initializeUserDatabase(userDbDir: string) {
         favorite_added_at TEXT,
         availability TEXT NOT NULL DEFAULT 'available'
           CHECK(availability IN ('available', 'unavailable')),
+        download_status TEXT NOT NULL DEFAULT 'not_downloaded'
+          CHECK(download_status IN ('not_downloaded', 'downloading', 'downloaded', 'failed')),
+        download_progress REAL NOT NULL DEFAULT 0,
+        local_path TEXT,
+        download_error TEXT,
         last_seen_at TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -668,6 +674,11 @@ export function initializeUserDatabase(userDbDir: string) {
     addDouyinColumn('douyin_favorite_folders', 'last_sync_complete', 'INTEGER NOT NULL DEFAULT 1')
     addDouyinColumn('douyin_favorite_folders', 'last_sync_stop_reason', 'TEXT')
     addDouyinColumn('douyin_favorite_items', 'favorite_added_at', 'TEXT')
+    addDouyinColumn('douyin_accounts', 'ever_sync_finished', 'INTEGER NOT NULL DEFAULT 0')
+    addDouyinColumn('douyin_favorite_items', 'download_status', "TEXT NOT NULL DEFAULT 'not_downloaded'")
+    addDouyinColumn('douyin_favorite_items', 'download_progress', 'REAL NOT NULL DEFAULT 0')
+    addDouyinColumn('douyin_favorite_items', 'local_path', 'TEXT')
+    addDouyinColumn('douyin_favorite_items', 'download_error', 'TEXT')
 
     ensureVideoGroupSchema(videosDb)
 

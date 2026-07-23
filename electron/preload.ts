@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDesktopTaskNoteSettings: () => ipcRenderer.invoke('desktopTaskNote:getSettings'),
   setDesktopTaskNoteSettings: (patch: { opacity?: number; alwaysOnTop?: boolean }) =>
     ipcRenderer.invoke('desktopTaskNote:setSettings', patch),
+  showDesktopTaskNote: () => ipcRenderer.invoke('desktopTaskNote:show'),
   hideDesktopTaskNote: () => ipcRenderer.invoke('desktopTaskNote:hide'),
   openMainWindow: () => ipcRenderer.invoke('desktopTaskNote:openMainWindow'),
 
@@ -224,6 +225,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     folderId: number,
     options?: { offset?: number; limit?: number; query?: string },
   ) => ipcRenderer.invoke('video:listDouyinFavoriteItems', folderId, options),
+  deleteDouyinFavoriteItems: (itemIds: number[]) =>
+    ipcRenderer.invoke('video:deleteDouyinFavoriteItems', itemIds),
+  clearDouyinFavoriteItems: () => ipcRenderer.invoke('video:clearDouyinFavoriteItems'),
+  downloadDouyinFavorite: (itemId: number) =>
+    ipcRenderer.invoke('video:downloadDouyinFavorite', itemId),
+  onDouyinDownloadProgress: (callback: (data: any) => void) => {
+    const subscription = (_event: any, data: any) => callback(data)
+    ipcRenderer.on('video:douyin-download-progress', subscription)
+    return () => ipcRenderer.removeListener('video:douyin-download-progress', subscription)
+  },
+  onDouyinDownloadFinished: (callback: (data: any) => void) => {
+    const subscription = (_event: any, data: any) => callback(data)
+    ipcRenderer.on('video:douyin-download-finished', subscription)
+    return () => ipcRenderer.removeListener('video:douyin-download-finished', subscription)
+  },
+  onDouyinDownloadFailed: (callback: (data: any) => void) => {
+    const subscription = (_event: any, data: any) => callback(data)
+    ipcRenderer.on('video:douyin-download-failed', subscription)
+    return () => ipcRenderer.removeListener('video:douyin-download-failed', subscription)
+  },
   getVideoCookieAccessStatus: (url: string) =>
     ipcRenderer.invoke('video:getCookieAccessStatus', url),
   verifyVideoCookieAccess: () => ipcRenderer.invoke('video:verifyCookieAccess'),

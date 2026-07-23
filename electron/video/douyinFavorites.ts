@@ -23,6 +23,10 @@ export interface DouyinAccountProfile {
   displayName?: string
 }
 
+export interface DouyinAccountSyncState {
+  ever_sync_finished: number
+}
+
 export interface DouyinFavoriteFolderInput {
   remoteId: string
   title: string
@@ -119,6 +123,10 @@ export interface DouyinFavoriteItemRecord {
   collected_at: string | null
   favorite_added_at: string | null
   position: number
+  download_status: 'not_downloaded' | 'downloading' | 'downloaded' | 'failed'
+  download_progress: number
+  local_path: string | null
+  download_error: string | null
 }
 
 export interface DouyinFavoriteItemsPage {
@@ -368,6 +376,36 @@ function updateFolderSyncState(
   ).run(folderId, complete ? 1 : 0, stopReason, folderId)
 }
 
+function getAccountSyncState(db: Database.Database, accountId: number): DouyinAccountSyncState {
+  return db
+    .prepare('SELECT ever_sync_finished FROM douyin_accounts WHERE id = ?')
+    .get(accountId) as DouyinAccountSyncState
+}
+
+function setAccountEverSyncFinished(db: Database.Database, accountId: number, value: boolean) {
+  db.prepare(
+    'UPDATE douyin_accounts SET ever_sync_finished = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+  ).run(value ? 1 : 0, accountId)
+}
+
+function countAccountFavoriteItems(db: Database.Database, accountId: number) {
+  return Number(
+    (
+      db
+        .prepare('SELECT COUNT(*) AS count FROM douyin_favorite_items WHERE account_id = ?')
+        .get(accountId) as { count: number }
+    ).count,
+  )
+}
+
+function favoriteItemAlreadyExists(db: Database.Database, accountId: number, remoteId: string) {
+  return Boolean(
+    db
+      .prepare('SELECT 1 FROM douyin_favorite_items WHERE account_id = ? AND remote_id = ?')
+      .get(accountId, remoteId),
+  )
+}
+
 function updateFolderFailure(db: Database.Database, folderId: number, error: DouyinFavoritesError) {
   db.prepare(
     `
@@ -498,6 +536,8 @@ export async function syncDouyinFavorites(input: {
       profile: {},
       authStatus: 'syncing',
     })
+    const everSyncFinished = getAccountSyncState(input.db, accountId).ever_sync_finished === 1
+    let observedExplicitEnd = false
     report('checking_login')
     const profile = await input.client.getAccountProfile()
     accountId = upsertAccount(input.db, {
@@ -560,6 +600,7 @@ export async function syncDouyinFavorites(input: {
         let verifiedOrdering = true
         let folderComplete = false
         let folderStopReason: string | null = null
+        let consecutiveKnownItems = 0
         for (let pageCount = 0; pageCount < MAX_PAGES_PER_SYNC; pageCount += 1) {
           report('loading_items', folder.title)
           const page = await input.client.listFolderItems({
@@ -571,6 +612,21 @@ export async function syncDouyinFavorites(input: {
               'invalid_response',
               'Favorite video response is invalid.',
             )
+          let reachedEverKnownThreshold = false
+          for (const entry of page.entries) {
+            if (
+              everSyncFinished &&
+              favoriteItemAlreadyExists(input.db, accountId!, entry.remoteId)
+            ) {
+              consecutiveKnownItems += 1
+              if (consecutiveKnownItems >= 5) {
+                reachedEverKnownThreshold = true
+                break
+              }
+            } else {
+              consecutiveKnownItems = 0
+            }
+          }
           const pageHasVerifiableOrder = canVerifyIncrementalOrder(page)
           if (page.entries.length > 0) {
             observedItemPage = true
@@ -589,6 +645,11 @@ export async function syncDouyinFavorites(input: {
           })()
           pagesLoaded += 1
           report('writing_items', folder.title)
+          if (reachedEverKnownThreshold) {
+            folderComplete = true
+            folderStopReason = 'ever_known_items'
+            break
+          }
           if (
             useIncremental &&
             pageHasVerifiableOrder &&
@@ -604,6 +665,7 @@ export async function syncDouyinFavorites(input: {
           if (!page.hasMore) {
             folderComplete = page.complete !== false
             folderStopReason = page.stopReason || (folderComplete ? 'source_end' : 'source_uncertain')
+            if (folderStopReason === 'explicit_end') observedExplicitEnd = true
             break
           }
           if (!text(page.cursor))
@@ -665,6 +727,14 @@ export async function syncDouyinFavorites(input: {
       `,
       )
       .run(accountId)
+    const localItemCount = countAccountFavoriteItems(input.db, accountId)
+    if (localItemCount === 0) {
+      setAccountEverSyncFinished(input.db, accountId, false)
+    } else if (observedExplicitEnd && syncComplete) {
+      setAccountEverSyncFinished(input.db, accountId, true)
+    } else if (!everSyncFinished) {
+      setAccountEverSyncFinished(input.db, accountId, false)
+    }
     report('completed')
     return {
       success: true,
@@ -744,7 +814,8 @@ export function listDouyinFavoriteItems(
     .prepare(
       `
       SELECT i.id, i.remote_id, i.title, i.author_id, i.author_name, i.source_url,
-             i.thumbnail_url, i.duration_seconds, i.collected_at, i.favorite_added_at, fi.position
+             i.thumbnail_url, i.duration_seconds, i.collected_at, i.favorite_added_at, fi.position,
+             i.download_status, i.download_progress, i.local_path, i.download_error
       ${base}
       ORDER BY fi.position ASC, i.id ASC
       LIMIT ? OFFSET ?
@@ -754,4 +825,80 @@ export function listDouyinFavoriteItems(
   if (!options) return items
   const total = Number(db.prepare(`SELECT COUNT(*) AS count ${base}`).get(...params).count)
   return { items, total, offset, limit, hasMore: offset + items.length < total }
+}
+
+export function getDouyinFavoriteItem(db: Database.Database, itemId: number) {
+  return db
+    .prepare(
+      `
+      SELECT id, title, source_url, duration_seconds, download_status
+      FROM douyin_favorite_items
+      WHERE id = ?
+      `,
+    )
+    .get(itemId) as
+    | {
+        id: number
+        title: string
+        source_url: string
+        duration_seconds: number | null
+        download_status: 'not_downloaded' | 'downloading' | 'downloaded' | 'failed'
+      }
+    | undefined
+}
+
+export function updateDouyinFavoriteDownloadState(
+  db: Database.Database,
+  itemId: number,
+  input: {
+    status: 'not_downloaded' | 'downloading' | 'downloaded' | 'failed'
+    progress?: number
+    localPath?: string | null
+    error?: string | null
+  },
+) {
+  db.prepare(
+    `
+    UPDATE douyin_favorite_items
+    SET download_status = ?, download_progress = ?, local_path = ?, download_error = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+    `,
+  ).run(
+    input.status,
+    Math.max(0, Math.min(100, Number(input.progress) || 0)),
+    input.localPath ?? null,
+    input.error ?? null,
+    itemId,
+  )
+}
+
+export function deleteDouyinFavoriteItems(db: Database.Database, itemIds: number[]) {
+  const ids = [...new Set(itemIds.filter((id) => Number.isSafeInteger(id) && id > 0))]
+  if (ids.length === 0) return { deleted: 0 }
+  const placeholders = ids.map(() => '?').join(', ')
+  const deleteItems = db.transaction(() => {
+    const existing = db
+      .prepare(`SELECT id, account_id FROM douyin_favorite_items WHERE id IN (${placeholders})`)
+      .all(...ids) as Array<{ id: number; account_id: number }>
+    if (existing.length === 0) return 0
+    db.prepare(`DELETE FROM douyin_folder_items WHERE item_id IN (${placeholders})`).run(...ids)
+    db.prepare(`DELETE FROM douyin_favorite_items WHERE id IN (${placeholders})`).run(...ids)
+    for (const accountId of new Set(existing.map((entry) => entry.account_id))) {
+      if (countAccountFavoriteItems(db, accountId) === 0) setAccountEverSyncFinished(db, accountId, false)
+    }
+    return existing.length
+  })
+  return { deleted: deleteItems() }
+}
+
+export function clearDouyinFavoriteItems(db: Database.Database) {
+  const clear = db.transaction(() => {
+    const count = Number(db.prepare('SELECT COUNT(*) AS count FROM douyin_favorite_items').get().count)
+    db.prepare('DELETE FROM douyin_folder_items').run()
+    db.prepare('DELETE FROM douyin_favorite_items').run()
+    db.prepare('UPDATE douyin_accounts SET ever_sync_finished = 0, updated_at = CURRENT_TIMESTAMP').run()
+    return count
+  })
+  return { deleted: clear() }
 }
