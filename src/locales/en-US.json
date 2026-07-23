@@ -1625,6 +1625,10 @@
   "topbar": {
     "manage_dir_hint": "Please manage local books/video directory in Settings",
     "search_placeholder": "Search or type / command...",
+    "sidebar_display": "Sidebar display",
+    "sidebar_mode_dynamic": "Dynamic width",
+    "sidebar_mode_collapsed": "Always collapsed",
+    "sidebar_mode_expanded": "Always expanded",
     "switch_theme": "Switch Theme",
     "switch_language": "Switch Language",
     "show_desktop_task_note": "Show today's task note"

@@ -2,11 +2,13 @@ import { create } from 'zustand'
 import i18n from '../i18n'
 
 export type SettingsMenu = 'appearance' | 'profile' | 'security' | 'updates' | 'video'
+export type SidebarDisplayMode = 'dynamic' | 'collapsed' | 'expanded'
 
 interface AppState {
   activeScreen: string
   taskTab: string
   settingsMenu: SettingsMenu
+  sidebarDisplayMode: SidebarDisplayMode
   theme: string
   language: string
   userId: string
@@ -20,6 +22,7 @@ interface AppState {
   setActiveScreen: (screen: string) => void
   setTaskTab: (tab: string) => void
   setSettingsMenu: (menu: SettingsMenu) => void
+  setSidebarDisplayMode: (mode: SidebarDisplayMode) => Promise<void>
   setTheme: (theme: string) => Promise<void>
   setLanguage: (lang: string) => Promise<void>
   showToast: (msg: string) => void
@@ -33,6 +36,9 @@ interface AppState {
 }
 
 const getElectronAPI = () => (window as any).electronAPI
+
+const isSidebarDisplayMode = (value: unknown): value is SidebarDisplayMode =>
+  value === 'dynamic' || value === 'collapsed' || value === 'expanded'
 
 // Helper functions for localStorage-based user profile mockup in browser environment
 const getMockProfiles = () => {
@@ -65,6 +71,7 @@ const getMockSettings = () => {
     const initial = {
       theme: 'Minimal',
       language: 'zh-CN',
+      sidebarDisplayMode: 'dynamic',
       lastUserId: 'guest',
     }
     localStorage.setItem('mock_settings', JSON.stringify(initial))
@@ -85,6 +92,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeScreen: 'dashboard',
   taskTab: 'list',
   settingsMenu: 'appearance',
+  sidebarDisplayMode: 'dynamic',
   theme: 'Minimal',
   language: 'zh-CN',
   userId: 'guest',
@@ -97,6 +105,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveScreen: (screen) => set({ activeScreen: screen }),
   setTaskTab: (tab) => set({ taskTab: tab }),
   setSettingsMenu: (menu) => set({ settingsMenu: menu }),
+  setSidebarDisplayMode: async (sidebarDisplayMode) => {
+    const api = getElectronAPI()
+    if (api) {
+      const settings = await api.getSettings()
+      settings.sidebarDisplayMode = sidebarDisplayMode
+      await api.saveSettings(settings)
+    } else {
+      const settings = getMockSettings()
+      settings.sidebarDisplayMode = sidebarDisplayMode
+      saveMockSettings(settings)
+    }
+    set({ sidebarDisplayMode })
+  },
 
   setTheme: async (theme) => {
     document.body.className = `theme-${theme.toLowerCase().replace(' ', '-')}`
@@ -481,6 +502,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({
           theme: settings.theme || 'Minimal',
           language: settings.language || 'zh-CN',
+          sidebarDisplayMode: isSidebarDisplayMode(settings.sidebarDisplayMode)
+            ? settings.sidebarDisplayMode
+            : 'dynamic',
         })
         const themeClass = `theme-${(settings.theme || 'Minimal').toLowerCase().replace(' ', '-')}`
         document.body.className = themeClass
@@ -515,6 +539,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         isAuthenticated: isAuthenticated,
         theme: settings.theme || 'Minimal',
         language: settings.language || 'zh-CN',
+        sidebarDisplayMode: isSidebarDisplayMode(settings.sidebarDisplayMode)
+          ? settings.sidebarDisplayMode
+          : 'dynamic',
       })
 
       const themeClass = `theme-${(settings.theme || 'Minimal').toLowerCase().replace(' ', '-')}`

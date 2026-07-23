@@ -253,6 +253,7 @@ function initConfig() {
     const defaultSettings = {
       theme: 'Minimal',
       language: 'zh-CN',
+      sidebarDisplayMode: 'dynamic',
       lastUserId: 'guest',
       maxDownloads: 3,
       autoCheckUpdates: true,

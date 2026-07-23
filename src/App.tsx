@@ -46,6 +46,7 @@ function App() {
   const activeScreen = useAppStore((state) => state.activeScreen)
   const setActiveScreen = useAppStore((state) => state.setActiveScreen)
   const setTaskTab = useAppStore((state) => state.setTaskTab)
+  const sidebarDisplayMode = useAppStore((state) => state.sidebarDisplayMode)
   const loadInitialConfig = useAppStore((state) => state.loadInitialConfig)
   const showToast = useAppStore((state) => state.showToast)
 
@@ -328,7 +329,7 @@ function App() {
   return (
     <div className="app-container">
       {/* 1. Main Workspace Layout. The native title bar lives outside this client area. */}
-      <div className="shell-container">
+      <div className={`shell-container sidebar-display-${sidebarDisplayMode}`}>
         <Sidebar />
         <main className="main-workspace">
           <Topbar onOpenSearch={() => setSearchOpen(true)} />

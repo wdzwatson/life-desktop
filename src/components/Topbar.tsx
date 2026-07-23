@@ -1,7 +1,18 @@
-import React from 'react'
-import { useAppStore } from '../store/useAppStore'
+import React, { useEffect, useRef, useState } from 'react'
+import { type SidebarDisplayMode, useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
-import { Search, Plus, Upload, Globe, Palette, StickyNote } from 'lucide-react'
+import {
+  Check,
+  Globe,
+  Palette,
+  PanelLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Search,
+  StickyNote,
+  Upload,
+} from 'lucide-react'
 import { shouldHighlightTopbarNewTask } from './topbarUtils'
 
 export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch }) => {
@@ -13,6 +24,10 @@ export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch })
   const activeScreen = useAppStore((state) => state.activeScreen)
   const setActiveScreen = useAppStore((state) => state.setActiveScreen)
   const setTaskTab = useAppStore((state) => state.setTaskTab)
+  const sidebarDisplayMode = useAppStore((state) => state.sidebarDisplayMode)
+  const setSidebarDisplayMode = useAppStore((state) => state.setSidebarDisplayMode)
+  const [sidebarMenuOpen, setSidebarMenuOpen] = useState(false)
+  const sidebarMenuRef = useRef<HTMLDivElement>(null)
 
   const themes = ['Minimal', 'Dense', 'Card', 'Dark Tech']
 
@@ -48,14 +63,84 @@ export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch })
 
   const isMac = navigator.userAgent.includes('Mac')
 
+  useEffect(() => {
+    if (!sidebarMenuOpen) return
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!sidebarMenuRef.current?.contains(event.target as Node)) {
+        setSidebarMenuOpen(false)
+      }
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSidebarMenuOpen(false)
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [sidebarMenuOpen])
+
+  const sidebarDisplayOptions: Array<{
+    mode: SidebarDisplayMode
+    label: string
+    Icon: typeof PanelLeft
+  }> = [
+    { mode: 'dynamic', label: t('topbar.sidebar_mode_dynamic'), Icon: PanelLeft },
+    { mode: 'collapsed', label: t('topbar.sidebar_mode_collapsed'), Icon: PanelLeftClose },
+    { mode: 'expanded', label: t('topbar.sidebar_mode_expanded'), Icon: PanelLeftOpen },
+  ]
+
+  const handleSidebarDisplayMode = (mode: SidebarDisplayMode) => {
+    void setSidebarDisplayMode(mode)
+    setSidebarMenuOpen(false)
+  }
+
   return (
     <header className="top-bar">
-      {/* Global search trigger */}
-      <button className="global-search-btn" onClick={onOpenSearch}>
-        <Search size={16} />
-        <span style={{ fontSize: '13px' }}>{t('topbar.search_placeholder')}</span>
-        <span className="kbd-shortcut">{isMac ? '⌘ K' : 'Ctrl+K'}</span>
-      </button>
+      <div className="topbar-search-controls">
+        <div className="sidebar-display-menu" ref={sidebarMenuRef}>
+          <button
+            className="btn btn-icon sidebar-display-menu__trigger"
+            type="button"
+            onClick={() => setSidebarMenuOpen((open) => !open)}
+            title={t('topbar.sidebar_display')}
+            aria-label={t('topbar.sidebar_display')}
+            aria-haspopup="menu"
+            aria-expanded={sidebarMenuOpen}
+            aria-controls="sidebar-display-options"
+          >
+            <PanelLeft size={17} />
+          </button>
+          {sidebarMenuOpen && (
+            <div id="sidebar-display-options" className="sidebar-display-menu__panel" role="menu">
+              {sidebarDisplayOptions.map(({ mode, label, Icon }) => (
+                <button
+                  key={mode}
+                  className="sidebar-display-menu__option"
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={sidebarDisplayMode === mode}
+                  onClick={() => handleSidebarDisplayMode(mode)}
+                >
+                  <Icon size={16} aria-hidden="true" />
+                  <span>{label}</span>
+                  {sidebarDisplayMode === mode && <Check size={15} aria-hidden="true" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Global search trigger */}
+        <button className="global-search-btn" onClick={onOpenSearch}>
+          <Search size={16} />
+          <span style={{ fontSize: '13px' }}>{t('topbar.search_placeholder')}</span>
+          <span className="kbd-shortcut">{isMac ? '⌘ K' : 'Ctrl+K'}</span>
+        </button>
+      </div>
 
       {/* Control buttons */}
       <div className="topbar-actions">

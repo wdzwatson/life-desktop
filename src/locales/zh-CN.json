@@ -1625,6 +1625,10 @@
   "topbar": {
     "manage_dir_hint": "请在设置中管理本地书籍/视频目录",
     "search_placeholder": "搜索或输入 / 指令...",
+    "sidebar_display": "侧栏显示方式",
+    "sidebar_mode_dynamic": "菜单动态宽度",
+    "sidebar_mode_collapsed": "菜单固定收起",
+    "sidebar_mode_expanded": "菜单固定展开",
     "switch_theme": "切换主题",
     "switch_language": "切换语言",
     "show_desktop_task_note": "显示今日任务便签"
