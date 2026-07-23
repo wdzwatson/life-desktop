@@ -474,7 +474,6 @@ async function startDouyinAccountLogin() {
 async function withDouyinFavoritesClient<T>(
   action: (client: ReturnType<typeof createDouyinWebFavoritesClient>) => Promise<T>,
 ) {
-  const keepWindowAfterSync = getSettings().douyinKeepSyncWindow === true
   const syncWindow =
     douyinSyncWindow && !douyinSyncWindow.isDestroyed()
       ? douyinSyncWindow
@@ -493,7 +492,7 @@ async function withDouyinFavoritesClient<T>(
         })
   douyinSyncWindow = syncWindow
   syncWindow.show()
-  logDouyinSyncWindow('opened', { keepWindowAfterSync })
+  logDouyinSyncWindow('opened')
   syncWindow.once('close', () => {
     logDouyinSyncWindow('close_requested', { reason: isQuitting ? 'app_quit' : 'user' })
   })
@@ -507,7 +506,7 @@ async function withDouyinFavoritesClient<T>(
   const officialPage = new DouyinOfficialPageObserver(syncWindow.webContents, (event) => {
     mainWindow?.webContents.send('video:douyin-sync-diagnostic', event)
   })
-  let outcome: 'completed' | 'failed' = 'failed'
+  let outcome: 'completed' | 'partial' | 'failed' = 'failed'
   try {
     await officialPage.start()
     mainWindow?.webContents.send('video:douyin-sync-diagnostic', { kind: 'page_loading' })
@@ -519,7 +518,11 @@ async function withDouyinFavoritesClient<T>(
     )
     officialPage.notifyPageReady()
     const result = await action(createDouyinWebFavoritesClient(officialPage))
-    outcome = 'completed'
+    const syncResult = result as { complete?: unknown }
+    outcome =
+      result && typeof result === 'object' && syncResult.complete === false
+        ? 'partial'
+        : 'completed'
     return result
   } catch (error) {
     logDouyinSyncWindow('sync_failed', {
@@ -531,13 +534,8 @@ async function withDouyinFavoritesClient<T>(
   } finally {
     officialPage.stop()
     if (!syncWindow.isDestroyed()) {
-      if (outcome === 'completed' && !keepWindowAfterSync) {
-        syncWindow.hide()
-        logDouyinSyncWindow('hidden', { reason: 'sync_completed' })
-      } else {
-        syncWindow.show()
-        logDouyinSyncWindow('retained', { reason: outcome })
-      }
+      syncWindow.show()
+      logDouyinSyncWindow('retained', { reason: outcome })
     }
   }
 }
@@ -2775,12 +2773,21 @@ ipcMain.handle('video:listDouyinFavoriteFolders', async () => {
   return { success: true, data: listDouyinFavoriteFolders(getUserDb('videos')) }
 })
 
-ipcMain.handle('video:listDouyinFavoriteItems', async (_, folderId: unknown) => {
+ipcMain.handle('video:listDouyinFavoriteItems', async (_, folderId: unknown, options?: unknown) => {
   const normalizedFolderId = Number(folderId)
   if (!Number.isSafeInteger(normalizedFolderId) || normalizedFolderId <= 0) {
     return { success: false, error: 'A valid Douyin favorite folder is required.' }
   }
-  return { success: true, data: listDouyinFavoriteItems(getUserDb('videos'), normalizedFolderId) }
+  const input = options && typeof options === 'object' ? (options as Record<string, unknown>) : {}
+  const normalizedOptions = {
+    offset: Number.isFinite(Number(input.offset)) ? Math.max(0, Math.floor(Number(input.offset))) : 0,
+    limit: Number.isFinite(Number(input.limit)) ? Math.min(200, Math.max(1, Math.floor(Number(input.limit)))) : 100,
+    query: typeof input.query === 'string' ? input.query.trim().slice(0, 200) : '',
+  }
+  return {
+    success: true,
+    data: listDouyinFavoriteItems(getUserDb('videos'), normalizedFolderId, normalizedOptions),
+  }
 })
 
 ipcMain.handle('video:getCookieAccessStatus', async (_, url: string) => {

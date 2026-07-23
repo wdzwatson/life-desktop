@@ -29,6 +29,8 @@ export interface DouyinOfficialPageDiagnostic {
 interface FavoriteVideoDomResult {
   entries: DouyinFavoriteVideoEntry[]
   hasMore: boolean
+  complete: boolean
+  stopReason: 'explicit_end' | 'round_limit' | 'source_end'
 }
 
 const PAGE_ACTION_TIMEOUT_MS = 35_000
@@ -57,6 +59,8 @@ function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult
       ? (value as Record<string, unknown>)
       : {}
   const entries = Array.isArray(source.entries) ? source.entries : []
+  const hasMore = source.hasMore === true
+  const complete = source.complete === false ? false : !hasMore
   const unique = new Set<string>()
   return {
     entries: entries.flatMap((value) => {
@@ -78,7 +82,16 @@ function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult
         },
       ]
     }),
-    hasMore: source.hasMore === true,
+    hasMore,
+    complete,
+    stopReason:
+      source.stopReason === 'explicit_end' ||
+      source.stopReason === 'round_limit' ||
+      source.stopReason === 'source_end'
+        ? source.stopReason
+        : complete
+          ? 'source_end'
+          : 'round_limit',
   }
 }
 
@@ -86,7 +99,6 @@ function normalizeFavoriteVideoDomResult(value: unknown): FavoriteVideoDomResult
 export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
   private readonly favoriteVideoIds = new Set<string>()
   private favoriteVideoPage = 0
-  private emptyFavoriteVideoPages = 0
 
   constructor(
     private readonly page: WebContents,
@@ -106,7 +118,6 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
   stop() {
     this.favoriteVideoIds.clear()
     this.favoriteVideoPage = 0
-    this.emptyFavoriteVideoPages = 0
   }
 
   async isLoggedIn() {
@@ -126,7 +137,6 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
     if (!cursor) {
       this.favoriteVideoIds.clear()
       this.favoriteVideoPage = 0
-      this.emptyFavoriteVideoPages = 0
     }
     this.onDiagnostic?.({ kind: 'triggering', path: '/user/self/favorites/videos' })
     const result = normalizeFavoriteVideoDomResult(
@@ -203,29 +213,24 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
             const list = favoriteList()
             const scrollTarget = getScrollTarget(list)
             const collected = new Map()
-            let stableRounds = 0
-            let reachedEnd = false
+            let explicitEnd = false
             for (let round = 0; round < ${SCROLL_ROUNDS_PER_PAGE}; round += 1) {
-              const beforeCount = collected.size
               readEntries(list).forEach((entry) => collected.set(entry.remoteId, entry))
-              const beforeTop = scrollTarget.scrollTop
-              const beforeHeight = scrollTarget.scrollHeight
               const step = Math.max(400, Math.floor(scrollTarget.clientHeight * 0.85))
               scrollTarget.scrollBy({ top: step, behavior: 'auto' })
               await delay(${SCROLL_SETTLE_MS})
               readEntries(list).forEach((entry) => collected.set(entry.remoteId, entry))
               const text = listText(list)
-              reachedEnd = text.includes('暂时没有更多') || text.includes('没有更多了') ||
-                scrollTarget.scrollTop + scrollTarget.clientHeight >= scrollTarget.scrollHeight - 8
-              const moved = scrollTarget.scrollTop !== beforeTop || scrollTarget.scrollHeight !== beforeHeight
-              if (collected.size === beforeCount && !moved) stableRounds += 1
-              else stableRounds = 0
-              if (reachedEnd && stableRounds >= 2) break
+              explicitEnd = text.includes('暂时没有更多') || text.includes('没有更多了')
+              if (explicitEnd) break
             }
             const text = listText(list)
+            explicitEnd = explicitEnd || text.includes('暂时没有更多') || text.includes('没有更多了')
             return {
               entries: [...collected.values()],
-              hasMore: !reachedEnd && !text.includes('暂时没有更多') && !text.includes('没有更多了'),
+              hasMore: !explicitEnd,
+              complete: explicitEnd,
+              stopReason: explicitEnd ? 'explicit_end' : 'round_limit',
             }
           })()
         `),
@@ -234,14 +239,14 @@ export class DouyinOfficialPageObserver implements DouyinOfficialPageExecutor {
     )
     const entries = result.entries.filter((entry) => !this.favoriteVideoIds.has(entry.remoteId))
     for (const entry of entries) this.favoriteVideoIds.add(entry.remoteId)
-    if (entries.length > 0) this.emptyFavoriteVideoPages = 0
-    else this.emptyFavoriteVideoPages += 1
     this.favoriteVideoPage += 1
-    const hasMore = result.hasMore && this.emptyFavoriteVideoPages < 2
+    const hasMore = result.hasMore
     return {
       entries,
       ...(hasMore ? { cursor: String(this.favoriteVideoPage) } : {}),
       hasMore,
+      complete: result.complete,
+      stopReason: result.stopReason,
       isNewestFirst: true,
     }
   }

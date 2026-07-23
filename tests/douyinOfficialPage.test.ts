@@ -32,6 +32,8 @@ test('official page observer keeps only visible Douyin video favorites', async (
       },
     ],
     hasMore: false,
+    complete: true,
+    stopReason: 'source_end',
     isNewestFirst: true,
   })
   observer.stop()
