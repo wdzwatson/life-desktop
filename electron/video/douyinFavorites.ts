@@ -485,19 +485,6 @@ function updateLatestWatermark(
   }
 }
 
-function pageIsStrictlyOlderThanWatermark(
-  page: DouyinPage<DouyinFavoriteItemInput>,
-  watermark: string | null,
-) {
-  return Boolean(
-    watermark &&
-    page.entries.length > 0 &&
-    page.entries.every(
-      (entry) => text(entry.favoriteAddedAt) && text(entry.favoriteAddedAt) < watermark,
-    ),
-  )
-}
-
 export async function syncDouyinFavorites(input: {
   db: Database.Database
   sessionPartition: string
@@ -600,7 +587,6 @@ export async function syncDouyinFavorites(input: {
         let verifiedOrdering = true
         let folderComplete = false
         let folderStopReason: string | null = null
-        let consecutiveKnownItems = 0
         for (let pageCount = 0; pageCount < MAX_PAGES_PER_SYNC; pageCount += 1) {
           report('loading_items', folder.title)
           const page = await input.client.listFolderItems({
@@ -612,21 +598,9 @@ export async function syncDouyinFavorites(input: {
               'invalid_response',
               'Favorite video response is invalid.',
             )
-          let reachedEverKnownThreshold = false
-          for (const entry of page.entries) {
-            if (
-              everSyncFinished &&
-              favoriteItemAlreadyExists(input.db, accountId!, entry.remoteId)
-            ) {
-              consecutiveKnownItems += 1
-              if (consecutiveKnownItems >= 5) {
-                reachedEverKnownThreshold = true
-                break
-              }
-            } else {
-              consecutiveKnownItems = 0
-            }
-          }
+          const newItemsOnPage = page.entries.filter(
+            (entry) => !favoriteItemAlreadyExists(input.db, accountId!, entry.remoteId),
+          ).length
           const pageHasVerifiableOrder = canVerifyIncrementalOrder(page)
           if (page.entries.length > 0) {
             observedItemPage = true
@@ -640,32 +614,26 @@ export async function syncDouyinFavorites(input: {
               const itemId = upsertItem(input.db, accountId!, item, lastSeenAt)
               upsertFolderItem(input.db, { folderId, itemId, position, lastSeenAt })
               position += 1
-              itemsSynced += 1
             }
           })()
+          itemsSynced += newItemsOnPage
           pagesLoaded += 1
           report('writing_items', folder.title)
-          if (reachedEverKnownThreshold) {
+          // A page without local additions means the visible favorite list has reached
+          // already synchronized history. Do not stop on individual known items: a page
+          // can legitimately contain both old and newly favorited videos.
+          if (page.entries.length > 0 && newItemsOnPage === 0) {
             folderComplete = true
-            folderStopReason = 'ever_known_items'
-            break
-          }
-          if (
-            useIncremental &&
-            pageHasVerifiableOrder &&
-            pageIsStrictlyOlderThanWatermark(
-              page,
-              previousIncrementalState.last_incremental_added_at,
-            )
-          ) {
-            folderComplete = true
-            folderStopReason = 'incremental_watermark'
+            folderStopReason = 'known_items_page'
             break
           }
           if (!page.hasMore) {
             folderComplete = page.complete !== false
-            folderStopReason = page.stopReason || (folderComplete ? 'source_end' : 'source_uncertain')
-            if (folderStopReason === 'explicit_end') observedExplicitEnd = true
+            folderStopReason =
+              page.stopReason || (folderComplete ? 'source_end' : 'source_uncertain')
+            if (folderStopReason === 'explicit_end' || folderStopReason === 'source_end') {
+              observedExplicitEnd = true
+            }
             break
           }
           if (!text(page.cursor))

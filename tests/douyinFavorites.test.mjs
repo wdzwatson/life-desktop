@@ -104,6 +104,7 @@ test('favorite synchronization upserts folders and items without duplication', a
     { success: true, foldersSynced: 1, itemsSynced: 1 },
   )
   assert.equal(second.success, true)
+  assert.equal(second.itemsSynced, 0)
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM douyin_accounts').get().count, 1)
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM douyin_favorite_folders').get().count, 1)
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM douyin_favorite_items').get().count, 1)
@@ -172,7 +173,7 @@ test('favorite synchronization reports page-level progress after local writes', 
   db.close()
 })
 
-test('incremental sync stops after reaching a verified per-folder watermark', async () => {
+test('incremental sync stops after a page contains no new videos', async () => {
   const db = createVideoDb()
   const sessionPartition = 'persist:lifeos-douyin-guest'
   const firstClient = createClient({
@@ -254,7 +255,7 @@ test('sync keeps scanning fully when the official page does not expose a verifia
   db.close()
 })
 
-test('full DOM-style sync continues through known pages without favorite timestamps', async () => {
+test('DOM-style sync stops at the first page with no new videos', async () => {
   const db = createVideoDb()
   const sessionPartition = 'persist:lifeos-douyin-guest'
   await syncDouyinFavorites({ db, sessionPartition, client: createClient() })
@@ -285,7 +286,7 @@ test('full DOM-style sync continues through known pages without favorite timesta
   assert.equal(result.success, true)
   assert.equal(result.complete, true)
   assert.equal(result.incrementalFolders, 0)
-  assert.equal(requests.length, 3)
+  assert.equal(requests.length, 1)
   db.close()
 })
 
@@ -317,7 +318,7 @@ test('explicit end marks ever sync completion and deleting the last item resets 
   db.close()
 })
 
-test('ever-complete sync stops after five consecutive known videos', async () => {
+test('ever-complete sync continues through mixed pages and stops at an all-known page', async () => {
   const db = createVideoDb()
   const sessionPartition = 'persist:lifeos-douyin-guest'
   await syncDouyinFavorites({
@@ -345,13 +346,35 @@ test('ever-complete sync stops after five consecutive known videos', async () =>
     client: createClient({
       listFolderItems: async ({ cursor }) => {
         requests.push(cursor)
+        if (cursor) {
+          return {
+            entries: [
+              {
+                remoteId: 'known-3',
+                title: 'Known 3',
+                sourceUrl: 'https://www.douyin.com/video/3',
+              },
+              {
+                remoteId: 'known-4',
+                title: 'Known 4',
+                sourceUrl: 'https://www.douyin.com/video/4',
+              },
+              {
+                remoteId: 'known-5',
+                title: 'Known 5',
+                sourceUrl: 'https://www.douyin.com/video/5',
+              },
+            ],
+            hasMore: true,
+            cursor: 'should-not-be-requested',
+            isNewestFirst: true,
+          }
+        }
         return {
           entries: [
             { remoteId: 'known-1', title: 'Known 1', sourceUrl: 'https://www.douyin.com/video/1' },
+            { remoteId: 'new-1', title: 'New 1', sourceUrl: 'https://www.douyin.com/video/6' },
             { remoteId: 'known-2', title: 'Known 2', sourceUrl: 'https://www.douyin.com/video/2' },
-            { remoteId: 'known-3', title: 'Known 3', sourceUrl: 'https://www.douyin.com/video/3' },
-            { remoteId: 'known-4', title: 'Known 4', sourceUrl: 'https://www.douyin.com/video/4' },
-            { remoteId: 'known-5', title: 'Known 5', sourceUrl: 'https://www.douyin.com/video/5' },
           ],
           hasMore: true,
           cursor: `page-${requests.length}`,
@@ -361,7 +384,14 @@ test('ever-complete sync stops after five consecutive known videos', async () =>
     }),
   })
   assert.equal(result.complete, true)
-  assert.deepEqual(requests, [undefined])
+  assert.equal(result.itemsSynced, 1)
+  assert.deepEqual(requests, [undefined, 'page-1'])
+  assert.equal(
+    db.prepare('SELECT last_sync_stop_reason FROM douyin_favorite_folders').get()
+      .last_sync_stop_reason,
+    'known_items_page',
+  )
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM douyin_favorite_items').get().count, 6)
   db.close()
 })
 
