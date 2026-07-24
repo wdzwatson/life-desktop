@@ -19,7 +19,9 @@
     "db_error_hint": "Unknown error\nPlease make sure to completely restart the app to apply the latest database patches!",
     "more_translations": "Configure translations for other languages",
     "main_name_label": "Name (Current Language)",
-    "main_category_label": "Category (Current Language)"
+    "main_category_label": "Category (Current Language)",
+    "show_password": "Show password",
+    "hide_password": "Hide password"
   },
   "sidebar": {
     "dashboard": "Dashboard",

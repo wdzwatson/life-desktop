@@ -14,6 +14,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
 import { useConfirmation } from '../../components/ConfirmationProvider'
+import { PasswordInput } from '../../components/PasswordInput'
 import { useAppStore } from '../../store/useAppStore'
 import {
   PROVIDER_CAPABILITIES,
@@ -319,7 +320,7 @@ export function ProviderManager({ onChanged }: Props) {
               </label>
               <label className="is-wide">
                 <span>{t('aiChat.providers.api_key')}</span>
-                <input className="form-field" type="password" value={draft.apiKey} onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })} placeholder={editing?.credentialConfigured ? '********' : (editing ? t('aiChat.providers.api_key_keep') : '')} autoComplete="off" />
+                <PasswordInput className="form-field" value={draft.apiKey} onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })} placeholder={editing?.credentialConfigured ? '********' : (editing ? t('aiChat.providers.api_key_keep') : '')} autoComplete="off" showLabel={t('common.show_password')} hideLabel={t('common.hide_password')} />
               </label>
             </div>
             <fieldset className="ai-provider-capabilities">

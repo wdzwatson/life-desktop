@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Lock, Eye, EyeOff, Copy, Trash2 } from 'lucide-react'
 import { copySecretWithAutoClear } from './toolboxVaultUtils'
 import { useConfirmation } from '../components/ConfirmationProvider'
+import { PasswordInput } from '../components/PasswordInput'
 
 type VaultStatus =
   | 'not_configured'
@@ -730,21 +731,23 @@ export const Toolbox: React.FC = () => {
                   {t('toolbox.vault_setup_desc')}
                 </p>
                 <div style={{ display: 'grid', gap: '8px', width: '300px' }}>
-                  <input
+                  <PasswordInput
                     className="form-field"
-                    type="password"
                     placeholder={t('toolbox.vault_setup_password_placeholder')}
                     value={setupPassword}
                     minLength={8}
                     onChange={(e) => setSetupPassword(e.target.value)}
+                    showLabel={t('common.show_password')}
+                    hideLabel={t('common.hide_password')}
                   />
-                  <input
+                  <PasswordInput
                     className="form-field"
-                    type="password"
                     placeholder={t('toolbox.vault_confirm_password_placeholder')}
                     value={setupConfirmPassword}
                     minLength={8}
                     onChange={(e) => setSetupConfirmPassword(e.target.value)}
+                    showLabel={t('common.show_password')}
+                    hideLabel={t('common.hide_password')}
                   />
                   <button
                     className="btn primary"
@@ -788,12 +791,14 @@ export const Toolbox: React.FC = () => {
                   onSubmit={handleUnlockVault}
                   style={{ display: 'flex', gap: '8px', width: '300px' }}
                 >
-                  <input
+                  <PasswordInput
                     className="form-field"
-                    type="password"
                     placeholder={t('toolbox.vault_password_placeholder')}
                     value={masterPassword}
                     onChange={(e) => setMasterPassword(e.target.value)}
+                    style={{ flexGrow: 1 }}
+                    showLabel={t('common.show_password')}
+                    hideLabel={t('common.hide_password')}
                   />
                   <button
                     className="btn primary"
@@ -829,21 +834,23 @@ export const Toolbox: React.FC = () => {
                   {t('toolbox.vault_migration_required_desc')}
                 </p>
                 <div style={{ display: 'grid', gap: '8px', width: '320px', marginTop: '4px' }}>
-                  <input
+                  <PasswordInput
                     className="form-field"
-                    type="password"
                     placeholder={t('toolbox.vault_setup_password_placeholder')}
                     value={setupPassword}
                     minLength={8}
                     onChange={(e) => setSetupPassword(e.target.value)}
+                    showLabel={t('common.show_password')}
+                    hideLabel={t('common.hide_password')}
                   />
-                  <input
+                  <PasswordInput
                     className="form-field"
-                    type="password"
                     placeholder={t('toolbox.vault_confirm_password_placeholder')}
                     value={setupConfirmPassword}
                     minLength={8}
                     onChange={(e) => setSetupConfirmPassword(e.target.value)}
+                    showLabel={t('common.show_password')}
+                    hideLabel={t('common.hide_password')}
                   />
                   <button
                     className="btn primary"
@@ -1107,12 +1114,13 @@ export const Toolbox: React.FC = () => {
                         {t('toolbox.vault_btn_generate_password')}
                       </button>
                     </div>
-                    <input
+                    <PasswordInput
                       className="form-field"
-                      type="password"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       required
+                      showLabel={t('common.show_password')}
+                      hideLabel={t('common.hide_password')}
                     />
                   </div>
                   <div>

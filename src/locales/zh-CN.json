@@ -19,7 +19,9 @@
     "db_error_hint": "未知错误\n请确保已彻底重启应用以应用最新的数据库补丁！",
     "more_translations": "配置其他语言翻译",
     "main_name_label": "名称 (当前语言)",
-    "main_category_label": "分类 (当前语言)"
+    "main_category_label": "分类 (当前语言)",
+    "show_password": "显示密码",
+    "hide_password": "隐藏密码"
   },
   "sidebar": {
     "dashboard": "仪表盘",

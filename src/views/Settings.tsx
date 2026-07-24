@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { getConfiguredLocales } from '../localeRegistry'
 import { clampVideoConcurrentDownloads } from './videoLibraryUtils'
 import { useConfirmation } from '../components/ConfirmationProvider'
+import { PasswordInput } from '../components/PasswordInput'
 import {
   Palette,
   User,
@@ -796,12 +797,13 @@ export const Settings: React.FC = () => {
                       >
                         {t('settings.new_password_label')}
                       </label>
-                      <input
+                      <PasswordInput
                         className="form-field"
-                        type="password"
                         placeholder="••••••••"
                         value={editPassword}
                         onChange={(e) => setEditPassword(e.target.value)}
+                        showLabel={t('common.show_password')}
+                        hideLabel={t('common.hide_password')}
                       />
                     </div>
                     <div>
@@ -815,12 +817,13 @@ export const Settings: React.FC = () => {
                       >
                         {t('settings.confirm_password_label')}
                       </label>
-                      <input
+                      <PasswordInput
                         className="form-field"
-                        type="password"
                         placeholder="••••••••"
                         value={editConfirmPassword}
                         onChange={(e) => setEditConfirmPassword(e.target.value)}
+                        showLabel={t('common.show_password')}
+                        hideLabel={t('common.hide_password')}
                       />
                     </div>
                   </div>
@@ -953,12 +956,13 @@ export const Settings: React.FC = () => {
                   {t('settings.security_desc')}
                 </p>
                 <div style={{ display: 'flex', gap: '8px', maxWidth: '560px' }}>
-                  <input
+                  <PasswordInput
                     className="form-field"
-                    type="password"
                     value={mockBackupKey}
                     onChange={(e) => setMockBackupKey(e.target.value)}
                     style={{ flexGrow: 1 }}
+                    showLabel={t('common.show_password')}
+                    hideLabel={t('common.hide_password')}
                   />
                   <button
                     className="btn"

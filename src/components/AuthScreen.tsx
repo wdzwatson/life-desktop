@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
-import { ShieldAlert, ArrowLeft, UserPlus, Eye, EyeOff } from 'lucide-react'
+import { ShieldAlert, ArrowLeft, UserPlus } from 'lucide-react'
 import logoImg from '../assets/logo.png'
+import { PasswordInput } from './PasswordInput'
 
 export const AuthScreen: React.FC = () => {
   const { t } = useTranslation()
@@ -23,7 +24,6 @@ export const AuthScreen: React.FC = () => {
     registeredUsers[0]?.userId || 'guest',
   )
   const [password, setPassword] = useState('')
-  const [showPass, setShowPass] = useState(false)
   const [loginError, setLoginError] = useState<string | null>(null)
 
   // Registration form states
@@ -331,33 +331,15 @@ export const AuthScreen: React.FC = () => {
                   >
                     {t('auth.label_password')}
                   </label>
-                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                    <input
-                      type={showPass ? 'text' : 'password'}
+                  <PasswordInput
                       className="form-field"
-                      style={{ paddingRight: '40px' }}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
                       autoFocus
+                      showLabel={t('common.show_password')}
+                      hideLabel={t('common.hide_password')}
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowPass(!showPass)}
-                      style={{
-                        position: 'absolute',
-                        right: '10px',
-                        border: 'none',
-                        background: 'none',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}
-                    >
-                      {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
                 </div>
               ) : (
                 <div
@@ -549,12 +531,13 @@ export const AuthScreen: React.FC = () => {
               >
                 {t('auth.label_new_password')}
               </label>
-              <input
+              <PasswordInput
                 className="form-field"
-                type="password"
                 placeholder="••••••••"
                 value={regPassword}
                 onChange={(e) => setRegPassword(e.target.value)}
+                showLabel={t('common.show_password')}
+                hideLabel={t('common.hide_password')}
               />
             </div>
 
@@ -571,12 +554,13 @@ export const AuthScreen: React.FC = () => {
                   >
                     {t('auth.label_confirm_password')}
                   </label>
-                  <input
+                  <PasswordInput
                     className="form-field"
-                    type="password"
                     placeholder="••••••••"
                     value={regConfirmPassword}
                     onChange={(e) => setRegConfirmPassword(e.target.value)}
+                    showLabel={t('common.show_password')}
+                    hideLabel={t('common.hide_password')}
                   />
                 </div>
                 <div>
@@ -771,12 +755,13 @@ export const AuthScreen: React.FC = () => {
               >
                 {t('auth.label_new_password')}
               </label>
-              <input
+              <PasswordInput
                 className="form-field"
-                type="password"
                 placeholder="••••••••"
                 value={recNewPassword}
                 onChange={(e) => setRecNewPassword(e.target.value)}
+                showLabel={t('common.show_password')}
+                hideLabel={t('common.hide_password')}
               />
             </div>
 
@@ -791,12 +776,13 @@ export const AuthScreen: React.FC = () => {
               >
                 {t('auth.label_confirm_password')}
               </label>
-              <input
+              <PasswordInput
                 className="form-field"
-                type="password"
                 placeholder="••••••••"
                 value={recConfirmPassword}
                 onChange={(e) => setRecConfirmPassword(e.target.value)}
+                showLabel={t('common.show_password')}
+                hideLabel={t('common.hide_password')}
               />
             </div>
 
