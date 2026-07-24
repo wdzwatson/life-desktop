@@ -33,6 +33,7 @@ import {
   getTemplateStartDateKey,
   getTemplateStartTime,
   getTemplateTimes,
+  serializeRuleWeekDays,
   toLocalDateKey,
 } from './taskScheduleUtils'
 import { projectCalendarOccurrences } from './taskOccurrenceProjection'
@@ -840,6 +841,11 @@ export const Tasks: React.FC = () => {
     if (drawerMode === 'create') {
       const effectiveFrequency = taskDraft.repeat === 'none' ? 'custom' : ruleFreq
       const effectiveTimes = ruleTimes
+      const effectiveWeekDays = serializeRuleWeekDays(
+        effectiveFrequency,
+        ruleWeekDays,
+        ruleStartDate,
+      )
       const res = await api.dbQuery(
         'tasks',
         `INSERT INTO recurring_rules (title, description, frequency, interval, week_days, month_days, start_date, start_time, time_slots, priority, end_condition, missed_policy)
@@ -849,7 +855,7 @@ export const Tasks: React.FC = () => {
           taskDraft.description,
           effectiveFrequency,
           ruleInterval,
-          ruleWeekDays.join(','),
+          effectiveWeekDays,
           ruleMonthDays.join(','),
           ruleStartDate,
           effectiveTimes[0],
@@ -914,6 +920,7 @@ export const Tasks: React.FC = () => {
 
       if (isChangingToRecurring) {
         const effectiveTimes = ruleTimes
+        const effectiveWeekDays = serializeRuleWeekDays(ruleFreq, ruleWeekDays, ruleStartDate)
         const ruleResult = await api.dbQuery(
           'tasks',
           `INSERT INTO recurring_rules
@@ -924,7 +931,7 @@ export const Tasks: React.FC = () => {
             taskDraft.description,
             ruleFreq,
             ruleInterval,
-            ruleWeekDays.join(','),
+            effectiveWeekDays,
             ruleMonthDays.join(','),
             ruleStartDate,
             effectiveTimes[0],
@@ -951,6 +958,7 @@ export const Tasks: React.FC = () => {
         !isChangingToNonRecurring &&
         editRuleScope !== 'single'
       ) {
+        const effectiveWeekDays = serializeRuleWeekDays(ruleFreq, ruleWeekDays, ruleStartDate)
         await api.dbQuery(
           'tasks',
           'UPDATE recurring_rules SET title = ?, description = ?, frequency = ?, interval = ?, week_days = ?, month_days = ?, start_date = ?, start_time = ?, time_slots = ?, priority = ?, missed_policy = ? WHERE id = ?',
@@ -959,7 +967,7 @@ export const Tasks: React.FC = () => {
             taskDraft.description,
             ruleFreq,
             ruleInterval,
-            ruleWeekDays.join(','),
+            effectiveWeekDays,
             ruleMonthDays.join(','),
             ruleStartDate,
             ruleTimes[0],
@@ -1122,7 +1130,7 @@ export const Tasks: React.FC = () => {
       return
     }
 
-    const weekDaysStr = ruleWeekDays.join(',')
+    const weekDaysStr = serializeRuleWeekDays(ruleFreq, ruleWeekDays, ruleStartDate)
     const monthDaysStr = ruleMonthDays.join(',')
     const timeSlots = ruleTimes.length > 0 ? ruleTimes : [ruleTime]
     const primaryTime = timeSlots[0] || '09:00'
@@ -1457,7 +1465,7 @@ export const Tasks: React.FC = () => {
           description: ruleDesc,
           frequency: ruleFreq,
           interval: ruleInterval,
-          week_days: ruleWeekDays.join(','),
+          week_days: serializeRuleWeekDays(ruleFreq, ruleWeekDays, ruleStartDate),
           month_days: ruleMonthDays.join(','),
           cron: ruleCron,
           start_date: ruleStartDate,

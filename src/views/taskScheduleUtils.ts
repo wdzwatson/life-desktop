@@ -25,6 +25,18 @@ const padDatePart = (value: number) => String(value).padStart(2, '0')
 export const toLocalDateKey = (date: Date) =>
   `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`
 
+export const serializeRuleWeekDays = (frequency: string, weekDays: number[], startDate: string) => {
+  if (frequency !== 'weekly' || weekDays.length > 0) return weekDays.join(',')
+
+  const [year, month, day] = startDate.split('-').map(Number)
+  const start = new Date(year, month - 1, day)
+  if (start.getFullYear() !== year || start.getMonth() !== month - 1 || start.getDate() !== day) {
+    return ''
+  }
+
+  return String(start.getDay() || 7)
+}
+
 const parseDateKey = (value: string | null | undefined) => {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value?.trim() ?? '')
   if (!match) return null
@@ -161,7 +173,9 @@ export const getDueTemplateOccurrences = (
     matches =
       monthsSinceStart >= 0 &&
       monthsSinceStart % interval === 0 &&
-      effectiveDays.some((day) => (day === -1 ? now.getDate() === lastDayOfMonth : day === now.getDate()))
+      effectiveDays.some((day) =>
+        day === -1 ? now.getDate() === lastDayOfMonth : day === now.getDate(),
+      )
   }
 
   if (!matches) return []

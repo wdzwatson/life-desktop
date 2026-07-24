@@ -5,6 +5,7 @@ import {
   getDueTemplateOccurrences,
   getNextTemplateOccurrences,
   getTemplateStartTime,
+  serializeRuleWeekDays,
   toLocalDateKey,
 } from '../src/views/taskScheduleUtils'
 
@@ -90,6 +91,13 @@ test('weekly templates honor selected visual weekdays and interval', () => {
   assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 7, 9, 0))?.dateKey, '2026-07-07')
   assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 14, 9, 0)), null)
   assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 21, 9, 0))?.dateKey, '2026-07-21')
+})
+
+test('weekly rules without selected weekdays use the start date weekday', () => {
+  assert.equal(serializeRuleWeekDays('weekly', [], '2026-07-21'), '2')
+  assert.equal(serializeRuleWeekDays('weekly', [], '2026-07-26'), '7')
+  assert.equal(serializeRuleWeekDays('weekly', [1, 3], '2026-07-21'), '1,3')
+  assert.equal(serializeRuleWeekDays('daily', [], '2026-07-21'), '')
 })
 
 test('weekday templates honor the configured working-day interval', () => {

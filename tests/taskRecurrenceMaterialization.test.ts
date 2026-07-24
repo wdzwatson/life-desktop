@@ -11,5 +11,9 @@ test('materializing a virtual occurrence copies its configured subtasks', () => 
 
 test('weekly plans use the selected start date weekday', () => {
   const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
-  assert.match(tasksView, /frequency === 'weekly' \? String\(weekDay\) : ''/)
+  assert.match(tasksView, /serializeRuleWeekDays\(\s*ruleFreq, ruleWeekDays, ruleStartDate\)/)
+  assert.match(
+    tasksView,
+    /serializeRuleWeekDays\(\s*effectiveFrequency,\s*ruleWeekDays,\s*ruleStartDate,\s*\)/,
+  )
 })
