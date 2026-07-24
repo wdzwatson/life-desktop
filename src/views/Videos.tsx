@@ -2109,6 +2109,10 @@ export const Videos: React.FC = () => {
                   return (
                     <article
                       key={video.id}
+                      className={`video-library-row${
+                        selectedVideo?.id === video.id ? ' is-active' : ''
+                      }${isBulkSelected ? ' is-checked' : ''}`}
+                      data-status={status}
                       onClick={() => {
                         setSelectedVideo(video)
                         updateDrawer('open-details')
@@ -2153,7 +2157,7 @@ export const Videos: React.FC = () => {
                         }}
                       />
                       <button
-                        className={`btn sm btn-icon ${canPlay ? 'primary' : ''}`}
+                        className={`btn sm btn-icon video-library-row__play ${canPlay ? 'primary' : ''}`}
                         disabled={!canPlay}
                         onClick={(event) => {
                           event.stopPropagation()
@@ -2163,8 +2167,9 @@ export const Videos: React.FC = () => {
                       >
                         <Play size={14} fill={canPlay ? '#fff' : 'none'} />
                       </button>
-                      <div style={{ minWidth: 0 }}>
+                      <div className="video-library-row__body" style={{ minWidth: 0 }}>
                         <h4
+                          className="video-library-row__title"
                           title={video.title}
                           style={{
                             display: 'block',
@@ -2281,7 +2286,10 @@ export const Videos: React.FC = () => {
                           })}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '6px' }}>
+                      <div
+                        className="video-library-row__actions"
+                        style={{ display: 'flex', gap: '6px' }}
+                      >
                         {downloadAction.visible && (
                           <button
                             className="btn sm btn-icon"

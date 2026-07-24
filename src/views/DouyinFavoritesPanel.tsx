@@ -732,6 +732,11 @@ export function DouyinFavoritesPanel({
                   return (
                     <article
                       key={item.id}
+                      className={`douyin-favorite-card${
+                        selectedItemIds.includes(item.id) ? ' is-selected' : ''
+                      }`}
+                      data-content-type={item.content_type}
+                      data-download-status={item.download_status}
                       style={{
                         display: 'grid',
                         gridTemplateRows: '154px minmax(0, 1fr)',
@@ -750,6 +755,7 @@ export function DouyinFavoritesPanel({
                       }}
                     >
                       <div
+                        className="douyin-favorite-card__media"
                         style={{
                           position: 'relative',
                           background: 'var(--color-border)',
@@ -757,6 +763,7 @@ export function DouyinFavoritesPanel({
                       >
                         {item.thumbnail_url ? (
                           <img
+                            className="douyin-favorite-card__thumbnail"
                             src={item.thumbnail_url}
                             alt=""
                             loading="lazy"
@@ -774,6 +781,7 @@ export function DouyinFavoritesPanel({
                           />
                         )}
                         <input
+                          className="douyin-favorite-card__check"
                           type="checkbox"
                           checked={selectedItemIds.includes(item.id)}
                           onChange={() => toggleItemSelection(item.id)}
@@ -851,6 +859,7 @@ export function DouyinFavoritesPanel({
                         ) : null}
                       </div>
                       <div
+                        className="douyin-favorite-card__content"
                         style={{
                           display: 'grid',
                           gridTemplateRows: '50.4px auto auto',
@@ -916,6 +925,7 @@ export function DouyinFavoritesPanel({
                               : ''}
                           </div>
                           <div
+                            className="douyin-favorite-card__actions"
                             style={{
                               display: 'inline-flex',
                               alignItems: 'center',

@@ -667,6 +667,242 @@ body.theme-dense .nav-item.active {
   position: relative;
 }
 
+/* Local library rows behave like compact tools: a precise lift, status rail, and focused controls. */
+.video-library-row {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 220ms ease;
+}
+
+.video-library-row::before {
+  content: '';
+  position: absolute;
+  inset: 7px auto 7px 0;
+  z-index: 1;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--color-accent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--color-accent) 58%, transparent);
+  opacity: 0;
+  transform: scaleY(0.25);
+  transition:
+    opacity 160ms ease,
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.video-library-row[data-status='downloaded']::before {
+  background: var(--color-success);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--color-success) 58%, transparent);
+}
+
+.video-library-row[data-status='download_failed']::before,
+.video-library-row[data-status='invalid']::before {
+  background: var(--color-danger);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--color-danger) 50%, transparent);
+}
+
+.video-library-row__title,
+.video-library-row__body,
+.video-library-row__play,
+.video-library-row__actions {
+  transition:
+    color 180ms ease,
+    opacity 180ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms ease;
+}
+
+/* Douyin cards act like media: the thumbnail pushes in and a cyan/red light passes the frame. */
+.douyin-favorite-card {
+  position: relative;
+  isolation: isolate;
+  transition:
+    border-color 220ms ease,
+    box-shadow 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.douyin-favorite-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px -1px auto;
+  z-index: 3;
+  height: 2px;
+  border-radius: 8px 8px 0 0;
+  background: linear-gradient(90deg, #25f4ee 0 46%, #ffffff 50%, #fe2c55 54% 100%);
+  opacity: 0;
+  transform: scaleX(0.2);
+  transition:
+    opacity 180ms ease,
+    transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+.douyin-favorite-card__media {
+  overflow: hidden;
+}
+
+.douyin-favorite-card__media::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    112deg,
+    transparent 20%,
+    rgba(37, 244, 238, 0.16) 42%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(254, 44, 85, 0.14) 58%,
+    transparent 80%
+  );
+  opacity: 0;
+  transform: translateX(-70%);
+  transition:
+    opacity 180ms ease,
+    transform 650ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+.douyin-favorite-card__thumbnail {
+  transform: translateZ(0) scale(1.001);
+  transform-origin: center;
+  backface-visibility: hidden;
+  will-change: transform;
+  transition: transform 520ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.douyin-favorite-card__content,
+.douyin-favorite-card__actions,
+.douyin-favorite-card__check {
+  transition:
+    opacity 200ms ease,
+    transform 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .video-library-row:hover {
+    z-index: 1;
+    border-color: color-mix(in srgb, var(--color-accent) 54%, var(--color-border)) !important;
+    background-color: color-mix(
+      in srgb,
+      var(--color-accent) 5%,
+      var(--bg-surface)
+    ) !important;
+    box-shadow:
+      -1px 0 0 color-mix(in srgb, var(--color-accent) 14%, transparent),
+      0 8px 22px color-mix(in srgb, #000 10%, transparent);
+  }
+
+  .video-library-row:hover::before,
+  .video-library-row.is-active::before,
+  .video-library-row.is-checked::before {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+
+  .video-library-row:hover .video-library-row__title {
+    color: color-mix(in srgb, var(--color-accent) 78%, var(--text-main));
+  }
+
+  .video-library-row:hover .video-library-row__body {
+    transform: translateX(2px);
+  }
+
+  .video-library-row:hover .video-library-row__play:not(:disabled) {
+    transform: scale(1.08);
+    box-shadow: 0 5px 14px color-mix(in srgb, var(--color-accent) 30%, transparent);
+  }
+
+  .video-library-row .video-library-row__actions {
+    opacity: 0.58;
+    transform: translateX(4px);
+  }
+
+  .video-library-row:hover .video-library-row__actions,
+  .video-library-row:focus-within .video-library-row__actions {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  .douyin-favorite-card:hover {
+    z-index: 2;
+    border-color: color-mix(
+      in srgb,
+      color-mix(in srgb, #25f4ee 68%, #fe2c55) 68%,
+      var(--color-border)
+    );
+    box-shadow:
+      -7px 10px 24px rgba(37, 244, 238, 0.12),
+      7px 12px 24px rgba(254, 44, 85, 0.1),
+      0 16px 30px color-mix(in srgb, #000 13%, transparent);
+  }
+
+  .douyin-favorite-card:hover::before,
+  .douyin-favorite-card.is-selected::before {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+
+  .douyin-favorite-card:hover .douyin-favorite-card__thumbnail {
+    transform: translateZ(0) scale(1.065);
+  }
+
+  .douyin-favorite-card:hover .douyin-favorite-card__media::after {
+    opacity: 1;
+    transform: translateX(70%);
+  }
+
+  .douyin-favorite-card:hover .douyin-favorite-card__content {
+    transform: translateY(-2px);
+  }
+
+  .douyin-favorite-card .douyin-favorite-card__actions {
+    opacity: 0.55;
+    transform: translateY(3px);
+  }
+
+  .douyin-favorite-card:hover .douyin-favorite-card__actions,
+  .douyin-favorite-card:focus-within .douyin-favorite-card__actions {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .douyin-favorite-card:not(:hover):not(.is-selected) .douyin-favorite-card__check {
+    opacity: 0.62;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .video-library-row,
+  .video-library-row::before,
+  .video-library-row__title,
+  .video-library-row__body,
+  .video-library-row__play,
+  .video-library-row__actions,
+  .douyin-favorite-card,
+  .douyin-favorite-card::before,
+  .douyin-favorite-card__media::after,
+  .douyin-favorite-card__thumbnail,
+  .douyin-favorite-card__content,
+  .douyin-favorite-card__actions,
+  .douyin-favorite-card__check {
+    transition-duration: 0.01ms !important;
+  }
+
+  .video-library-row:hover,
+  .douyin-favorite-card:hover,
+  .douyin-favorite-card:hover .douyin-favorite-card__content {
+    transform: none;
+  }
+
+  .douyin-favorite-card:hover .douyin-favorite-card__thumbnail {
+    transform: translateZ(0) scale(1.001);
+  }
+}
+
 .video-refresh-indicator {
   position: absolute;
   top: -6px;
