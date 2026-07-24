@@ -168,7 +168,7 @@ export function ModelManager({ onChanged }: Props) {
       </div>
 
       {draft && <AccessibleDialog
-        title={<span className="ai-settings-drawer__title"><span>{t(editing ? 'aiChat.models.edit_title' : 'aiChat.models.add_title')}</span><button type="button" onClick={handleDrawerClose} aria-label={t('common.close')}><X size={16} /></button></span>}
+        title={<span className="ai-settings-drawer__title"><span>{t(editing ? 'aiChat.models.edit_title' : 'aiChat.models.add_title')}</span><button type="button" className="btn btn-icon-close ai-settings-drawer__close" onClick={handleDrawerClose} title={t('common.close')} aria-label={t('common.close')}><X size={16} /></button></span>}
         onClose={closeEditor} returnFocus={() => triggerRef.current?.focus()} initialFocusRef={nameRef}
         overlayClassName="ai-settings-drawer-overlay" contentClassName="ai-settings-drawer ai-settings-drawer--model" closeOnOverlay
       >

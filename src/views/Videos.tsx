@@ -2159,6 +2159,8 @@ export const Videos: React.FC = () => {
                       <button
                         className={`btn sm btn-icon video-library-row__play ${canPlay ? 'primary' : ''}`}
                         disabled={!canPlay}
+                        title={t('videos.douyin_play')}
+                        aria-label={t('videos.douyin_play')}
                         onClick={(event) => {
                           event.stopPropagation()
                           handlePlayVideo(video)
@@ -2295,6 +2297,7 @@ export const Videos: React.FC = () => {
                             className="btn sm btn-icon"
                             disabled={downloadAction.disabled}
                             title={downloadTitle}
+                            aria-label={downloadTitle}
                             onClick={(event) => {
                               event.stopPropagation()
                               handleDownloadVideoFromList(video)
@@ -2308,6 +2311,8 @@ export const Videos: React.FC = () => {
                         )}
                         <button
                           className="btn sm btn-icon"
+                          title={t('common.delete')}
+                          aria-label={t('common.delete')}
                           onClick={(event) => {
                             event.stopPropagation()
                             handleDeleteVideo(video.id)
@@ -2372,7 +2377,9 @@ export const Videos: React.FC = () => {
               <header style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <strong style={{ fontSize: '13px' }}>{t(getVideoDrawerTitleKey())}</strong>
                 <button
-                  className="btn sm btn-icon"
+                  className="btn btn-icon-close"
+                  title={t('common.close')}
+                  aria-label={t('common.close')}
                   onClick={() => updateDrawer('close')}
                   style={{ marginLeft: 'auto' }}
                 >
@@ -2782,7 +2789,12 @@ export const Videos: React.FC = () => {
                     {parsedData.title || parsedData.playlistTitle}
                   </p>
                 </div>
-                <button className="btn sm btn-icon" onClick={closeParsedData}>
+                <button
+                  className="btn sm btn-icon"
+                  title={t('common.close')}
+                  aria-label={t('common.close')}
+                  onClick={closeParsedData}
+                >
                   <X size={14} />
                 </button>
               </div>

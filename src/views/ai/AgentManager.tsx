@@ -238,7 +238,13 @@ export function AgentManager({ onChanged }: Props) {
           title={(
             <span className="ai-settings-drawer__title">
               <span>{t(editing ? 'aiChat.agents.edit_title' : 'aiChat.agents.create_title')}</span>
-              <button type="button" onClick={closeEditor} aria-label={t('common.close')}>
+              <button
+                type="button"
+                className="btn btn-icon-close ai-settings-drawer__close"
+                onClick={closeEditor}
+                title={t('common.close')}
+                aria-label={t('common.close')}
+              >
                 <X size={16} aria-hidden="true" />
               </button>
             </span>

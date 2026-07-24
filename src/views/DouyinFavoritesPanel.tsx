@@ -940,12 +940,6 @@ export function DouyinFavoritesPanel({
                                 title={t('videos.douyin_play')}
                                 aria-label={t('videos.douyin_play')}
                                 onClick={() => void playDownloadedItem(item)}
-                                style={{
-                                  width: '28px',
-                                  height: '28px',
-                                  minWidth: '28px',
-                                  padding: 0,
-                                }}
                               >
                                 <Play size={13} />
                               </button>
@@ -956,12 +950,6 @@ export function DouyinFavoritesPanel({
                               title={t('videos.btn_open_external')}
                               aria-label={t('videos.btn_open_external')}
                               onClick={() => void api?.openExternal?.(item.source_url)}
-                              style={{
-                                width: '28px',
-                                height: '28px',
-                                minWidth: '28px',
-                                padding: 0,
-                              }}
                             >
                               <ExternalLink size={13} />
                             </button>
@@ -981,12 +969,6 @@ export function DouyinFavoritesPanel({
                                 }
                                 onClick={() => void startItemDownload(item)}
                                 disabled={item.download_status === 'downloading'}
-                                style={{
-                                  width: '28px',
-                                  height: '28px',
-                                  minWidth: '28px',
-                                  padding: 0,
-                                }}
                               >
                                 <Download size={13} />
                               </button>
@@ -997,12 +979,6 @@ export function DouyinFavoritesPanel({
                                 title={t('videos.douyin_read')}
                                 aria-label={t('videos.douyin_read')}
                                 onClick={() => void openItemReader(item)}
-                                style={{
-                                  width: '28px',
-                                  height: '28px',
-                                  minWidth: '28px',
-                                  padding: 0,
-                                }}
                               >
                                 <BookOpen size={13} />
                               </button>

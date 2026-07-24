@@ -1409,11 +1409,6 @@
   margin: 0;
   font-size: 16px;
 }
-.task-drawer__close {
-  width: 30px;
-  min-width: 30px;
-  padding: 0;
-}
 .task-drawer__body {
   min-height: 0;
   padding: 16px;

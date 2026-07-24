@@ -2314,39 +2314,9 @@
   -webkit-app-region: no-drag;
 }
 
-.ai-settings-drawer__title > button {
-  position: relative;
-  width: 40px;
-  height: 40px;
-  display: grid;
+.ai-settings-drawer__close {
   flex: 0 0 auto;
-  place-items: center;
-  margin: -4px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--text-main);
-  cursor: pointer;
   -webkit-app-region: no-drag;
-}
-
-.ai-settings-drawer__title > button::before {
-  position: absolute;
-  inset: 4px;
-  content: '';
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--bg-surface);
-  pointer-events: none;
-}
-
-.ai-settings-drawer__title > button > svg,
-.ai-settings-drawer__title > button > svg * {
-  position: relative;
-  z-index: 1;
-  cursor: pointer !important;
-  pointer-events: none !important;
 }
 
 .ai-settings-drawer .ai-provider-form,

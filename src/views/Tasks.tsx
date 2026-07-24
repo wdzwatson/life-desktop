@@ -2766,7 +2766,7 @@ export const Tasks: React.FC = () => {
               </h2>
               <button
                 type="button"
-                className="btn sm task-drawer__close"
+                className="btn btn-icon-close task-drawer__close"
                 onClick={() => setDrawerMode(null)}
                 aria-label={t('tasks.drawer_close')}
                 title={t('tasks.drawer_close')}

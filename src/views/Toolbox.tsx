@@ -992,6 +992,8 @@ export const Toolbox: React.FC = () => {
                               className="btn sm btn-icon"
                               style={{ border: 'none', background: 'none' }}
                               onClick={() => handleDeleteCredential(item.id)}
+                              title={t('common.delete')}
+                              aria-label={t('common.delete')}
                             >
                               <Trash2 size={13} color="var(--color-danger)" />
                             </button>
