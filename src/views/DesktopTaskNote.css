@@ -129,6 +129,26 @@ body:has(.desktop-task-note) #root {
   text-decoration: line-through;
 }
 
+.desktop-task-note__schedule {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 3px;
+  padding: 3px 5px;
+  border-radius: 4px;
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 9%, transparent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.desktop-task-note__task.is-completed .desktop-task-note__schedule {
+  color: var(--text-muted);
+}
+
 .desktop-task-note__overdue {
   flex: 0 0 auto;
   color: var(--color-danger);

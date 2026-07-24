@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, Circle, LayoutDashboard, Pin, RefreshCw, X } from 'lucide-react'
+import { Check, Circle, Clock3, LayoutDashboard, Pin, RefreshCw, X } from 'lucide-react'
 import {
   getDesktopTasksForDate,
   getUserDateKey,
@@ -14,6 +14,8 @@ type DesktopTaskRecord = {
   title: string
   status?: string | null
   due_date?: string | null
+  due_time?: string | null
+  recur_rule_id?: number | null
   start_date?: string | null
   end_date?: string | null
   is_completed?: number | null
@@ -21,6 +23,12 @@ type DesktopTaskRecord = {
 }
 
 const getUserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+
+const formatRecurringSchedule = (task: DesktopTaskRecord, todayKey: string) => {
+  if (!task.due_date || !task.due_time) return null
+  const time = task.due_time.slice(0, 5)
+  return task.due_date === todayKey ? time : `${task.due_date.slice(5).replace('-', '/')} ${time}`
+}
 
 export const DesktopTaskNote: React.FC = () => {
   const api = (window as any).electronAPI
@@ -92,7 +100,7 @@ export const DesktopTaskNote: React.FC = () => {
       setError(null)
       const result = await api.dbQuery(
         'tasks',
-        "SELECT * FROM tasks WHERE status != '已关闭' ORDER BY COALESCE(due_date, created_at) ASC, id ASC",
+        "SELECT * FROM tasks WHERE status != '已关闭' ORDER BY COALESCE(due_date, created_at) ASC, COALESCE(due_time, '23:59:59') ASC, id ASC",
       )
       if (result?.success) {
         setTasks(getDesktopTasksForDate(result.data as DesktopTaskRecord[], todayKey))
@@ -173,6 +181,7 @@ export const DesktopTaskNote: React.FC = () => {
 
   const renderTask = (task: DesktopTaskRecord, group: 'active' | 'completed') => {
     const isCompleted = task.is_completed === 1
+    const schedule = task.recur_rule_id ? formatRecurringSchedule(task, todayKey) : null
     return (
       <li
         key={task.id}
@@ -199,6 +208,16 @@ export const DesktopTaskNote: React.FC = () => {
           )}
         </button>
         <span className="desktop-task-note__title">{task.title}</span>
+        {schedule && (
+          <time
+            className="desktop-task-note__schedule"
+            dateTime={`${task.due_date}T${task.due_time}`}
+            title={`${task.due_date} ${task.due_time}`}
+          >
+            <Clock3 size={12} aria-hidden="true" />
+            {schedule}
+          </time>
+        )}
         {task.status === '已逾期' && <span className="desktop-task-note__overdue">逾期</span>}
         <button
           type="button"

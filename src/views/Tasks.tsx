@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronUp,
   Circle,
+  Clock3,
   Flag,
   X,
   Kanban,
@@ -548,7 +549,7 @@ export const Tasks: React.FC = () => {
       // Load Tasks
       const res = await api.dbQuery(
         'tasks',
-        'SELECT * FROM tasks ORDER BY COALESCE(due_date, created_at) ASC, id ASC',
+        "SELECT * FROM tasks ORDER BY COALESCE(due_date, created_at) ASC, COALESCE(due_time, '23:59:59') ASC, id ASC",
       )
       if (res?.success) {
         setTasks(res.data)
@@ -1760,7 +1761,10 @@ export const Tasks: React.FC = () => {
                             candidate.due_date === task.due_date,
                         )
                       : []
-                    const completedOccurrenceCount = sameDayOccurrences.filter(
+                    const orderedSameDayOccurrences = [...sameDayOccurrences].sort((left, right) =>
+                      String(left.due_time || '').localeCompare(String(right.due_time || '')),
+                    )
+                    const completedOccurrenceCount = orderedSameDayOccurrences.filter(
                       (candidate) => candidate.is_completed === 1,
                     ).length
                     const occurrenceGroupKey =
@@ -1829,14 +1833,28 @@ export const Tasks: React.FC = () => {
                             )}
                           </button>
                           <div className="task-row__main">
-                            <span className="task-row__title">{task.title}</span>
+                            <div className="task-row__heading">
+                              <span className="task-row__title">{task.title}</span>
+                              {task.recur_rule_id && (
+                                <time
+                                  className="task-row__instance-schedule"
+                                  dateTime={`${task.due_date || ''}T${task.due_time || ''}`}
+                                  title={formatDue(task)}
+                                >
+                                  <Clock3 size={12} aria-hidden="true" />
+                                  {orderedSameDayOccurrences.length > 1
+                                    ? `${task.due_date} · ${orderedSameDayOccurrences.length}`
+                                    : formatDue(task)}
+                                </time>
+                              )}
+                            </div>
                             <span className="task-row__meta">
                               {getStatusLabel(task.status)}
                               {repeatSummary ? ` · ${repeatSummary}` : ''}
-                              {sameDayOccurrences.length > 1
+                              {orderedSameDayOccurrences.length > 1
                                 ? ` · ${t('tasks.multi_occurrence_progress', {
                                     completed: completedOccurrenceCount,
-                                    total: sameDayOccurrences.length,
+                                    total: orderedSameDayOccurrences.length,
                                   })}`
                                 : ''}
                             </span>
@@ -1874,9 +1892,23 @@ export const Tasks: React.FC = () => {
                               </span>
                               <span className="task-row__date-content">
                                 {isOverdue && <strong>{t('common.overdue')}</strong>}
-                                <time>{formatDue(task)}</time>
+                                <time>
+                                  {orderedSameDayOccurrences.length > 1
+                                    ? task.due_date
+                                    : formatDue(task)}
+                                </time>
                               </span>
                             </span>
+                            {orderedSameDayOccurrences.length > 1 && (
+                              <span className="task-row__occurrence-times">
+                                {orderedSameDayOccurrences.map((occurrence) => (
+                                  <span key={occurrence.id}>
+                                    <Clock3 size={11} aria-hidden="true" />
+                                    {String(occurrence.due_time || '').slice(0, 5)}
+                                  </span>
+                                ))}
+                              </span>
+                            )}
                             {directSubtasks.length > 0 && (
                               <button
                                 type="button"
@@ -1912,14 +1944,14 @@ export const Tasks: React.FC = () => {
                                 )}
                               </button>
                             )}
-                            {sameDayOccurrences.length > 1 && (
+                            {orderedSameDayOccurrences.length > 1 && (
                               <button
                                 type="button"
                                 className="task-row__subtask-toggle"
                                 aria-expanded={isOccurrenceGroupExpanded}
                                 aria-label={t('tasks.multi_occurrence_progress', {
                                   completed: completedOccurrenceCount,
-                                  total: sameDayOccurrences.length,
+                                  total: orderedSameDayOccurrences.length,
                                 })}
                                 onClick={(event) => {
                                   event.stopPropagation()
@@ -1930,7 +1962,7 @@ export const Tasks: React.FC = () => {
                               >
                                 {t('tasks.multi_occurrence_progress', {
                                   completed: completedOccurrenceCount,
-                                  total: sameDayOccurrences.length,
+                                  total: orderedSameDayOccurrences.length,
                                 })}
                                 {isOccurrenceGroupExpanded ? (
                                   <ChevronUp aria-hidden="true" />
@@ -1947,10 +1979,10 @@ export const Tasks: React.FC = () => {
                             className="task-occurrence-list"
                             aria-label={t('tasks.multi_occurrence_progress', {
                               completed: completedOccurrenceCount,
-                              total: sameDayOccurrences.length,
+                              total: orderedSameDayOccurrences.length,
                             })}
                           >
-                            {sameDayOccurrences.map((occurrence) => (
+                            {orderedSameDayOccurrences.map((occurrence) => (
                               <button
                                 type="button"
                                 key={occurrence.id}
@@ -1967,7 +1999,10 @@ export const Tasks: React.FC = () => {
                                     <Circle size={14} />
                                   )}
                                 </span>
-                                <span>{formatDue(occurrence)}</span>
+                                <time className="task-occurrence-row__time">
+                                  <Clock3 size={13} aria-hidden="true" />
+                                  {formatDue(occurrence)}
+                                </time>
                                 <span>{getStatusLabel(occurrence.status)}</span>
                               </button>
                             ))}
