@@ -14,6 +14,13 @@
   --color-warn: #f59e0b;
   --color-danger: #ef4444;
   --shadow-app: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --shadow-hover: 0 12px 26px color-mix(in srgb, #000 12%, transparent);
+  --shadow-pressed: 0 2px 8px color-mix(in srgb, #000 10%, transparent);
+  --motion-fast: 150ms;
+  --motion-base: 220ms;
+  --motion-slow: 420ms;
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-press: cubic-bezier(0.2, 0, 0, 1);
   --overlay-dialog-bg: rgba(15, 23, 42, 0.16);
   --overlay-dialog-blur: 8px;
   --overlay-command-bg: rgba(15, 23, 42, 0.12);
@@ -37,6 +44,8 @@ body.theme-dense {
   --color-accent-hover: #8b5cf6;
   --color-border: #2e2e2e;
   --shadow-app: none;
+  --shadow-hover: 0 0 0 1px color-mix(in srgb, var(--color-accent) 14%, transparent);
+  --shadow-pressed: none;
   --overlay-dialog-bg: rgba(0, 0, 0, 0.24);
   --overlay-command-bg: rgba(0, 0, 0, 0.16);
   --overlay-drawer-bg: rgba(0, 0, 0, 0.12);
@@ -54,6 +63,8 @@ body.theme-card {
   --color-accent-hover: #b45309;
   --color-border: #e6e2d8;
   --shadow-app: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-hover: 0 14px 30px color-mix(in srgb, #6b5a43 14%, transparent);
+  --shadow-pressed: 0 3px 10px color-mix(in srgb, #6b5a43 12%, transparent);
   --overlay-dialog-bg: rgba(67, 56, 42, 0.14);
   --overlay-command-bg: rgba(67, 56, 42, 0.1);
   --overlay-drawer-bg: rgba(67, 56, 42, 0.07);
@@ -71,6 +82,8 @@ body.theme-dark-tech {
   --color-accent-hover: #00aaee;
   --color-border: #00ffcc33;
   --shadow-app: 0 0 10px rgba(0, 255, 204, 0.15);
+  --shadow-hover: 0 0 18px color-mix(in srgb, var(--color-accent) 22%, transparent);
+  --shadow-pressed: 0 0 8px color-mix(in srgb, var(--color-accent) 16%, transparent);
   --overlay-dialog-bg: rgba(0, 0, 0, 0.28);
   --overlay-command-bg: rgba(0, 0, 0, 0.2);
   --overlay-drawer-bg: rgba(0, 0, 0, 0.14);
@@ -584,6 +597,30 @@ body.theme-dense .nav-item.active {
     transition: none;
   }
 
+  .btn,
+  .btn::after,
+  .card,
+  .card::after,
+  .form-field,
+  .pill,
+  .tab,
+  .book-actions,
+  .notebook-sidebar__row,
+  .notebook-sidebar__row::before,
+  .notebook-sidebar__note,
+  .notebook-sidebar__note::before,
+  .book-category-sidebar__row,
+  .book-category-sidebar__row::before,
+  .video-group-sidebar__row,
+  .video-group-sidebar__row::before,
+  .task-row,
+  .task-row::before,
+  .task-calendar__task,
+  .task-stat,
+  .task-stat::after {
+    transition: none !important;
+  }
+
   .screen-loading__bar,
   .screen-loading__row,
   .screen-loading__card {
@@ -604,6 +641,25 @@ body.theme-dense .nav-item.active {
   .screen-progress.is-visible::after {
     animation: none;
     transform: translateX(385%);
+  }
+
+  .btn:hover,
+  .btn:active,
+  .card:hover,
+  .card:active,
+  .card [role='button']:hover,
+  .card [role='button']:active,
+  .task-row:hover,
+  .task-row:active,
+  .task-calendar__task:hover,
+  .task-template-card:hover,
+  .task-template-item:hover,
+  .notebook-sidebar__row:hover,
+  .notebook-sidebar__note:hover,
+  .book-category-sidebar__row:hover,
+  .video-group-sidebar__row:hover {
+    transform: none;
+    box-shadow: inherit;
   }
 }
 
@@ -1067,8 +1123,10 @@ body.theme-dense .nav-item.active {
 
 /* Buttons */
 .btn {
+  position: relative;
   height: 34px;
   padding: 0 16px;
+  overflow: hidden;
   border-radius: var(--radius-card);
   font-size: 13px;
   font-weight: 600;
@@ -1081,13 +1139,58 @@ body.theme-dense .nav-item.active {
   justify-content: center;
   line-height: 1;
   gap: 8px;
-  transition: all 0.1s ease;
+  transform: translateY(0);
+  transition:
+    border-color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    box-shadow var(--motion-base) var(--ease-standard),
+    transform var(--motion-base) var(--ease-standard),
+    opacity var(--motion-fast) ease;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
-.btn:hover {
-  border-color: var(--color-accent);
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    110deg,
+    transparent 20%,
+    color-mix(in srgb, #fff 20%, transparent) 48%,
+    transparent 76%
+  );
+  opacity: 0;
+  transform: translateX(-80%);
+  transition:
+    opacity var(--motion-fast) ease,
+    transform var(--motion-slow) var(--ease-standard);
+  pointer-events: none;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-accent) 58%, var(--color-border));
+  background-color: color-mix(in srgb, var(--color-accent) 5%, var(--bg-surface));
+  box-shadow: 0 6px 15px color-mix(in srgb, #000 8%, transparent);
+  transform: translateY(-1px);
+}
+
+.btn:hover:not(:disabled)::after {
+  opacity: 1;
+  transform: translateX(80%);
+}
+
+.btn:active:not(:disabled) {
+  box-shadow: var(--shadow-pressed);
+  transform: translateY(0) scale(0.985);
+  transition-duration: 80ms;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.54;
 }
 
 .btn:focus-visible {
@@ -1103,6 +1206,18 @@ body.theme-dense .nav-item.active {
 
 .btn.primary:hover {
   background-color: var(--color-accent-hover);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--color-accent) 28%, transparent);
+}
+
+.btn.danger {
+  border-color: color-mix(in srgb, var(--color-danger) 72%, var(--color-border));
+  color: var(--color-danger);
+}
+
+.btn.danger:hover:not(:disabled) {
+  border-color: var(--color-danger);
+  background-color: color-mix(in srgb, var(--color-danger) 8%, var(--bg-surface));
+  color: var(--color-danger);
 }
 
 .btn.sm {
@@ -1162,11 +1277,17 @@ body.theme-dense .nav-item.active {
 }
 
 .card {
+  position: relative;
   background-color: var(--bg-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   padding: 16px;
   box-shadow: var(--shadow-app);
+  transition:
+    border-color var(--motion-base) ease,
+    background-color var(--motion-base) ease,
+    box-shadow var(--motion-base) var(--ease-standard),
+    transform var(--motion-base) var(--ease-standard);
 }
 
 .card-title {
@@ -1189,10 +1310,20 @@ body.theme-dense .nav-item.active {
   color: var(--text-main);
   outline: none;
   font-size: 13px;
+  transition:
+    border-color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease,
+    box-shadow var(--motion-base) var(--ease-standard),
+    transform var(--motion-base) var(--ease-standard);
+}
+
+.form-field:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--text-muted) 34%, var(--color-border));
 }
 
 .form-field:focus {
   border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 13%, transparent);
 }
 
 textarea.form-field {
@@ -1213,6 +1344,11 @@ textarea.form-field {
   background-color: var(--bg-app);
   color: var(--text-muted);
   border: 1px solid var(--color-border);
+  transition:
+    border-color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    transform var(--motion-base) var(--ease-standard);
 }
 
 .pill.red {
@@ -1270,6 +1406,7 @@ textarea.form-field {
 }
 
 .tab {
+  position: relative;
   height: 36px;
   padding: 0 16px;
   font-size: 13px;
@@ -1282,13 +1419,18 @@ textarea.form-field {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition:
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    transform var(--motion-base) var(--ease-standard),
+    border-color var(--motion-fast) ease;
   white-space: nowrap;
 }
 
 .tab:hover {
   color: var(--text-main);
   background-color: rgba(0, 0, 0, 0.02);
+  transform: translateY(-1px);
 }
 
 body.theme-dense .tab:hover {
@@ -1299,6 +1441,80 @@ body.theme-dense .tab:hover {
   color: var(--color-accent);
   border-bottom-color: var(--color-accent);
   font-weight: 700;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .card:has(.book-actions) {
+    overflow: hidden;
+  }
+
+  .card:has(.book-actions)::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(
+      115deg,
+      transparent 0 38%,
+      color-mix(in srgb, var(--color-accent) 10%, transparent) 50%,
+      transparent 62% 100%
+    );
+    opacity: 0;
+    transform: translateX(-42%);
+    transition:
+      opacity var(--motion-fast) ease,
+      transform 650ms var(--ease-standard);
+    pointer-events: none;
+  }
+
+  .card:has(.book-actions):hover::after {
+    opacity: 1;
+    transform: translateX(42%);
+  }
+
+  .card:has(.book-actions):hover {
+    border-color: color-mix(in srgb, var(--color-accent) 18%, var(--color-border));
+    box-shadow: var(--shadow-hover);
+    transform: translateY(-2px);
+  }
+
+  .card:has(.book-actions):hover .book-actions {
+    opacity: 1 !important;
+    transform: translateY(0);
+  }
+
+  .book-actions {
+    transform: translateY(-4px);
+    transition:
+      opacity var(--motion-fast) ease,
+      transform var(--motion-base) var(--ease-standard) !important;
+  }
+
+  .card [role='button'] {
+    transition:
+      border-color var(--motion-fast) ease,
+      background-color var(--motion-fast) ease,
+      box-shadow var(--motion-base) var(--ease-standard),
+      transform var(--motion-base) var(--ease-standard);
+  }
+
+  .card [role='button']:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 32%, var(--color-border)) !important;
+    background-color: color-mix(in srgb, var(--color-accent) 5%, var(--bg-app)) !important;
+    box-shadow: 0 7px 16px color-mix(in srgb, #000 8%, transparent);
+    transform: translateX(2px);
+  }
+
+  .card [role='button']:active,
+  button.pill:active {
+    transform: scale(0.985);
+  }
+
+  button.pill:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 26%, transparent) !important;
+    background-color: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    transform: translateY(-1px);
+  }
 }
 
 /* Spinner Animation */

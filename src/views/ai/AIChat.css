@@ -4688,6 +4688,103 @@
   }
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .ai-provider-card,
+  .ai-agent-card,
+  .ai-mcp-card,
+  .ai-model-card,
+  .ai-chat-suggestions button,
+  .ai-provider-model-options label,
+  .ai-model-form__capabilities label,
+  .ai-tool-card {
+    transition:
+      border-color 180ms ease,
+      background-color 180ms ease,
+      box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .ai-provider-card,
+  .ai-agent-card,
+  .ai-mcp-card,
+  .ai-model-card,
+  .ai-tool-card {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .ai-provider-card::before,
+  .ai-agent-card::before,
+  .ai-mcp-card::before,
+  .ai-model-card::before,
+  .ai-tool-card::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    border-radius: 0 999px 999px 0;
+    background: var(--color-accent);
+    opacity: 0;
+    transform: scaleY(0.3);
+    transition:
+      opacity 160ms ease,
+      transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+    pointer-events: none;
+  }
+
+  .ai-provider-card:hover,
+  .ai-agent-card:hover,
+  .ai-mcp-card:hover,
+  .ai-model-card:hover,
+  .ai-tool-card:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 24%, var(--color-border));
+    box-shadow: var(--shadow-hover);
+    transform: translateY(-2px);
+  }
+
+  .ai-provider-card:hover::before,
+  .ai-agent-card:hover::before,
+  .ai-mcp-card:hover::before,
+  .ai-model-card:hover::before,
+  .ai-tool-card:hover::before {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+
+  .ai-provider-card:hover .ai-provider-card__actions,
+  .ai-agent-card:hover .ai-agent-card__actions,
+  .ai-mcp-card:hover .ai-mcp-card__actions,
+  .ai-model-card:hover .ai-model-card__actions {
+    opacity: 1;
+  }
+
+  .ai-chat-suggestions button:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
+    background: color-mix(in srgb, var(--color-accent) 7%, var(--bg-surface));
+    box-shadow: 0 10px 20px color-mix(in srgb, #000 7%, transparent);
+    transform: translateY(-2px) scale(1.01);
+  }
+
+  .ai-chat-suggestions button:active {
+    transform: translateY(0) scale(0.985);
+  }
+
+  .ai-provider-model-options label:hover,
+  .ai-model-form__capabilities label:hover {
+    border-color: color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
+    box-shadow: 0 8px 18px color-mix(in srgb, #000 7%, transparent);
+    transform: translateY(-2px);
+  }
+
+  .ai-model-card:hover .ai-model-card__icon {
+    transform: scale(1.08);
+  }
+
+  .ai-tool-card__summary:hover {
+    background: color-mix(in srgb, var(--color-accent) 4%, transparent);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ai-storage-view {
     scroll-behavior: auto;
@@ -4713,5 +4810,28 @@
   .ai-message__media-task svg,
   .ai-run-inspector__activity svg {
     animation: none;
+  }
+
+  .ai-provider-card,
+  .ai-agent-card,
+  .ai-mcp-card,
+  .ai-model-card,
+  .ai-chat-suggestions button,
+  .ai-provider-model-options label,
+  .ai-model-form__capabilities label,
+  .ai-tool-card {
+    transition: none;
+  }
+
+  .ai-provider-card:hover,
+  .ai-agent-card:hover,
+  .ai-mcp-card:hover,
+  .ai-model-card:hover,
+  .ai-chat-suggestions button:hover,
+  .ai-provider-model-options label:hover,
+  .ai-model-form__capabilities label:hover,
+  .ai-tool-card:hover {
+    transform: none;
+    box-shadow: none;
   }
 }

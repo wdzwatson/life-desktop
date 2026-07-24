@@ -40,6 +40,7 @@
 }
 
 .notebook-sidebar__row {
+  position: relative;
   width: 100%;
   min-height: 38px;
   padding: 0 8px;
@@ -57,7 +58,25 @@
   transition:
     background-color 120ms ease,
     border-color 120ms ease,
-    color 120ms ease;
+    color 120ms ease,
+    box-shadow 180ms ease,
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.notebook-sidebar__row::before,
+.notebook-sidebar__note::before {
+  content: '';
+  position: absolute;
+  inset: 7px auto 7px 0;
+  width: 2px;
+  border-radius: 0 999px 999px 0;
+  background: var(--color-accent);
+  opacity: 0;
+  transform: scaleY(0.35);
+  transition:
+    opacity 160ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
 }
 
 .notebook-sidebar__notebook-row {
@@ -112,6 +131,7 @@
   border-color: color-mix(in srgb, var(--color-border) 72%, var(--text-muted));
   background-color: color-mix(in srgb, var(--text-main) 6%, transparent);
   color: var(--text-main);
+  transform: translateX(2px);
 }
 
 .notebook-sidebar__notebook-row:focus-within {
@@ -123,6 +143,15 @@
   background-color: color-mix(in srgb, var(--color-accent) 12%, transparent);
   color: var(--color-accent);
   font-weight: 650;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 7%, transparent);
+}
+
+.notebook-sidebar__row:hover::before,
+.notebook-sidebar__row.active::before,
+.notebook-sidebar__note:hover::before,
+.notebook-sidebar__note.active::before {
+  opacity: 1;
+  transform: scaleY(1);
 }
 
 .notebook-sidebar__notebook-row.active.contains-active-note {
@@ -161,7 +190,8 @@
   transition:
     opacity 120ms ease,
     background-color 120ms ease,
-    color 120ms ease;
+    color 120ms ease,
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .notebook-sidebar__menu-button svg {
@@ -182,6 +212,7 @@
   outline: none;
   background-color: color-mix(in srgb, var(--text-main) 7%, transparent);
   color: var(--text-main);
+  transform: scale(1.06);
 }
 
 .notebook-sidebar__menu-button:focus-visible {
@@ -219,12 +250,18 @@
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease,
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .notebook-sidebar__add-button:hover {
   border-color: var(--color-border);
   background-color: color-mix(in srgb, var(--text-main) 6%, transparent);
   color: var(--text-main);
+  transform: rotate(90deg) scale(1.05);
 }
 
 .notebook-sidebar__add-button svg {
@@ -282,13 +319,15 @@
   cursor: pointer;
   transition:
     background-color 120ms ease,
-    color 120ms ease;
+    color 120ms ease,
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .notebook-sidebar__category-row:hover,
 .notebook-sidebar__category-row[aria-expanded='true'] {
   background-color: color-mix(in srgb, var(--text-main) 4%, transparent);
   color: var(--text-main);
+  transform: translateX(1px);
 }
 
 .notebook-sidebar__category-row > svg {
@@ -332,6 +371,7 @@
 }
 
 .notebook-sidebar__note {
+  position: relative;
   width: 100%;
   min-height: 40px;
   padding: 5px 7px;
@@ -346,15 +386,35 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease,
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .notebook-sidebar__note:hover {
   background-color: color-mix(in srgb, var(--text-main) 5%, transparent);
+  transform: translateX(2px);
 }
 
 .notebook-sidebar__note.active {
   border-color: color-mix(in srgb, var(--color-accent) 24%, transparent);
   background-color: color-mix(in srgb, var(--color-accent) 9%, transparent);
+}
+
+.notebook-sidebar__count,
+.notebook-sidebar__category-count {
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.notebook-sidebar__row:hover .notebook-sidebar__count,
+.notebook-sidebar__row.active .notebook-sidebar__count,
+.notebook-sidebar__category-row:hover .notebook-sidebar__category-count {
+  transform: scale(1.05);
 }
 
 .notebook-sidebar__note > svg {

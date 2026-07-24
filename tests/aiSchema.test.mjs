@@ -226,7 +226,7 @@ test('AI schema migrates version 5 catalog rows into composite capabilities', ()
   db.close()
 })
 
-test('AI schema clears existing catalog rows and seeds the curated model list', () => {
+test('AI schema seeds the curated model list while preserving custom catalog rows', () => {
   const db = new Database(':memory:')
   initializeAISchema(db)
   db.prepare(`
@@ -243,8 +243,49 @@ test('AI schema clears existing catalog rows and seeds the curated model list', 
   initializeAISchema(db)
 
   assert.deepEqual(
-    db.prepare('SELECT name, category, capabilities_json FROM ai_model_catalog ORDER BY name COLLATE NOCASE').all(),
+    db.prepare(`
+      SELECT name, category, capabilities_json
+      FROM ai_model_catalog
+      WHERE name != 'custom-model'
+      ORDER BY name COLLATE NOCASE
+    `).all(),
     expectedCatalogRows(),
+  )
+  assert.deepEqual(
+    db.prepare(`
+      SELECT name, category, capabilities_json
+      FROM ai_model_catalog
+      WHERE name = 'custom-model'
+    `).get(),
+    { name: 'custom-model', category: 'other', capabilities_json: '["text"]' },
+  )
+  db.close()
+})
+
+test('AI schema refreshes default model catalog even when already current', () => {
+  const db = new Database(':memory:')
+  initializeAISchema(db)
+  db.prepare("DELETE FROM ai_model_catalog WHERE name = 'gpt-5.5'").run()
+  db.prepare(`
+    UPDATE ai_model_catalog
+    SET category = 'other', capabilities_json = '["video"]'
+    WHERE name = 'gpt-5.4'
+  `).run()
+  db.prepare('UPDATE ai_schema_meta SET schema_version = ? WHERE id = 1').run(AI_SCHEMA_VERSION)
+
+  initializeAISchema(db)
+
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM ai_model_catalog WHERE name = 'gpt-5.5'").get().count,
+    1,
+  )
+  assert.deepEqual(
+    db.prepare(`
+      SELECT name, category, capabilities_json
+      FROM ai_model_catalog
+      WHERE name = 'gpt-5.4'
+    `).get(),
+    { name: 'gpt-5.4', category: 'chatgpt', capabilities_json: '["text"]' },
   )
   db.close()
 })

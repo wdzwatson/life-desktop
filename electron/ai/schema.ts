@@ -60,10 +60,6 @@ function seedDefaultModelCatalog(db: Database.Database) {
   }
 }
 
-function resetModelCatalog(db: Database.Database) {
-  db.prepare('DELETE FROM ai_model_catalog').run()
-}
-
 function createSchemaObjects(db: Database.Database) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS ai_providers (
@@ -513,10 +509,6 @@ function migrateSchema(db: Database.Database, currentVersion: number) {
   if (currentVersion < 9 && !hasColumn(db, 'ai_providers', 'request_body_json')) {
     db.exec("ALTER TABLE ai_providers ADD COLUMN request_body_json TEXT NOT NULL DEFAULT '{}'")
   }
-  if (currentVersion < 13) {
-    resetModelCatalog(db)
-    seedDefaultModelCatalog(db)
-  }
 }
 
 export function initializeAISchema(db: Database.Database) {
@@ -540,6 +532,7 @@ export function initializeAISchema(db: Database.Database) {
     createSchemaObjects(db)
     migrateSchema(db, currentVersion)
     ensureManagedModelIndex(db)
+    seedDefaultModelCatalog(db)
     db.prepare(
       `
       INSERT INTO ai_schema_meta (id, schema_version, updated_at)
