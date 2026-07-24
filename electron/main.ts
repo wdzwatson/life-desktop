@@ -1556,9 +1556,12 @@ function showMainWindow() {
 function createAppTray() {
   if (appTray) return
   const iconPath = path.join(__dirname, '../build/icon.png')
-  const icon = fs.existsSync(iconPath)
+  const sourceIcon = fs.existsSync(iconPath)
     ? nativeImage.createFromPath(iconPath)
     : nativeImage.createEmpty()
+  const icon = process.platform === 'darwin'
+    ? sourceIcon.resize({ width: 18, height: 18, quality: 'best' })
+    : sourceIcon
   appTray = new Tray(icon)
   appTray.setToolTip('LifeOS')
   appTray.setContextMenu(
