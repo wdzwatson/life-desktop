@@ -285,6 +285,8 @@ export function initializeUserDatabase(userDbDir: string) {
       CREATE UNIQUE INDEX tasks_recur_instance_parent_idx
         ON tasks (recur_rule_id, instance_key)
         WHERE recur_rule_id IS NOT NULL AND instance_key IS NOT NULL AND parent_id IS NULL;
+
+      CREATE INDEX IF NOT EXISTS tasks_parent_id_idx ON tasks (parent_id);
     `)
   } catch (err) {
     console.error('Failed to migrate task template schema:', err)

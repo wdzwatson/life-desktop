@@ -1803,6 +1803,152 @@
   gap: 12px;
 }
 
+.task-drawer__hierarchy-section {
+  padding-top: 14px;
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+.task-drawer__section-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.task-drawer__section-icon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--bg-surface));
+  color: var(--color-accent);
+}
+
+.task-drawer__section-header > span:last-child {
+  min-width: 0;
+}
+
+.task-drawer__section-header strong,
+.task-drawer__section-header small {
+  display: block;
+}
+
+.task-drawer__section-header strong {
+  font-size: 12.5px;
+}
+
+.task-drawer__section-header small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.task-drawer__hierarchy-section .task-form-section {
+  display: grid;
+  gap: 5px;
+}
+
+.task-drawer__hierarchy-section .task-form-section > span {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 720;
+}
+
+.task-drawer__subtask-list {
+  min-width: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.task-drawer__subtask-row {
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 2px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.task-drawer__subtask-row.is-pending {
+  color: var(--text-muted);
+}
+
+.task-drawer__subtask-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-drawer__subtask-status,
+.task-drawer__subtask-pending {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--text-muted) 9%, var(--bg-surface));
+  color: var(--text-muted);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+.task-drawer__subtask-status[data-status='进行中'] {
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--bg-surface));
+  color: var(--color-accent);
+}
+
+.task-drawer__subtask-status[data-status='待审核'] {
+  background: color-mix(in srgb, var(--color-warning, #d97706) 10%, var(--bg-surface));
+  color: var(--color-warning, #d97706);
+}
+
+.task-drawer__subtask-status[data-status='已逾期'] {
+  background: color-mix(in srgb, var(--color-danger) 10%, var(--bg-surface));
+  color: var(--color-danger);
+}
+
+.task-drawer__subtask-status[data-status='已关闭'] {
+  background: color-mix(in srgb, var(--color-success) 10%, var(--bg-surface));
+  color: var(--color-success);
+}
+
+.task-drawer__subtask-row .btn-icon-close {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.task-drawer__subtask-add {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: 8px;
+}
+
+.task-drawer__subtask-add .btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+.task-drawer__subtask-note,
+.task-drawer__recurrence-lock-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.task-drawer__recurrence-lock-note {
+  margin-top: -8px;
+  padding: 0 2px;
+}
+
 .task-drawer__schedule-section {
   display: grid;
   gap: 6px;
@@ -1866,6 +2012,15 @@
 .task-drawer__recurring-setting input:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--color-accent) 34%, transparent);
   outline-offset: 2px;
+}
+
+.task-drawer__recurring-setting:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.task-drawer__recurring-setting input:disabled {
+  cursor: not-allowed;
 }
 .task-due-picker {
   display: flex;

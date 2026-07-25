@@ -17,8 +17,10 @@ import {
   ChevronUp,
   Circle,
   Clock3,
+  CornerDownRight,
   Flag,
   Hourglass,
+  ListTree,
   X,
   Kanban,
   ListChecks,
@@ -125,6 +127,19 @@ registerLocale('zh-CN', zhCN)
 registerLocale('en-US', enUS)
 
 type TaskDeletionScope = 'single' | 'end-repeat' | 'delete-repeat' | 'delete-all-repeat'
+
+type TaskDraft = {
+  title: string
+  description: string
+  startDate: string
+  startTime: string
+  dueDate: string
+  time: string
+  priority: string
+  requiresReview: boolean
+  repeat: string
+  parentId: number | null
+}
 
 export const Tasks: React.FC = () => {
   const { t, i18n } = useTranslation()
@@ -321,12 +336,13 @@ export const Tasks: React.FC = () => {
     title?: string
     timeWindow?: string
     ruleStartDate?: string
+    hierarchy?: string
   }>({})
   const drawerTitleInputRef = useRef<HTMLInputElement | null>(null)
   const drawerStartDatePickerRef = useRef<DatePicker | null>(null)
   const drawerDueDatePickerRef = useRef<DatePicker | null>(null)
   const drawerRuleStartDatePickerRef = useRef<DatePicker | null>(null)
-  const [taskDraft, setTaskDraft] = useState({
+  const [taskDraft, setTaskDraft] = useState<TaskDraft>({
     title: '',
     description: '',
     startDate: toLocalDateKey(new Date()),
@@ -336,7 +352,10 @@ export const Tasks: React.FC = () => {
     priority: 'mid',
     requiresReview: true,
     repeat: 'none',
+    parentId: null,
   })
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
+  const [pendingSubtaskTitles, setPendingSubtaskTitles] = useState<string[]>([])
 
   useEffect(() => {
     if (!drawerMode) return
@@ -677,6 +696,8 @@ export const Tasks: React.FC = () => {
     setRuleMonthDays([])
     setRuleExcludedWeekDays([])
     setRuleExcludedMonthDays([])
+    setNewSubtaskTitle('')
+    setPendingSubtaskTitles([])
     setTaskDraft({
       title: '',
       description: '',
@@ -687,6 +708,7 @@ export const Tasks: React.FC = () => {
       priority: 'mid',
       requiresReview: true,
       repeat: 'none',
+      parentId: null,
     })
     setDrawerMode('create')
   }
@@ -702,6 +724,8 @@ export const Tasks: React.FC = () => {
     setDrawerErrors({})
     setEditDesc(task.description || '')
     setEditProgress(task.progress || 0)
+    setNewSubtaskTitle('')
+    setPendingSubtaskTitles([])
     const rule = task.recur_rule_id
       ? rules.find((candidate) => candidate.id === task.recur_rule_id)
       : null
@@ -753,39 +777,9 @@ export const Tasks: React.FC = () => {
       priority: task.priority || 'mid',
       requiresReview: Boolean(task.requires_review),
       repeat: rule && rule.frequency !== 'custom' ? rule.frequency : 'none',
+      parentId: task.parent_id ?? null,
     })
     setDrawerMode('edit')
-  }
-
-  const getFrequencyLabel = (frequency: string) => {
-    switch (frequency) {
-      case 'custom':
-        return t('tasks.freq_once')
-      case 'daily':
-        return t('tasks.freq_daily')
-      case 'weekday':
-        return t('tasks.freq_weekday')
-      case 'weekly':
-        return t('tasks.freq_weekly')
-      case 'monthly':
-        return t('tasks.freq_monthly')
-      case 'cron':
-        return t('tasks.freq_cron')
-      default:
-        return frequency
-    }
-  }
-
-  const getIntervalHint = (frequency: string, interval: number) => {
-    const unitKey =
-      frequency === 'weekday'
-        ? 'interval_unit_weekday'
-        : frequency === 'weekly'
-          ? 'interval_unit_week'
-          : frequency === 'monthly'
-            ? 'interval_unit_month'
-            : 'interval_unit_day'
-    return t('tasks.interval_hint', { count: Math.max(1, interval), unit: t(`tasks.${unitKey}`) })
   }
 
   const getCurrentRuleScheduleSummary = () => {
@@ -874,6 +868,44 @@ export const Tasks: React.FC = () => {
         setSkippedOccurrences(
           new Set(skippedRes.data.map((item: any) => `${item.recur_rule_id}:${item.instance_key}`)),
         )
+      }
+    }
+  }
+
+  const refreshAncestorProgress = async (startingTaskIds: Array<number | null | undefined>) => {
+    if (!api) return
+
+    const startingIds = startingTaskIds.filter((id): id is number => Number.isInteger(id))
+    for (const startingId of startingIds) {
+      let taskId: number | null = startingId
+      const visited = new Set<number>()
+      while (taskId && !visited.has(taskId)) {
+        visited.add(taskId)
+        const taskResult: any = await api.dbQuery(
+          'tasks',
+          'SELECT parent_id FROM tasks WHERE id = ?',
+          [taskId],
+        )
+        const childResult: any = await api.dbQuery(
+          'tasks',
+          'SELECT progress FROM tasks WHERE parent_id = ?',
+          [taskId],
+        )
+        const task: { parent_id?: number | null } | undefined = taskResult?.data?.[0]
+        const children = childResult?.data ?? []
+        if (!task) break
+
+        if (children.length > 0) {
+          const progress = Math.round(
+            children.reduce((sum: number, child: any) => sum + Number(child.progress || 0), 0) /
+              children.length,
+          )
+          await api.dbQuery('tasks', 'UPDATE tasks SET progress = ? WHERE id = ?', [
+            progress,
+            taskId,
+          ])
+        }
+        taskId = task.parent_id ? Number(task.parent_id) : null
       }
     }
   }
@@ -998,6 +1030,8 @@ export const Tasks: React.FC = () => {
       )
     }
 
+    await refreshAncestorProgress([task.parent_id])
+
     showToast(nextDone ? t('tasks.toast_completed') : t('tasks.toast_reopened'))
     loadData()
   }
@@ -1010,7 +1044,10 @@ export const Tasks: React.FC = () => {
       'UPDATE tasks SET status = ?, is_completed = ?, progress = ? WHERE id = ?',
       [nextStatus, approved ? 1 : 0, approved ? 100 : 0, task.id],
     )
-    if (result?.success) await loadData()
+    if (result?.success) {
+      await refreshAncestorProgress([task.parent_id])
+      await loadData()
+    }
   }
 
   const requestTaskCompletionToggle = (task: any, trigger: HTMLButtonElement) => {
@@ -1196,8 +1233,32 @@ export const Tasks: React.FC = () => {
     return () => window.cancelAnimationFrame(frame)
   }, [expandedTaskGroupId])
 
+  const createPendingSubtasks = async (parentId: number) => {
+    for (const title of pendingSubtaskTitles) {
+      await api.dbQuery(
+        'tasks',
+        `INSERT INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, parent_id, progress)
+         VALUES (?, '', ?, '待处理', 0, ?, ?, ?, ?, ?, 0)`,
+        [
+          title,
+          taskDraft.priority,
+          taskDraft.startDate,
+          normalizeTaskDueTime(taskDraft.startTime),
+          taskDraft.dueDate,
+          normalizeTaskDueTime(taskDraft.time),
+          parentId,
+        ],
+      )
+    }
+  }
+
   const handleSaveDrawer = async () => {
-    const nextErrors: { title?: string; timeWindow?: string; ruleStartDate?: string } = {}
+    const nextErrors: {
+      title?: string
+      timeWindow?: string
+      ruleStartDate?: string
+      hierarchy?: string
+    } = {}
     if (!taskDraft.title.trim()) nextErrors.title = t('tasks.validation_title_required')
     if (taskDraft.repeat !== 'none' && !ruleStartDate) {
       nextErrors.ruleStartDate = t('tasks.validation_rule_start_date_required')
@@ -1207,6 +1268,29 @@ export const Tasks: React.FC = () => {
       `${taskDraft.startDate}T${normalizeTaskDueTime(taskDraft.startTime)}`
     ) {
       nextErrors.timeWindow = t('tasks.invalid_time_window')
+    }
+    if (taskDraft.parentId !== null) {
+      const parent = tasks.find((task) => task.id === taskDraft.parentId)
+      let ancestor = parent
+      const visited = new Set<number>()
+      while (ancestor) {
+        if (visited.has(ancestor.id)) {
+          nextErrors.hierarchy = t('tasks.parent_task_cycle_error')
+          break
+        }
+        if (ancestor.id === selectedTaskId) {
+          nextErrors.hierarchy = t('tasks.parent_task_cycle_error')
+          break
+        }
+        visited.add(ancestor.id)
+        ancestor = tasks.find((task) => task.id === ancestor.parent_id)
+      }
+      if (
+        !parent ||
+        (parent.status === TASK_STATUS.closed && parent.id !== activeTask?.parent_id)
+      ) {
+        nextErrors.hierarchy = t('tasks.parent_task_unavailable_error')
+      }
     }
     if (Object.keys(nextErrors).length > 0) {
       setDrawerErrors(nextErrors)
@@ -1219,12 +1303,14 @@ export const Tasks: React.FC = () => {
 
     if (!api) return
 
+    const targetParentId = taskDraft.repeat === 'none' ? taskDraft.parentId : null
+
     if (drawerMode === 'create') {
       if (taskDraft.repeat === 'none') {
-        await api.dbQuery(
+        const result = await api.dbQuery(
           'tasks',
-          `INSERT INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, progress)
-           VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, 0)`,
+          `INSERT INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, parent_id, progress)
+           VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, 0)`,
           [
             taskDraft.title.trim(),
             taskDraft.description,
@@ -1234,9 +1320,18 @@ export const Tasks: React.FC = () => {
             normalizeTaskDueTime(taskDraft.startTime),
             taskDraft.dueDate,
             normalizeTaskDueTime(taskDraft.time),
+            targetParentId,
           ],
         )
-        showToast(t('tasks.toast_task_added'))
+        const createdTaskId = Number(result?.data?.lastInsertRowid)
+        if (result?.success && createdTaskId) {
+          await createPendingSubtasks(createdTaskId)
+          await refreshAncestorProgress([
+            pendingSubtaskTitles.length > 0 ? createdTaskId : null,
+            targetParentId,
+          ])
+          showToast(t('tasks.toast_task_added'))
+        }
       } else {
         const effectiveTimes = ruleTimes.length > 0 ? ruleTimes : ['09:00']
         const res = await api.dbQuery(
@@ -1299,7 +1394,8 @@ export const Tasks: React.FC = () => {
              recur_rule_id = CASE WHEN ? THEN NULL ELSE recur_rule_id END,
              template_id = CASE WHEN ? THEN NULL ELSE template_id END,
              template_version = CASE WHEN ? THEN NULL ELSE template_version END,
-             instance_key = CASE WHEN ? THEN NULL ELSE instance_key END
+             instance_key = CASE WHEN ? THEN NULL ELSE instance_key END,
+             parent_id = ?
          WHERE id = ?`,
         [
           taskDraft.title.trim(),
@@ -1314,6 +1410,7 @@ export const Tasks: React.FC = () => {
           isChangingToNonRecurring ? 1 : 0,
           isChangingToNonRecurring ? 1 : 0,
           isChangingToNonRecurring ? 1 : 0,
+          targetParentId,
           activeTask.id,
         ],
       )
@@ -1383,6 +1480,12 @@ export const Tasks: React.FC = () => {
           ],
         )
       }
+      await createPendingSubtasks(activeTask.id)
+      await refreshAncestorProgress([
+        pendingSubtaskTitles.length > 0 ? activeTask.id : null,
+        activeTask.parent_id,
+        targetParentId,
+      ])
       showToast(t('tasks.toast_details_updated'))
     }
 
@@ -1544,8 +1647,9 @@ export const Tasks: React.FC = () => {
       selectedTaskId,
     ])
     if (res?.success) {
+      await refreshAncestorProgress([activeTask?.parent_id])
       showToast(t('tasks.toast_details_updated'))
-      loadData()
+      await loadData()
     }
   }
 
@@ -1851,6 +1955,56 @@ export const Tasks: React.FC = () => {
   }
 
   const activeTask = tasks.find((t) => t.id === selectedTaskId)
+  const drawerDescendantIds = useMemo(() => {
+    const descendants = new Set<number>()
+    if (!selectedTaskId) return descendants
+
+    const queue = [selectedTaskId]
+    while (queue.length > 0) {
+      const parentId = queue.shift()
+      for (const task of tasks) {
+        if (task.parent_id !== parentId || descendants.has(task.id)) continue
+        descendants.add(task.id)
+        queue.push(task.id)
+      }
+    }
+    return descendants
+  }, [selectedTaskId, tasks])
+  const eligibleParentTasks = tasks.filter(
+    (task) =>
+      task.id !== selectedTaskId &&
+      !drawerDescendantIds.has(task.id) &&
+      (task.status !== TASK_STATUS.closed || task.id === activeTask?.parent_id) &&
+      !task.is_virtual,
+  )
+  const parentTaskOptions = (() => {
+    const taskById = new Map(tasks.map((task) => [task.id, task]))
+    return eligibleParentTasks.map((task) => {
+      const path = [task.title]
+      const visited = new Set<number>([task.id])
+      let parent = task.parent_id ? taskById.get(task.parent_id) : null
+      while (parent && !visited.has(parent.id)) {
+        path.unshift(parent.title)
+        visited.add(parent.id)
+        parent = parent.parent_id ? taskById.get(parent.parent_id) : null
+      }
+      return { id: task.id, label: path.join(' / ') }
+    })
+  })()
+  const directDrawerSubtasks = activeTask
+    ? tasks.filter((task) => task.parent_id === activeTask.id)
+    : []
+  const recurrenceHierarchyLocked =
+    taskDraft.repeat === 'none' &&
+    (taskDraft.parentId !== null ||
+      directDrawerSubtasks.length > 0 ||
+      pendingSubtaskTitles.length > 0)
+  const addPendingSubtask = () => {
+    const title = newSubtaskTitle.trim()
+    if (!title) return
+    setPendingSubtaskTitles((current) => [...current, title])
+    setNewSubtaskTitle('')
+  }
   const activeTaskTemplate = activeTask?.recur_rule_id
     ? rules.find((rule) => rule.id === activeTask.recur_rule_id)
     : null
@@ -3483,6 +3637,140 @@ export const Tasks: React.FC = () => {
                     placeholder={t('tasks.details_desc_placeholder')}
                   />
                 </label>
+                <section className="task-drawer__hierarchy-section">
+                  <header className="task-drawer__section-header">
+                    <span className="task-drawer__section-icon" aria-hidden="true">
+                      <ListTree size={16} />
+                    </span>
+                    <span>
+                      <strong>{t('tasks.hierarchy_section_title')}</strong>
+                      <small>{t('tasks.hierarchy_section_hint')}</small>
+                    </span>
+                  </header>
+                  <label className="task-form-section">
+                    <span>{t('tasks.parent_task_label')}</span>
+                    <select
+                      className={`form-field ${drawerErrors.hierarchy ? 'is-invalid' : ''}`}
+                      value={taskDraft.parentId ?? ''}
+                      disabled={taskDraft.repeat !== 'none'}
+                      aria-describedby="task-parent-hint"
+                      onChange={(event) => {
+                        const parentId = event.target.value ? Number(event.target.value) : null
+                        setTaskDraft({ ...taskDraft, parentId })
+                        if (drawerErrors.hierarchy) {
+                          setDrawerErrors((current) => ({ ...current, hierarchy: undefined }))
+                        }
+                      }}
+                    >
+                      <option value="">{t('tasks.parent_task_none')}</option>
+                      {parentTaskOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <small id="task-parent-hint" className="task-form-hint">
+                      {taskDraft.repeat !== 'none'
+                        ? t('tasks.parent_task_recurring_hint')
+                        : t('tasks.parent_task_select_hint')}
+                    </small>
+                    {drawerErrors.hierarchy && (
+                      <small className="task-field-error" role="alert">
+                        {drawerErrors.hierarchy}
+                      </small>
+                    )}
+                  </label>
+                </section>
+
+                <section className="task-drawer__hierarchy-section">
+                  <header className="task-drawer__section-header">
+                    <span className="task-drawer__section-icon" aria-hidden="true">
+                      <CornerDownRight size={16} />
+                    </span>
+                    <span>
+                      <strong>{t('tasks.direct_subtasks_title')}</strong>
+                      <small>
+                        {t('tasks.direct_subtasks_count', {
+                          count: directDrawerSubtasks.length + pendingSubtaskTitles.length,
+                        })}
+                      </small>
+                    </span>
+                  </header>
+
+                  {directDrawerSubtasks.length > 0 && (
+                    <div className="task-drawer__subtask-list">
+                      {directDrawerSubtasks.map((subtask) => (
+                        <div className="task-drawer__subtask-row" key={subtask.id}>
+                          <span className="task-drawer__subtask-title">{subtask.title}</span>
+                          <span className="task-drawer__subtask-status" data-status={subtask.status}>
+                            {getStatusLabel(subtask.status)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {pendingSubtaskTitles.length > 0 && (
+                    <div className="task-drawer__subtask-list">
+                      {pendingSubtaskTitles.map((title, index) => (
+                        <div className="task-drawer__subtask-row is-pending" key={`${title}-${index}`}>
+                          <span className="task-drawer__subtask-title">{title}</span>
+                          <span className="task-drawer__subtask-pending">
+                            {t('tasks.subtask_pending_create')}
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-icon-close"
+                            title={t('tasks.remove_pending_subtask')}
+                            aria-label={t('tasks.remove_pending_subtask')}
+                            onClick={() =>
+                              setPendingSubtaskTitles((current) =>
+                                current.filter((_, currentIndex) => currentIndex !== index),
+                              )
+                            }
+                          >
+                            <X size={14} aria-hidden="true" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {drawerMode === 'create' && taskDraft.repeat !== 'none' ? (
+                    <p className="task-drawer__subtask-note">
+                      {t('tasks.recurring_subtask_instance_hint')}
+                    </p>
+                  ) : (
+                    <>
+                      <div className="task-drawer__subtask-add">
+                        <input
+                          className="form-field"
+                          value={newSubtaskTitle}
+                          placeholder={t('tasks.subtask_title_placeholder')}
+                          onChange={(event) => setNewSubtaskTitle(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key !== 'Enter') return
+                            event.preventDefault()
+                            addPendingSubtask()
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-icon primary"
+                          disabled={!newSubtaskTitle.trim()}
+                          title={t('tasks.add_subtask_tooltip')}
+                          aria-label={t('tasks.add_subtask_tooltip')}
+                          onClick={addPendingSubtask}
+                        >
+                          <Plus size={15} aria-hidden="true" />
+                        </button>
+                      </div>
+                      <p className="task-drawer__subtask-note">
+                        {t('tasks.subtask_inheritance_hint')}
+                      </p>
+                    </>
+                  )}
+                </section>
                 <div className="task-drawer__schedule-section">
                   <div className="task-drawer__grid">
                     <div className="task-form-section">
@@ -3609,6 +3897,7 @@ export const Tasks: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={taskDraft.repeat !== 'none'}
+                    disabled={recurrenceHierarchyLocked}
                     onChange={(event) => {
                       const recurring = event.target.checked
                       setTaskDraft({ ...taskDraft, repeat: recurring ? ruleFreq : 'none' })
@@ -3617,6 +3906,11 @@ export const Tasks: React.FC = () => {
                     }}
                   />
                 </label>
+                {recurrenceHierarchyLocked && (
+                  <p className="task-drawer__recurrence-lock-note">
+                    {t('tasks.recurring_hierarchy_lock_hint')}
+                  </p>
+                )}
                 {taskDraft.repeat !== 'none' && (
                   <div className="task-drawer__rule-panel">
                     <button
