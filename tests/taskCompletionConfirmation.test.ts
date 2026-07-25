@@ -16,13 +16,20 @@ test('task completion changes require an explicit confirmation', () => {
   assert.match(tasksView, /await toggleTaskDone\(completionConfirmationTask\)/)
   assert.match(tasksView, /tasks\.confirm_complete_with_subtasks_description/)
   assert.match(tasksView, /tasks\.close_overdue_task_action/)
-  assert.match(tasksView, /tasks\.confirm_close_overdue_with_subtasks_description/)
+  assert.match(tasksView, /const resolveOverdueTask = async/)
+  assert.match(tasksView, /TASK_STATUS\.review/)
+  assert.match(tasksView, /TASK_STATUS\.closed/)
+  assert.match(tasksView, /tasks\.confirm_resolve_overdue_review_action/)
+  assert.match(tasksView, /tasks\.confirm_resolve_overdue_close_action/)
 })
 
 test('task completion follows the review requirement before closing a task', () => {
   const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
 
-  assert.match(tasksView, /task\.requires_review \? TASK_STATUS\.review : TASK_STATUS\.closed/)
+  assert.match(
+    tasksView,
+    /task\.requires_review\s*\?\s*TASK_STATUS\.review\s*:\s*TASK_STATUS\.closed/,
+  )
   assert.match(tasksView, /status = CASE WHEN requires_review = 1 THEN '待审核' ELSE '已关闭' END/)
   assert.match(tasksView, /const reviewTask = async/)
   assert.match(tasksView, /reviewTask\(task, false\)/)
