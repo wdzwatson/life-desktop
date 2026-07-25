@@ -21,6 +21,7 @@ export type CalendarOccurrence = PersistedTask & {
   is_virtual?: boolean
   occurrence_time?: string
   due_time?: string | null
+  requires_review?: number | boolean | null
 }
 
 export const projectCalendarOccurrences = (
@@ -30,7 +31,9 @@ export const projectCalendarOccurrences = (
   end: Date,
   skippedKeys = new Set<string>(),
 ) => {
-  const realKeys = new Set(tasks.map((task) => `${task.recur_rule_id ?? ''}:${task.instance_key ?? ''}`))
+  const realKeys = new Set(
+    tasks.map((task) => `${task.recur_rule_id ?? ''}:${task.instance_key ?? ''}`),
+  )
   const projected = [...tasks]
   const startKey = toLocalDateKey(start)
   const endKey = toLocalDateKey(end)
@@ -41,13 +44,16 @@ export const projectCalendarOccurrences = (
       if (skippedKeys.has(`${rule.id}:${occurrence.instanceKey}`)) continue
       if (realKeys.has(`${rule.id}:${occurrence.instanceKey}`)) continue
       projected.push({
-        id: -Number(`${rule.id}${occurrence.dateKey.replaceAll('-', '')}${occurrence.time.replaceAll(':', '')}`),
+        id: -Number(
+          `${rule.id}${occurrence.dateKey.replaceAll('-', '')}${occurrence.time.replaceAll(':', '')}`,
+        ),
         title: rule.title,
         description: rule.description,
         priority: (rule as any).priority || 'mid',
         status: '待处理',
         due_date: occurrence.dateKey,
         due_time: occurrence.time,
+        requires_review: (rule as any).requires_review || 0,
         recur_rule_id: rule.id,
         template_id: (rule as any).template_id || null,
         template_version: (rule as any).template_version || null,

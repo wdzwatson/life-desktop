@@ -59,8 +59,11 @@ export function initializeUserDatabase(userDbDir: string) {
       title TEXT NOT NULL,
       description TEXT,
       priority TEXT CHECK(priority IN ('high', 'mid', 'low')) DEFAULT 'mid',
-      status TEXT NOT NULL DEFAULT '待收集',
+      status TEXT NOT NULL DEFAULT '待处理',
       closed_from_status TEXT,
+      requires_review INTEGER NOT NULL DEFAULT 0,
+      start_date TEXT,
+      start_time TEXT,
       due_date TEXT,
       due_time TEXT,
       recur_rule_id INTEGER,
@@ -87,6 +90,7 @@ export function initializeUserDatabase(userDbDir: string) {
       start_date TEXT,
       start_time TEXT DEFAULT '09:00',
       time_slots TEXT,
+      requires_review INTEGER NOT NULL DEFAULT 0,
       template_id INTEGER,
       template_version INTEGER,
       priority TEXT CHECK(priority IN ('high', 'mid', 'low')) DEFAULT 'mid',
@@ -164,6 +168,15 @@ export function initializeUserDatabase(userDbDir: string) {
     if (!taskColumnNames.has('closed_from_status')) {
       tasksDb.exec('ALTER TABLE tasks ADD COLUMN closed_from_status TEXT')
     }
+    if (!taskColumnNames.has('requires_review')) {
+      tasksDb.exec('ALTER TABLE tasks ADD COLUMN requires_review INTEGER NOT NULL DEFAULT 0')
+    }
+    if (!taskColumnNames.has('start_date')) {
+      tasksDb.exec('ALTER TABLE tasks ADD COLUMN start_date TEXT')
+    }
+    if (!taskColumnNames.has('start_time')) {
+      tasksDb.exec('ALTER TABLE tasks ADD COLUMN start_time TEXT')
+    }
 
     const ruleColumns = tasksDb.prepare('PRAGMA table_info(recurring_rules)').all() as {
       name: string
@@ -187,6 +200,11 @@ export function initializeUserDatabase(userDbDir: string) {
     if (!ruleColumnNames.has('template_version')) {
       tasksDb.exec('ALTER TABLE recurring_rules ADD COLUMN template_version INTEGER')
     }
+    if (!ruleColumnNames.has('requires_review')) {
+      tasksDb.exec(
+        'ALTER TABLE recurring_rules ADD COLUMN requires_review INTEGER NOT NULL DEFAULT 0',
+      )
+    }
 
     tasksDb.exec(`
       UPDATE recurring_rules
@@ -201,6 +219,27 @@ export function initializeUserDatabase(userDbDir: string) {
       UPDATE tasks
       SET due_time = due_time || ':00'
       WHERE due_time GLOB '??:??';
+
+      UPDATE tasks
+      SET due_time = '23:59:59'
+      WHERE due_date IS NOT NULL AND due_time IS NULL;
+
+      UPDATE tasks
+      SET start_date = COALESCE(start_date, due_date, substr(created_at, 1, 10)),
+          start_time = COALESCE(start_time, '00:00:00')
+      WHERE start_date IS NULL OR start_time IS NULL;
+
+      UPDATE tasks
+      SET status = '待处理'
+      WHERE status = '待收集';
+
+      UPDATE tasks
+      SET status = '待审核'
+      WHERE status = '待验收';
+
+      UPDATE tasks
+      SET status = CASE WHEN requires_review = 1 THEN '待审核' ELSE '已关闭' END
+      WHERE is_completed = 1 AND status NOT IN ('待审核', '已关闭');
 
       CREATE TABLE IF NOT EXISTS recurring_rule_steps (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -239,10 +278,9 @@ export function initializeUserDatabase(userDbDir: string) {
       'INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES (?, ?, ?, ?)',
     )
     const statusMappings = [
-      { id: '待收集', zh: '待收集', en: 'Inbox' },
       { id: '待处理', zh: '待处理', en: 'To Do' },
       { id: '进行中', zh: '进行中', en: 'In Progress' },
-      { id: '待验收', zh: '待验收', en: 'Review' },
+      { id: '待审核', zh: '待审核', en: 'Awaiting Review' },
       { id: '已关闭', zh: '已关闭', en: 'Closed' },
       { id: '已逾期', zh: '已逾期', en: 'Overdue' },
     ]
@@ -665,12 +703,18 @@ export function initializeUserDatabase(userDbDir: string) {
     `)
 
     const addDouyinColumn = (table: string, column: string, definition: string) => {
-      const columns = videosDb.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+      const columns = videosDb.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+        name: string
+      }>
       if (!columns.some((entry) => entry.name === column)) {
         videosDb.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
       }
     }
-    addDouyinColumn('douyin_favorite_folders', 'incremental_capability', "TEXT NOT NULL DEFAULT 'unknown'")
+    addDouyinColumn(
+      'douyin_favorite_folders',
+      'incremental_capability',
+      "TEXT NOT NULL DEFAULT 'unknown'",
+    )
     addDouyinColumn('douyin_favorite_folders', 'last_incremental_added_at', 'TEXT')
     addDouyinColumn('douyin_favorite_folders', 'last_incremental_remote_id', 'TEXT')
     addDouyinColumn('douyin_favorite_folders', 'last_sync_complete', 'INTEGER NOT NULL DEFAULT 1')
@@ -678,15 +722,23 @@ export function initializeUserDatabase(userDbDir: string) {
     addDouyinColumn('douyin_favorite_items', 'favorite_added_at', 'TEXT')
     addDouyinColumn('douyin_favorite_items', 'content_type', "TEXT NOT NULL DEFAULT 'video'")
     addDouyinColumn('douyin_accounts', 'ever_sync_finished', 'INTEGER NOT NULL DEFAULT 0')
-    addDouyinColumn('douyin_favorite_items', 'download_status', "TEXT NOT NULL DEFAULT 'not_downloaded'")
+    addDouyinColumn(
+      'douyin_favorite_items',
+      'download_status',
+      "TEXT NOT NULL DEFAULT 'not_downloaded'",
+    )
     addDouyinColumn('douyin_favorite_items', 'download_progress', 'REAL NOT NULL DEFAULT 0')
     addDouyinColumn('douyin_favorite_items', 'local_path', 'TEXT')
     addDouyinColumn('douyin_favorite_items', 'download_error', 'TEXT')
 
     const favoriteItemsSql = String(
-      (videosDb
-        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'douyin_favorite_items'")
-        .get() as { sql?: string } | undefined)?.sql || '',
+      (
+        videosDb
+          .prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'douyin_favorite_items'",
+          )
+          .get() as { sql?: string } | undefined
+      )?.sql || '',
     )
     if (favoriteItemsSql && !favoriteItemsSql.includes("'article'")) {
       const foreignKeysEnabled = Number(videosDb.pragma('foreign_keys', { simple: true })) === 1

@@ -1139,6 +1139,13 @@
   background: color-mix(in srgb, var(--color-accent) 8%, transparent);
 }
 
+.task-review-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  align-items: center;
+}
+
 .task-row.is-overdue .task-row__date {
   color: var(--color-danger);
   font-weight: 700;

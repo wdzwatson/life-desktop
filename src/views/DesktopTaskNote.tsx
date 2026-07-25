@@ -8,6 +8,7 @@ import {
   type DesktopTaskOrder,
 } from './taskDesktopUtils'
 import './DesktopTaskNote.css'
+import { getReopenedTaskStatus, TASK_STATUS } from '../taskWorkflow'
 
 type DesktopTaskRecord = {
   id: number
@@ -15,6 +16,7 @@ type DesktopTaskRecord = {
   status?: string | null
   due_date?: string | null
   due_time?: string | null
+  requires_review?: number | null
   recur_rule_id?: number | null
   start_date?: string | null
   end_date?: string | null
@@ -128,7 +130,11 @@ export const DesktopTaskNote: React.FC = () => {
 
   const toggleTask = async (task: DesktopTaskRecord) => {
     const nextDone = task.is_completed === 1 ? 0 : 1
-    const nextStatus = task.status === '已关闭' ? '待处理' : task.status || '待处理'
+    const nextStatus = nextDone
+      ? task.requires_review
+        ? TASK_STATUS.review
+        : TASK_STATUS.closed
+      : getReopenedTaskStatus(task)
     const result = await api?.dbQuery(
       'tasks',
       'UPDATE tasks SET is_completed = ?, status = ?, progress = ? WHERE id = ?',
@@ -156,7 +162,7 @@ export const DesktopTaskNote: React.FC = () => {
     if (!taskToClose) return
     const result = await api?.dbQuery(
       'tasks',
-      "UPDATE tasks SET closed_from_status = status, status = '已关闭' WHERE id = ?",
+      "UPDATE tasks SET closed_from_status = status, status = '已关闭', is_completed = 1, progress = 100 WHERE id = ?",
       [taskToClose.id],
     )
     if (result?.success) {

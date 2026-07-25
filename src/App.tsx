@@ -30,14 +30,18 @@ function ScreenLoading({ screen }: { screen: string }) {
   )
 }
 
-const Dashboard = lazy(() => import('./views/Dashboard').then(({ Dashboard }) => ({ default: Dashboard })))
+const Dashboard = lazy(() =>
+  import('./views/Dashboard').then(({ Dashboard }) => ({ default: Dashboard })),
+)
 const Tasks = lazy(() => import('./views/Tasks').then(({ Tasks }) => ({ default: Tasks })))
 const Notes = lazy(() => import('./views/Notes').then(({ Notes }) => ({ default: Notes })))
 const Books = lazy(() => import('./views/Books').then(({ Books }) => ({ default: Books })))
 const Videos = lazy(() => import('./views/Videos').then(({ Videos }) => ({ default: Videos })))
 const Toolbox = lazy(() => import('./views/Toolbox').then(({ Toolbox }) => ({ default: Toolbox })))
 const AIChat = lazy(() => import('./views/ai/AIChat').then(({ AIChat }) => ({ default: AIChat })))
-const Settings = lazy(() => import('./views/Settings').then(({ Settings }) => ({ default: Settings })))
+const Settings = lazy(() =>
+  import('./views/Settings').then(({ Settings }) => ({ default: Settings })),
+)
 
 function App() {
   const { t } = useTranslation()
@@ -255,14 +259,16 @@ function App() {
   // Create task command handler
   const handleCreateTaskFromCmd = async (title: string) => {
     if (!api) return
-    const todayYMD = new Date().toISOString().slice(0, 10)
+    const now = new Date()
+    const todayYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const startTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
     const res = await api.dbQuery(
       'tasks',
       `
-      INSERT INTO tasks (title, description, priority, status, due_date, is_completed, progress)
-      VALUES (?, '', 'mid', '待处理', ?, 0, 0)
+      INSERT INTO tasks (title, description, priority, status, start_date, start_time, due_date, due_time, is_completed, progress)
+      VALUES (?, '', 'mid', '进行中', ?, ?, ?, '23:59:59', 0, 0)
     `,
-      [title.trim(), todayYMD],
+      [title.trim(), todayYMD, startTime, todayYMD],
     )
 
     if (res?.success) {
@@ -447,7 +453,9 @@ function App() {
                         backgroundColor: 'transparent',
                         transition: 'background-color 0.1s',
                       }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-app)')}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                      }
                       onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                     >
                       <div>
@@ -460,7 +468,10 @@ function App() {
                           {result.desc}
                         </span>
                       </div>
-                    <span className="pill" style={{ textTransform: 'uppercase', fontSize: '9px' }}>
+                      <span
+                        className="pill"
+                        style={{ textTransform: 'uppercase', fontSize: '9px' }}
+                      >
                         {result.type}
                       </span>
                     </div>

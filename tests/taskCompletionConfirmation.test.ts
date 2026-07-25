@@ -19,13 +19,12 @@ test('task completion changes require an explicit confirmation', () => {
   assert.match(tasksView, /tasks\.confirm_close_overdue_with_subtasks_description/)
 })
 
-test('task completion does not conflate completed and explicitly closed states', () => {
+test('task completion follows the review requirement before closing a task', () => {
   const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
 
-  assert.match(
-    tasksView,
-    /const nextStatus = task\.status === '已关闭' \? '待处理' : task\.status \|\| '待处理'/,
-  )
-  assert.match(tasksView, /UPDATE tasks SET is_completed = 1, progress = 100/)
-  assert.doesNotMatch(tasksView, /UPDATE tasks SET is_completed = 1, status = \?, progress = 100/)
+  assert.match(tasksView, /task\.requires_review \? TASK_STATUS\.review : TASK_STATUS\.closed/)
+  assert.match(tasksView, /status = CASE WHEN requires_review = 1 THEN '待审核' ELSE '已关闭' END/)
+  assert.match(tasksView, /const reviewTask = async/)
+  assert.match(tasksView, /reviewTask\(task, false\)/)
+  assert.match(tasksView, /reviewTask\(task, true\)/)
 })

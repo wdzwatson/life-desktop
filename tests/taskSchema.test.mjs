@@ -64,12 +64,15 @@ test('task schema migrates legacy recurring task columns before creating recurre
         .map((column) => column.name)
       assert.ok(taskColumns.includes('instance_key'))
       assert.ok(taskColumns.includes('closed_from_status'))
+      assert.ok(taskColumns.includes('requires_review'))
+      assert.ok(taskColumns.includes('start_date'))
+      assert.ok(taskColumns.includes('start_time'))
 
       const ruleColumns = migratedDb
         .prepare('PRAGMA table_info(recurring_rules)')
         .all()
         .map((column) => column.name)
-      for (const column of ['start_date', 'start_time', 'priority']) {
+      for (const column of ['start_date', 'start_time', 'priority', 'requires_review']) {
         assert.ok(ruleColumns.includes(column), `missing ${column}`)
       }
 
@@ -130,9 +133,13 @@ test('task schema creates template scheduling and step columns on a fresh databa
       assert.ok(taskColumns.includes('instance_key'))
       assert.ok(taskColumns.includes('closed_from_status'))
       assert.ok(taskColumns.includes('due_time'))
+      assert.ok(taskColumns.includes('requires_review'))
+      assert.ok(taskColumns.includes('start_date'))
+      assert.ok(taskColumns.includes('start_time'))
       assert.ok(ruleColumns.includes('start_date'))
       assert.ok(ruleColumns.includes('start_time'))
       assert.ok(ruleColumns.includes('priority'))
+      assert.ok(ruleColumns.includes('requires_review'))
       assert.ok(stepColumns.includes('rule_id'))
       assert.ok(stepColumns.includes('sort_order'))
       assert.equal(exceptionTable?.name, 'recurring_rule_occurrence_exceptions')

@@ -38,6 +38,7 @@ import {
   toLocalDateKey,
 } from './taskScheduleUtils'
 import { projectCalendarOccurrences } from './taskOccurrenceProjection'
+import { getAutomaticTaskStatus, getReopenedTaskStatus, TASK_STATUS } from '../taskWorkflow'
 import './Tasks.css'
 
 const getCurrentTimeValue = () => {
@@ -88,13 +89,11 @@ export const Tasks: React.FC = () => {
     if (match) return match.translation
 
     switch (status) {
-      case '待收集':
-        return t('tasks.lane_inbox')
       case '待处理':
         return t('tasks.lane_todo')
       case '进行中':
         return t('tasks.lane_inprogress')
-      case '待验收':
+      case '待审核':
         return t('tasks.lane_review')
       case '已关闭':
         return t('tasks.lane_closed')
@@ -116,7 +115,6 @@ export const Tasks: React.FC = () => {
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
   const [expandedTaskGroupId, setExpandedTaskGroupId] = useState<number | null>(null)
   const [expandedOccurrenceGroupKey, setExpandedOccurrenceGroupKey] = useState<string | null>(null)
-  const [dragOverStatus, setDragOverStatus] = useState<string | null>(null)
   const [completionConfirmationTask, setCompletionConfirmationTask] = useState<any | null>(null)
   const [isCompletionConfirming, setIsCompletionConfirming] = useState(false)
   const completionTriggerRef = useRef<HTMLButtonElement | null>(null)
@@ -131,9 +129,12 @@ export const Tasks: React.FC = () => {
   const [taskDraft, setTaskDraft] = useState({
     title: '',
     description: '',
+    startDate: toLocalDateKey(new Date()),
+    startTime: getCurrentTimeValue(),
     dueDate: toLocalDateKey(new Date()),
     time: getDefaultDueTime(),
     priority: 'mid',
+    requiresReview: false,
     repeat: 'none',
   })
 
@@ -272,10 +273,9 @@ export const Tasks: React.FC = () => {
 
   const boardLanes = useMemo(
     () => [
-      { key: 'lane_inbox', dbVal: '待收集' },
       { key: 'lane_todo', dbVal: '待处理' },
       { key: 'lane_inprogress', dbVal: '进行中' },
-      { key: 'lane_review', dbVal: '待验收' },
+      { key: 'lane_review', dbVal: '待审核' },
       { key: 'lane_closed', dbVal: '已关闭' },
     ],
     [],
@@ -329,14 +329,16 @@ export const Tasks: React.FC = () => {
     if (task.is_virtual && api) {
       await api.dbQuery(
         'tasks',
-        `INSERT OR IGNORE INTO tasks (title, description, priority, status, due_date, due_time, recur_rule_id, template_id, template_version, instance_key, progress)
-         VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, 0)`,
+        `INSERT OR IGNORE INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, recur_rule_id, template_id, template_version, instance_key, progress)
+         VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, '23:59:59', ?, ?, ?, ?, 0)`,
         [
           task.title,
           task.description || '',
           task.priority,
+          task.requires_review ? 1 : 0,
           task.due_date,
-          task.due_time || task.occurrence_time || null,
+          task.due_time || task.occurrence_time || '09:00',
+          task.due_date,
           task.recur_rule_id,
           task.template_id || null,
           task.template_version || null,
@@ -364,14 +366,16 @@ export const Tasks: React.FC = () => {
           for (const step of steps?.data ?? []) {
             await api.dbQuery(
               'tasks',
-              `INSERT INTO tasks (title, description, priority, status, due_date, due_time, recur_rule_id, template_id, template_version, instance_key, parent_id, progress)
-             VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, 0)`,
+              `INSERT INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, recur_rule_id, template_id, template_version, instance_key, parent_id, progress)
+             VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, '23:59:59', ?, ?, ?, ?, ?, 0)`,
               [
                 step.title,
                 step.description || '',
                 step.priority || task.priority,
+                task.requires_review ? 1 : 0,
                 task.due_date,
-                task.due_time || task.occurrence_time || null,
+                task.due_time || task.occurrence_time || '09:00',
+                task.due_date,
                 task.recur_rule_id,
                 task.template_id || null,
                 task.template_version || null,
@@ -421,9 +425,12 @@ export const Tasks: React.FC = () => {
     setTaskDraft({
       title: '',
       description: '',
+      startDate: toLocalDateKey(new Date()),
+      startTime: getCurrentTimeValue(),
       dueDate: toLocalDateKey(new Date()),
       time: getDefaultDueTime(),
       priority: 'mid',
+      requiresReview: false,
       repeat: 'none',
     })
     setDrawerMode('create')
@@ -467,9 +474,12 @@ export const Tasks: React.FC = () => {
     setTaskDraft({
       title: task.title || '',
       description: task.description || '',
+      startDate: task.start_date || task.due_date || toLocalDateKey(new Date()),
+      startTime: normalizeTaskDueTime(task.start_time || '00:00:00'),
       dueDate: task.due_date || toLocalDateKey(new Date()),
       time: normalizeTaskDueTime(task.due_time),
       priority: task.priority || 'mid',
+      requiresReview: Boolean(task.requires_review),
       repeat: rule && rule.frequency !== 'custom' ? rule.frequency : 'none',
     })
     setDrawerMode('edit')
@@ -521,27 +531,6 @@ export const Tasks: React.FC = () => {
   const handleStartFirstTask = () => {
     setTaskTab('list')
     openCreateDrawer()
-  }
-
-  const handleMoveTaskStatus = async (task: any, nextStatus: string) => {
-    if (!api || !task || task.status === nextStatus) return
-
-    const nextCompleted = nextStatus === '已关闭' ? 1 : 0
-    const nextProgress = nextCompleted ? 100 : task.progress === 100 ? 0 : task.progress || 0
-    const res = await api.dbQuery(
-      'tasks',
-      'UPDATE tasks SET status = ?, is_completed = ?, progress = ? WHERE id = ?',
-      [nextStatus, nextCompleted, nextProgress, task.id],
-    )
-
-    if (res?.success) {
-      showToast(
-        t('tasks.toast_task_moved', {
-          status: getStatusLabel(nextStatus),
-        }),
-      )
-      await loadData()
-    }
   }
 
   const loadData = async () => {
@@ -658,10 +647,11 @@ export const Tasks: React.FC = () => {
   const toggleTaskDone = async (task: any) => {
     if (!api) return
     const nextDone = task.is_completed === 1 ? 0 : 1
-    // Completion is independent from explicitly closing a task. Keep the
-    // workflow status so completed tasks can still be shown in the desktop
-    // task note and distinguished from closed tasks.
-    const nextStatus = task.status === '已关闭' ? '待处理' : task.status || '待处理'
+    const nextStatus = nextDone
+      ? task.requires_review
+        ? TASK_STATUS.review
+        : TASK_STATUS.closed
+      : getReopenedTaskStatus(task)
 
     // Update self
     await api.dbQuery(
@@ -681,7 +671,8 @@ export const Tasks: React.FC = () => {
             SELECT tasks.id FROM tasks
             INNER JOIN descendants ON tasks.parent_id = descendants.id
           )
-          UPDATE tasks SET is_completed = 1, progress = 100
+          UPDATE tasks SET is_completed = 1, progress = 100,
+            status = CASE WHEN requires_review = 1 THEN '待审核' ELSE '已关闭' END
           WHERE id IN (SELECT id FROM descendants)
         `,
         [task.id],
@@ -696,13 +687,24 @@ export const Tasks: React.FC = () => {
     if (!api || !task || task.status !== '已关闭') return
     const result = await api.dbQuery(
       'tasks',
-      "UPDATE tasks SET status = COALESCE(closed_from_status, '待处理'), closed_from_status = NULL WHERE id = ?",
-      [task.id],
+      'UPDATE tasks SET status = ?, is_completed = 0, progress = 0, closed_from_status = NULL WHERE id = ?',
+      [getReopenedTaskStatus(task), task.id],
     )
     if (result?.success) {
       showToast(t('tasks.toast_task_restored'))
       await loadData()
     }
+  }
+
+  const reviewTask = async (task: any, approved: boolean) => {
+    if (!api || task.status !== TASK_STATUS.review) return
+    const nextStatus = approved ? TASK_STATUS.closed : getReopenedTaskStatus(task)
+    const result = await api.dbQuery(
+      'tasks',
+      'UPDATE tasks SET status = ?, is_completed = ?, progress = ? WHERE id = ?',
+      [nextStatus, approved ? 1 : 0, approved ? 100 : 0, task.id],
+    )
+    if (result?.success) await loadData()
   }
 
   const requestTaskCompletionToggle = (task: any, trigger: HTMLButtonElement) => {
@@ -783,23 +785,32 @@ export const Tasks: React.FC = () => {
             <button
               type="button"
               title={
-                child.is_completed === 1
-                  ? t('tasks.reopen_task_action')
-                  : isChildOverdue
-                    ? t('tasks.close_overdue_task_action')
-                    : t('tasks.complete_task_action')
+                child.status === TASK_STATUS.review
+                  ? t('tasks.lane_review')
+                  : child.status === TASK_STATUS.closed
+                    ? t('tasks.lane_closed')
+                    : child.is_completed === 1
+                      ? t('tasks.reopen_task_action')
+                      : isChildOverdue
+                        ? t('tasks.close_overdue_task_action')
+                        : t('tasks.complete_task_action')
               }
               aria-label={
-                child.is_completed === 1
-                  ? t('tasks.reopen_task_action')
-                  : isChildOverdue
-                    ? t('tasks.close_overdue_task_action')
-                    : t('tasks.complete_task_action')
+                child.status === TASK_STATUS.review
+                  ? t('tasks.lane_review')
+                  : child.status === TASK_STATUS.closed
+                    ? t('tasks.lane_closed')
+                    : child.is_completed === 1
+                      ? t('tasks.reopen_task_action')
+                      : isChildOverdue
+                        ? t('tasks.close_overdue_task_action')
+                        : t('tasks.complete_task_action')
               }
               onClick={(e) => {
                 e.stopPropagation()
                 requestTaskCompletionToggle(child, e.currentTarget)
               }}
+              disabled={child.status === TASK_STATUS.review || child.status === TASK_STATUS.closed}
               className="task-row__check"
             >
               {child.is_completed === 1 ? (
@@ -838,10 +849,19 @@ export const Tasks: React.FC = () => {
 
   const handleSaveDrawer = async () => {
     if (!api || !taskDraft.title.trim()) return
+    if (
+      `${taskDraft.dueDate}T${normalizeTaskDueTime(taskDraft.time)}` <
+      `${taskDraft.startDate}T${normalizeTaskDueTime(taskDraft.startTime)}`
+    ) {
+      showToast(t('tasks.invalid_time_window'))
+      return
+    }
 
     if (drawerMode === 'create') {
       const effectiveFrequency = taskDraft.repeat === 'none' ? 'custom' : ruleFreq
-      const effectiveTimes = ruleTimes
+      const effectiveTimes =
+        taskDraft.repeat === 'none' ? [normalizeScheduleTime(taskDraft.startTime)] : ruleTimes
+      const effectiveStartDate = taskDraft.repeat === 'none' ? taskDraft.startDate : ruleStartDate
       const effectiveWeekDays = serializeRuleWeekDays(
         effectiveFrequency,
         ruleWeekDays,
@@ -849,8 +869,8 @@ export const Tasks: React.FC = () => {
       )
       const res = await api.dbQuery(
         'tasks',
-        `INSERT INTO recurring_rules (title, description, frequency, interval, week_days, month_days, start_date, start_time, time_slots, priority, end_condition, missed_policy)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO recurring_rules (title, description, frequency, interval, week_days, month_days, start_date, start_time, time_slots, priority, requires_review, end_condition, missed_policy)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           taskDraft.title.trim(),
           taskDraft.description,
@@ -858,10 +878,11 @@ export const Tasks: React.FC = () => {
           ruleInterval,
           effectiveWeekDays,
           ruleMonthDays.join(','),
-          ruleStartDate,
+          effectiveStartDate,
           effectiveTimes[0],
           effectiveTimes.join(','),
           rulePriority,
+          taskDraft.requiresReview ? 1 : 0,
           effectiveFrequency === 'custom' ? 'count:1' : 'never',
           ruleHolidayPolicy,
         ],
@@ -899,7 +920,7 @@ export const Tasks: React.FC = () => {
       await api.dbQuery(
         'tasks',
         `UPDATE tasks
-         SET title = ?, description = ?, priority = ?, due_date = ?, due_time = ?,
+         SET title = ?, description = ?, priority = ?, requires_review = ?, start_date = ?, start_time = ?, due_date = ?, due_time = ?,
              recur_rule_id = CASE WHEN ? THEN NULL ELSE recur_rule_id END,
              template_id = CASE WHEN ? THEN NULL ELSE template_id END,
              template_version = CASE WHEN ? THEN NULL ELSE template_version END,
@@ -909,6 +930,9 @@ export const Tasks: React.FC = () => {
           taskDraft.title.trim(),
           taskDraft.description,
           taskDraft.priority,
+          taskDraft.requiresReview ? 1 : 0,
+          taskDraft.startDate,
+          normalizeTaskDueTime(taskDraft.startTime),
           taskDraft.dueDate,
           normalizeTaskDueTime(taskDraft.time),
           isChangingToNonRecurring ? 1 : 0,
@@ -925,8 +949,8 @@ export const Tasks: React.FC = () => {
         const ruleResult = await api.dbQuery(
           'tasks',
           `INSERT INTO recurring_rules
-           (title, description, frequency, interval, week_days, month_days, start_date, start_time, time_slots, priority, end_condition, missed_policy)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (title, description, frequency, interval, week_days, month_days, start_date, start_time, time_slots, priority, requires_review, end_condition, missed_policy)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             taskDraft.title.trim(),
             taskDraft.description,
@@ -938,6 +962,7 @@ export const Tasks: React.FC = () => {
             effectiveTimes[0],
             effectiveTimes.join(','),
             rulePriority,
+            taskDraft.requiresReview ? 1 : 0,
             'never',
             ruleHolidayPolicy,
           ],
@@ -962,7 +987,7 @@ export const Tasks: React.FC = () => {
         const effectiveWeekDays = serializeRuleWeekDays(ruleFreq, ruleWeekDays, ruleStartDate)
         await api.dbQuery(
           'tasks',
-          'UPDATE recurring_rules SET title = ?, description = ?, frequency = ?, interval = ?, week_days = ?, month_days = ?, start_date = ?, start_time = ?, time_slots = ?, priority = ?, missed_policy = ? WHERE id = ?',
+          'UPDATE recurring_rules SET title = ?, description = ?, frequency = ?, interval = ?, week_days = ?, month_days = ?, start_date = ?, start_time = ?, time_slots = ?, priority = ?, requires_review = ?, missed_policy = ? WHERE id = ?',
           [
             taskDraft.title.trim(),
             taskDraft.description,
@@ -974,6 +999,7 @@ export const Tasks: React.FC = () => {
             ruleTimes[0],
             ruleTimes.join(','),
             rulePriority,
+            taskDraft.requiresReview ? 1 : 0,
             ruleHolidayPolicy,
             activeTask.recur_rule_id,
           ],
@@ -1100,9 +1126,12 @@ export const Tasks: React.FC = () => {
   const handleSaveDetails = async () => {
     if (!selectedTaskId || !api) return
 
-    // If progress is changed to 100, mark as completed
     const isCompleted = editProgress === 100 ? 1 : 0
-    const status = isCompleted ? '已关闭' : '进行中'
+    const status = isCompleted
+      ? activeTask?.requires_review
+        ? TASK_STATUS.review
+        : TASK_STATUS.closed
+      : getAutomaticTaskStatus({ ...activeTask, is_completed: 0, status: TASK_STATUS.inProgress })
 
     const query = `
       UPDATE tasks 
@@ -1425,7 +1454,9 @@ export const Tasks: React.FC = () => {
   }, [rules, skippedOccurrences, tasks])
   const executionTasks = useMemo(
     () => [
-      ...tasks.filter((task) => !task.due_date || task.due_date <= todayKey),
+      ...tasks.filter((task) =>
+        task.start_date ? task.start_date <= todayKey : !task.due_date || task.due_date <= todayKey,
+      ),
       ...todayProjectedTasks.filter((task) => task.is_virtual),
     ],
     [tasks, todayKey, todayProjectedTasks],
@@ -1594,41 +1625,19 @@ export const Tasks: React.FC = () => {
                   (t) =>
                     t.status === lane.dbVal || (lane.dbVal === '待处理' && t.status === '已逾期'),
                 )
-                const isDragTarget = dragOverStatus === lane.dbVal
                 return (
                   <div
                     key={lane.key}
                     data-kanban-status={lane.dbVal}
-                    onDragOver={(event) => {
-                      event.preventDefault()
-                      event.dataTransfer.dropEffect = 'move'
-                      setDragOverStatus(lane.dbVal)
-                    }}
-                    onDragLeave={(event) => {
-                      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                        setDragOverStatus(null)
-                      }
-                    }}
-                    onDrop={async (event) => {
-                      event.preventDefault()
-                      setDragOverStatus(null)
-                      const taskId = Number(event.dataTransfer.getData('text/plain'))
-                      const task = tasks.find((candidate) => candidate.id === taskId)
-                      await handleMoveTaskStatus(task, lane.dbVal)
-                    }}
                     style={{
-                      backgroundColor: isDragTarget
-                        ? 'rgba(59, 130, 246, 0.08)'
-                        : 'var(--bg-sidebar)',
+                      backgroundColor: 'var(--bg-sidebar)',
                       borderRadius: '8px',
                       padding: '12px',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '10px',
                       minHeight: '400px',
-                      border: isDragTarget
-                        ? '1px solid var(--color-accent)'
-                        : '1px solid transparent',
+                      border: '1px solid transparent',
                     }}
                   >
                     <div
@@ -1657,15 +1666,9 @@ export const Tasks: React.FC = () => {
                           key={task.id}
                           className="card"
                           data-task-id={task.id}
-                          draggable
-                          onDragStart={(event) => {
-                            event.dataTransfer.effectAllowed = 'move'
-                            event.dataTransfer.setData('text/plain', String(task.id))
-                          }}
-                          onDragEnd={() => setDragOverStatus(null)}
                           style={{
                             padding: '12px',
-                            cursor: 'grab',
+                            cursor: 'pointer',
                             borderColor:
                               task.status === '已逾期'
                                 ? 'var(--color-danger)'
@@ -1711,6 +1714,27 @@ export const Tasks: React.FC = () => {
                               {getPriorityLabel(task.priority)}
                             </span>
                           </div>
+                          {task.status === TASK_STATUS.review && (
+                            <div
+                              className="task-review-actions"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                className="btn sm"
+                                onClick={() => void reviewTask(task, false)}
+                              >
+                                {t('tasks.review_reject_action')}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn sm primary"
+                                onClick={() => void reviewTask(task, true)}
+                              >
+                                {t('tasks.review_approve_action')}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1798,18 +1822,26 @@ export const Tasks: React.FC = () => {
                           <button
                             type="button"
                             title={
-                              task.is_completed === 1
-                                ? t('tasks.reopen_task_action')
-                                : isOverdue
-                                  ? t('tasks.close_overdue_task_action')
-                                  : t('tasks.complete_task_action')
+                              task.status === TASK_STATUS.review
+                                ? t('tasks.lane_review')
+                                : task.status === TASK_STATUS.closed
+                                  ? t('tasks.lane_closed')
+                                  : task.is_completed === 1
+                                    ? t('tasks.reopen_task_action')
+                                    : isOverdue
+                                      ? t('tasks.close_overdue_task_action')
+                                      : t('tasks.complete_task_action')
                             }
                             aria-label={
-                              task.is_completed === 1
-                                ? t('tasks.reopen_task_action')
-                                : isOverdue
-                                  ? t('tasks.close_overdue_task_action')
-                                  : t('tasks.complete_task_action')
+                              task.status === TASK_STATUS.review
+                                ? t('tasks.lane_review')
+                                : task.status === TASK_STATUS.closed
+                                  ? t('tasks.lane_closed')
+                                  : task.is_completed === 1
+                                    ? t('tasks.reopen_task_action')
+                                    : isOverdue
+                                      ? t('tasks.close_overdue_task_action')
+                                      : t('tasks.complete_task_action')
                             }
                             onClick={(e) => {
                               e.stopPropagation()
@@ -1819,6 +1851,10 @@ export const Tasks: React.FC = () => {
                               }
                               requestTaskCompletionToggle(task, e.currentTarget)
                             }}
+                            disabled={
+                              task.status === TASK_STATUS.review ||
+                              task.status === TASK_STATUS.closed
+                            }
                             className="task-row__check"
                           >
                             {task.is_completed === 1 ? (
@@ -1878,6 +1914,27 @@ export const Tasks: React.FC = () => {
                               >
                                 {t('tasks.restore_closed_action')}
                               </button>
+                            )}
+                            {task.status === TASK_STATUS.review && (
+                              <span
+                                className="task-review-actions"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  className="btn sm"
+                                  onClick={() => void reviewTask(task, false)}
+                                >
+                                  {t('tasks.review_reject_action')}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn sm primary"
+                                  onClick={() => void reviewTask(task, true)}
+                                >
+                                  {t('tasks.review_approve_action')}
+                                </button>
+                              </span>
                             )}
                             <span
                               className={`task-row__date ${isOverdue ? 'is-overdue-date' : ''}`}
@@ -2833,6 +2890,26 @@ export const Tasks: React.FC = () => {
               </label>
               <div className="task-drawer__grid">
                 <div className="task-form-section">
+                  <span>{t('tasks.details_start_prefix')}</span>
+                  <div className="task-due-picker">
+                    <input
+                      className="form-field"
+                      type="datetime-local"
+                      step={1}
+                      value={`${taskDraft.startDate}T${normalizeTaskDueTime(taskDraft.startTime)}`}
+                      onChange={(event) => {
+                        const [startDate, startTime = '00:00:00'] = event.target.value.split('T')
+                        setTaskDraft({
+                          ...taskDraft,
+                          startDate,
+                          startTime: normalizeTaskDueTime(startTime),
+                        })
+                        if (taskDraft.repeat !== 'none') setRuleStartDate(startDate)
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="task-form-section">
                   <span>{t('tasks.details_due_prefix')}</span>
                   <div className="task-due-picker">
                     <input
@@ -2862,6 +2939,19 @@ export const Tasks: React.FC = () => {
                   </select>
                 </label>
               </div>
+              <label className="task-drawer__recurring-setting">
+                <span className="task-drawer__recurring-copy">
+                  <strong>{t('tasks.requires_review_label')}</strong>
+                  <small>{t('tasks.requires_review_hint')}</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={taskDraft.requiresReview}
+                  onChange={(event) =>
+                    setTaskDraft({ ...taskDraft, requiresReview: event.target.checked })
+                  }
+                />
+              </label>
               <label className="task-drawer__recurring-setting">
                 <span className="task-drawer__recurring-copy">
                   <strong>{t('tasks.recurring_task_checkbox_label')}</strong>
