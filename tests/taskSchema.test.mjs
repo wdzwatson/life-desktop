@@ -98,6 +98,11 @@ test('task schema migrates legacy recurring task columns before creating recurre
           .prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?")
           .get('tasks_recur_instance_parent_idx'),
       )
+      assert.ok(
+        migratedDb
+          .prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?")
+          .get('tasks_parent_id_idx'),
+      )
 
       migratedDb
         .prepare(
