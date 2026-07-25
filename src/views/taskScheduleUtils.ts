@@ -6,6 +6,10 @@ export type TaskTemplateRule = {
   interval?: number | null
   week_days?: string | null
   month_days?: string | null
+  excluded_week_days?: string | null
+  excluded_month_days?: string | null
+  schedule_mode?: 'rules' | 'interval' | null
+  end_date?: string | null
   cron?: string | null
   start_date?: string | null
   start_time?: string | null
@@ -83,11 +87,34 @@ const monthDifference = (startDateKey: string, currentDate: Date) => {
   return (currentDate.getFullYear() - startYear) * 12 + currentDate.getMonth() + 1 - startMonth
 }
 
-const numberList = (value: string | null | undefined) =>
+export const parseRuleNumberList = (
+  value: string | null | undefined,
+  min = Number.NEGATIVE_INFINITY,
+  max = Number.POSITIVE_INFINITY,
+) =>
   (value ?? '')
     .split(',')
-    .map((item) => Number(item.trim()))
-    .filter((item) => Number.isInteger(item))
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map(Number)
+    .filter((item) => Number.isInteger(item) && item >= min && item <= max)
+
+const numberList = (value: string | null | undefined) => parseRuleNumberList(value)
+
+const includesDateRule = (rule: TaskTemplateRule, now: Date) => {
+  const selectedWeekDays = numberList(rule.week_days).filter((day) => day >= 0 && day <= 6)
+  const selectedMonthDays = numberList(rule.month_days).filter((day) => day >= 1 && day <= 31)
+  const excludedWeekDays = numberList(rule.excluded_week_days).filter((day) => day >= 0 && day <= 6)
+  const excludedMonthDays = numberList(rule.excluded_month_days).filter(
+    (day) => day >= 1 && day <= 31,
+  )
+
+  if (excludedWeekDays.includes(now.getDay()) || excludedMonthDays.includes(now.getDate()))
+    return false
+  if (selectedWeekDays.length === 0 && selectedMonthDays.length === 0) return true
+
+  return selectedWeekDays.includes(now.getDay()) || selectedMonthDays.includes(now.getDate())
+}
 
 const getWorkingDaysSinceStart = (startDateKey: string, currentDateKey: string) => {
   const [startYear, startMonth, startDay] = startDateKey.split('-').map(Number)
@@ -128,12 +155,10 @@ export const getDueTemplateOccurrences = (
   const dateKey = toLocalDateKey(now)
   const startDateKey = getTemplateStartDateKey(rule, now)
   if (localDayNumber(dateKey) < localDayNumber(startDateKey)) return []
+  const endDateKey = parseDateKey(rule.end_date)
+  if (endDateKey && localDayNumber(dateKey) > localDayNumber(endDateKey)) return []
 
   const times = getTemplateTimes(rule)
-  const firstTime = times[0]
-  const [hour, minute] = firstTime.split(':').map(Number)
-  const scheduledAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute)
-  if (!options.ignoreStartTime && now.getTime() < scheduledAt.getTime()) return []
 
   const frequency = rule.frequency || 'daily'
   const interval = Math.max(1, Number(rule.interval) || 1)
@@ -144,6 +169,10 @@ export const getDueTemplateOccurrences = (
 
   if (frequency === 'custom') {
     matches = daysSinceStart === 0 && !rule.last_trigger_time
+  } else if (rule.schedule_mode === 'interval') {
+    matches = daysSinceStart % interval === 0
+  } else if (rule.schedule_mode === 'rules') {
+    matches = includesDateRule(rule, now)
   } else if (frequency === 'daily') {
     matches = daysSinceStart % interval === 0
   } else if (frequency === 'weekday') {

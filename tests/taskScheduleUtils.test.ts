@@ -4,12 +4,18 @@ import {
   getDueTemplateOccurrence,
   getDueTemplateOccurrences,
   getNextTemplateOccurrences,
+  parseRuleNumberList,
   getTemplateStartTime,
   serializeRuleWeekDays,
   toLocalDateKey,
 } from '../src/views/taskScheduleUtils'
 
-test('task template occurrence waits until local start time', () => {
+test('rule number lists ignore blank values and enforce valid ranges', () => {
+  assert.deepEqual(parseRuleNumberList('', 0, 6), [])
+  assert.deepEqual(parseRuleNumberList('0, 1, 7, invalid', 0, 6), [0, 1])
+})
+
+test('task template becomes effective at the start of its start date', () => {
   const rule = {
     id: 1,
     title: 'Morning review',
@@ -19,7 +25,11 @@ test('task template occurrence waits until local start time', () => {
     start_time: '09:00',
   }
 
-  assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 21, 8, 59)), null)
+  assert.deepEqual(getDueTemplateOccurrence(rule, new Date(2026, 6, 21, 0, 0)), {
+    dateKey: '2026-07-21',
+    time: '09:00',
+    instanceKey: '2026-07-21T09:00',
+  })
   assert.deepEqual(getDueTemplateOccurrence(rule, new Date(2026, 6, 21, 9, 0)), {
     dateKey: '2026-07-21',
     time: '09:00',
@@ -185,6 +195,58 @@ test('multi-time templates create one occurrence for each configured time', () =
     occurrences.map((item) => item.instanceKey),
     ['2026-07-22T09:00', '2026-07-22T13:00', '2026-07-22T18:00'],
   )
+})
+
+test('date rules combine weekdays and month dates, then apply exclusions', () => {
+  const rule = {
+    id: 1,
+    title: 'Planning',
+    frequency: 'daily',
+    schedule_mode: 'rules' as const,
+    week_days: '1,3',
+    month_days: '25',
+    excluded_week_days: '3',
+    excluded_month_days: '25',
+    start_date: '2026-07-20',
+    start_time: '09:00',
+  }
+
+  assert.ok(getDueTemplateOccurrence(rule, new Date(2026, 6, 20, 0, 0)))
+  assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 22, 0, 0)), null)
+  assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 25, 0, 0)), null)
+})
+
+test('interval rules ignore date selections and recur from the effective date', () => {
+  const rule = {
+    id: 1,
+    title: 'Alternate days',
+    frequency: 'daily',
+    schedule_mode: 'interval' as const,
+    interval: 2,
+    week_days: '1,2,3,4,5',
+    month_days: '21',
+    start_date: '2026-07-21',
+    start_time: '09:00',
+  }
+
+  assert.ok(getDueTemplateOccurrence(rule, new Date(2026, 6, 21, 0, 0)))
+  assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 22, 0, 0)), null)
+  assert.ok(getDueTemplateOccurrence(rule, new Date(2026, 6, 23, 0, 0)))
+})
+
+test('end date includes the entire configured date and excludes its next midnight', () => {
+  const rule = {
+    id: 1,
+    title: 'Limited schedule',
+    frequency: 'daily',
+    schedule_mode: 'rules' as const,
+    start_date: '2026-07-21',
+    end_date: '2026-07-23',
+    start_time: '09:00',
+  }
+
+  assert.ok(getDueTemplateOccurrence(rule, new Date(2026, 6, 23, 23, 59)))
+  assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 24, 0, 0)), null)
 })
 
 test('template date and time helpers normalize invalid values', () => {

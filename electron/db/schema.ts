@@ -86,8 +86,12 @@ export function initializeUserDatabase(userDbDir: string) {
       interval INTEGER DEFAULT 1,
       week_days TEXT,     -- e.g., '1,3,5' for Mon, Wed, Fri
       month_days TEXT,    -- e.g., '1,15,-1' for 1st, 15th, last day
+      excluded_week_days TEXT,
+      excluded_month_days TEXT,
+      schedule_mode TEXT CHECK(schedule_mode IN ('rules', 'interval')),
       cron TEXT,          -- standard cron string
       start_date TEXT,
+      end_date TEXT,
       start_time TEXT DEFAULT '09:00',
       time_slots TEXT,
       requires_review INTEGER NOT NULL DEFAULT 0,
@@ -194,6 +198,18 @@ export function initializeUserDatabase(userDbDir: string) {
     if (!ruleColumnNames.has('time_slots')) {
       tasksDb.exec('ALTER TABLE recurring_rules ADD COLUMN time_slots TEXT')
     }
+    if (!ruleColumnNames.has('excluded_week_days')) {
+      tasksDb.exec('ALTER TABLE recurring_rules ADD COLUMN excluded_week_days TEXT')
+    }
+    if (!ruleColumnNames.has('excluded_month_days')) {
+      tasksDb.exec('ALTER TABLE recurring_rules ADD COLUMN excluded_month_days TEXT')
+    }
+    if (!ruleColumnNames.has('schedule_mode')) {
+      tasksDb.exec("ALTER TABLE recurring_rules ADD COLUMN schedule_mode TEXT CHECK(schedule_mode IN ('rules', 'interval'))")
+    }
+    if (!ruleColumnNames.has('end_date')) {
+      tasksDb.exec('ALTER TABLE recurring_rules ADD COLUMN end_date TEXT')
+    }
     if (!ruleColumnNames.has('template_id')) {
       tasksDb.exec('ALTER TABLE recurring_rules ADD COLUMN template_id INTEGER')
     }
@@ -211,6 +227,10 @@ export function initializeUserDatabase(userDbDir: string) {
       SET start_date = COALESCE(start_date, substr(created_at, 1, 10)),
           start_time = COALESCE(start_time, '09:00'),
           priority = COALESCE(priority, 'mid');
+
+      UPDATE recurring_rules
+      SET end_date = substr(end_condition, 6)
+      WHERE end_date IS NULL AND end_condition GLOB 'date:????-??-??';
 
       UPDATE tasks
       SET due_time = substr(instance_key, 12, 5)

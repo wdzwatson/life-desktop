@@ -72,7 +72,16 @@ test('task schema migrates legacy recurring task columns before creating recurre
         .prepare('PRAGMA table_info(recurring_rules)')
         .all()
         .map((column) => column.name)
-      for (const column of ['start_date', 'start_time', 'priority', 'requires_review']) {
+      for (const column of [
+        'start_date',
+        'start_time',
+        'end_date',
+        'schedule_mode',
+        'excluded_week_days',
+        'excluded_month_days',
+        'priority',
+        'requires_review',
+      ]) {
         assert.ok(ruleColumns.includes(column), `missing ${column}`)
       }
 
@@ -138,6 +147,10 @@ test('task schema creates template scheduling and step columns on a fresh databa
       assert.ok(taskColumns.includes('start_time'))
       assert.ok(ruleColumns.includes('start_date'))
       assert.ok(ruleColumns.includes('start_time'))
+      assert.ok(ruleColumns.includes('end_date'))
+      assert.ok(ruleColumns.includes('schedule_mode'))
+      assert.ok(ruleColumns.includes('excluded_week_days'))
+      assert.ok(ruleColumns.includes('excluded_month_days'))
       assert.ok(ruleColumns.includes('priority'))
       assert.ok(ruleColumns.includes('requires_review'))
       assert.ok(stepColumns.includes('rule_id'))
