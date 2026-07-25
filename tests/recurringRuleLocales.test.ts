@@ -26,10 +26,30 @@ for (const locale of configuredLocales) {
       'cron_hint',
       'cron_placeholder',
       'future_triggers_empty',
-      'holiday_strategy_skip',
-      'holiday_strategy_delay',
-      'holiday_strategy_advance',
+      'interval_hint',
+      'interval_unit_day',
+      'interval_unit_weekday',
+      'interval_unit_week',
+      'interval_unit_month',
       'rule_start_date_label',
+      'rule_section_schedule',
+      'rule_section_frequency',
+      'rule_section_range',
+      'rule_summary_every_day',
+      'rule_summary_interval',
+      'rule_summary_times',
+      'rule_summary_time_instances',
+      'rule_summary_excluded_weekdays',
+      'rule_summary_excluded_month_days',
+      'rule_summary_with_exclusions',
+      'rule_summary_range',
+      'rule_status_active',
+      'rule_status_upcoming',
+      'rule_status_ended',
+      'daily_generation_times_label',
+      'instance_start_times_hint',
+      'rule_exclusions_label',
+      'rule_instance_unchanged_note',
       'template_priority_label',
       'btn_run_now',
       'log_header_name',
@@ -42,17 +62,6 @@ for (const locale of configuredLocales) {
       assert.equal(typeof resource.tasks?.[key], 'string', `missing tasks.${key}`)
       assert.notEqual(resource.tasks[key].trim(), '', `blank tasks.${key}`)
     }
-
-    assert.notEqual(
-      resource.tasks.holiday_strategy_skip,
-      resource.tasks.holiday_strategy_delay,
-      'holiday strategy options should be distinguishable',
-    )
-    assert.notEqual(
-      resource.tasks.holiday_strategy_delay,
-      resource.tasks.holiday_strategy_advance,
-      'holiday strategy options should be distinguishable',
-    )
 
     assert.equal(
       new Set([

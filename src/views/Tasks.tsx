@@ -1,8 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import DatePicker, { registerLocale } from 'react-datepicker'
+import { enUS, zhCN } from 'date-fns/locale'
+import 'react-datepicker/dist/react-datepicker.css'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../components/AccessibleDialog'
 import { useConfirmation } from '../components/ConfirmationProvider'
+import { ViewportPortal } from '../components/ViewportPortal'
 import {
   AlertTriangle,
   CalendarDays,
@@ -14,6 +18,7 @@ import {
   Circle,
   Clock3,
   Flag,
+  Hourglass,
   X,
   Kanban,
   ListChecks,
@@ -21,6 +26,7 @@ import {
   Trash2,
   Plus,
   RefreshCw,
+  Undo2,
 } from 'lucide-react'
 import {
   getCalendarMonthDays,
@@ -31,6 +37,7 @@ import {
 } from './taskCalendarUtils'
 import {
   getNextTemplateOccurrences,
+  parseRuleNumberList,
   getTemplateStartDateKey,
   getTemplateStartTime,
   getTemplateTimes,
@@ -49,6 +56,7 @@ const getCurrentTimeValue = () => {
 const getDefaultDueTime = () => '23:59:59'
 
 const getDefaultScheduleTime = () => '09:00'
+const DEFAULT_MISSED_POLICY = 'accumulate'
 
 const normalizeScheduleTime = (value: string | null | undefined) => {
   if (!value) return getDefaultScheduleTime()
@@ -61,11 +69,173 @@ const normalizeTaskDueTime = (value: string | null | undefined) => {
   return /^\d{2}:\d{2}$/.test(value) ? `${value}:00` : value
 }
 
-type TaskDeletionScope = 'single' | 'end-repeat' | 'delete-repeat'
+const toLocalTimeValue = (date: Date) =>
+  `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(
+    date.getSeconds(),
+  ).padStart(2, '0')}`
+
+const toLocalDateTime = (dateKey: string, time: string | null | undefined) => {
+  const [year, month, day] = dateKey.split('-').map(Number)
+  const [hour = 0, minute = 0, second = 0] = normalizeTaskDueTime(time).split(':').map(Number)
+  return new Date(year, month - 1, day, hour, minute, second)
+}
+
+const toLocalDate = (dateKey: string) => toLocalDateTime(dateKey, '00:00:00')
+
+type DatePickerInputProps = {
+  value?: string
+  onClick?: React.MouseEventHandler<HTMLButtonElement>
+  placeholder?: string
+  className?: string
+  'aria-label'?: string
+  'aria-invalid'?: React.AriaAttributes['aria-invalid']
+  'aria-describedby'?: string
+}
+
+const DatePickerInput = React.forwardRef<HTMLButtonElement, DatePickerInputProps>(
+  (
+    {
+      value,
+      onClick,
+      placeholder,
+      className,
+      'aria-label': ariaLabel,
+      'aria-invalid': ariaInvalid,
+      'aria-describedby': ariaDescribedBy,
+    },
+    ref,
+  ) => (
+    <button
+      ref={ref}
+      type="button"
+      className={`form-field task-date-picker__trigger ${className || ''}`}
+      onClick={onClick}
+      aria-label={ariaLabel}
+      aria-invalid={ariaInvalid}
+      aria-describedby={ariaDescribedBy}
+    >
+      {value || placeholder}
+    </button>
+  ),
+)
+
+DatePickerInput.displayName = 'DatePickerInput'
+
+registerLocale('zh-CN', zhCN)
+registerLocale('en-US', enUS)
+
+type TaskDeletionScope = 'single' | 'end-repeat' | 'delete-repeat' | 'delete-all-repeat'
 
 export const Tasks: React.FC = () => {
   const { t, i18n } = useTranslation()
   const { confirm } = useConfirmation()
+  const datePickerLocale = i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US'
+
+  const getRuleScheduleSummary = (rule: any) => {
+    if (rule.frequency === 'custom') return t('tasks.freq_once')
+    if (rule.schedule_mode === 'interval') {
+      return t('tasks.rule_summary_interval', {
+        count: Math.max(1, Number(rule.interval) || 1),
+      })
+    }
+
+    const weekdayNames = t('tasks.weekdays_sunday_first').split(',')
+    const selectedWeekDays = parseRuleNumberList(rule.week_days, 0, 6)
+    const selectedMonthDays = parseRuleNumberList(rule.month_days, 1, 31)
+    const excludedWeekDays = parseRuleNumberList(rule.excluded_week_days, 0, 6)
+    const excludedMonthDays = parseRuleNumberList(rule.excluded_month_days, 1, 31)
+    const conditions: string[] = []
+
+    if (selectedWeekDays.length > 0) {
+      conditions.push(
+        t('tasks.rule_summary_weekdays', {
+          days: selectedWeekDays
+            .sort((left, right) => left - right)
+            .map((day) => weekdayNames[day])
+            .join(t('tasks.rule_value_separator')),
+        }),
+      )
+    }
+    if (selectedMonthDays.length > 0) {
+      conditions.push(
+        t('tasks.rule_summary_month_days', {
+          days: selectedMonthDays
+            .sort((left, right) => left - right)
+            .join(t('tasks.rule_value_separator')),
+        }),
+      )
+    }
+
+    if (rule.schedule_mode !== 'rules' && conditions.length === 0) {
+      if (rule.frequency === 'weekday') return t('tasks.repeat_summary_weekday')
+      if (rule.frequency === 'weekly') return t('tasks.repeat_summary_weekly')
+      if (rule.frequency === 'monthly') return t('tasks.repeat_summary_monthly')
+      if (rule.frequency === 'cron') return rule.cron || t('tasks.freq_cron')
+    }
+
+    const baseSummary =
+      conditions.length > 0
+        ? conditions.join(t('tasks.rule_condition_separator'))
+        : t('tasks.rule_summary_every_day')
+    const exclusions: string[] = []
+    if (excludedWeekDays.length > 0) {
+      exclusions.push(
+        t('tasks.rule_summary_excluded_weekdays', {
+          days: excludedWeekDays
+            .sort((left, right) => left - right)
+            .map((day) => weekdayNames[day])
+            .join(t('tasks.rule_value_separator')),
+        }),
+      )
+    }
+    if (excludedMonthDays.length > 0) {
+      exclusions.push(
+        t('tasks.rule_summary_excluded_month_days', {
+          days: excludedMonthDays
+            .sort((left, right) => left - right)
+            .join(t('tasks.rule_value_separator')),
+        }),
+      )
+    }
+
+    return exclusions.length > 0
+      ? t('tasks.rule_summary_with_exclusions', {
+          schedule: baseSummary,
+          exclusions: exclusions.join(t('tasks.rule_condition_separator')),
+        })
+      : baseSummary
+  }
+
+  const getRuleTimesSummary = (rule: any) => {
+    const times = getTemplateTimes(rule)
+    return t('tasks.rule_summary_time_instances', {
+      count: times.length,
+      times: times.join(' / '),
+    })
+  }
+
+  const getRuleRangeSummary = (rule: any) =>
+    t('tasks.rule_summary_range', {
+      start: getTemplateStartDateKey(rule),
+      end: rule.end_date || t('tasks.rule_summary_permanent'),
+    })
+
+  const getRuleStatus = (rule: any) => {
+    const today = toLocalDateKey(new Date())
+    const start = getTemplateStartDateKey(rule)
+    if (today < start) return { key: 'upcoming', label: t('tasks.rule_status_upcoming') }
+    if (rule.end_date && today > rule.end_date) {
+      return { key: 'ended', label: t('tasks.rule_status_ended') }
+    }
+    return { key: 'active', label: t('tasks.rule_status_active') }
+  }
+
+  const getOccurrenceScheduleTime = (task: any) => {
+    const instanceTime = /T(\d{2}:\d{2})/.exec(String(task.instance_key || ''))?.[1]
+    return normalizeScheduleTime(
+      task.start_time || task.occurrence_time || instanceTime || task.due_time,
+    )
+  }
 
   const getPriorityLabel = (priority: string) => {
     switch (priority) {
@@ -77,6 +247,19 @@ export const Tasks: React.FC = () => {
         return t('tasks.priority_low')
       default:
         return priority
+    }
+  }
+
+  const getPriorityBadgeLabel = (priority: string) => {
+    switch (priority) {
+      case 'high':
+        return t('tasks.priority_badge_high')
+      case 'mid':
+        return t('tasks.priority_badge_mid')
+      case 'low':
+        return t('tasks.priority_badge_low')
+      default:
+        return t('tasks.priority_badge_mid')
     }
   }
 
@@ -122,10 +305,27 @@ export const Tasks: React.FC = () => {
   const [deletionScope, setDeletionScope] = useState<TaskDeletionScope>('single')
   const [isDeletingTask, setIsDeletingTask] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [showClosedTasks, setShowClosedTasks] = useState(false)
+  const [dueDateFrom, setDueDateFrom] = useState(() => {
+    const date = new Date()
+    date.setDate(date.getDate() - 7)
+    return toLocalDateKey(date)
+  })
+  const [dueDateTo, setDueDateTo] = useState('')
   const deletionTriggerRef = useRef<HTMLButtonElement | null>(null)
   const deletionCancelButtonRef = useRef<HTMLButtonElement | null>(null)
+  const expandedSubtaskPanelRef = useRef<HTMLElement | null>(null)
 
   const [drawerMode, setDrawerMode] = useState<'create' | 'edit' | null>(null)
+  const [drawerErrors, setDrawerErrors] = useState<{
+    title?: string
+    timeWindow?: string
+    ruleStartDate?: string
+  }>({})
+  const drawerTitleInputRef = useRef<HTMLInputElement | null>(null)
+  const drawerStartDatePickerRef = useRef<DatePicker | null>(null)
+  const drawerDueDatePickerRef = useRef<DatePicker | null>(null)
+  const drawerRuleStartDatePickerRef = useRef<DatePicker | null>(null)
   const [taskDraft, setTaskDraft] = useState({
     title: '',
     description: '',
@@ -134,9 +334,30 @@ export const Tasks: React.FC = () => {
     dueDate: toLocalDateKey(new Date()),
     time: getDefaultDueTime(),
     priority: 'mid',
-    requiresReview: false,
+    requiresReview: true,
     repeat: 'none',
   })
+
+  useEffect(() => {
+    if (!drawerMode) return
+
+    const closeDrawerDatePickersOnOutsidePointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Element)) return
+      if (
+        event.target.closest('.react-datepicker-popper') ||
+        event.target.closest('.task-date-picker__trigger')
+      ) {
+        return
+      }
+      drawerStartDatePickerRef.current?.setOpen(false)
+      drawerDueDatePickerRef.current?.setOpen(false)
+      drawerRuleStartDatePickerRef.current?.setOpen(false)
+    }
+
+    document.addEventListener('pointerdown', closeDrawerDatePickersOnOutsidePointerDown, true)
+    return () =>
+      document.removeEventListener('pointerdown', closeDrawerDatePickersOnOutsidePointerDown, true)
+  }, [drawerMode])
 
   // Detail Panel Edit State
   const [editDesc, setEditDesc] = useState('')
@@ -149,15 +370,18 @@ export const Tasks: React.FC = () => {
   const [ruleName, setRuleName] = useState('')
   const [ruleDesc, setRuleDesc] = useState('')
   const [ruleFreq, setRuleFreq] = useState('daily')
+  const [ruleScheduleMode, setRuleScheduleMode] = useState<'rules' | 'interval'>('rules')
   const [ruleInterval, setRuleInterval] = useState(1)
   const [ruleStartDate, setRuleStartDate] = useState(() => toLocalDateKey(new Date()))
+  const [ruleEndDate, setRuleEndDate] = useState('')
   const [ruleTime, setRuleTime] = useState('09:00')
   const [ruleTimes, setRuleTimes] = useState<string[]>(['09:00'])
   const [rulePriority, setRulePriority] = useState('mid')
-  const [ruleWeekDays, setRuleWeekDays] = useState<number[]>([]) // 1=Mon...7=Sun
+  const [ruleWeekDays, setRuleWeekDays] = useState<number[]>([]) // 0=Sun...6=Sat
   const [ruleMonthDays, setRuleMonthDays] = useState<number[]>([])
+  const [ruleExcludedWeekDays, setRuleExcludedWeekDays] = useState<number[]>([])
+  const [ruleExcludedMonthDays, setRuleExcludedMonthDays] = useState<number[]>([])
   const [ruleCron, setRuleCron] = useState('')
-  const [ruleHolidayPolicy, setRuleHolidayPolicy] = useState('skip')
 
   // Calendar Mode State ('day' | 'week' | 'month')
   const [calendarMode, setCalendarMode] = useState<'day' | 'week' | 'month'>('week')
@@ -167,6 +391,9 @@ export const Tasks: React.FC = () => {
   const [templates, setTemplates] = useState<any[]>([])
   const [templateEditor, setTemplateEditor] = useState<any | null>(null)
   const [isRulePanelExpanded, setIsRulePanelExpanded] = useState(false)
+  const [isMonthDayPickerExpanded, setIsMonthDayPickerExpanded] = useState(false)
+  const [isRuleExclusionsExpanded, setIsRuleExclusionsExpanded] = useState(false)
+  const [isExcludedMonthDayPickerExpanded, setIsExcludedMonthDayPickerExpanded] = useState(false)
   const [editRuleScope, setEditRuleScope] = useState<'single' | 'future' | 'all'>('future')
 
   useEffect(() => {
@@ -257,12 +484,14 @@ export const Tasks: React.FC = () => {
     () =>
       rules.map((rule) => {
         const nextOccurrence = getNextTemplateOccurrences(rule, new Date(), 1)[0]
+        const ruleStatus = getRuleStatus(rule)
         return {
           id: rule.id,
           name: rule.title,
           action: t('tasks.log_rule_action'),
-          trigger: `${rule.cron || rule.frequency} · ${getTemplateStartTime(rule)}`,
-          status: t('tasks.log_rule_status_active'),
+          trigger: `${getRuleScheduleSummary(rule)} · ${getRuleTimesSummary(rule)} · ${getRuleRangeSummary(rule)}`,
+          status: ruleStatus.label,
+          statusKey: ruleStatus.key,
           nextRun: nextOccurrence
             ? `${nextOccurrence.dateKey} ${nextOccurrence.time}`
             : t('tasks.log_rule_next_calculated'),
@@ -280,6 +509,15 @@ export const Tasks: React.FC = () => {
     ],
     [],
   )
+  const taskMatchesFilters = useCallback(
+    (task: any) => {
+      if (!showClosedTasks && task.status === TASK_STATUS.closed) return false
+      if (!task.due_date) return false
+      if (dueDateFrom && task.due_date < dueDateFrom) return false
+      return !dueDateTo || task.due_date <= dueDateTo
+    },
+    [dueDateFrom, dueDateTo, showClosedTasks],
+  )
   const calendarWeekDays = useMemo(() => getCalendarWeekDays(calendarDate), [calendarDate])
   const calendarMonthDays = useMemo(() => getCalendarMonthDays(calendarDate), [calendarDate])
   const calendarVisibleDays =
@@ -293,8 +531,10 @@ export const Tasks: React.FC = () => {
     start.setHours(0, 0, 0, 0)
     const end = new Date(calendarVisibleDays[calendarVisibleDays.length - 1])
     end.setHours(23, 59, 59, 999)
-    return projectCalendarOccurrences(tasks, rules, start, end, skippedOccurrences)
-  }, [calendarVisibleDays, rules, skippedOccurrences, tasks])
+    return projectCalendarOccurrences(tasks, rules, start, end, skippedOccurrences).filter(
+      taskMatchesFilters,
+    )
+  }, [calendarVisibleDays, rules, skippedOccurrences, taskMatchesFilters, tasks])
   const calendarTasksByDate = useMemo(() => groupTasksByDueDate(calendarTasks), [calendarTasks])
   const calendarVisibleTasks = calendarVisibleDays.flatMap(
     (day) => calendarTasksByDate.get(toCalendarDateKey(day)) ?? [],
@@ -398,6 +638,13 @@ export const Tasks: React.FC = () => {
     return task.due_time ? `${task.due_date} ${task.due_time}` : task.due_date
   }
 
+  const formatCompactDue = (task: any) => {
+    if (!task.due_date) return t('tasks.due_date_not_set')
+    const date = String(task.due_date).slice(-5)
+    const time = String(task.due_time || '').slice(0, 5)
+    return time ? `${date} ${time}` : date
+  }
+
   const renderCalendarTask = (task: any) => (
     <button
       key={task.id}
@@ -414,14 +661,22 @@ export const Tasks: React.FC = () => {
 
   const openCreateDrawer = () => {
     setSelectedTaskId(null)
+    setDrawerErrors({})
     setIsRulePanelExpanded(false)
+    setIsMonthDayPickerExpanded(false)
+    setIsRuleExclusionsExpanded(false)
+    setIsExcludedMonthDayPickerExpanded(false)
     setEditRuleScope('future')
     setRuleFreq('daily')
+    setRuleScheduleMode('rules')
     setRuleInterval(1)
     setRuleStartDate(toLocalDateKey(new Date()))
+    setRuleEndDate('')
     setRuleTimes(['09:00'])
     setRuleWeekDays([])
     setRuleMonthDays([])
+    setRuleExcludedWeekDays([])
+    setRuleExcludedMonthDays([])
     setTaskDraft({
       title: '',
       description: '',
@@ -430,7 +685,7 @@ export const Tasks: React.FC = () => {
       dueDate: toLocalDateKey(new Date()),
       time: getDefaultDueTime(),
       priority: 'mid',
-      requiresReview: false,
+      requiresReview: true,
       repeat: 'none',
     })
     setDrawerMode('create')
@@ -444,23 +699,29 @@ export const Tasks: React.FC = () => {
 
   const selectTaskForDetails = (task: any) => {
     setSelectedTaskId(task.id)
+    setDrawerErrors({})
     setEditDesc(task.description || '')
     setEditProgress(task.progress || 0)
     const rule = task.recur_rule_id
       ? rules.find((candidate) => candidate.id === task.recur_rule_id)
       : null
     setIsRulePanelExpanded(Boolean(rule && rule.frequency !== 'custom'))
+    setIsMonthDayPickerExpanded(false)
+    setIsRuleExclusionsExpanded(Boolean(rule?.excluded_week_days || rule?.excluded_month_days))
+    setIsExcludedMonthDayPickerExpanded(false)
     setEditRuleScope('future')
     if (rule) {
       setRuleFreq(rule.frequency || 'daily')
+      setRuleScheduleMode(rule.schedule_mode === 'interval' ? 'interval' : 'rules')
       setRuleInterval(Math.max(1, Number(rule.interval || 1)))
       setRuleStartDate(getTemplateStartDateKey(rule))
+      setRuleEndDate(rule.end_date || '')
       setRuleTimes(getTemplateTimes(rule))
       setRuleWeekDays(
         String(rule.week_days || '')
           .split(',')
           .map(Number)
-          .filter(Boolean),
+          .filter((value) => value >= 0 && value <= 6),
       )
       setRuleMonthDays(
         String(rule.month_days || '')
@@ -468,8 +729,19 @@ export const Tasks: React.FC = () => {
           .map(Number)
           .filter(Boolean),
       )
+      setRuleExcludedWeekDays(
+        String(rule.excluded_week_days || '')
+          .split(',')
+          .map(Number)
+          .filter((value) => value >= 0 && value <= 6),
+      )
+      setRuleExcludedMonthDays(
+        String(rule.excluded_month_days || '')
+          .split(',')
+          .map(Number)
+          .filter((value) => value >= 1 && value <= 31),
+      )
       setRulePriority(rule.priority || task.priority || 'mid')
-      setRuleHolidayPolicy(rule.missed_policy || 'skip')
     }
     setTaskDraft({
       title: task.title || '',
@@ -504,21 +776,45 @@ export const Tasks: React.FC = () => {
     }
   }
 
+  const getIntervalHint = (frequency: string, interval: number) => {
+    const unitKey =
+      frequency === 'weekday'
+        ? 'interval_unit_weekday'
+        : frequency === 'weekly'
+          ? 'interval_unit_week'
+          : frequency === 'monthly'
+            ? 'interval_unit_month'
+            : 'interval_unit_day'
+    return t('tasks.interval_hint', { count: Math.max(1, interval), unit: t(`tasks.${unitKey}`) })
+  }
+
+  const getCurrentRuleScheduleSummary = () => {
+    return getRuleScheduleSummary({
+      frequency: ruleFreq,
+      schedule_mode: ruleScheduleMode,
+      interval: ruleInterval,
+      week_days: ruleWeekDays.join(','),
+      month_days: ruleMonthDays.join(','),
+      excluded_week_days: ruleExcludedWeekDays.join(','),
+      excluded_month_days: ruleExcludedMonthDays.join(','),
+    })
+  }
+
+  const getCurrentRuleRangeSummary = () =>
+    t('tasks.rule_summary_range', {
+      start: ruleStartDate,
+      end: ruleEndDate || t('tasks.rule_summary_permanent'),
+    })
+
   const getRepeatSummary = (task: any) => {
     if (!task.recur_rule_id) return null
 
-    const frequency = rules.find((rule) => rule.id === task.recur_rule_id)?.frequency
-    switch (frequency) {
-      case 'daily':
-        return t('tasks.repeat_summary_daily')
-      case 'weekday':
-        return t('tasks.repeat_summary_weekday')
-      case 'weekly':
-        return t('tasks.repeat_summary_weekly')
-      case 'monthly':
-        return t('tasks.repeat_summary_monthly')
-      default:
-        return t('tasks.repeat_summary_source')
+    const rule = rules.find((candidate) => candidate.id === task.recur_rule_id)
+    if (!rule || rule.frequency === 'custom') return null
+    return {
+      schedule: getRuleScheduleSummary(rule),
+      times: getRuleTimesSummary(rule),
+      range: getRuleRangeSummary(rule),
     }
   }
 
@@ -568,6 +864,16 @@ export const Tasks: React.FC = () => {
         if (rulesRes.data.length > 0 && selectedRuleId === null) {
           selectRule(rulesRes.data[0])
         }
+      }
+
+      const skippedRes = await api.dbQuery(
+        'tasks',
+        'SELECT recur_rule_id, instance_key FROM recurring_rule_occurrence_exceptions',
+      )
+      if (skippedRes?.success) {
+        setSkippedOccurrences(
+          new Set(skippedRes.data.map((item: any) => `${item.recur_rule_id}:${item.instance_key}`)),
+        )
       }
     }
   }
@@ -622,16 +928,18 @@ export const Tasks: React.FC = () => {
     setRuleName(rule.title)
     setRuleDesc(rule.description || '')
     setRuleFreq(rule.frequency)
+    setRuleScheduleMode(rule.schedule_mode === 'interval' ? 'interval' : 'rules')
     setRuleInterval(rule.interval || 1)
     setRuleStartDate(getTemplateStartDateKey(rule))
+    setRuleEndDate(rule.end_date || '')
     setRuleTime(getTemplateStartTime(rule))
     setRuleTimes(getTemplateTimes(rule))
     setRulePriority(rule.priority || 'mid')
     setRuleWeekDays(
       (rule.week_days || '')
         .split(',')
-        .filter(Boolean)
-        .map((x: string) => parseInt(x)),
+        .map((x: string) => parseInt(x))
+        .filter((value: number) => value >= 0 && value <= 6),
     )
     setRuleMonthDays(
       (rule.month_days || '')
@@ -639,8 +947,19 @@ export const Tasks: React.FC = () => {
         .filter(Boolean)
         .map((x: string) => parseInt(x)),
     )
+    setRuleExcludedWeekDays(
+      (rule.excluded_week_days || '')
+        .split(',')
+        .filter(Boolean)
+        .map((x: string) => parseInt(x)),
+    )
+    setRuleExcludedMonthDays(
+      (rule.excluded_month_days || '')
+        .split(',')
+        .filter(Boolean)
+        .map((x: string) => parseInt(x)),
+    )
     setRuleCron(rule.cron || '')
-    setRuleHolidayPolicy(rule.missed_policy || 'skip')
   }
 
   // Task checkmark click toggle
@@ -683,19 +1002,6 @@ export const Tasks: React.FC = () => {
     loadData()
   }
 
-  const restoreClosedTask = async (task: any) => {
-    if (!api || !task || task.status !== '已关闭') return
-    const result = await api.dbQuery(
-      'tasks',
-      'UPDATE tasks SET status = ?, is_completed = 0, progress = 0, closed_from_status = NULL WHERE id = ?',
-      [getReopenedTaskStatus(task), task.id],
-    )
-    if (result?.success) {
-      showToast(t('tasks.toast_task_restored'))
-      await loadData()
-    }
-  }
-
   const reviewTask = async (task: any, approved: boolean) => {
     if (!api || task.status !== TASK_STATUS.review) return
     const nextStatus = approved ? TASK_STATUS.closed : getReopenedTaskStatus(task)
@@ -724,6 +1030,36 @@ export const Tasks: React.FC = () => {
     }
   }
 
+  const resolveOverdueTask = async (
+    status: typeof TASK_STATUS.review | typeof TASK_STATUS.closed,
+  ) => {
+    const task = completionConfirmationTask
+    if (!api || !task || task.status !== TASK_STATUS.overdue || isCompletionConfirming) return
+
+    setIsCompletionConfirming(true)
+    try {
+      await api.dbQuery(
+        'tasks',
+        `
+          WITH RECURSIVE task_tree(id) AS (
+            SELECT id FROM tasks WHERE id = ?
+            UNION ALL
+            SELECT tasks.id FROM tasks
+            INNER JOIN task_tree ON tasks.parent_id = task_tree.id
+          )
+          UPDATE tasks
+          SET status = ?, is_completed = 1, progress = 100
+          WHERE id IN (SELECT id FROM task_tree)
+        `,
+        [task.id, status],
+      )
+      setCompletionConfirmationTask(null)
+      await loadData()
+    } finally {
+      setIsCompletionConfirming(false)
+    }
+  }
+
   const getCompletionConfirmationCopy = (task: any) => {
     const hasSubtasks = tasks.some((candidate) => candidate.parent_id === task.id)
     if (task.is_completed === 1) {
@@ -736,11 +1072,11 @@ export const Tasks: React.FC = () => {
 
     if (task.status === '已逾期') {
       return {
-        title: t('tasks.confirm_close_overdue_title'),
+        title: t('tasks.confirm_resolve_overdue_title'),
         description: hasSubtasks
-          ? t('tasks.confirm_close_overdue_with_subtasks_description', { title: task.title })
-          : t('tasks.confirm_close_overdue_description', { title: task.title }),
-        action: t('tasks.confirm_close_overdue_action'),
+          ? t('tasks.confirm_resolve_overdue_with_subtasks_description', { title: task.title })
+          : t('tasks.confirm_resolve_overdue_description', { title: task.title }),
+        action: null,
       }
     }
 
@@ -847,49 +1183,88 @@ export const Tasks: React.FC = () => {
     setExpandedTaskGroupId((current) => (current === taskId ? null : taskId))
   }
 
+  useEffect(() => {
+    if (expandedTaskGroupId === null) return
+
+    const frame = window.requestAnimationFrame(() => {
+      const panel = expandedSubtaskPanelRef.current
+      if (!panel) return
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      panel.focus({ preventScroll: true })
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [expandedTaskGroupId])
+
   const handleSaveDrawer = async () => {
-    if (!api || !taskDraft.title.trim()) return
+    const nextErrors: { title?: string; timeWindow?: string; ruleStartDate?: string } = {}
+    if (!taskDraft.title.trim()) nextErrors.title = t('tasks.validation_title_required')
+    if (taskDraft.repeat !== 'none' && !ruleStartDate) {
+      nextErrors.ruleStartDate = t('tasks.validation_rule_start_date_required')
+    }
     if (
       `${taskDraft.dueDate}T${normalizeTaskDueTime(taskDraft.time)}` <
       `${taskDraft.startDate}T${normalizeTaskDueTime(taskDraft.startTime)}`
     ) {
-      showToast(t('tasks.invalid_time_window'))
+      nextErrors.timeWindow = t('tasks.invalid_time_window')
+    }
+    if (Object.keys(nextErrors).length > 0) {
+      setDrawerErrors(nextErrors)
+      window.requestAnimationFrame(() => {
+        if (nextErrors.title) drawerTitleInputRef.current?.focus()
+      })
       return
     }
+    setDrawerErrors({})
+
+    if (!api) return
 
     if (drawerMode === 'create') {
-      const effectiveFrequency = taskDraft.repeat === 'none' ? 'custom' : ruleFreq
-      const effectiveTimes =
-        taskDraft.repeat === 'none' ? [normalizeScheduleTime(taskDraft.startTime)] : ruleTimes
-      const effectiveStartDate = taskDraft.repeat === 'none' ? taskDraft.startDate : ruleStartDate
-      const effectiveWeekDays = serializeRuleWeekDays(
-        effectiveFrequency,
-        ruleWeekDays,
-        ruleStartDate,
-      )
-      const res = await api.dbQuery(
-        'tasks',
-        `INSERT INTO recurring_rules (title, description, frequency, interval, week_days, month_days, start_date, start_time, time_slots, priority, requires_review, end_condition, missed_policy)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          taskDraft.title.trim(),
-          taskDraft.description,
-          effectiveFrequency,
-          ruleInterval,
-          effectiveWeekDays,
-          ruleMonthDays.join(','),
-          effectiveStartDate,
-          effectiveTimes[0],
-          effectiveTimes.join(','),
-          rulePriority,
-          taskDraft.requiresReview ? 1 : 0,
-          effectiveFrequency === 'custom' ? 'count:1' : 'never',
-          ruleHolidayPolicy,
-        ],
-      )
-      if (res?.success) {
-        await runDueTaskGeneration()
+      if (taskDraft.repeat === 'none') {
+        await api.dbQuery(
+          'tasks',
+          `INSERT INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, progress)
+           VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, 0)`,
+          [
+            taskDraft.title.trim(),
+            taskDraft.description,
+            taskDraft.priority,
+            taskDraft.requiresReview ? 1 : 0,
+            taskDraft.startDate,
+            normalizeTaskDueTime(taskDraft.startTime),
+            taskDraft.dueDate,
+            normalizeTaskDueTime(taskDraft.time),
+          ],
+        )
         showToast(t('tasks.toast_task_added'))
+      } else {
+        const effectiveTimes = ruleTimes.length > 0 ? ruleTimes : ['09:00']
+        const res = await api.dbQuery(
+          'tasks',
+          `INSERT INTO recurring_rules (title, description, frequency, schedule_mode, interval, week_days, month_days, excluded_week_days, excluded_month_days, start_date, end_date, start_time, time_slots, priority, requires_review, end_condition, missed_policy)
+           VALUES (?, ?, 'daily', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'never', ?)`,
+          [
+            taskDraft.title.trim(),
+            taskDraft.description,
+            ruleScheduleMode,
+            ruleInterval,
+            ruleScheduleMode === 'rules' ? ruleWeekDays.join(',') : '',
+            ruleScheduleMode === 'rules' ? ruleMonthDays.join(',') : '',
+            ruleScheduleMode === 'rules' ? ruleExcludedWeekDays.join(',') : '',
+            ruleScheduleMode === 'rules' ? ruleExcludedMonthDays.join(',') : '',
+            ruleStartDate,
+            ruleEndDate || null,
+            effectiveTimes[0],
+            effectiveTimes.join(','),
+            taskDraft.priority,
+            taskDraft.requiresReview ? 1 : 0,
+            DEFAULT_MISSED_POLICY,
+          ],
+        )
+        if (res?.success) {
+          await runDueTaskGeneration()
+          showToast(t('tasks.toast_task_added'))
+        }
       }
 
       const skippedRes = await api.dbQuery(
@@ -944,27 +1319,28 @@ export const Tasks: React.FC = () => {
       )
 
       if (isChangingToRecurring) {
-        const effectiveTimes = ruleTimes
-        const effectiveWeekDays = serializeRuleWeekDays(ruleFreq, ruleWeekDays, ruleStartDate)
+        const effectiveTimes = ruleTimes.length > 0 ? ruleTimes : ['09:00']
         const ruleResult = await api.dbQuery(
           'tasks',
           `INSERT INTO recurring_rules
-           (title, description, frequency, interval, week_days, month_days, start_date, start_time, time_slots, priority, requires_review, end_condition, missed_policy)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (title, description, frequency, schedule_mode, interval, week_days, month_days, excluded_week_days, excluded_month_days, start_date, end_date, start_time, time_slots, priority, requires_review, end_condition, missed_policy)
+           VALUES (?, ?, 'daily', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'never', ?)`,
           [
             taskDraft.title.trim(),
             taskDraft.description,
-            ruleFreq,
+            ruleScheduleMode,
             ruleInterval,
-            effectiveWeekDays,
-            ruleMonthDays.join(','),
+            ruleScheduleMode === 'rules' ? ruleWeekDays.join(',') : '',
+            ruleScheduleMode === 'rules' ? ruleMonthDays.join(',') : '',
+            ruleScheduleMode === 'rules' ? ruleExcludedWeekDays.join(',') : '',
+            ruleScheduleMode === 'rules' ? ruleExcludedMonthDays.join(',') : '',
             ruleStartDate,
+            ruleEndDate || null,
             effectiveTimes[0],
             effectiveTimes.join(','),
-            rulePriority,
+            taskDraft.priority,
             taskDraft.requiresReview ? 1 : 0,
-            'never',
-            ruleHolidayPolicy,
+            DEFAULT_MISSED_POLICY,
           ],
         )
         const ruleId = ruleResult?.data?.lastInsertRowid || ruleResult?.data?.insertId
@@ -984,23 +1360,25 @@ export const Tasks: React.FC = () => {
         !isChangingToNonRecurring &&
         editRuleScope !== 'single'
       ) {
-        const effectiveWeekDays = serializeRuleWeekDays(ruleFreq, ruleWeekDays, ruleStartDate)
         await api.dbQuery(
           'tasks',
-          'UPDATE recurring_rules SET title = ?, description = ?, frequency = ?, interval = ?, week_days = ?, month_days = ?, start_date = ?, start_time = ?, time_slots = ?, priority = ?, requires_review = ?, missed_policy = ? WHERE id = ?',
+          'UPDATE recurring_rules SET title = ?, description = ?, frequency = ?, schedule_mode = ?, interval = ?, week_days = ?, month_days = ?, excluded_week_days = ?, excluded_month_days = ?, start_date = ?, end_date = ?, start_time = ?, time_slots = ?, priority = ?, requires_review = ? WHERE id = ?',
           [
             taskDraft.title.trim(),
             taskDraft.description,
-            ruleFreq,
+            'daily',
+            ruleScheduleMode,
             ruleInterval,
-            effectiveWeekDays,
-            ruleMonthDays.join(','),
+            ruleScheduleMode === 'rules' ? ruleWeekDays.join(',') : '',
+            ruleScheduleMode === 'rules' ? ruleMonthDays.join(',') : '',
+            ruleScheduleMode === 'rules' ? ruleExcludedWeekDays.join(',') : '',
+            ruleScheduleMode === 'rules' ? ruleExcludedMonthDays.join(',') : '',
             ruleStartDate,
+            ruleEndDate || null,
             ruleTimes[0],
             ruleTimes.join(','),
-            rulePriority,
+            taskDraft.priority,
             taskDraft.requiresReview ? 1 : 0,
-            ruleHolidayPolicy,
             activeTask.recur_rule_id,
           ],
         )
@@ -1066,6 +1444,20 @@ export const Tasks: React.FC = () => {
     }
   }
 
+  const deleteAllRecurringTaskTrees = async (ruleId: number) => {
+    if (!api) return
+
+    const result = await api.dbQuery(
+      'tasks',
+      'SELECT id FROM tasks WHERE recur_rule_id = ? AND parent_id IS NULL',
+      [ruleId],
+    )
+
+    for (const task of result?.data ?? []) {
+      await deleteTaskTree(task.id)
+    }
+  }
+
   const deleteRecurringRule = async (ruleId: number) => {
     if (!api) return
     await api.dbQuery('tasks', 'DELETE FROM recurring_rule_steps WHERE rule_id = ?', [ruleId])
@@ -1090,7 +1482,7 @@ export const Tasks: React.FC = () => {
     const canManageRepeat = isRecurringRootTask(task)
     setIsDeletingTask(true)
     try {
-      if (canManageRepeat && deletionScope !== 'delete-repeat') {
+      if (canManageRepeat && (deletionScope === 'single' || deletionScope === 'end-repeat')) {
         await api.dbQuery(
           'tasks',
           'INSERT OR IGNORE INTO recurring_rule_occurrence_exceptions (recur_rule_id, instance_key) VALUES (?, ?)',
@@ -1098,7 +1490,13 @@ export const Tasks: React.FC = () => {
         )
       }
 
-      await deleteTaskTree(task.id)
+      if (canManageRepeat && deletionScope === 'delete-all-repeat') {
+        await deleteAllRecurringTaskTrees(task.recur_rule_id)
+        await deleteRecurringRule(task.recur_rule_id)
+        showToast(t('tasks.toast_repeat_all_deleted'))
+      } else {
+        await deleteTaskTree(task.id)
+      }
 
       if (canManageRepeat && deletionScope === 'end-repeat') {
         await deleteUnfinishedRecurringTaskTrees(task.recur_rule_id, task)
@@ -1108,7 +1506,7 @@ export const Tasks: React.FC = () => {
         await deleteUnfinishedRecurringTaskTrees(task.recur_rule_id)
         await deleteRecurringRule(task.recur_rule_id)
         showToast(t('tasks.toast_repeat_deleted'))
-      } else {
+      } else if (deletionScope !== 'delete-all-repeat') {
         showToast(t('tasks.toast_task_deleted'))
       }
 
@@ -1160,8 +1558,12 @@ export const Tasks: React.FC = () => {
       return
     }
 
-    const weekDaysStr = serializeRuleWeekDays(ruleFreq, ruleWeekDays, ruleStartDate)
-    const monthDaysStr = ruleMonthDays.join(',')
+    if (!api) return
+
+    const weekDaysStr = ruleScheduleMode === 'rules' ? ruleWeekDays.join(',') : ''
+    const monthDaysStr = ruleScheduleMode === 'rules' ? ruleMonthDays.join(',') : ''
+    const excludedWeekDaysStr = ruleScheduleMode === 'rules' ? ruleExcludedWeekDays.join(',') : ''
+    const excludedMonthDaysStr = ruleScheduleMode === 'rules' ? ruleExcludedMonthDays.join(',') : ''
     const timeSlots = ruleTimes.length > 0 ? ruleTimes : [ruleTime]
     const primaryTime = timeSlots[0] || '09:00'
     const timeSlotsStr = timeSlots.join(',')
@@ -1170,22 +1572,24 @@ export const Tasks: React.FC = () => {
       // Update
       const query = `
         UPDATE recurring_rules 
-        SET title = ?, description = ?, frequency = ?, interval = ?, week_days = ?, month_days = ?, cron = ?, start_date = ?, start_time = ?, time_slots = ?, priority = ?, missed_policy = ?
+        SET title = ?, description = ?, frequency = 'daily', schedule_mode = ?, interval = ?, week_days = ?, month_days = ?, excluded_week_days = ?, excluded_month_days = ?, cron = ?, start_date = ?, end_date = ?, start_time = ?, time_slots = ?, priority = ?
         WHERE id = ?
       `
       await api.dbQuery('tasks', query, [
         ruleName,
         ruleDesc,
-        ruleFreq,
+        ruleScheduleMode,
         ruleInterval,
         weekDaysStr,
         monthDaysStr,
+        excludedWeekDaysStr,
+        excludedMonthDaysStr,
         ruleCron,
         ruleStartDate,
+        ruleEndDate || null,
         primaryTime,
         timeSlotsStr,
         rulePriority,
-        ruleHolidayPolicy,
         selectedRuleId,
       ])
       showToast(t('tasks.toast_rule_modified'))
@@ -1193,23 +1597,26 @@ export const Tasks: React.FC = () => {
       // Create new
       const query = `
         INSERT INTO recurring_rules (
-          title, description, frequency, interval, week_days, month_days, cron, start_date, start_time, time_slots, priority, missed_policy
+          title, description, frequency, schedule_mode, interval, week_days, month_days, excluded_week_days, excluded_month_days, cron, start_date, end_date, start_time, time_slots, priority, missed_policy
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, 'daily', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
       await api.dbQuery('tasks', query, [
         ruleName,
         ruleDesc,
-        ruleFreq,
+        ruleScheduleMode,
         ruleInterval,
         weekDaysStr,
         monthDaysStr,
+        excludedWeekDaysStr,
+        excludedMonthDaysStr,
         ruleCron,
         ruleStartDate,
+        ruleEndDate || null,
         primaryTime,
         timeSlotsStr,
         rulePriority,
-        ruleHolidayPolicy,
+        DEFAULT_MISSED_POLICY,
       ])
       showToast(t('tasks.toast_rule_created'))
     }
@@ -1222,13 +1629,17 @@ export const Tasks: React.FC = () => {
     setRuleName(t('tasks.rule_new_name'))
     setRuleDesc('')
     setRuleFreq('daily')
+    setRuleScheduleMode('rules')
     setRuleInterval(1)
     setRuleStartDate(toLocalDateKey(new Date()))
+    setRuleEndDate('')
     setRuleTime('09:00')
     setRuleTimes(['09:00'])
     setRulePriority('mid')
     setRuleWeekDays([])
     setRuleMonthDays([])
+    setRuleExcludedWeekDays([])
+    setRuleExcludedMonthDays([])
     setRuleCron('')
   }
 
@@ -1461,20 +1872,76 @@ export const Tasks: React.FC = () => {
     ],
     [tasks, todayKey, todayProjectedTasks],
   )
-  const rootTasks = useMemo(
-    () => executionTasks.filter((task) => !task.parent_id),
-    [executionTasks],
+  const filteredExecutionTasks = useMemo(
+    () => executionTasks.filter(taskMatchesFilters),
+    [executionTasks, taskMatchesFilters],
   )
+  const listProjectedTasks = useMemo(() => {
+    const start = new Date()
+    start.setHours(0, 0, 0, 0)
+    const end = new Date(start)
+    end.setDate(end.getDate() + 370)
+    const nearestByRule = new Map<number, any>()
+    const openRuleIds = new Set(
+      tasks
+        .filter(
+          (task) => task.recur_rule_id && !task.parent_id && task.status !== TASK_STATUS.closed,
+        )
+        .map((task) => Number(task.recur_rule_id)),
+    )
+
+    for (const task of projectCalendarOccurrences(tasks, rules, start, end, skippedOccurrences)) {
+      if (
+        !task.is_virtual ||
+        !task.recur_rule_id ||
+        openRuleIds.has(Number(task.recur_rule_id)) ||
+        nearestByRule.has(task.recur_rule_id)
+      )
+        continue
+      nearestByRule.set(task.recur_rule_id, task)
+    }
+
+    return [...nearestByRule.values()]
+  }, [rules, skippedOccurrences, tasks])
+  const listTasks = useMemo(() => [...tasks, ...listProjectedTasks], [listProjectedTasks, tasks])
+  const rootTasks = useMemo(() => listTasks.filter((task) => !task.parent_id), [listTasks])
   const displayRootTasks = useMemo(() => {
     const seen = new Set<string>()
-    return rootTasks.filter((task) => {
-      if (!task.recur_rule_id || !task.due_date) return true
-      const key = `${task.recur_rule_id}:${task.due_date}`
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-  }, [rootTasks])
+    const statusOrder: Record<string, number> = {
+      已逾期: 0,
+      待审核: 1,
+      进行中: 2,
+      待处理: 3,
+      已关闭: 4,
+    }
+    const priorityOrder: Record<string, number> = { high: 0, mid: 1, low: 2 }
+
+    return rootTasks
+      .filter(taskMatchesFilters)
+      .filter((task) => {
+        if (!task.recur_rule_id || !task.due_date) return true
+        const key = `${task.recur_rule_id}:${task.due_date}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      .sort((left, right) => {
+        const statusDifference =
+          (statusOrder[left.status] ?? Number.MAX_SAFE_INTEGER) -
+          (statusOrder[right.status] ?? Number.MAX_SAFE_INTEGER)
+        if (statusDifference !== 0) return statusDifference
+
+        const priorityDifference =
+          (priorityOrder[left.priority] ?? Number.MAX_SAFE_INTEGER) -
+          (priorityOrder[right.priority] ?? Number.MAX_SAFE_INTEGER)
+        if (priorityDifference !== 0) return priorityDifference
+
+        const leftDueAt = `${left.due_date || '9999-12-31'}T${left.due_time || '23:59:59'}`
+        const rightDueAt = `${right.due_date || '9999-12-31'}T${right.due_time || '23:59:59'}`
+        const dueDifference = leftDueAt.localeCompare(rightDueAt)
+        return dueDifference !== 0 ? dueDifference : Number(left.id) - Number(right.id)
+      })
+  }, [rootTasks, taskMatchesFilters])
   const expandedTaskGroup =
     expandedTaskGroupId === null
       ? null
@@ -1485,7 +1952,7 @@ export const Tasks: React.FC = () => {
   const openTaskCount = tasks.filter(
     (task) => task.is_completed !== 1 && task.status !== '已关闭',
   ).length
-  const todayTaskCount = executionTasks.filter((task) => task.due_date === todayKey).length
+  const todayTaskCount = filteredExecutionTasks.filter((task) => task.due_date === todayKey).length
   const overdueTaskCount = tasks.filter((task) => task.status === '已逾期').length
   const selectedRule = selectedRuleId ? rules.find((rule) => rule.id === selectedRuleId) : null
   const rulePreviewOccurrences = useMemo(
@@ -1594,12 +2061,62 @@ export const Tasks: React.FC = () => {
             <span>{t('tasks.tab_calendar')}</span>
           </button>
         </div>
+        <div className="task-navigation__tools" aria-label={t('tasks.workflow_tools_label')}>
+          <label className="task-navigation__checkbox">
+            <input
+              type="checkbox"
+              checked={showClosedTasks}
+              onChange={(event) => setShowClosedTasks(event.target.checked)}
+            />
+            <span>{t('tasks.filter_show_closed')}</span>
+          </label>
+          <div
+            className="task-navigation__date-range"
+            aria-label={t('tasks.filter_due_date_range')}
+          >
+            <span className="task-navigation__date-range-label">{t('tasks.filter_due_date')}</span>
+            <DatePicker
+              selected={dueDateFrom ? toLocalDate(dueDateFrom) : null}
+              onChange={(date: Date | null) => setDueDateFrom(date ? toLocalDateKey(date) : '')}
+              dateFormat="yyyy-MM-dd"
+              locale={datePickerLocale}
+              portalId="task-filter-datepicker-portal"
+              popperPlacement="bottom-end"
+              customInput={
+                <DatePickerInput
+                  className="task-navigation__date-input"
+                  placeholder={t('tasks.filter_start_date')}
+                  aria-label={t('tasks.filter_start_date')}
+                />
+              }
+            />
+            <span className="task-navigation__date-range-separator" aria-hidden="true">
+              {t('tasks.filter_date_range_to')}
+            </span>
+            <DatePicker
+              selected={dueDateTo ? toLocalDate(dueDateTo) : null}
+              onChange={(date: Date | null) => setDueDateTo(date ? toLocalDateKey(date) : '')}
+              dateFormat="yyyy-MM-dd"
+              isClearable
+              locale={datePickerLocale}
+              portalId="task-filter-datepicker-portal"
+              popperPlacement="bottom-end"
+              customInput={
+                <DatePickerInput
+                  className="task-navigation__date-input"
+                  placeholder={t('tasks.filter_end_date')}
+                  aria-label={t('tasks.filter_end_date')}
+                />
+              }
+            />
+          </div>
+        </div>
       </nav>
 
       <div className="task-content">
         {/* TAB: KANBAN BOARD */}
         {taskTab === 'kanban' &&
-          (tasks.length === 0 ? (
+          (filteredExecutionTasks.length === 0 ? (
             <section className="task-board-empty" aria-labelledby="task-board-empty-title">
               <div className="task-board-empty__icon" aria-hidden="true">
                 <ListTodo />
@@ -1621,7 +2138,7 @@ export const Tasks: React.FC = () => {
               }}
             >
               {boardLanes.map((lane) => {
-                const laneTasks = executionTasks.filter(
+                const laneTasks = filteredExecutionTasks.filter(
                   (t) =>
                     t.status === lane.dbVal || (lane.dbVal === '待处理' && t.status === '已逾期'),
                 )
@@ -1664,22 +2181,25 @@ export const Tasks: React.FC = () => {
                       {laneTasks.map((task) => (
                         <div
                           key={task.id}
-                          className="card"
+                          className={`card task-board-card ${
+                            task.status === '已逾期' ? 'is-overdue' : ''
+                          }`}
                           data-task-id={task.id}
+                          data-task-status={task.status}
+                          role="button"
+                          tabIndex={0}
                           style={{
                             padding: '12px',
                             cursor: 'pointer',
-                            borderColor:
-                              task.status === '已逾期'
-                                ? 'var(--color-danger)'
-                                : 'var(--color-border)',
-                            boxShadow:
-                              task.status === '已逾期'
-                                ? '0 0 4px rgba(239, 68, 68, 0.15)'
-                                : 'var(--shadow-app)',
                           }}
                           onClick={() => {
                             void openCalendarTask(task)
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              void openCalendarTask(task)
+                            }
                           }}
                         >
                           <h4
@@ -1721,17 +2241,21 @@ export const Tasks: React.FC = () => {
                             >
                               <button
                                 type="button"
-                                className="btn sm"
+                                className="btn sm btn-icon task-review-action task-review-action--reject"
+                                title={t('tasks.review_reject_action')}
+                                aria-label={t('tasks.review_reject_action')}
                                 onClick={() => void reviewTask(task, false)}
                               >
-                                {t('tasks.review_reject_action')}
+                                <Undo2 aria-hidden="true" />
                               </button>
                               <button
                                 type="button"
-                                className="btn sm primary"
+                                className="btn sm btn-icon primary task-review-action task-review-action--approve"
+                                title={t('tasks.review_approve_action')}
+                                aria-label={t('tasks.review_approve_action')}
                                 onClick={() => void reviewTask(task, true)}
                               >
-                                {t('tasks.review_approve_action')}
+                                <Check aria-hidden="true" />
                               </button>
                             </div>
                           )}
@@ -1760,7 +2284,7 @@ export const Tasks: React.FC = () => {
 
               {/* Task rows */}
               <div className="task-list">
-                {rootTasks.length === 0 ? (
+                {displayRootTasks.length === 0 ? (
                   <div className="task-list-empty">
                     <ListTodo aria-hidden="true" />
                     <strong>{t('tasks.board_empty_title')}</strong>
@@ -1786,7 +2310,9 @@ export const Tasks: React.FC = () => {
                         )
                       : []
                     const orderedSameDayOccurrences = [...sameDayOccurrences].sort((left, right) =>
-                      String(left.due_time || '').localeCompare(String(right.due_time || '')),
+                      getOccurrenceScheduleTime(left).localeCompare(
+                        getOccurrenceScheduleTime(right),
+                      ),
                     )
                     const completedOccurrenceCount = orderedSameDayOccurrences.filter(
                       (candidate) => candidate.is_completed === 1,
@@ -1805,8 +2331,12 @@ export const Tasks: React.FC = () => {
                         className={`task-row-group ${isTaskGroupExpanded ? 'is-expanded' : ''}`}
                       >
                         <div
-                          className={`task-row ${isSelected ? 'is-selected' : ''} ${isOverdue ? 'is-overdue' : ''} ${
-                            task.is_completed === 1 ? 'is-completed' : ''
+                          className={`task-row ${isSelected ? 'is-selected' : ''} ${
+                            isOverdue ? 'is-overdue' : ''
+                          } ${task.status === TASK_STATUS.pending ? 'is-todo' : ''} ${
+                            task.status === TASK_STATUS.inProgress ? 'is-in-progress' : ''
+                          } ${task.status === TASK_STATUS.review ? 'is-review' : ''} ${
+                            task.status === TASK_STATUS.closed ? 'is-closed' : ''
                           }`}
                           role="button"
                           tabIndex={0}
@@ -1819,81 +2349,103 @@ export const Tasks: React.FC = () => {
                             }
                           }}
                         >
-                          <button
-                            type="button"
-                            title={
-                              task.status === TASK_STATUS.review
-                                ? t('tasks.lane_review')
-                                : task.status === TASK_STATUS.closed
-                                  ? t('tasks.lane_closed')
-                                  : task.is_completed === 1
-                                    ? t('tasks.reopen_task_action')
-                                    : isOverdue
-                                      ? t('tasks.close_overdue_task_action')
-                                      : t('tasks.complete_task_action')
-                            }
-                            aria-label={
-                              task.status === TASK_STATUS.review
-                                ? t('tasks.lane_review')
-                                : task.status === TASK_STATUS.closed
-                                  ? t('tasks.lane_closed')
-                                  : task.is_completed === 1
-                                    ? t('tasks.reopen_task_action')
-                                    : isOverdue
-                                      ? t('tasks.close_overdue_task_action')
-                                      : t('tasks.complete_task_action')
-                            }
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (task.is_virtual) {
-                                void openCalendarTask(task)
-                                return
+                          <div className="task-row__lead">
+                            <span
+                              className={`task-row__priority-badge is-${task.priority}`}
+                              role="img"
+                              aria-label={getPriorityLabel(task.priority)}
+                              title={getPriorityLabel(task.priority)}
+                            >
+                              {getPriorityBadgeLabel(task.priority)}
+                            </span>
+                            <button
+                              type="button"
+                              title={
+                                task.status === TASK_STATUS.review
+                                  ? t('tasks.lane_review')
+                                  : task.status === TASK_STATUS.closed
+                                    ? t('tasks.lane_closed')
+                                    : task.is_completed === 1
+                                      ? t('tasks.reopen_task_action')
+                                      : isOverdue
+                                        ? t('tasks.close_overdue_task_action')
+                                        : t('tasks.complete_task_action')
                               }
-                              requestTaskCompletionToggle(task, e.currentTarget)
-                            }}
-                            disabled={
-                              task.status === TASK_STATUS.review ||
-                              task.status === TASK_STATUS.closed
-                            }
-                            className="task-row__check"
-                          >
-                            {task.is_completed === 1 ? (
-                              <Check size={16} color="var(--color-success)" />
-                            ) : isOverdue ? (
-                              <X size={16} color="var(--color-danger)" />
-                            ) : (
-                              <Circle
-                                size={16}
-                                color={isOverdue ? 'var(--color-danger)' : 'var(--text-muted)'}
-                              />
-                            )}
-                          </button>
+                              aria-label={
+                                task.status === TASK_STATUS.review
+                                  ? t('tasks.lane_review')
+                                  : task.status === TASK_STATUS.closed
+                                    ? t('tasks.lane_closed')
+                                    : task.is_completed === 1
+                                      ? t('tasks.reopen_task_action')
+                                      : isOverdue
+                                        ? t('tasks.close_overdue_task_action')
+                                        : t('tasks.complete_task_action')
+                              }
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (task.is_virtual) {
+                                  void openCalendarTask(task)
+                                  return
+                                }
+                                requestTaskCompletionToggle(task, e.currentTarget)
+                              }}
+                              disabled={
+                                task.status === TASK_STATUS.review ||
+                                task.status === TASK_STATUS.closed
+                              }
+                              className="task-row__check"
+                            >
+                              {task.is_completed === 1 ? (
+                                <Check size={16} color="var(--color-success)" />
+                              ) : isOverdue ? (
+                                <X size={16} color="var(--color-danger)" />
+                              ) : (
+                                <Circle
+                                  size={16}
+                                  color={isOverdue ? 'var(--color-danger)' : 'var(--text-muted)'}
+                                />
+                              )}
+                            </button>
+                          </div>
                           <div className="task-row__main">
                             <div className="task-row__heading">
                               <span className="task-row__title">{task.title}</span>
-                              {task.recur_rule_id && (
-                                <time
-                                  className="task-row__instance-schedule"
-                                  dateTime={`${task.due_date || ''}T${task.due_time || ''}`}
-                                  title={formatDue(task)}
-                                >
-                                  <Clock3 size={12} aria-hidden="true" />
+                              <span
+                                className="task-row__deadline"
+                                title={`${t('tasks.details_due_prefix')}: ${formatDue(task)}`}
+                              >
+                                <Hourglass size={13} aria-hidden="true" />
+                                <time>
                                   {orderedSameDayOccurrences.length > 1
-                                    ? `${task.due_date} · ${orderedSameDayOccurrences.length}`
-                                    : formatDue(task)}
+                                    ? String(task.due_date || '').slice(-5)
+                                    : formatCompactDue(task)}
                                 </time>
-                              )}
+                              </span>
                             </div>
                             <span className="task-row__meta">
-                              {getStatusLabel(task.status)}
-                              {repeatSummary ? ` · ${repeatSummary}` : ''}
-                              {orderedSameDayOccurrences.length > 1
-                                ? ` · ${t('tasks.multi_occurrence_progress', {
-                                    completed: completedOccurrenceCount,
-                                    total: orderedSameDayOccurrences.length,
-                                  })}`
-                                : ''}
+                              <span className="task-row__status" data-status={task.status}>
+                                {getStatusLabel(task.status)}
+                              </span>
                             </span>
+                            {repeatSummary && (
+                              <div className="task-row__recurrence">
+                                <div className="task-row__recurrence-schedule">
+                                  <RefreshCw size={11} aria-hidden="true" />
+                                  <span>{repeatSummary.schedule}</span>
+                                </div>
+                                <div className="task-row__recurrence-details">
+                                  <span>
+                                    <Clock3 size={11} aria-hidden="true" />
+                                    {repeatSummary.times}
+                                  </span>
+                                  <span>
+                                    <CalendarDays size={11} aria-hidden="true" />
+                                    {repeatSummary.range}
+                                  </span>
+                                </div>
+                              </div>
+                            )}
                             {task.progress > 0 && task.progress < 100 && (
                               <div className="task-row__progress">
                                 <div style={{ width: `${task.progress}%` }} />
@@ -1901,20 +2453,6 @@ export const Tasks: React.FC = () => {
                             )}
                           </div>
                           <div className="task-row__footer">
-                            {task.status === '已关闭' && (
-                              <button
-                                type="button"
-                                className="task-row__restore"
-                                title={t('tasks.restore_closed_action')}
-                                aria-label={t('tasks.restore_closed_action')}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  void restoreClosedTask(task)
-                                }}
-                              >
-                                {t('tasks.restore_closed_action')}
-                              </button>
-                            )}
                             {task.status === TASK_STATUS.review && (
                               <span
                                 className="task-review-actions"
@@ -1922,46 +2460,30 @@ export const Tasks: React.FC = () => {
                               >
                                 <button
                                   type="button"
-                                  className="btn sm"
+                                  className="btn sm btn-icon task-review-action task-review-action--reject"
+                                  title={t('tasks.review_reject_action')}
+                                  aria-label={t('tasks.review_reject_action')}
                                   onClick={() => void reviewTask(task, false)}
                                 >
-                                  {t('tasks.review_reject_action')}
+                                  <Undo2 aria-hidden="true" />
                                 </button>
                                 <button
                                   type="button"
-                                  className="btn sm primary"
+                                  className="btn sm btn-icon primary task-review-action task-review-action--approve"
+                                  title={t('tasks.review_approve_action')}
+                                  aria-label={t('tasks.review_approve_action')}
                                   onClick={() => void reviewTask(task, true)}
                                 >
-                                  {t('tasks.review_approve_action')}
+                                  <Check aria-hidden="true" />
                                 </button>
                               </span>
                             )}
-                            <span
-                              className={`task-row__date ${isOverdue ? 'is-overdue-date' : ''}`}
-                            >
-                              <span
-                                className={`task-row__priority is-${task.priority}`}
-                                role="img"
-                                aria-label={getPriorityLabel(task.priority)}
-                                title={getPriorityLabel(task.priority)}
-                              >
-                                <Flag size={13} aria-hidden="true" />
-                              </span>
-                              <span className="task-row__date-content">
-                                {isOverdue && <strong>{t('common.overdue')}</strong>}
-                                <time>
-                                  {orderedSameDayOccurrences.length > 1
-                                    ? task.due_date
-                                    : formatDue(task)}
-                                </time>
-                              </span>
-                            </span>
                             {orderedSameDayOccurrences.length > 1 && (
                               <span className="task-row__occurrence-times">
                                 {orderedSameDayOccurrences.map((occurrence) => (
                                   <span key={occurrence.id}>
                                     <Clock3 size={11} aria-hidden="true" />
-                                    {String(occurrence.due_time || '').slice(0, 5)}
+                                    {getOccurrenceScheduleTime(occurrence)}
                                   </span>
                                 ))}
                               </span>
@@ -2058,7 +2580,7 @@ export const Tasks: React.FC = () => {
                                 </span>
                                 <time className="task-occurrence-row__time">
                                   <Clock3 size={13} aria-hidden="true" />
-                                  {formatDue(occurrence)}
+                                  {occurrence.due_date} {getOccurrenceScheduleTime(occurrence)}
                                 </time>
                                 <span>{getStatusLabel(occurrence.status)}</span>
                               </button>
@@ -2076,6 +2598,8 @@ export const Tasks: React.FC = () => {
                   id={`task-subtasks-${expandedTaskGroup.id}`}
                   className="task-expanded-group"
                   aria-label={t('tasks.subtask_detail_region')}
+                  ref={expandedSubtaskPanelRef}
+                  tabIndex={-1}
                 >
                   <header className="task-expanded-group__header">
                     <div>
@@ -2371,28 +2895,43 @@ export const Tasks: React.FC = () => {
                     </button>
                   </div>
                 ) : (
-                  rules.map((rule) => (
-                    <div
-                      key={rule.id}
-                      className={`task-template-item ${selectedRuleId === rule.id ? 'is-selected' : ''}`}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={rule.title}
-                      onClick={() => selectRule(rule)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          selectRule(rule)
-                        }
-                      }}
-                    >
-                      <strong>{rule.title}</strong>
-                      <span>
-                        {getFrequencyLabel(rule.frequency)} · {getTemplateStartDateKey(rule)}{' '}
-                        {getTemplateStartTime(rule)}
-                      </span>
-                    </div>
-                  ))
+                  rules.map((rule) => {
+                    const status = getRuleStatus(rule)
+                    return (
+                      <div
+                        key={rule.id}
+                        className={`task-template-item ${selectedRuleId === rule.id ? 'is-selected' : ''}`}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={rule.title}
+                        onClick={() => selectRule(rule)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            selectRule(rule)
+                          }
+                        }}
+                      >
+                        <div className="task-template-item__heading">
+                          <strong>{rule.title}</strong>
+                          <span className="task-template-item__status" data-status={status.key}>
+                            {status.label}
+                          </span>
+                        </div>
+                        <span className="task-template-item__detail">
+                          <CalendarDays size={12} aria-hidden="true" />
+                          <span>{getRuleScheduleSummary(rule)}</span>
+                        </span>
+                        <span className="task-template-item__detail is-times">
+                          <Clock3 size={12} aria-hidden="true" />
+                          <span>{getRuleTimesSummary(rule)}</span>
+                        </span>
+                        <span className="task-template-item__range">
+                          {getRuleRangeSummary(rule)}
+                        </span>
+                      </div>
+                    )
+                  })
                 )}
               </div>
             </section>
@@ -2404,7 +2943,7 @@ export const Tasks: React.FC = () => {
                   <strong>{t('tasks.config_rule_title')}</strong>
                   <p>
                     {selectedRule
-                      ? `${getFrequencyLabel(selectedRule.frequency)} · ${getTemplateStartTime(selectedRule)}`
+                      ? `${getRuleScheduleSummary(selectedRule)} · ${getRuleTimesSummary(selectedRule)}`
                       : t('tasks.rule_new_name')}
                   </p>
                 </div>
@@ -2440,41 +2979,55 @@ export const Tasks: React.FC = () => {
 
               <div className="task-rule-schedule-grid">
                 <div className="task-form-section">
-                  <label>{t('tasks.freq_label')}</label>
+                  <label>{t('tasks.schedule_mode_label')}</label>
                   <select
                     className="form-field"
-                    value={ruleFreq}
-                    onChange={(e) => setRuleFreq(e.target.value)}
+                    value={ruleScheduleMode}
+                    onChange={(e) => setRuleScheduleMode(e.target.value as 'rules' | 'interval')}
                   >
-                    <option value="custom">{t('tasks.freq_once')}</option>
-                    <option value="daily">{t('tasks.freq_daily')}</option>
-                    <option value="weekday">{t('tasks.freq_weekday')}</option>
-                    <option value="weekly">{t('tasks.freq_weekly')}</option>
-                    <option value="monthly">{t('tasks.freq_monthly')}</option>
-                    {ruleFreq === 'cron' && (
-                      <option value="cron" disabled>
-                        {t('tasks.legacy_cron_label')}
-                      </option>
-                    )}
+                    <option value="rules">{t('tasks.schedule_mode_rules')}</option>
+                    <option value="interval">{t('tasks.schedule_mode_interval')}</option>
                   </select>
                 </div>
+                {ruleScheduleMode === 'interval' && (
+                  <div className="task-form-section">
+                    <label>{t('tasks.interval_days_label')}</label>
+                    <input
+                      className="form-field"
+                      type="number"
+                      min={1}
+                      value={ruleInterval}
+                      onChange={(e) => setRuleInterval(Math.max(1, parseInt(e.target.value) || 1))}
+                    />
+                  </div>
+                )}
                 <div className="task-form-section">
-                  <label>{t('tasks.interval_label')}</label>
-                  <input
-                    className="form-field"
-                    type="number"
-                    min={1}
-                    value={ruleInterval}
-                    onChange={(e) => setRuleInterval(Math.max(1, parseInt(e.target.value) || 1))}
+                  <label>{t('tasks.rule_start_date_label')}</label>
+                  <DatePicker
+                    selected={toLocalDate(ruleStartDate)}
+                    onChange={(date: Date | null) => {
+                      if (date) setRuleStartDate(toLocalDateKey(date))
+                    }}
+                    dateFormat="yyyy-MM-dd"
+                    locale={datePickerLocale}
+                    portalId="task-filter-datepicker-portal"
+                    popperPlacement="bottom-end"
+                    customInput={
+                      <DatePickerInput
+                        aria-label={t('tasks.rule_start_date_label')}
+                        className="task-navigation__date-input"
+                      />
+                    }
                   />
                 </div>
                 <div className="task-form-section">
-                  <label>{t('tasks.rule_start_date_label')}</label>
+                  <label>{t('tasks.rule_end_date_label')}</label>
                   <input
                     className="form-field"
                     type="date"
-                    value={ruleStartDate}
-                    onChange={(e) => setRuleStartDate(e.target.value)}
+                    value={ruleEndDate}
+                    min={ruleStartDate || undefined}
+                    onChange={(event) => setRuleEndDate(event.target.value)}
                   />
                 </div>
                 <div className="task-form-section">
@@ -2491,14 +3044,8 @@ export const Tasks: React.FC = () => {
                 </div>
               </div>
 
-              {ruleFreq === 'cron' && (
-                <div className="task-form-warning" role="alert">
-                  {t('tasks.legacy_cron_warning')}
-                </div>
-              )}
-
               <div className="task-form-section">
-                <label>{t('tasks.execution_times_label')}</label>
+                <label>{t('tasks.daily_generation_times_label')}</label>
                 <div className="task-rule-times">
                   {ruleTimes.map((time, index) => (
                     <div className="task-rule-time-row" key={`${index}-${time}`}>
@@ -2536,79 +3083,113 @@ export const Tasks: React.FC = () => {
                     <Plus size={13} /> {t('tasks.add_execution_time')}
                   </button>
                 </div>
-                <span className="task-form-hint">{t('tasks.multiple_times_hint')}</span>
+                <span className="task-form-hint">{t('tasks.instance_start_times_hint')}</span>
               </div>
 
-              {ruleFreq === 'weekly' && (
-                <div className="task-form-section">
-                  <label>{t('tasks.days_of_week_label')}</label>
-                  <div className="task-weekday-picker">
-                    {[1, 2, 3, 4, 5, 6, 7].map((d) => {
-                      const isActive = ruleWeekDays.includes(d)
-                      const names = t('tasks.weekdays_short').split(',')
-                      return (
-                        <button
-                          key={d}
-                          type="button"
-                          className="btn sm"
-                          aria-pressed={isActive}
-                          style={{
-                            minWidth: '32px',
-                            backgroundColor: isActive ? 'var(--color-accent)' : 'var(--bg-surface)',
-                            color: isActive ? '#fff' : 'var(--text-main)',
-                          }}
-                          onClick={() => {
-                            if (isActive) {
-                              setRuleWeekDays(ruleWeekDays.filter((x) => x !== d))
-                            } else {
-                              setRuleWeekDays([...ruleWeekDays, d])
+              {ruleScheduleMode === 'rules' && (
+                <>
+                  <div className="task-form-section">
+                    <label>{t('tasks.week_days_label')}</label>
+                    <div className="task-weekday-picker">
+                      {[0, 1, 2, 3, 4, 5, 6].map((day, index) => {
+                        const selected = ruleWeekDays.includes(day)
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            className="btn sm"
+                            aria-pressed={selected}
+                            onClick={() =>
+                              setRuleWeekDays(
+                                selected
+                                  ? ruleWeekDays.filter((value) => value !== day)
+                                  : [...ruleWeekDays, day],
+                              )
                             }
-                          }}
-                        >
-                          {names[d]}
-                        </button>
-                      )
-                    })}
+                          >
+                            {t('tasks.weekdays_sunday_first').split(',')[index]}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
+                  <div className="task-form-section">
+                    <label>{t('tasks.month_days_label')}</label>
+                    <div className="task-monthday-picker">
+                      {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => {
+                        const selected = ruleMonthDays.includes(day)
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            className="btn sm"
+                            aria-pressed={selected}
+                            onClick={() =>
+                              setRuleMonthDays(
+                                selected
+                                  ? ruleMonthDays.filter((value) => value !== day)
+                                  : [...ruleMonthDays, day],
+                              )
+                            }
+                          >
+                            {day}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div className="task-form-section">
+                    <label>{t('tasks.excluded_week_days_label')}</label>
+                    <div className="task-weekday-picker">
+                      {[0, 1, 2, 3, 4, 5, 6].map((day, index) => {
+                        const selected = ruleExcludedWeekDays.includes(day)
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            className="btn sm"
+                            aria-pressed={selected}
+                            onClick={() =>
+                              setRuleExcludedWeekDays(
+                                selected
+                                  ? ruleExcludedWeekDays.filter((value) => value !== day)
+                                  : [...ruleExcludedWeekDays, day],
+                              )
+                            }
+                          >
+                            {t('tasks.weekdays_sunday_first').split(',')[index]}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div className="task-form-section">
+                    <label>{t('tasks.excluded_month_days_label')}</label>
+                    <div className="task-monthday-picker">
+                      {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => {
+                        const selected = ruleExcludedMonthDays.includes(day)
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            className="btn sm"
+                            aria-pressed={selected}
+                            onClick={() =>
+                              setRuleExcludedMonthDays(
+                                selected
+                                  ? ruleExcludedMonthDays.filter((value) => value !== day)
+                                  : [...ruleExcludedMonthDays, day],
+                              )
+                            }
+                          >
+                            {day}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </>
               )}
-
-              {ruleFreq === 'monthly' && (
-                <div className="task-form-section">
-                  <label>{t('tasks.month_days_label')}</label>
-                  <input
-                    className="form-field"
-                    value={ruleMonthDays.join(',')}
-                    onChange={(event) =>
-                      setRuleMonthDays(
-                        event.target.value
-                          .split(',')
-                          .map((value) => Number(value.trim()))
-                          .filter(
-                            (value) =>
-                              Number.isInteger(value) &&
-                              (value === -1 || (value >= 1 && value <= 31)),
-                          ),
-                      )
-                    }
-                    placeholder={t('tasks.month_days_placeholder')}
-                  />
-                  <span className="task-form-hint">{t('tasks.month_days_hint')}</span>
-                </div>
-              )}
-
-              <div className="task-form-section">
-                <label>{t('tasks.holiday_strategy_label')}</label>
-                <select
-                  className="form-field"
-                  value={ruleHolidayPolicy}
-                  onChange={(e) => setRuleHolidayPolicy(e.target.value)}
-                >
-                  <option value="skip">{t('tasks.holiday_strategy_skip')}</option>
-                  <option value="delay">{t('tasks.holiday_strategy_delay')}</option>
-                  <option value="advance">{t('tasks.holiday_strategy_advance')}</option>
-                </select>
-              </div>
 
               <div className="task-form-section task-preview-section">
                 <label>{t('tasks.future_triggers_label')}</label>
@@ -2803,7 +3384,7 @@ export const Tasks: React.FC = () => {
                         </td>
                         <td style={{ padding: '10px 8px' }}>
                           <span
-                            className={`pill ${log.status === '运行中' || log.status === 'Running' ? 'yellow' : log.status === '已完成' || log.status === 'Finished' ? 'green' : 'blue'}`}
+                            className={`pill ${log.statusKey === 'active' ? 'green' : log.statusKey === 'ended' ? '' : 'blue'}`}
                           >
                             {log.status}
                           </span>
@@ -2834,337 +3415,629 @@ export const Tasks: React.FC = () => {
         )}
       </div>
       {drawerMode && (
-        <div
-          className="task-drawer-backdrop"
-          role="presentation"
-          onMouseDown={() => setDrawerMode(null)}
-        >
-          <aside
-            className="task-drawer"
-            role="dialog"
-            aria-modal="true"
-            aria-label={
-              drawerMode === 'create'
-                ? t('tasks.drawer_create_title')
-                : t('tasks.drawer_edit_title')
-            }
-            onMouseDown={(event) => event.stopPropagation()}
+        <ViewportPortal>
+          <div
+            className="task-drawer-backdrop"
+            role="presentation"
+            onMouseDown={() => setDrawerMode(null)}
           >
-            <header className="task-drawer__header">
-              <h2>
-                {drawerMode === 'create'
+            <aside
+              className="task-drawer"
+              role="dialog"
+              aria-modal="true"
+              aria-label={
+                drawerMode === 'create'
                   ? t('tasks.drawer_create_title')
-                  : t('tasks.drawer_edit_title')}
-              </h2>
-              <button
-                type="button"
-                className="btn btn-icon-close task-drawer__close"
-                onClick={() => setDrawerMode(null)}
-                aria-label={t('tasks.drawer_close')}
-                title={t('tasks.drawer_close')}
-              >
-                <X size={16} />
-              </button>
-            </header>
-            <div className="task-drawer__body">
-              <label className="task-form-section">
-                <span>{t('tasks.details_label_title')}</span>
-                <input
-                  autoFocus
-                  className="form-field"
-                  value={taskDraft.title}
-                  onChange={(event) => setTaskDraft({ ...taskDraft, title: event.target.value })}
-                />
-              </label>
-              <label className="task-form-section">
-                <span>{t('tasks.details_label_desc')}</span>
-                <textarea
-                  className="form-field"
-                  rows={4}
-                  value={taskDraft.description}
-                  onChange={(event) =>
-                    setTaskDraft({ ...taskDraft, description: event.target.value })
-                  }
-                  placeholder={t('tasks.details_desc_placeholder')}
-                />
-              </label>
-              <div className="task-drawer__grid">
-                <div className="task-form-section">
-                  <span>{t('tasks.details_start_prefix')}</span>
-                  <div className="task-due-picker">
-                    <input
-                      className="form-field"
-                      type="datetime-local"
-                      step={1}
-                      value={`${taskDraft.startDate}T${normalizeTaskDueTime(taskDraft.startTime)}`}
-                      onChange={(event) => {
-                        const [startDate, startTime = '00:00:00'] = event.target.value.split('T')
-                        setTaskDraft({
-                          ...taskDraft,
-                          startDate,
-                          startTime: normalizeTaskDueTime(startTime),
-                        })
-                        if (taskDraft.repeat !== 'none') setRuleStartDate(startDate)
-                      }}
-                    />
-                  </div>
-                </div>
-                <div className="task-form-section">
-                  <span>{t('tasks.details_due_prefix')}</span>
-                  <div className="task-due-picker">
-                    <input
-                      className="form-field"
-                      type="datetime-local"
-                      step={1}
-                      value={`${taskDraft.dueDate}T${normalizeTaskDueTime(taskDraft.time)}`}
-                      onChange={(event) => {
-                        const [dueDate, time = '23:59:59'] = event.target.value.split('T')
-                        setTaskDraft({ ...taskDraft, dueDate, time: normalizeTaskDueTime(time) })
-                      }}
-                    />
-                  </div>
-                </div>
-                <label className="task-form-section">
-                  <span>{t('tasks.quick_add_priority_label')}</span>
-                  <select
-                    className="form-field"
-                    value={taskDraft.priority}
-                    onChange={(event) =>
-                      setTaskDraft({ ...taskDraft, priority: event.target.value })
-                    }
-                  >
-                    <option value="high">{t('tasks.priority_high')}</option>
-                    <option value="mid">{t('tasks.priority_mid')}</option>
-                    <option value="low">{t('tasks.priority_low')}</option>
-                  </select>
-                </label>
-              </div>
-              <label className="task-drawer__recurring-setting">
-                <span className="task-drawer__recurring-copy">
-                  <strong>{t('tasks.requires_review_label')}</strong>
-                  <small>{t('tasks.requires_review_hint')}</small>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={taskDraft.requiresReview}
-                  onChange={(event) =>
-                    setTaskDraft({ ...taskDraft, requiresReview: event.target.checked })
-                  }
-                />
-              </label>
-              <label className="task-drawer__recurring-setting">
-                <span className="task-drawer__recurring-copy">
-                  <strong>{t('tasks.recurring_task_checkbox_label')}</strong>
-                  <small>{t('tasks.recurring_task_hint')}</small>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={taskDraft.repeat !== 'none'}
-                  onChange={(event) => {
-                    const recurring = event.target.checked
-                    setTaskDraft({ ...taskDraft, repeat: recurring ? ruleFreq : 'none' })
-                    if (recurring) setRuleStartDate(taskDraft.dueDate)
-                    setIsRulePanelExpanded(recurring)
-                  }}
-                />
-              </label>
-              {taskDraft.repeat !== 'none' && (
-                <div className="task-drawer__rule-panel">
-                  <button
-                    type="button"
-                    className="task-drawer__rule-summary"
-                    onClick={() => setIsRulePanelExpanded((current) => !current)}
-                    aria-expanded={isRulePanelExpanded}
-                  >
-                    <span>
-                      <strong>{t('tasks.advanced_repeat_label')}</strong>
-                      <small>
-                        {getFrequencyLabel(ruleFreq)} · {ruleTimes.join(', ')}
-                      </small>
-                    </span>
-                    {isRulePanelExpanded ? (
-                      <ChevronUp aria-hidden="true" />
-                    ) : (
-                      <ChevronDown aria-hidden="true" />
-                    )}
-                  </button>
-                  {isRulePanelExpanded && (
-                    <div className="task-drawer__rule-editor">
-                      <label className="task-form-section">
-                        <span>{t('tasks.freq_label')}</span>
-                        <select
-                          className="form-field"
-                          value={ruleFreq}
-                          onChange={(event) => setRuleFreq(event.target.value)}
-                        >
-                          <option value="daily">{t('tasks.freq_daily')}</option>
-                          <option value="weekday">{t('tasks.freq_weekday')}</option>
-                          <option value="weekly">{t('tasks.freq_weekly')}</option>
-                          <option value="monthly">{t('tasks.freq_monthly')}</option>
-                        </select>
-                      </label>
-                      <label className="task-form-section">
-                        <span>{t('tasks.interval_label')}</span>
-                        <input
-                          className="form-field"
-                          type="number"
-                          min={1}
-                          value={ruleInterval}
-                          onChange={(event) =>
-                            setRuleInterval(Math.max(1, Number(event.target.value) || 1))
-                          }
-                        />
-                      </label>
-                      <label className="task-form-section">
-                        <span>{t('tasks.rule_start_date_label')}</span>
-                        <input
-                          className="form-field"
-                          type="date"
-                          value={ruleStartDate}
-                          onChange={(event) => setRuleStartDate(event.target.value)}
-                        />
-                      </label>
-                      <label className="task-form-section">
-                        <span>{t('tasks.template_priority_label')}</span>
-                        <select
-                          className="form-field"
-                          value={rulePriority}
-                          onChange={(event) => setRulePriority(event.target.value)}
-                        >
-                          <option value="high">{t('tasks.priority_high')}</option>
-                          <option value="mid">{t('tasks.priority_mid')}</option>
-                          <option value="low">{t('tasks.priority_low')}</option>
-                        </select>
-                      </label>
-                      <div className="task-form-section">
-                        <span>{t('tasks.schedule_time_label')}</span>
-                        <div className="task-drawer__times-editor">
-                          {ruleTimes.map((time, index) => (
-                            <div className="task-drawer__time-row" key={`${time}-${index}`}>
-                              <input
-                                className="form-field"
-                                type="time"
-                                value={time}
-                                onChange={(event) =>
-                                  setRuleTimes(
-                                    ruleTimes.map((current, currentIndex) =>
-                                      currentIndex === index ? event.target.value : current,
-                                    ),
-                                  )
-                                }
-                              />
-                              {ruleTimes.length > 1 && (
-                                <button
-                                  type="button"
-                                  className="btn sm"
-                                  onClick={() =>
-                                    setRuleTimes(
-                                      ruleTimes.filter((_, currentIndex) => currentIndex !== index),
-                                    )
-                                  }
-                                >
-                                  {t('common.delete')}
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                          <button
-                            type="button"
-                            className="btn sm"
-                            onClick={() => setRuleTimes([...ruleTimes, '09:00'])}
-                          >
-                            {t('tasks.add_time')}
-                          </button>
-                        </div>
-                      </div>
-                      {ruleFreq === 'weekly' && (
-                        <label className="task-form-section">
-                          <span>{t('tasks.week_days_label')}</span>
-                          <input
-                            className="form-field"
-                            value={ruleWeekDays.join(',')}
-                            onChange={(event) =>
-                              setRuleWeekDays(
-                                event.target.value
-                                  .split(',')
-                                  .map(Number)
-                                  .filter((value) => value >= 1 && value <= 7),
-                              )
-                            }
-                            placeholder="1,3,5"
-                          />
-                        </label>
-                      )}
-                      {ruleFreq === 'monthly' && (
-                        <label className="task-form-section">
-                          <span>{t('tasks.month_days_label')}</span>
-                          <input
-                            className="form-field"
-                            value={ruleMonthDays.join(',')}
-                            onChange={(event) =>
-                              setRuleMonthDays(
-                                event.target.value
-                                  .split(',')
-                                  .map(Number)
-                                  .filter((value) => value === -1 || (value >= 1 && value <= 31)),
-                              )
-                            }
-                            placeholder="1,15,-1"
-                          />
-                        </label>
-                      )}
-                      <label className="task-form-section">
-                        <span>{t('tasks.holiday_strategy_label')}</span>
-                        <select
-                          className="form-field"
-                          value={ruleHolidayPolicy}
-                          onChange={(event) => setRuleHolidayPolicy(event.target.value)}
-                        >
-                          <option value="skip">{t('tasks.holiday_strategy_skip')}</option>
-                          <option value="delay">{t('tasks.holiday_strategy_delay')}</option>
-                          <option value="advance">{t('tasks.holiday_strategy_advance')}</option>
-                        </select>
-                      </label>
-                      {drawerMode === 'edit' && activeTaskRule && taskDraft.repeat !== 'none' && (
-                        <label className="task-form-section">
-                          <span>{t('tasks.edit_rule_scope_label')}</span>
-                          <select
-                            className="form-field"
-                            value={editRuleScope}
-                            onChange={(event) =>
-                              setEditRuleScope(event.target.value as 'single' | 'future' | 'all')
-                            }
-                          >
-                            <option value="single">{t('tasks.edit_rule_scope_single')}</option>
-                            <option value="future">{t('tasks.edit_rule_scope_future')}</option>
-                            <option value="all">{t('tasks.edit_rule_scope_all')}</option>
-                          </select>
-                        </label>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            <footer className="task-drawer__footer">
-              {drawerMode === 'edit' && activeTask && (
+                  : t('tasks.drawer_edit_title')
+              }
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <header className="task-drawer__header">
+                <h2>
+                  {drawerMode === 'create'
+                    ? t('tasks.drawer_create_title')
+                    : t('tasks.drawer_edit_title')}
+                </h2>
                 <button
                   type="button"
-                  className="btn danger"
-                  onClick={(event) => openTaskDeletionConfirmation(activeTask, event.currentTarget)}
+                  className="btn btn-icon-close task-drawer__close"
+                  onClick={() => setDrawerMode(null)}
+                  aria-label={t('tasks.drawer_close')}
+                  title={t('tasks.drawer_close')}
                 >
-                  {t('tasks.delete_task')}
+                  <X size={16} />
                 </button>
-              )}
-              <button type="button" className="btn" onClick={() => setDrawerMode(null)}>
-                {t('common.cancel')}
-              </button>
-              <button type="button" className="btn primary" onClick={handleSaveDrawer}>
-                {t('tasks.btn_save_changes')}
-              </button>
-            </footer>
-          </aside>
-        </div>
+              </header>
+              <div className="task-drawer__body">
+                <label className="task-form-section">
+                  <span>{t('tasks.details_label_title')}</span>
+                  <input
+                    ref={drawerTitleInputRef}
+                    autoFocus
+                    className={`form-field ${drawerErrors.title ? 'is-invalid' : ''}`}
+                    value={taskDraft.title}
+                    onChange={(event) => {
+                      setTaskDraft({ ...taskDraft, title: event.target.value })
+                      if (drawerErrors.title && event.target.value.trim()) {
+                        setDrawerErrors((current) => ({ ...current, title: undefined }))
+                      }
+                    }}
+                    aria-invalid={Boolean(drawerErrors.title)}
+                    aria-describedby={drawerErrors.title ? 'task-title-error' : undefined}
+                  />
+                  {drawerErrors.title && (
+                    <small id="task-title-error" className="task-field-error" role="alert">
+                      {drawerErrors.title}
+                    </small>
+                  )}
+                </label>
+                <label className="task-form-section">
+                  <span>{t('tasks.details_label_desc')}</span>
+                  <textarea
+                    className="form-field"
+                    rows={4}
+                    value={taskDraft.description}
+                    onChange={(event) =>
+                      setTaskDraft({ ...taskDraft, description: event.target.value })
+                    }
+                    placeholder={t('tasks.details_desc_placeholder')}
+                  />
+                </label>
+                <div className="task-drawer__schedule-section">
+                  <div className="task-drawer__grid">
+                    <div className="task-form-section">
+                      <span>{t('tasks.details_start_prefix')}</span>
+                      <div className="task-due-picker">
+                        <DatePicker
+                          ref={drawerStartDatePickerRef}
+                          selected={toLocalDateTime(taskDraft.startDate, taskDraft.startTime)}
+                          onInputClick={() => {
+                            drawerDueDatePickerRef.current?.setOpen(false)
+                            drawerRuleStartDatePickerRef.current?.setOpen(false)
+                          }}
+                          onChange={(date: Date | null) => {
+                            if (!date) return
+                            const startDate = toLocalDateKey(date)
+                            setTaskDraft({
+                              ...taskDraft,
+                              startDate,
+                              startTime: toLocalTimeValue(date),
+                            })
+                            if (drawerErrors.timeWindow) {
+                              setDrawerErrors((current) => ({ ...current, timeWindow: undefined }))
+                            }
+                            if (taskDraft.repeat !== 'none') setRuleStartDate(startDate)
+                          }}
+                          showTimeInput
+                          dateFormat="yyyy-MM-dd HH:mm"
+                          timeInputLabel={t('tasks.time_picker_time_label')}
+                          locale={datePickerLocale}
+                          portalId="task-drawer-datepicker-portal"
+                          popperPlacement="bottom-end"
+                          ariaInvalid={drawerErrors.timeWindow ? 'true' : undefined}
+                          customInput={
+                            <DatePickerInput
+                              aria-label={t('tasks.details_start_prefix')}
+                              aria-invalid={drawerErrors.timeWindow ? 'true' : undefined}
+                              aria-describedby={
+                                drawerErrors.timeWindow ? 'task-time-window-error' : undefined
+                              }
+                            />
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="task-form-section">
+                      <span>{t('tasks.details_due_prefix')}</span>
+                      <div className="task-due-picker">
+                        <DatePicker
+                          ref={drawerDueDatePickerRef}
+                          selected={toLocalDateTime(taskDraft.dueDate, taskDraft.time)}
+                          onInputClick={() => {
+                            drawerStartDatePickerRef.current?.setOpen(false)
+                            drawerRuleStartDatePickerRef.current?.setOpen(false)
+                          }}
+                          onChange={(date: Date | null) => {
+                            if (!date) return
+                            setTaskDraft({
+                              ...taskDraft,
+                              dueDate: toLocalDateKey(date),
+                              time: toLocalTimeValue(date),
+                            })
+                            if (drawerErrors.timeWindow) {
+                              setDrawerErrors((current) => ({ ...current, timeWindow: undefined }))
+                            }
+                          }}
+                          showTimeInput
+                          dateFormat="yyyy-MM-dd HH:mm"
+                          timeInputLabel={t('tasks.time_picker_time_label')}
+                          locale={datePickerLocale}
+                          portalId="task-drawer-datepicker-portal"
+                          popperPlacement="bottom-end"
+                          ariaInvalid={drawerErrors.timeWindow ? 'true' : undefined}
+                          customInput={
+                            <DatePickerInput
+                              aria-label={t('tasks.details_due_prefix')}
+                              aria-invalid={drawerErrors.timeWindow ? 'true' : undefined}
+                              aria-describedby={
+                                drawerErrors.timeWindow ? 'task-time-window-error' : undefined
+                              }
+                            />
+                          }
+                        />
+                      </div>
+                    </div>
+                    <label className="task-form-section">
+                      <span>{t('tasks.quick_add_priority_label')}</span>
+                      <select
+                        className="form-field"
+                        value={taskDraft.priority}
+                        onChange={(event) =>
+                          setTaskDraft({ ...taskDraft, priority: event.target.value })
+                        }
+                      >
+                        <option value="high">{t('tasks.priority_high')}</option>
+                        <option value="mid">{t('tasks.priority_mid')}</option>
+                        <option value="low">{t('tasks.priority_low')}</option>
+                      </select>
+                    </label>
+                  </div>
+                  {drawerErrors.timeWindow && (
+                    <p id="task-time-window-error" className="task-field-error" role="alert">
+                      {drawerErrors.timeWindow}
+                    </p>
+                  )}
+                </div>
+                <label className="task-drawer__recurring-setting">
+                  <span className="task-drawer__recurring-copy">
+                    <strong>{t('tasks.requires_review_label')}</strong>
+                    <small>{t('tasks.requires_review_hint')}</small>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={taskDraft.requiresReview}
+                    onChange={(event) =>
+                      setTaskDraft({ ...taskDraft, requiresReview: event.target.checked })
+                    }
+                  />
+                </label>
+                <label className="task-drawer__recurring-setting">
+                  <span className="task-drawer__recurring-copy">
+                    <strong>{t('tasks.recurring_task_checkbox_label')}</strong>
+                    <small>{t('tasks.recurring_task_hint')}</small>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={taskDraft.repeat !== 'none'}
+                    onChange={(event) => {
+                      const recurring = event.target.checked
+                      setTaskDraft({ ...taskDraft, repeat: recurring ? ruleFreq : 'none' })
+                      if (recurring) setRuleStartDate(taskDraft.startDate)
+                      setIsRulePanelExpanded(recurring)
+                    }}
+                  />
+                </label>
+                {taskDraft.repeat !== 'none' && (
+                  <div className="task-drawer__rule-panel">
+                    <button
+                      type="button"
+                      className="task-drawer__rule-summary"
+                      onClick={() => setIsRulePanelExpanded((current) => !current)}
+                      aria-expanded={isRulePanelExpanded}
+                    >
+                      <span className="task-rule-summary__icon" aria-hidden="true">
+                        <RefreshCw size={16} />
+                      </span>
+                      <span className="task-rule-summary__copy">
+                        <strong>{getCurrentRuleScheduleSummary()}</strong>
+                        <small>
+                          {t('tasks.rule_summary_time_instances', {
+                            count: ruleTimes.length,
+                            times: ruleTimes.join(' / '),
+                          })}{' '}
+                          · {getCurrentRuleRangeSummary()}
+                        </small>
+                      </span>
+                      <span className="task-rule-summary__action">
+                        {isRulePanelExpanded
+                          ? t('tasks.rule_action_collapse')
+                          : t('tasks.rule_action_edit')}
+                        {isRulePanelExpanded ? (
+                          <ChevronUp size={16} aria-hidden="true" />
+                        ) : (
+                          <ChevronDown size={16} aria-hidden="true" />
+                        )}
+                      </span>
+                    </button>
+                    {isRulePanelExpanded && (
+                      <div className="task-drawer__rule-editor">
+                        <section className="task-rule-section">
+                          <header className="task-rule-section__header">
+                            <span className="task-rule-section__number">1</span>
+                            <span>
+                              <strong>{t('tasks.rule_section_schedule')}</strong>
+                              <small>{getCurrentRuleScheduleSummary()}</small>
+                            </span>
+                          </header>
+                          <div
+                            className="task-rule-mode-control"
+                            role="group"
+                            aria-label={t('tasks.schedule_mode_label')}
+                          >
+                            <button
+                              type="button"
+                              aria-pressed={ruleScheduleMode === 'rules'}
+                              onClick={() => setRuleScheduleMode('rules')}
+                            >
+                              <CalendarDays size={15} aria-hidden="true" />
+                              {t('tasks.schedule_mode_rules')}
+                            </button>
+                            <button
+                              type="button"
+                              aria-pressed={ruleScheduleMode === 'interval'}
+                              onClick={() => setRuleScheduleMode('interval')}
+                            >
+                              <RefreshCw size={15} aria-hidden="true" />
+                              {t('tasks.schedule_mode_interval')}
+                            </button>
+                          </div>
+
+                          {ruleScheduleMode === 'interval' ? (
+                            <label className="task-rule-interval-field">
+                              <span>{t('tasks.rule_interval_prefix')}</span>
+                              <input
+                                className="form-field"
+                                type="number"
+                                min={1}
+                                value={ruleInterval}
+                                aria-label={t('tasks.interval_days_label')}
+                                onChange={(event) =>
+                                  setRuleInterval(Math.max(1, Number(event.target.value) || 1))
+                                }
+                              />
+                              <span>{t('tasks.rule_interval_suffix')}</span>
+                            </label>
+                          ) : (
+                            <div className="task-rule-condition-list">
+                              <div className="task-rule-condition">
+                                <div className="task-rule-condition__label">
+                                  <strong>{t('tasks.week_days_label')}</strong>
+                                  <small>{t('tasks.rule_condition_optional')}</small>
+                                </div>
+                                <div className="task-weekday-picker">
+                                  {[0, 1, 2, 3, 4, 5, 6].map((day, index) => {
+                                    const selected = ruleWeekDays.includes(day)
+                                    return (
+                                      <button
+                                        key={day}
+                                        type="button"
+                                        aria-pressed={selected}
+                                        onClick={() =>
+                                          setRuleWeekDays(
+                                            selected
+                                              ? ruleWeekDays.filter((value) => value !== day)
+                                              : [...ruleWeekDays, day],
+                                          )
+                                        }
+                                      >
+                                        {t('tasks.weekdays_sunday_first').split(',')[index]}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+
+                              <div className="task-rule-condition">
+                                <div className="task-rule-condition__label">
+                                  <strong>{t('tasks.month_days_label')}</strong>
+                                  <small>
+                                    {ruleMonthDays.length > 0
+                                      ? t('tasks.rule_selected_count', {
+                                          count: ruleMonthDays.length,
+                                        })
+                                      : t('tasks.rule_condition_optional')}
+                                  </small>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="task-rule-picker-toggle"
+                                  aria-expanded={isMonthDayPickerExpanded}
+                                  onClick={() => setIsMonthDayPickerExpanded((current) => !current)}
+                                >
+                                  <span>
+                                    {ruleMonthDays.length > 0
+                                      ? [...ruleMonthDays]
+                                          .sort((left, right) => left - right)
+                                          .join(t('tasks.rule_value_separator'))
+                                      : t('tasks.rule_no_month_days')}
+                                  </span>
+                                  {isMonthDayPickerExpanded ? (
+                                    <ChevronUp size={15} aria-hidden="true" />
+                                  ) : (
+                                    <ChevronDown size={15} aria-hidden="true" />
+                                  )}
+                                </button>
+                                {isMonthDayPickerExpanded && (
+                                  <div className="task-monthday-picker">
+                                    {Array.from({ length: 31 }, (_, index) => index + 1).map(
+                                      (day) => {
+                                        const selected = ruleMonthDays.includes(day)
+                                        return (
+                                          <button
+                                            key={day}
+                                            type="button"
+                                            aria-pressed={selected}
+                                            onClick={() =>
+                                              setRuleMonthDays(
+                                                selected
+                                                  ? ruleMonthDays.filter((value) => value !== day)
+                                                  : [...ruleMonthDays, day],
+                                              )
+                                            }
+                                          >
+                                            {day}
+                                          </button>
+                                        )
+                                      },
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+
+                              <button
+                                type="button"
+                                className="task-rule-exclusions-toggle"
+                                aria-expanded={isRuleExclusionsExpanded}
+                                onClick={() => setIsRuleExclusionsExpanded((current) => !current)}
+                              >
+                                <Plus size={14} aria-hidden="true" />
+                                {t('tasks.rule_exclusions_label')}
+                                {ruleExcludedWeekDays.length + ruleExcludedMonthDays.length > 0 && (
+                                  <span>
+                                    {ruleExcludedWeekDays.length + ruleExcludedMonthDays.length}
+                                  </span>
+                                )}
+                              </button>
+
+                              {isRuleExclusionsExpanded && (
+                                <div className="task-rule-exclusions">
+                                  <div className="task-rule-condition">
+                                    <div className="task-rule-condition__label">
+                                      <strong>{t('tasks.excluded_week_days_label')}</strong>
+                                    </div>
+                                    <div className="task-weekday-picker">
+                                      {[0, 1, 2, 3, 4, 5, 6].map((day, index) => {
+                                        const selected = ruleExcludedWeekDays.includes(day)
+                                        return (
+                                          <button
+                                            key={day}
+                                            type="button"
+                                            aria-pressed={selected}
+                                            onClick={() =>
+                                              setRuleExcludedWeekDays(
+                                                selected
+                                                  ? ruleExcludedWeekDays.filter(
+                                                      (value) => value !== day,
+                                                    )
+                                                  : [...ruleExcludedWeekDays, day],
+                                              )
+                                            }
+                                          >
+                                            {t('tasks.weekdays_sunday_first').split(',')[index]}
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                  <div className="task-rule-condition">
+                                    <div className="task-rule-condition__label">
+                                      <strong>{t('tasks.excluded_month_days_label')}</strong>
+                                      <small>
+                                        {t('tasks.rule_selected_count', {
+                                          count: ruleExcludedMonthDays.length,
+                                        })}
+                                      </small>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="task-rule-picker-toggle"
+                                      aria-expanded={isExcludedMonthDayPickerExpanded}
+                                      onClick={() =>
+                                        setIsExcludedMonthDayPickerExpanded((current) => !current)
+                                      }
+                                    >
+                                      <span>
+                                        {ruleExcludedMonthDays.length > 0
+                                          ? [...ruleExcludedMonthDays]
+                                              .sort((left, right) => left - right)
+                                              .join(t('tasks.rule_value_separator'))
+                                          : t('tasks.rule_no_excluded_month_days')}
+                                      </span>
+                                      {isExcludedMonthDayPickerExpanded ? (
+                                        <ChevronUp size={15} aria-hidden="true" />
+                                      ) : (
+                                        <ChevronDown size={15} aria-hidden="true" />
+                                      )}
+                                    </button>
+                                    {isExcludedMonthDayPickerExpanded && (
+                                      <div className="task-monthday-picker">
+                                        {Array.from({ length: 31 }, (_, index) => index + 1).map(
+                                          (day) => {
+                                            const selected = ruleExcludedMonthDays.includes(day)
+                                            return (
+                                              <button
+                                                key={day}
+                                                type="button"
+                                                aria-pressed={selected}
+                                                onClick={() =>
+                                                  setRuleExcludedMonthDays(
+                                                    selected
+                                                      ? ruleExcludedMonthDays.filter(
+                                                          (value) => value !== day,
+                                                        )
+                                                      : [...ruleExcludedMonthDays, day],
+                                                  )
+                                                }
+                                              >
+                                                {day}
+                                              </button>
+                                            )
+                                          },
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </section>
+
+                        <section className="task-rule-section">
+                          <header className="task-rule-section__header">
+                            <span className="task-rule-section__number">2</span>
+                            <span>
+                              <strong>{t('tasks.rule_section_frequency')}</strong>
+                              <small>
+                                {t('tasks.rule_summary_time_instances', {
+                                  count: ruleTimes.length,
+                                  times: ruleTimes.join(' / '),
+                                })}
+                              </small>
+                            </span>
+                          </header>
+                          <div className="task-drawer__times-editor">
+                            {ruleTimes.map((time, index) => (
+                              <div className="task-drawer__time-row" key={`${time}-${index}`}>
+                                <span className="task-rule-time-index">{index + 1}</span>
+                                <input
+                                  className="form-field"
+                                  type="time"
+                                  value={time}
+                                  aria-label={t('tasks.rule_occurrence_time', { index: index + 1 })}
+                                  onChange={(event) =>
+                                    setRuleTimes(
+                                      ruleTimes.map((current, currentIndex) =>
+                                        currentIndex === index ? event.target.value : current,
+                                      ),
+                                    )
+                                  }
+                                />
+                                {ruleTimes.length > 1 && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-icon-close"
+                                    aria-label={t('tasks.remove_execution_time')}
+                                    title={t('tasks.remove_execution_time')}
+                                    onClick={() =>
+                                      setRuleTimes(
+                                        ruleTimes.filter(
+                                          (_, currentIndex) => currentIndex !== index,
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    <Trash2 size={14} aria-hidden="true" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              className="task-rule-add-time"
+                              onClick={() => setRuleTimes([...ruleTimes, '09:00'])}
+                            >
+                              <Plus size={14} aria-hidden="true" />
+                              {t('tasks.add_time')}
+                            </button>
+                          </div>
+                          <p className="task-rule-section__hint">
+                            {t('tasks.instance_start_times_hint')}
+                          </p>
+                        </section>
+
+                        <section className="task-rule-section">
+                          <header className="task-rule-section__header">
+                            <span className="task-rule-section__number">3</span>
+                            <span>
+                              <strong>{t('tasks.rule_section_range')}</strong>
+                              <small>{getCurrentRuleRangeSummary()}</small>
+                            </span>
+                          </header>
+                          <div className="task-rule-range-grid">
+                            <div className="task-form-section">
+                              <span>{t('tasks.rule_start_date_label')}</span>
+                              <DatePicker
+                                ref={drawerRuleStartDatePickerRef}
+                                selected={toLocalDate(ruleStartDate)}
+                                onInputClick={() => {
+                                  drawerStartDatePickerRef.current?.setOpen(false)
+                                  drawerDueDatePickerRef.current?.setOpen(false)
+                                  drawerRuleStartDatePickerRef.current?.setOpen(true)
+                                }}
+                                onChange={(date: Date | null) => {
+                                  if (date) setRuleStartDate(toLocalDateKey(date))
+                                }}
+                                dateFormat="yyyy-MM-dd"
+                                locale={datePickerLocale}
+                                portalId="task-drawer-datepicker-portal"
+                                popperPlacement="bottom-end"
+                                customInput={
+                                  <DatePickerInput aria-label={t('tasks.rule_start_date_label')} />
+                                }
+                              />
+                              {drawerErrors.ruleStartDate && (
+                                <small className="task-field-error" role="alert">
+                                  {drawerErrors.ruleStartDate}
+                                </small>
+                              )}
+                            </div>
+                            <label className="task-form-section">
+                              <span>{t('tasks.rule_end_date_label')}</span>
+                              <input
+                                className="form-field"
+                                type="date"
+                                value={ruleEndDate}
+                                min={ruleStartDate || undefined}
+                                onChange={(event) => setRuleEndDate(event.target.value)}
+                              />
+                            </label>
+                          </div>
+                        </section>
+
+                        {drawerMode === 'edit' && activeTaskRule && (
+                          <div className="task-rule-instance-note">
+                            <AlertTriangle size={15} aria-hidden="true" />
+                            <span>{t('tasks.rule_instance_unchanged_note')}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <footer className="task-drawer__footer">
+                {drawerMode === 'edit' && activeTask && (
+                  <button
+                    type="button"
+                    className="btn danger"
+                    onClick={(event) =>
+                      openTaskDeletionConfirmation(activeTask, event.currentTarget)
+                    }
+                  >
+                    {t('tasks.delete_task')}
+                  </button>
+                )}
+                <button type="button" className="btn" onClick={() => setDrawerMode(null)}>
+                  {t('common.cancel')}
+                </button>
+                <button type="button" className="btn primary" onClick={handleSaveDrawer}>
+                  {t('tasks.btn_save_changes')}
+                </button>
+              </footer>
+            </aside>
+          </div>
+        </ViewportPortal>
       )}
       {completionConfirmationTask && completionConfirmationCopy && (
         <AccessibleDialog
@@ -3177,24 +4050,53 @@ export const Tasks: React.FC = () => {
           contentClassName="task-completion-confirm"
         >
           <p className="task-completion-confirm__copy">{completionConfirmationCopy.description}</p>
-          <div className="task-completion-confirm__actions">
-            <button
-              type="button"
-              className="btn"
-              disabled={isCompletionConfirming}
-              onClick={() => setCompletionConfirmationTask(null)}
-            >
-              {t('common.cancel')}
-            </button>
-            <button
-              type="button"
-              className="btn primary"
-              disabled={isCompletionConfirming}
-              onClick={() => void confirmTaskCompletionToggle()}
-            >
-              {completionConfirmationCopy.action}
-            </button>
-          </div>
+          {completionConfirmationTask.status === TASK_STATUS.overdue ? (
+            <div className="task-completion-confirm__actions task-completion-confirm__actions--overdue">
+              <button
+                type="button"
+                className="btn"
+                disabled={isCompletionConfirming}
+                onClick={() => setCompletionConfirmationTask(null)}
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={isCompletionConfirming}
+                onClick={() => void resolveOverdueTask(TASK_STATUS.review)}
+              >
+                {t('tasks.confirm_resolve_overdue_review_action')}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={isCompletionConfirming}
+                onClick={() => void resolveOverdueTask(TASK_STATUS.closed)}
+              >
+                {t('tasks.confirm_resolve_overdue_close_action')}
+              </button>
+            </div>
+          ) : (
+            <div className="task-completion-confirm__actions">
+              <button
+                type="button"
+                className="btn"
+                disabled={isCompletionConfirming}
+                onClick={() => setCompletionConfirmationTask(null)}
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={isCompletionConfirming}
+                onClick={() => void confirmTaskCompletionToggle()}
+              >
+                {completionConfirmationCopy.action}
+              </button>
+            </div>
+          )}
         </AccessibleDialog>
       )}
       {deletionConfirmationTask && (
@@ -3254,6 +4156,20 @@ export const Tasks: React.FC = () => {
                 <span>
                   <strong>{t('tasks.delete_scope_delete_repeat_title')}</strong>
                   <small>{t('tasks.delete_scope_delete_repeat_description')}</small>
+                </span>
+              </label>
+              <label className="task-delete-confirm__scope task-delete-confirm__scope--danger">
+                <input
+                  type="radio"
+                  name="task-delete-scope"
+                  value="delete-all-repeat"
+                  checked={deletionScope === 'delete-all-repeat'}
+                  disabled={isDeletingTask}
+                  onChange={() => setDeletionScope('delete-all-repeat')}
+                />
+                <span>
+                  <strong>{t('tasks.delete_scope_delete_all_repeat_title')}</strong>
+                  <small>{t('tasks.delete_scope_delete_all_repeat_description')}</small>
                 </span>
               </label>
             </fieldset>
