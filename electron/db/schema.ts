@@ -70,6 +70,7 @@ export function initializeUserDatabase(userDbDir: string) {
       template_id INTEGER,
       template_version INTEGER,
       instance_key TEXT,
+      recur_instance_root INTEGER NOT NULL DEFAULT 0,
       parent_id INTEGER,
       progress INTEGER DEFAULT 0,
       associated_note_id INTEGER,
@@ -97,6 +98,7 @@ export function initializeUserDatabase(userDbDir: string) {
       requires_review INTEGER NOT NULL DEFAULT 0,
       template_id INTEGER,
       template_version INTEGER,
+      parent_id INTEGER,
       priority TEXT CHECK(priority IN ('high', 'mid', 'low')) DEFAULT 'mid',
       end_condition TEXT,  -- 'never' or 'count:X' or 'date:YYYY-MM-DD'
       missed_policy TEXT DEFAULT 'accumulate', -- 'skip', 'accumulate', 'prompt'
@@ -181,6 +183,9 @@ export function initializeUserDatabase(userDbDir: string) {
     if (!taskColumnNames.has('start_time')) {
       tasksDb.exec('ALTER TABLE tasks ADD COLUMN start_time TEXT')
     }
+    if (!taskColumnNames.has('recur_instance_root')) {
+      tasksDb.exec('ALTER TABLE tasks ADD COLUMN recur_instance_root INTEGER NOT NULL DEFAULT 0')
+    }
 
     const ruleColumns = tasksDb.prepare('PRAGMA table_info(recurring_rules)').all() as {
       name: string
@@ -205,7 +210,9 @@ export function initializeUserDatabase(userDbDir: string) {
       tasksDb.exec('ALTER TABLE recurring_rules ADD COLUMN excluded_month_days TEXT')
     }
     if (!ruleColumnNames.has('schedule_mode')) {
-      tasksDb.exec("ALTER TABLE recurring_rules ADD COLUMN schedule_mode TEXT CHECK(schedule_mode IN ('rules', 'interval'))")
+      tasksDb.exec(
+        "ALTER TABLE recurring_rules ADD COLUMN schedule_mode TEXT CHECK(schedule_mode IN ('rules', 'interval'))",
+      )
     }
     if (!ruleColumnNames.has('end_date')) {
       tasksDb.exec('ALTER TABLE recurring_rules ADD COLUMN end_date TEXT')
@@ -220,6 +227,9 @@ export function initializeUserDatabase(userDbDir: string) {
       tasksDb.exec(
         'ALTER TABLE recurring_rules ADD COLUMN requires_review INTEGER NOT NULL DEFAULT 0',
       )
+    }
+    if (!ruleColumnNames.has('parent_id')) {
+      tasksDb.exec('ALTER TABLE recurring_rules ADD COLUMN parent_id INTEGER')
     }
 
     tasksDb.exec(`
@@ -248,6 +258,13 @@ export function initializeUserDatabase(userDbDir: string) {
       SET start_date = COALESCE(start_date, due_date, substr(created_at, 1, 10)),
           start_time = COALESCE(start_time, '00:00:00')
       WHERE start_date IS NULL OR start_time IS NULL;
+
+      UPDATE tasks
+      SET recur_instance_root = 1
+      WHERE recur_instance_root = 0
+        AND recur_rule_id IS NOT NULL
+        AND instance_key IS NOT NULL
+        AND parent_id IS NULL;
 
       UPDATE tasks
       SET status = '待处理'
@@ -284,9 +301,94 @@ export function initializeUserDatabase(userDbDir: string) {
 
       CREATE UNIQUE INDEX tasks_recur_instance_parent_idx
         ON tasks (recur_rule_id, instance_key)
-        WHERE recur_rule_id IS NOT NULL AND instance_key IS NOT NULL AND parent_id IS NULL;
+        WHERE recur_rule_id IS NOT NULL AND instance_key IS NOT NULL AND recur_instance_root = 1;
 
       CREATE INDEX IF NOT EXISTS tasks_parent_id_idx ON tasks (parent_id);
+
+      CREATE TABLE IF NOT EXISTS task_peer_links (
+        task_id INTEGER NOT NULL,
+        peer_task_id INTEGER NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (task_id, peer_task_id),
+        CHECK (task_id < peer_task_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS task_peer_links_peer_idx ON task_peer_links (peer_task_id);
+
+      CREATE TRIGGER IF NOT EXISTS recurring_rules_valid_date_range_insert
+      BEFORE INSERT ON recurring_rules
+      WHEN NEW.start_date IS NOT NULL
+        AND NEW.end_date IS NOT NULL
+        AND NEW.end_date < NEW.start_date
+      BEGIN
+        SELECT RAISE(ABORT, 'The last generation date cannot be earlier than the first generation date');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS recurring_rules_valid_date_range_update
+      BEFORE UPDATE OF start_date, end_date ON recurring_rules
+      WHEN NEW.start_date IS NOT NULL
+        AND NEW.end_date IS NOT NULL
+        AND NEW.end_date < NEW.start_date
+      BEGIN
+        SELECT RAISE(ABORT, 'The last generation date cannot be earlier than the first generation date');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS tasks_parent_no_cycle
+      BEFORE UPDATE OF parent_id ON tasks
+      WHEN NEW.parent_id IS NOT NULL
+      BEGIN
+        SELECT CASE
+          WHEN NEW.parent_id = NEW.id
+          THEN RAISE(ABORT, 'A task cannot be its own parent')
+        END;
+
+        WITH RECURSIVE ancestors(id, parent_id) AS (
+          SELECT id, parent_id FROM tasks WHERE id = NEW.parent_id
+          UNION
+          SELECT tasks.id, tasks.parent_id
+          FROM tasks
+          INNER JOIN ancestors ON tasks.id = ancestors.parent_id
+        )
+        SELECT CASE
+          WHEN EXISTS (SELECT 1 FROM ancestors WHERE id = NEW.id)
+          THEN RAISE(ABORT, 'A task cannot be assigned to one of its descendants')
+        END;
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS task_peer_links_same_parent
+      BEFORE INSERT ON task_peer_links
+      BEGIN
+        SELECT CASE
+          WHEN NOT EXISTS (
+            SELECT 1
+            FROM tasks AS task
+            INNER JOIN tasks AS peer ON peer.id = NEW.peer_task_id
+            WHERE task.id = NEW.task_id
+              AND task.parent_id IS peer.parent_id
+          )
+          THEN RAISE(ABORT, 'Peer tasks must share the same parent')
+        END;
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS tasks_parent_clear_peer_links
+      AFTER UPDATE OF parent_id ON tasks
+      BEGIN
+        DELETE FROM task_peer_links
+        WHERE (task_id = NEW.id OR peer_task_id = NEW.id)
+          AND NOT EXISTS (
+            SELECT 1
+            FROM tasks AS task
+            INNER JOIN tasks AS peer ON peer.id = task_peer_links.peer_task_id
+            WHERE task.id = task_peer_links.task_id
+              AND task.parent_id IS peer.parent_id
+          );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS tasks_delete_peer_links
+      AFTER DELETE ON tasks
+      BEGIN
+        DELETE FROM task_peer_links WHERE task_id = OLD.id OR peer_task_id = OLD.id;
+      END;
     `)
   } catch (err) {
     console.error('Failed to migrate task template schema:', err)
@@ -430,6 +532,7 @@ export function initializeUserDatabase(userDbDir: string) {
       author TEXT,
       path TEXT NOT NULL,
       cover TEXT,
+      cover_path TEXT,
       category TEXT DEFAULT '未分类',
       progress REAL DEFAULT 0.0,
       status TEXT CHECK(status IN ('want', 'reading', 'read')) DEFAULT 'want',
@@ -449,6 +552,7 @@ export function initializeUserDatabase(userDbDir: string) {
     CREATE TABLE IF NOT EXISTS categories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT UNIQUE NOT NULL,
+      parent_id INTEGER,
       sort_order INTEGER DEFAULT 0
     );
 
@@ -460,6 +564,17 @@ export function initializeUserDatabase(userDbDir: string) {
       PRIMARY KEY (entity_type, entity_id, locale)
     );
   `)
+
+  const categoryColumns = booksDb.prepare('PRAGMA table_info(categories)').all() as { name: string }[]
+  if (!categoryColumns.some((column) => column.name === 'parent_id')) {
+    booksDb.prepare('ALTER TABLE categories ADD COLUMN parent_id INTEGER').run()
+  }
+  booksDb.exec('CREATE INDEX IF NOT EXISTS categories_parent_id_idx ON categories (parent_id)')
+
+  const bookColumns = booksDb.prepare('PRAGMA table_info(books)').all() as { name: string }[]
+  if (!bookColumns.some((column) => column.name === 'cover_path')) {
+    booksDb.prepare('ALTER TABLE books ADD COLUMN cover_path TEXT').run()
+  }
 
   // Seed default book categories if empty
   const countStmt = booksDb.prepare('SELECT count(*) as count FROM categories')

@@ -7,6 +7,7 @@ import {
   sortDesktopTasksByOrder,
   type DesktopTaskOrder,
 } from './taskDesktopUtils'
+import { getTaskDuePresentation } from './taskDuePresentationUtils'
 import './DesktopTaskNote.css'
 import { getReopenedTaskStatus, TASK_STATUS } from '../taskWorkflow'
 
@@ -26,10 +27,11 @@ type DesktopTaskRecord = {
 
 const getUserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 
-const formatRecurringSchedule = (task: DesktopTaskRecord, todayKey: string) => {
-  if (!task.due_date || !task.due_time) return null
-  const time = task.due_time.slice(0, 5)
-  return task.due_date === todayKey ? time : `${task.due_date.slice(5).replace('-', '/')} ${time}`
+const formatTaskSchedule = (task: DesktopTaskRecord, todayKey: string) => {
+  const due = getTaskDuePresentation(task.due_date, task.due_time)
+  if (!due.dateKey) return null
+  if (due.time && due.dateKey === todayKey) return due.time
+  return `${due.dateKey.slice(5).replace('-', '/')}${due.time ? ` ${due.time}` : ''}`
 }
 
 export const DesktopTaskNote: React.FC = () => {
@@ -187,7 +189,8 @@ export const DesktopTaskNote: React.FC = () => {
 
   const renderTask = (task: DesktopTaskRecord, group: 'active' | 'completed') => {
     const isCompleted = task.is_completed === 1
-    const schedule = task.recur_rule_id ? formatRecurringSchedule(task, todayKey) : null
+    const schedule = formatTaskSchedule(task, todayKey)
+    const due = getTaskDuePresentation(task.due_date, task.due_time)
     return (
       <li
         key={task.id}
@@ -217,8 +220,8 @@ export const DesktopTaskNote: React.FC = () => {
         {schedule && (
           <time
             className="desktop-task-note__schedule"
-            dateTime={`${task.due_date}T${task.due_time}`}
-            title={`${task.due_date} ${task.due_time}`}
+            dateTime={due.time ? `${due.dateKey}T${due.time}` : due.dateKey || undefined}
+            title={due.time ? `${due.dateKey} ${due.time}` : due.dateKey || undefined}
           >
             <Clock3 size={12} aria-hidden="true" />
             {schedule}

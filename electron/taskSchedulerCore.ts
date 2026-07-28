@@ -19,7 +19,7 @@ export function runTaskSchedulerCore(db: any, now = new Date()) {
       if (
         db
           .prepare(
-            'SELECT id FROM tasks WHERE recur_rule_id = ? AND instance_key = ? AND parent_id IS NULL LIMIT 1',
+            'SELECT id FROM tasks WHERE recur_rule_id = ? AND instance_key = ? AND recur_instance_root = 1 LIMIT 1',
           )
           .get(rule.id, occurrence.instanceKey)
       )
@@ -27,7 +27,7 @@ export function runTaskSchedulerCore(db: any, now = new Date()) {
 
       const inserted = db
         .prepare(
-          `INSERT INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, recur_rule_id, template_id, template_version, instance_key, progress) VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, '23:59:59', ?, ?, ?, ?, 0)`,
+          `INSERT INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, recur_rule_id, template_id, template_version, instance_key, recur_instance_root, parent_id, progress) VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, '23:59:59', ?, ?, ?, ?, 1, ?, 0)`,
         )
         .run(
           rule.title,
@@ -41,6 +41,7 @@ export function runTaskSchedulerCore(db: any, now = new Date()) {
           rule.template_id || null,
           rule.template_version || null,
           occurrence.instanceKey,
+          rule.parent_id || null,
         )
       const parentId = Number(inserted.lastInsertRowid)
       const insertStep = db.prepare(

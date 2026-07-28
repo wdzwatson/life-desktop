@@ -6,6 +6,47 @@ import test from 'node:test'
 import Database from 'better-sqlite3'
 import { initializeUserDatabase } from '../electron/db/schema.ts'
 
+test('book category schema adds parent ids without losing legacy shelves', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-book-category-schema-'))
+  try {
+    const dbPath = path.join(dir, 'books.db')
+    const db = new Database(dbPath)
+    db.exec(`
+      CREATE TABLE categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        sort_order INTEGER DEFAULT 0
+      );
+      INSERT INTO categories (name, sort_order) VALUES ('技术', 1);
+    `)
+    db.close()
+
+    initializeUserDatabase(dir)
+
+    const migratedDb = new Database(dbPath)
+    try {
+      const categoryColumns = migratedDb
+        .prepare('PRAGMA table_info(categories)')
+        .all()
+        .map((column) => column.name)
+      assert.ok(categoryColumns.includes('parent_id'))
+      const bookColumns = migratedDb
+        .prepare('PRAGMA table_info(books)')
+        .all()
+        .map((column) => column.name)
+      assert.ok(bookColumns.includes('cover_path'))
+      assert.deepEqual(
+        migratedDb.prepare('SELECT id, name, parent_id FROM categories').all(),
+        [{ id: 1, name: '技术', parent_id: null }],
+      )
+    } finally {
+      migratedDb.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('task schema migrates legacy recurring task columns before creating recurrence index', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-task-schema-'))
   try {
@@ -103,6 +144,11 @@ test('task schema migrates legacy recurring task columns before creating recurre
           .prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?")
           .get('tasks_parent_id_idx'),
       )
+      assert.ok(
+        migratedDb
+          .prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = ?")
+          .get('tasks_parent_no_cycle'),
+      )
 
       migratedDb
         .prepare(
@@ -114,6 +160,84 @@ test('task schema migrates legacy recurring task columns before creating recurre
         .run()
     } finally {
       migratedDb.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('task schema rejects self and descendant parent bindings', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'life-task-hierarchy-schema-'))
+  try {
+    initializeUserDatabase(dir)
+    const db = new Database(path.join(dir, 'tasks.db'))
+    try {
+      db.prepare("INSERT INTO tasks (title) VALUES ('Root')").run()
+      db.prepare("INSERT INTO tasks (title, parent_id) VALUES ('Child', 1)").run()
+      db.prepare("INSERT INTO tasks (title, parent_id) VALUES ('Grandchild', 2)").run()
+
+      assert.throws(
+        () => db.prepare('UPDATE tasks SET parent_id = ? WHERE id = ?').run(1, 1),
+        /own parent/i,
+      )
+      assert.throws(
+        () => db.prepare('UPDATE tasks SET parent_id = ? WHERE id = ?').run(3, 1),
+        /descendants/i,
+      )
+      assert.doesNotThrow(() => db.prepare('UPDATE tasks SET parent_id = ? WHERE id = ?').run(1, 3))
+    } finally {
+      db.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('task schema keeps peer links between tasks at the same level only', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'life-task-peer-schema-'))
+  try {
+    initializeUserDatabase(dir)
+    const db = new Database(path.join(dir, 'tasks.db'))
+    try {
+      db.prepare("INSERT INTO tasks (title) VALUES ('Parent')").run()
+      db.prepare("INSERT INTO tasks (title, parent_id) VALUES ('Peer A', 1)").run()
+      db.prepare("INSERT INTO tasks (title, parent_id) VALUES ('Peer B', 1)").run()
+      assert.doesNotThrow(() =>
+        db.prepare('INSERT INTO task_peer_links (task_id, peer_task_id) VALUES (?, ?)').run(2, 3),
+      )
+      assert.throws(
+        () =>
+          db.prepare('INSERT INTO task_peer_links (task_id, peer_task_id) VALUES (?, ?)').run(1, 2),
+        /same parent/i,
+      )
+
+      db.prepare('UPDATE tasks SET parent_id = NULL WHERE id = ?').run(3)
+      assert.equal(db.prepare('SELECT COUNT(*) AS count FROM task_peer_links').get().count, 0)
+    } finally {
+      db.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('task schema rejects a recurring rule that ends before its first generation date', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'life-task-rule-range-schema-'))
+  try {
+    initializeUserDatabase(dir)
+    const db = new Database(path.join(dir, 'tasks.db'))
+    try {
+      assert.throws(
+        () =>
+          db
+            .prepare(
+              "INSERT INTO recurring_rules (title, frequency, start_date, end_date) VALUES ('Invalid range', 'daily', '2026-07-28', '2026-07-27')",
+            )
+            .run(),
+        /last generation date/i,
+      )
+    } finally {
+      db.close()
     }
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -177,16 +301,16 @@ test('task schema prevents duplicate root instances for the same template occurr
     try {
       db.prepare(
         `
-        INSERT INTO tasks (title, recur_rule_id, instance_key, status)
-        VALUES ('Daily check', 1, '2026-07-21T09:00', '待处理')
+        INSERT INTO tasks (title, recur_rule_id, instance_key, recur_instance_root, status)
+        VALUES ('Daily check', 1, '2026-07-21T09:00', 1, '待处理')
       `,
       ).run()
       assert.throws(() =>
         db
           .prepare(
             `
-            INSERT INTO tasks (title, recur_rule_id, instance_key, status)
-            VALUES ('Daily check duplicate', 1, '2026-07-21T09:00', '待处理')
+            INSERT INTO tasks (title, recur_rule_id, instance_key, recur_instance_root, status)
+            VALUES ('Daily check duplicate', 1, '2026-07-21T09:00', 1, '待处理')
           `,
           )
           .run(),

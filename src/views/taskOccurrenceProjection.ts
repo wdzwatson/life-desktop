@@ -11,6 +11,7 @@ type PersistedTask = {
   template_id?: number | null
   template_version?: number | null
   instance_key?: string | null
+  parent_id?: number | null
 }
 
 export type CalendarOccurrence = PersistedTask & {
@@ -58,6 +59,7 @@ export const projectCalendarOccurrences = (
         template_id: (rule as any).template_id || null,
         template_version: (rule as any).template_version || null,
         instance_key: occurrence.instanceKey,
+        parent_id: (rule as any).parent_id || null,
         occurrence_time: occurrence.time,
         is_virtual: true,
       })

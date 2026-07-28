@@ -78,6 +78,27 @@ test('scheduler creates today task when the app starts after midnight', () => {
   }
 })
 
+test('scheduler preserves a recurring rule parent binding on generated instances', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'life-task-scheduler-'))
+  try {
+    initializeUserDatabase(dir)
+    const db = new Database(path.join(dir, 'tasks.db'))
+    db.prepare("INSERT INTO tasks (title) VALUES ('Health plan')").run()
+    db.prepare(
+      "INSERT INTO recurring_rules (title, frequency, start_date, start_time, parent_id) VALUES ('Run', 'daily', '2026-07-21', '09:00', 1)",
+    ).run()
+
+    runTaskSchedulerCore(db, new Date(2026, 6, 22, 8, 0))
+    assert.deepEqual(
+      db.prepare('SELECT parent_id, recur_instance_root FROM tasks WHERE recur_rule_id = 1').get(),
+      { parent_id: 1, recur_instance_root: 1 },
+    )
+    db.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  }
+})
+
 test('scheduler derives task status from start and due timestamps without changing review or closed tasks', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'life-task-scheduler-'))
   try {

@@ -12,10 +12,7 @@ test('list groups parent tasks with their subtasks in a scannable responsive flo
   assert.match(css, /\.task-content\s*\{[\s\S]*min-width:\s*0/)
   assert.match(css, /\.task-list-layout\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)/)
   assert.match(css, /\.task-list-layout > \.task-details-panel\s*\{\s*display:\s*none/)
-  assert.match(
-    css,
-    /\.task-list\s*\{[\s\S]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*420px\),\s*1fr\)\)/,
-  )
+  assert.match(css, /\.task-list\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)/)
   assert.match(css, /\.task-row-group\s*\{[\s\S]*border:\s*1px solid var\(--color-border\)/)
   assert.match(css, /\.task-expanded-group\s*\{[\s\S]*border:\s*1px solid/)
   assert.match(tasksView, /className="task-subtask-list"/)
@@ -32,7 +29,7 @@ test('list groups parent tasks with their subtasks in a scannable responsive flo
   assert.match(css, /\.task-row\s*\{[\s\S]*grid-template-areas:\s*'check main'\s*'footer footer'/)
   assert.match(css, /\.task-row\s*\{[\s\S]*min-height:\s*92px/)
   assert.match(css, /\.task-row__title\s*\{[\s\S]*overflow-wrap:\s*anywhere/)
-  assert.doesNotMatch(css, /\.task-row__title\s*\{[^}]*-webkit-line-clamp/)
+  assert.match(css, /\.task-row__title\s*\{[\s\S]*-webkit-line-clamp:\s*2/)
   assert.match(tasksView, /className="task-row__status" data-status=\{task\.status\}/)
   assert.match(css, /\.task-row__status\s*\{[\s\S]*flex:\s*0 0 auto/)
   assert.match(tasksView, /className=\{`task-row__priority-badge is-\$\{task\.priority\}`\}/)
@@ -73,6 +70,8 @@ test('list groups parent tasks with their subtasks in a scannable responsive flo
   assert.match(css, /\.task-row\.is-review\s*\{[\s\S]*background-color:/)
   assert.match(css, /\.task-row\.is-closed\s*\{[\s\S]*var\(--text-muted\) 8%/)
   assert.match(css, /\.task-expanded-group\s*\{[\s\S]*border:\s*1px solid var\(--color-border\)/)
+  assert.match(css, /\.task-expanded-group\s*\{[\s\S]*margin:\s*0 8px 8px/)
+  assert.match(css, /\.task-row-group > \.task-row\s*\{[\s\S]*height:\s*92px/)
   assert.match(css, /\.task-row--child\s*\{[\s\S]*border-left:\s*2px solid var\(--color-border\)/)
   assert.match(
     css,

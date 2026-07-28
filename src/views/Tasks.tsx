@@ -28,6 +28,7 @@ import {
   Trash2,
   Plus,
   RefreshCw,
+  Search,
   Undo2,
 } from 'lucide-react'
 import {
@@ -47,6 +48,14 @@ import {
   toLocalDateKey,
 } from './taskScheduleUtils'
 import { projectCalendarOccurrences } from './taskOccurrenceProjection'
+import { getTaskDuePresentation } from './taskDuePresentationUtils'
+import {
+  canBindTaskToParent,
+  formatTaskCode,
+  getTaskAncestorPath,
+  getTaskDescendantIds,
+  parseTaskCode,
+} from './taskHierarchyUtils'
 import { getAutomaticTaskStatus, getReopenedTaskStatus, TASK_STATUS } from '../taskWorkflow'
 import './Tasks.css'
 
@@ -321,6 +330,7 @@ export const Tasks: React.FC = () => {
   const [isDeletingTask, setIsDeletingTask] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [showClosedTasks, setShowClosedTasks] = useState(false)
+  const [taskQuery, setTaskQuery] = useState('')
   const [dueDateFrom, setDueDateFrom] = useState(() => {
     const date = new Date()
     date.setDate(date.getDate() - 7)
@@ -336,6 +346,7 @@ export const Tasks: React.FC = () => {
     title?: string
     timeWindow?: string
     ruleStartDate?: string
+    ruleEndDate?: string
     hierarchy?: string
   }>({})
   const drawerTitleInputRef = useRef<HTMLInputElement | null>(null)
@@ -354,8 +365,12 @@ export const Tasks: React.FC = () => {
     repeat: 'none',
     parentId: null,
   })
-  const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
-  const [pendingSubtaskTitles, setPendingSubtaskTitles] = useState<string[]>([])
+  const [parentTaskCode, setParentTaskCode] = useState('')
+  const [peerTaskIds, setPeerTaskIds] = useState<number[]>([])
+  const [isPeerDropdownOpen, setIsPeerDropdownOpen] = useState(false)
+  const [peerTaskQuery, setPeerTaskQuery] = useState('')
+  const [peerTaskVisibleCount, setPeerTaskVisibleCount] = useState(20)
+  const peerDropdownRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!drawerMode) return
@@ -377,6 +392,19 @@ export const Tasks: React.FC = () => {
     return () =>
       document.removeEventListener('pointerdown', closeDrawerDatePickersOnOutsidePointerDown, true)
   }, [drawerMode])
+
+  useEffect(() => {
+    if (!isPeerDropdownOpen) return
+
+    const closePeerDropdownOnOutsidePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !peerDropdownRef.current?.contains(event.target)) {
+        setIsPeerDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', closePeerDropdownOnOutsidePointerDown)
+    return () => document.removeEventListener('pointerdown', closePeerDropdownOnOutsidePointerDown)
+  }, [isPeerDropdownOpen])
 
   // Detail Panel Edit State
   const [editDesc, setEditDesc] = useState('')
@@ -528,14 +556,30 @@ export const Tasks: React.FC = () => {
     ],
     [],
   )
+  const taskMatchesQuery = useCallback(
+    (task: any) => {
+      const query = taskQuery.trim().toLowerCase()
+      if (!query) return true
+      const code = task.is_virtual ? '' : formatTaskCode(task.id).toLowerCase()
+      return (
+        code.includes(query) ||
+        String(task.title || '')
+          .toLowerCase()
+          .includes(query)
+      )
+    },
+    [taskQuery],
+  )
   const taskMatchesFilters = useCallback(
     (task: any) => {
+      if (taskQuery.trim() && taskMatchesQuery(task)) return true
       if (!showClosedTasks && task.status === TASK_STATUS.closed) return false
       if (!task.due_date) return false
       if (dueDateFrom && task.due_date < dueDateFrom) return false
-      return !dueDateTo || task.due_date <= dueDateTo
+      if (dueDateTo && task.due_date > dueDateTo) return false
+      return taskMatchesQuery(task)
     },
-    [dueDateFrom, dueDateTo, showClosedTasks],
+    [dueDateFrom, dueDateTo, showClosedTasks, taskMatchesQuery, taskQuery],
   )
   const calendarWeekDays = useMemo(() => getCalendarWeekDays(calendarDate), [calendarDate])
   const calendarMonthDays = useMemo(() => getCalendarMonthDays(calendarDate), [calendarDate])
@@ -588,8 +632,8 @@ export const Tasks: React.FC = () => {
     if (task.is_virtual && api) {
       await api.dbQuery(
         'tasks',
-        `INSERT OR IGNORE INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, recur_rule_id, template_id, template_version, instance_key, progress)
-         VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, '23:59:59', ?, ?, ?, ?, 0)`,
+        `INSERT OR IGNORE INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, recur_rule_id, template_id, template_version, instance_key, recur_instance_root, parent_id, progress)
+         VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, '23:59:59', ?, ?, ?, ?, 1, ?, 0)`,
         [
           task.title,
           task.description || '',
@@ -602,11 +646,12 @@ export const Tasks: React.FC = () => {
           task.template_id || null,
           task.template_version || null,
           task.instance_key,
+          task.parent_id || null,
         ],
       )
       const result = await api.dbQuery(
         'tasks',
-        'SELECT * FROM tasks WHERE recur_rule_id = ? AND instance_key = ? AND parent_id IS NULL LIMIT 1',
+        'SELECT * FROM tasks WHERE recur_rule_id = ? AND instance_key = ? AND recur_instance_root = 1 LIMIT 1',
         [task.recur_rule_id, task.instance_key],
       )
       const materialized = result?.data?.[0]
@@ -653,14 +698,16 @@ export const Tasks: React.FC = () => {
   }
 
   const formatDue = (task: any) => {
-    if (!task.due_date) return t('tasks.due_date_not_set')
-    return task.due_time ? `${task.due_date} ${task.due_time}` : task.due_date
+    const due = getTaskDuePresentation(task.due_date, task.due_time)
+    if (!due.dateKey) return t('tasks.due_date_not_set')
+    return due.time ? `${due.dateKey} ${due.time}` : due.dateKey
   }
 
   const formatCompactDue = (task: any) => {
-    if (!task.due_date) return t('tasks.due_date_not_set')
-    const date = String(task.due_date).slice(-5)
-    const time = String(task.due_time || '').slice(0, 5)
+    const due = getTaskDuePresentation(task.due_date, task.due_time)
+    if (!due.dateKey) return t('tasks.due_date_not_set')
+    const date = due.dateKey.slice(-5)
+    const time = due.time
     return time ? `${date} ${time}` : date
   }
 
@@ -671,8 +718,12 @@ export const Tasks: React.FC = () => {
       className="task-calendar__task"
       onClick={() => openCalendarTask(task)}
     >
-      <span className="task-calendar__task-title">{task.title}</span>
+      <span className="task-calendar__task-title">
+        {!task.is_virtual && <span className="task-code">{formatTaskCode(task.id)}</span>}
+        {task.title}
+      </span>
       <span className="task-calendar__task-meta">
+        {task.parent_id && <span>↳ {formatTaskCode(task.parent_id)} · </span>}
         {getPriorityLabel(task.priority)} · {getStatusLabel(task.status)}
       </span>
     </button>
@@ -696,8 +747,7 @@ export const Tasks: React.FC = () => {
     setRuleMonthDays([])
     setRuleExcludedWeekDays([])
     setRuleExcludedMonthDays([])
-    setNewSubtaskTitle('')
-    setPendingSubtaskTitles([])
+    setParentTaskCode('')
     setTaskDraft({
       title: '',
       description: '',
@@ -724,8 +774,7 @@ export const Tasks: React.FC = () => {
     setDrawerErrors({})
     setEditDesc(task.description || '')
     setEditProgress(task.progress || 0)
-    setNewSubtaskTitle('')
-    setPendingSubtaskTitles([])
+    setParentTaskCode(task.parent_id ? formatTaskCode(task.parent_id) : '')
     const rule = task.recur_rule_id
       ? rules.find((candidate) => candidate.id === task.recur_rule_id)
       : null
@@ -1210,7 +1259,10 @@ export const Tasks: React.FC = () => {
                 <time>{formatDue(child)}</time>
               </span>
             </span>
-            <span className="task-row__title">{child.title}</span>
+            <span className="task-row__title">
+              <span className="task-code">{formatTaskCode(child.id)}</span>
+              {child.title}
+            </span>
           </div>,
           ...renderSubtaskRows(child.id, depth + 1, nextVisited),
         ]
@@ -1233,30 +1285,12 @@ export const Tasks: React.FC = () => {
     return () => window.cancelAnimationFrame(frame)
   }, [expandedTaskGroupId])
 
-  const createPendingSubtasks = async (parentId: number) => {
-    for (const title of pendingSubtaskTitles) {
-      await api.dbQuery(
-        'tasks',
-        `INSERT INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, parent_id, progress)
-         VALUES (?, '', ?, '待处理', 0, ?, ?, ?, ?, ?, 0)`,
-        [
-          title,
-          taskDraft.priority,
-          taskDraft.startDate,
-          normalizeTaskDueTime(taskDraft.startTime),
-          taskDraft.dueDate,
-          normalizeTaskDueTime(taskDraft.time),
-          parentId,
-        ],
-      )
-    }
-  }
-
   const handleSaveDrawer = async () => {
     const nextErrors: {
       title?: string
       timeWindow?: string
       ruleStartDate?: string
+      ruleEndDate?: string
       hierarchy?: string
     } = {}
     if (!taskDraft.title.trim()) nextErrors.title = t('tasks.validation_title_required')
@@ -1264,26 +1298,19 @@ export const Tasks: React.FC = () => {
       nextErrors.ruleStartDate = t('tasks.validation_rule_start_date_required')
     }
     if (
+      taskDraft.repeat === 'none' &&
       `${taskDraft.dueDate}T${normalizeTaskDueTime(taskDraft.time)}` <
-      `${taskDraft.startDate}T${normalizeTaskDueTime(taskDraft.startTime)}`
+        `${taskDraft.startDate}T${normalizeTaskDueTime(taskDraft.startTime)}`
     ) {
       nextErrors.timeWindow = t('tasks.invalid_time_window')
     }
+    if (taskDraft.repeat !== 'none' && ruleEndDate && ruleEndDate < ruleStartDate) {
+      nextErrors.ruleEndDate = t('tasks.validation_rule_end_date_before_start')
+    }
     if (taskDraft.parentId !== null) {
       const parent = tasks.find((task) => task.id === taskDraft.parentId)
-      let ancestor = parent
-      const visited = new Set<number>()
-      while (ancestor) {
-        if (visited.has(ancestor.id)) {
-          nextErrors.hierarchy = t('tasks.parent_task_cycle_error')
-          break
-        }
-        if (ancestor.id === selectedTaskId) {
-          nextErrors.hierarchy = t('tasks.parent_task_cycle_error')
-          break
-        }
-        visited.add(ancestor.id)
-        ancestor = tasks.find((task) => task.id === ancestor.parent_id)
+      if (!canBindTaskToParent(tasks, selectedTaskId, taskDraft.parentId)) {
+        nextErrors.hierarchy = t('tasks.parent_task_cycle_error')
       }
       if (
         !parent ||
@@ -1303,7 +1330,7 @@ export const Tasks: React.FC = () => {
 
     if (!api) return
 
-    const targetParentId = taskDraft.repeat === 'none' ? taskDraft.parentId : null
+    const targetParentId = taskDraft.parentId
 
     if (drawerMode === 'create') {
       if (taskDraft.repeat === 'none') {
@@ -1325,19 +1352,15 @@ export const Tasks: React.FC = () => {
         )
         const createdTaskId = Number(result?.data?.lastInsertRowid)
         if (result?.success && createdTaskId) {
-          await createPendingSubtasks(createdTaskId)
-          await refreshAncestorProgress([
-            pendingSubtaskTitles.length > 0 ? createdTaskId : null,
-            targetParentId,
-          ])
+          await refreshAncestorProgress([targetParentId])
           showToast(t('tasks.toast_task_added'))
         }
       } else {
         const effectiveTimes = ruleTimes.length > 0 ? ruleTimes : ['09:00']
         const res = await api.dbQuery(
           'tasks',
-          `INSERT INTO recurring_rules (title, description, frequency, schedule_mode, interval, week_days, month_days, excluded_week_days, excluded_month_days, start_date, end_date, start_time, time_slots, priority, requires_review, end_condition, missed_policy)
-           VALUES (?, ?, 'daily', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'never', ?)`,
+          `INSERT INTO recurring_rules (title, description, frequency, schedule_mode, interval, week_days, month_days, excluded_week_days, excluded_month_days, start_date, end_date, start_time, time_slots, priority, requires_review, parent_id, end_condition, missed_policy)
+           VALUES (?, ?, 'daily', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'never', ?)`,
           [
             taskDraft.title.trim(),
             taskDraft.description,
@@ -1353,6 +1376,7 @@ export const Tasks: React.FC = () => {
             effectiveTimes.join(','),
             taskDraft.priority,
             taskDraft.requiresReview ? 1 : 0,
+            targetParentId,
             DEFAULT_MISSED_POLICY,
           ],
         )
@@ -1395,6 +1419,7 @@ export const Tasks: React.FC = () => {
              template_id = CASE WHEN ? THEN NULL ELSE template_id END,
              template_version = CASE WHEN ? THEN NULL ELSE template_version END,
              instance_key = CASE WHEN ? THEN NULL ELSE instance_key END,
+             recur_instance_root = CASE WHEN ? THEN 0 ELSE recur_instance_root END,
              parent_id = ?
          WHERE id = ?`,
         [
@@ -1410,6 +1435,7 @@ export const Tasks: React.FC = () => {
           isChangingToNonRecurring ? 1 : 0,
           isChangingToNonRecurring ? 1 : 0,
           isChangingToNonRecurring ? 1 : 0,
+          isChangingToNonRecurring ? 1 : 0,
           targetParentId,
           activeTask.id,
         ],
@@ -1420,8 +1446,8 @@ export const Tasks: React.FC = () => {
         const ruleResult = await api.dbQuery(
           'tasks',
           `INSERT INTO recurring_rules
-           (title, description, frequency, schedule_mode, interval, week_days, month_days, excluded_week_days, excluded_month_days, start_date, end_date, start_time, time_slots, priority, requires_review, end_condition, missed_policy)
-           VALUES (?, ?, 'daily', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'never', ?)`,
+           (title, description, frequency, schedule_mode, interval, week_days, month_days, excluded_week_days, excluded_month_days, start_date, end_date, start_time, time_slots, priority, requires_review, parent_id, end_condition, missed_policy)
+           VALUES (?, ?, 'daily', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'never', ?)`,
           [
             taskDraft.title.trim(),
             taskDraft.description,
@@ -1437,6 +1463,7 @@ export const Tasks: React.FC = () => {
             effectiveTimes.join(','),
             taskDraft.priority,
             taskDraft.requiresReview ? 1 : 0,
+            targetParentId,
             DEFAULT_MISSED_POLICY,
           ],
         )
@@ -1444,10 +1471,16 @@ export const Tasks: React.FC = () => {
         if (ruleId) {
           await api.dbQuery(
             'tasks',
-            'UPDATE tasks SET recur_rule_id = ?, instance_key = ? WHERE id = ?',
+            `UPDATE tasks
+             SET recur_rule_id = ?, instance_key = ?, recur_instance_root = 1,
+                 start_date = ?, start_time = ?, due_date = ?, due_time = '23:59:59'
+             WHERE id = ?`,
             [
               ruleId,
-              `${taskDraft.dueDate}T${normalizeScheduleTime(effectiveTimes[0])}`,
+              `${ruleStartDate}T${normalizeScheduleTime(effectiveTimes[0])}`,
+              ruleStartDate,
+              normalizeScheduleTime(effectiveTimes[0]),
+              ruleStartDate,
               activeTask.id,
             ],
           )
@@ -1459,7 +1492,7 @@ export const Tasks: React.FC = () => {
       ) {
         await api.dbQuery(
           'tasks',
-          'UPDATE recurring_rules SET title = ?, description = ?, frequency = ?, schedule_mode = ?, interval = ?, week_days = ?, month_days = ?, excluded_week_days = ?, excluded_month_days = ?, start_date = ?, end_date = ?, start_time = ?, time_slots = ?, priority = ?, requires_review = ? WHERE id = ?',
+          'UPDATE recurring_rules SET title = ?, description = ?, frequency = ?, schedule_mode = ?, interval = ?, week_days = ?, month_days = ?, excluded_week_days = ?, excluded_month_days = ?, start_date = ?, end_date = ?, start_time = ?, time_slots = ?, priority = ?, requires_review = ?, parent_id = ? WHERE id = ?',
           [
             taskDraft.title.trim(),
             taskDraft.description,
@@ -1476,16 +1509,30 @@ export const Tasks: React.FC = () => {
             ruleTimes.join(','),
             taskDraft.priority,
             taskDraft.requiresReview ? 1 : 0,
+            targetParentId,
             activeTask.recur_rule_id,
           ],
         )
       }
-      await createPendingSubtasks(activeTask.id)
-      await refreshAncestorProgress([
-        pendingSubtaskTitles.length > 0 ? activeTask.id : null,
-        activeTask.parent_id,
-        targetParentId,
-      ])
+      const nextPeerTaskIds = peerTaskIds.filter((peerId) =>
+        tasks.some(
+          (task) =>
+            task.id === peerId && task.parent_id === targetParentId && task.id !== activeTask.id,
+        ),
+      )
+      await api.dbQuery(
+        'tasks',
+        'DELETE FROM task_peer_links WHERE task_id = ? OR peer_task_id = ?',
+        [activeTask.id, activeTask.id],
+      )
+      for (const peerId of nextPeerTaskIds) {
+        await api.dbQuery(
+          'tasks',
+          'INSERT OR IGNORE INTO task_peer_links (task_id, peer_task_id) VALUES (?, ?)',
+          [Math.min(activeTask.id, peerId), Math.max(activeTask.id, peerId)],
+        )
+      }
+      await refreshAncestorProgress([activeTask.parent_id, targetParentId])
       showToast(t('tasks.toast_details_updated'))
     }
 
@@ -1494,7 +1541,7 @@ export const Tasks: React.FC = () => {
   }
 
   const isRecurringRootTask = (task: any) =>
-    Boolean(task?.recur_rule_id && task.instance_key && !task.parent_id)
+    Boolean(task?.recur_rule_id && task.instance_key && task.recur_instance_root === 1)
 
   const deleteTaskTree = async (taskId: number) => {
     if (!api) return
@@ -1525,7 +1572,7 @@ export const Tasks: React.FC = () => {
           `
             SELECT id FROM tasks
             WHERE recur_rule_id = ?
-              AND parent_id IS NULL
+              AND recur_instance_root = 1
               AND is_completed = 0
               AND (due_date > ? OR (due_date = ? AND instance_key > ?))
           `,
@@ -1538,7 +1585,7 @@ export const Tasks: React.FC = () => {
         )
       : await api.dbQuery(
           'tasks',
-          'SELECT id FROM tasks WHERE recur_rule_id = ? AND parent_id IS NULL AND is_completed = 0',
+          'SELECT id FROM tasks WHERE recur_rule_id = ? AND recur_instance_root = 1 AND is_completed = 0',
           [ruleId],
         )
 
@@ -1552,7 +1599,7 @@ export const Tasks: React.FC = () => {
 
     const result = await api.dbQuery(
       'tasks',
-      'SELECT id FROM tasks WHERE recur_rule_id = ? AND parent_id IS NULL',
+      'SELECT id FROM tasks WHERE recur_rule_id = ? AND recur_instance_root = 1',
       [ruleId],
     )
 
@@ -1659,6 +1706,11 @@ export const Tasks: React.FC = () => {
 
     if (ruleFreq === 'cron') {
       showToast(t('tasks.legacy_cron_save_blocked'))
+      return
+    }
+
+    if (ruleEndDate && ruleEndDate < ruleStartDate) {
+      showToast(t('tasks.validation_rule_end_date_before_start'))
       return
     }
 
@@ -1955,20 +2007,32 @@ export const Tasks: React.FC = () => {
   }
 
   const activeTask = tasks.find((t) => t.id === selectedTaskId)
-  const drawerDescendantIds = useMemo(() => {
-    const descendants = new Set<number>()
-    if (!selectedTaskId) return descendants
-
-    const queue = [selectedTaskId]
-    while (queue.length > 0) {
-      const parentId = queue.shift()
-      for (const task of tasks) {
-        if (task.parent_id !== parentId || descendants.has(task.id)) continue
-        descendants.add(task.id)
-        queue.push(task.id)
-      }
+  useEffect(() => {
+    if (!api || drawerMode !== 'edit' || !activeTask) {
+      setPeerTaskIds([])
+      return
     }
-    return descendants
+
+    let cancelled = false
+    void api
+      .dbQuery(
+        'tasks',
+        `SELECT CASE WHEN task_id = ? THEN peer_task_id ELSE task_id END AS id
+         FROM task_peer_links
+         WHERE task_id = ? OR peer_task_id = ?`,
+        [activeTask.id, activeTask.id, activeTask.id],
+      )
+      .then((result: any) => {
+        if (cancelled) return
+        setPeerTaskIds(result?.success ? result.data.map((row: { id: number }) => row.id) : [])
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeTask, api, drawerMode])
+  const drawerDescendantIds = useMemo(() => {
+    return selectedTaskId ? getTaskDescendantIds(tasks, selectedTaskId) : new Set<number>()
   }, [selectedTaskId, tasks])
   const eligibleParentTasks = tasks.filter(
     (task) =>
@@ -1978,33 +2042,48 @@ export const Tasks: React.FC = () => {
       !task.is_virtual,
   )
   const parentTaskOptions = (() => {
-    const taskById = new Map(tasks.map((task) => [task.id, task]))
     return eligibleParentTasks.map((task) => {
-      const path = [task.title]
-      const visited = new Set<number>([task.id])
-      let parent = task.parent_id ? taskById.get(task.parent_id) : null
-      while (parent && !visited.has(parent.id)) {
-        path.unshift(parent.title)
-        visited.add(parent.id)
-        parent = parent.parent_id ? taskById.get(parent.parent_id) : null
-      }
-      return { id: task.id, label: path.join(' / ') }
+      const path = getTaskAncestorPath(tasks, task.id)
+        .map((node) => node.title)
+        .join(' / ')
+      return { id: task.id, code: formatTaskCode(task.id), label: path }
     })
   })()
-  const directDrawerSubtasks = activeTask
-    ? tasks.filter((task) => task.parent_id === activeTask.id)
+  const selectedParentTask =
+    taskDraft.parentId == null ? null : tasks.find((task) => task.id === taskDraft.parentId)
+  const activeTaskPath = activeTask ? getTaskAncestorPath(tasks, activeTask.id) : []
+  const eligiblePeerTasks = activeTask
+    ? tasks.filter(
+        (task) =>
+          task.id !== activeTask.id && task.parent_id === taskDraft.parentId && !task.is_virtual,
+      )
     : []
-  const recurrenceHierarchyLocked =
-    taskDraft.repeat === 'none' &&
-    (taskDraft.parentId !== null ||
-      directDrawerSubtasks.length > 0 ||
-      pendingSubtaskTitles.length > 0)
-  const addPendingSubtask = () => {
-    const title = newSubtaskTitle.trim()
-    if (!title) return
-    setPendingSubtaskTitles((current) => [...current, title])
-    setNewSubtaskTitle('')
-  }
+  const filteredPeerTasks = useMemo(() => {
+    const query = peerTaskQuery.trim().toLowerCase()
+    if (!query) return eligiblePeerTasks
+    return eligiblePeerTasks.filter((task) => {
+      const code = formatTaskCode(task.id).toLowerCase()
+      return (
+        code.includes(query) ||
+        String(task.title || '')
+          .toLowerCase()
+          .includes(query)
+      )
+    })
+  }, [eligiblePeerTasks, peerTaskQuery])
+  const visiblePeerTasks = filteredPeerTasks.slice(0, peerTaskVisibleCount)
+  const canLoadMorePeerTasks = visiblePeerTasks.length < filteredPeerTasks.length
+  const tasksById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks])
+  const selectedPeerTasks = peerTaskIds
+    // Keep selected links visible even when the option list is filtered or has not loaded that row yet.
+    .map((peerId) => tasksById.get(peerId))
+    .filter((task): task is any => Boolean(task))
+
+  useEffect(() => {
+    setPeerTaskVisibleCount(20)
+    setPeerTaskQuery('')
+    setIsPeerDropdownOpen(false)
+  }, [activeTask?.id, taskDraft.parentId])
   const activeTaskTemplate = activeTask?.recur_rule_id
     ? rules.find((rule) => rule.id === activeTask.recur_rule_id)
     : null
@@ -2071,7 +2150,14 @@ export const Tasks: React.FC = () => {
     const priorityOrder: Record<string, number> = { high: 0, mid: 1, low: 2 }
 
     return rootTasks
-      .filter(taskMatchesFilters)
+      .filter((task) => {
+        if (taskMatchesFilters(task)) return true
+        if (!taskQuery.trim()) return false
+        return [...getTaskDescendantIds(tasks, task.id)].some((id) => {
+          const descendant = tasks.find((candidate) => candidate.id === id)
+          return descendant ? taskMatchesFilters(descendant) : false
+        })
+      })
       .filter((task) => {
         if (!task.recur_rule_id || !task.due_date) return true
         const key = `${task.recur_rule_id}:${task.due_date}`
@@ -2095,11 +2181,14 @@ export const Tasks: React.FC = () => {
         const dueDifference = leftDueAt.localeCompare(rightDueAt)
         return dueDifference !== 0 ? dueDifference : Number(left.id) - Number(right.id)
       })
-  }, [rootTasks, taskMatchesFilters])
-  const expandedTaskGroup =
-    expandedTaskGroupId === null
-      ? null
-      : (displayRootTasks.find((task) => task.id === expandedTaskGroupId) ?? null)
+  }, [rootTasks, taskMatchesFilters, taskQuery, tasks])
+  useEffect(() => {
+    if (!taskQuery.trim()) return
+    const matchedTask = tasks.find(taskMatchesQuery)
+    if (!matchedTask) return
+    const root = getTaskAncestorPath(tasks, matchedTask.id)[0]
+    if (root) setExpandedTaskGroupId(root.id)
+  }, [taskMatchesQuery, taskQuery, tasks])
   const completionConfirmationCopy = completionConfirmationTask
     ? getCompletionConfirmationCopy(completionConfirmationTask)
     : null
@@ -2216,6 +2305,16 @@ export const Tasks: React.FC = () => {
           </button>
         </div>
         <div className="task-navigation__tools" aria-label={t('tasks.workflow_tools_label')}>
+          <label className="task-navigation__search">
+            <Search size={14} aria-hidden="true" />
+            <input
+              className="form-field"
+              value={taskQuery}
+              onChange={(event) => setTaskQuery(event.target.value)}
+              placeholder={t('tasks.search_placeholder')}
+              aria-label={t('tasks.search_placeholder')}
+            />
+          </label>
           <label className="task-navigation__checkbox">
             <input
               type="checkbox"
@@ -2332,89 +2431,110 @@ export const Tasks: React.FC = () => {
                         overflowY: 'auto',
                       }}
                     >
-                      {laneTasks.map((task) => (
-                        <div
-                          key={task.id}
-                          className={`card task-board-card ${
-                            task.status === '已逾期' ? 'is-overdue' : ''
-                          }`}
-                          data-task-id={task.id}
-                          data-task-status={task.status}
-                          role="button"
-                          tabIndex={0}
-                          style={{
-                            padding: '12px',
-                            cursor: 'pointer',
-                          }}
-                          onClick={() => {
-                            void openCalendarTask(task)
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault()
-                              void openCalendarTask(task)
-                            }
-                          }}
-                        >
-                          <h4
-                            style={{
-                              fontSize: '12.5px',
-                              fontWeight: 600,
-                              color: 'var(--text-main)',
-                            }}
-                          >
-                            {task.status === '已逾期' && (
-                              <span style={{ color: 'var(--color-danger)', marginRight: '4px' }}>
-                                [{t('common.overdue')}]
-                              </span>
-                            )}
-                            {task.title}
-                          </h4>
+                      {laneTasks.map((task) => {
+                        const parentTask = task.parent_id
+                          ? tasks.find((candidate) => candidate.id === task.parent_id)
+                          : null
+                        return (
                           <div
+                            key={task.id}
+                            className={`card task-board-card ${
+                              task.status === '已逾期' ? 'is-overdue' : ''
+                            }`}
+                            data-task-id={task.id}
+                            data-task-status={task.status}
+                            role="button"
+                            tabIndex={0}
                             style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              marginTop: '12px',
+                              padding: '12px',
+                              cursor: 'pointer',
+                            }}
+                            onClick={() => {
+                              void openCalendarTask(task)
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault()
+                                void openCalendarTask(task)
+                              }
                             }}
                           >
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                              {formatDue(task)}
-                            </span>
-                            <span
-                              className={`pill ${task.priority === 'high' ? 'red' : task.priority === 'mid' ? 'yellow' : 'green'}`}
-                              style={{ fontSize: '9px', transform: 'scale(0.85)' }}
+                            <h4
+                              style={{
+                                fontSize: '12.5px',
+                                fontWeight: 600,
+                                color: 'var(--text-main)',
+                              }}
                             >
-                              {getPriorityLabel(task.priority)}
-                            </span>
-                          </div>
-                          {task.status === TASK_STATUS.review && (
+                              {task.status === '已逾期' && (
+                                <span style={{ color: 'var(--color-danger)', marginRight: '4px' }}>
+                                  [{t('common.overdue')}]
+                                </span>
+                              )}
+                              {!task.is_virtual && (
+                                <span className="task-code">{formatTaskCode(task.id)}</span>
+                              )}
+                              {task.title}
+                            </h4>
+                            {parentTask && (
+                              <button
+                                type="button"
+                                className="task-hierarchy-context"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void openCalendarTask(parentTask)
+                                }}
+                              >
+                                <CornerDownRight size={12} aria-hidden="true" />
+                                {formatTaskCode(parentTask.id)} {parentTask.title}
+                              </button>
+                            )}
                             <div
-                              className="task-review-actions"
-                              onClick={(event) => event.stopPropagation()}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                marginTop: '12px',
+                              }}
                             >
-                              <button
-                                type="button"
-                                className="btn sm btn-icon task-review-action task-review-action--reject"
-                                title={t('tasks.review_reject_action')}
-                                aria-label={t('tasks.review_reject_action')}
-                                onClick={() => void reviewTask(task, false)}
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                {formatDue(task)}
+                              </span>
+                              <span
+                                className={`pill ${task.priority === 'high' ? 'red' : task.priority === 'mid' ? 'yellow' : 'green'}`}
+                                style={{ fontSize: '9px', transform: 'scale(0.85)' }}
                               >
-                                <Undo2 aria-hidden="true" />
-                              </button>
-                              <button
-                                type="button"
-                                className="btn sm btn-icon primary task-review-action task-review-action--approve"
-                                title={t('tasks.review_approve_action')}
-                                aria-label={t('tasks.review_approve_action')}
-                                onClick={() => void reviewTask(task, true)}
-                              >
-                                <Check aria-hidden="true" />
-                              </button>
+                                {getPriorityLabel(task.priority)}
+                              </span>
                             </div>
-                          )}
-                        </div>
-                      ))}
+                            {task.status === TASK_STATUS.review && (
+                              <div
+                                className="task-review-actions"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  className="btn sm btn-icon task-review-action task-review-action--reject"
+                                  title={t('tasks.review_reject_action')}
+                                  aria-label={t('tasks.review_reject_action')}
+                                  onClick={() => void reviewTask(task, false)}
+                                >
+                                  <Undo2 aria-hidden="true" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn sm btn-icon primary task-review-action task-review-action--approve"
+                                  title={t('tasks.review_approve_action')}
+                                  aria-label={t('tasks.review_approve_action')}
+                                  onClick={() => void reviewTask(task, true)}
+                                >
+                                  <Check aria-hidden="true" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )
@@ -2454,7 +2574,7 @@ export const Tasks: React.FC = () => {
                     const completedSubtaskCount = directSubtasks.filter(
                       (subtask) => subtask.is_completed === 1,
                     ).length
-                    const isTaskGroupExpanded = expandedTaskGroup?.id === task.id
+                    const isTaskGroupExpanded = expandedTaskGroupId === task.id
                     const repeatSummary = getRepeatSummary(task)
                     const sameDayOccurrences = task.recur_rule_id
                       ? rootTasks.filter(
@@ -2564,7 +2684,12 @@ export const Tasks: React.FC = () => {
                           </div>
                           <div className="task-row__main">
                             <div className="task-row__heading">
-                              <span className="task-row__title">{task.title}</span>
+                              <span className="task-row__title">
+                                {!task.is_virtual && (
+                                  <span className="task-code">{formatTaskCode(task.id)}</span>
+                                )}
+                                {task.title}
+                              </span>
                               <span
                                 className="task-row__deadline"
                                 title={`${t('tasks.details_due_prefix')}: ${formatDue(task)}`}
@@ -2741,37 +2866,38 @@ export const Tasks: React.FC = () => {
                             ))}
                           </div>
                         )}
+                        {isTaskGroupExpanded && (
+                          <section
+                            id={`task-subtasks-${task.id}`}
+                            className="task-expanded-group"
+                            aria-label={t('tasks.subtask_detail_region')}
+                            ref={expandedSubtaskPanelRef}
+                            tabIndex={-1}
+                          >
+                            <header className="task-expanded-group__header">
+                              <div>
+                                <span>{t('tasks.subtask_detail_region')}</span>
+                                <strong>
+                                  {formatTaskCode(task.id)} {task.title}
+                                </strong>
+                              </div>
+                              <button
+                                type="button"
+                                className="task-expanded-group__close"
+                                onClick={() => toggleTaskGroup(task.id)}
+                              >
+                                <ChevronUp aria-hidden="true" />
+                                {t('tasks.subtask_collapse')}
+                              </button>
+                            </header>
+                            <div className="task-subtask-list">{renderSubtaskRows(task.id)}</div>
+                          </section>
+                        )}
                       </div>
                     )
                   })
                 )}
               </div>
-
-              {expandedTaskGroup && (
-                <section
-                  id={`task-subtasks-${expandedTaskGroup.id}`}
-                  className="task-expanded-group"
-                  aria-label={t('tasks.subtask_detail_region')}
-                  ref={expandedSubtaskPanelRef}
-                  tabIndex={-1}
-                >
-                  <header className="task-expanded-group__header">
-                    <div>
-                      <span>{t('tasks.subtask_detail_region')}</span>
-                      <strong>{expandedTaskGroup.title}</strong>
-                    </div>
-                    <button
-                      type="button"
-                      className="task-expanded-group__close"
-                      onClick={() => toggleTaskGroup(expandedTaskGroup.id)}
-                    >
-                      <ChevronUp aria-hidden="true" />
-                      {t('tasks.subtask_collapse')}
-                    </button>
-                  </header>
-                  <div className="task-subtask-list">{renderSubtaskRows(expandedTaskGroup.id)}</div>
-                </section>
-              )}
             </section>
 
             {/* Right details panel */}
@@ -2780,7 +2906,29 @@ export const Tasks: React.FC = () => {
                 <>
                   <div className="task-details-panel__header">
                     <span>{t('tasks.details_title')}</span>
-                    <h3>{activeTask.title}</h3>
+                    <h3>
+                      <span className="task-code">{formatTaskCode(activeTask.id)}</span>
+                      {activeTask.title}
+                    </h3>
+                    {activeTaskPath.length > 1 && (
+                      <nav
+                        className="task-details-path"
+                        aria-label={t('tasks.hierarchy_section_title')}
+                      >
+                        {activeTaskPath.map((task, index) => (
+                          <React.Fragment key={task.id}>
+                            {index > 0 && <span aria-hidden="true">/</span>}
+                            <button
+                              type="button"
+                              onClick={() => void openCalendarTask(task)}
+                              aria-current={task.id === activeTask.id ? 'page' : undefined}
+                            >
+                              {formatTaskCode(task.id)}
+                            </button>
+                          </React.Fragment>
+                        ))}
+                      </nav>
+                    )}
                   </div>
                   <div className="task-details-meta">
                     <div>
@@ -3649,30 +3797,40 @@ export const Tasks: React.FC = () => {
                   </header>
                   <label className="task-form-section">
                     <span>{t('tasks.parent_task_label')}</span>
-                    <select
+                    <input
                       className={`form-field ${drawerErrors.hierarchy ? 'is-invalid' : ''}`}
-                      value={taskDraft.parentId ?? ''}
-                      disabled={taskDraft.repeat !== 'none'}
+                      value={parentTaskCode}
+                      list="task-parent-options"
+                      placeholder={t('tasks.parent_task_code_placeholder')}
                       aria-describedby="task-parent-hint"
                       onChange={(event) => {
-                        const parentId = event.target.value ? Number(event.target.value) : null
+                        const value = event.target.value
+                        const parentId = value ? parseTaskCode(value) : null
+                        setParentTaskCode(value)
                         setTaskDraft({ ...taskDraft, parentId })
+                        setPeerTaskIds((current) =>
+                          current.filter((peerId) =>
+                            tasks.some((task) => task.id === peerId && task.parent_id === parentId),
+                          ),
+                        )
                         if (drawerErrors.hierarchy) {
                           setDrawerErrors((current) => ({ ...current, hierarchy: undefined }))
                         }
                       }}
-                    >
-                      <option value="">{t('tasks.parent_task_none')}</option>
+                    />
+                    <datalist id="task-parent-options">
                       {parentTaskOptions.map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.label}
-                        </option>
+                        <option key={option.id} value={option.code} label={option.label} />
                       ))}
-                    </select>
+                    </datalist>
+                    {selectedParentTask && (
+                      <div className="task-drawer__parent-preview">
+                        <span>{formatTaskCode(selectedParentTask.id)}</span>
+                        <strong>{selectedParentTask.title}</strong>
+                      </div>
+                    )}
                     <small id="task-parent-hint" className="task-form-hint">
-                      {taskDraft.repeat !== 'none'
-                        ? t('tasks.parent_task_recurring_hint')
-                        : t('tasks.parent_task_select_hint')}
+                      {t('tasks.parent_task_select_hint')}
                     </small>
                     {drawerErrors.hierarchy && (
                       <small className="task-field-error" role="alert">
@@ -3682,199 +3840,215 @@ export const Tasks: React.FC = () => {
                   </label>
                 </section>
 
-                <section className="task-drawer__hierarchy-section">
-                  <header className="task-drawer__section-header">
-                    <span className="task-drawer__section-icon" aria-hidden="true">
-                      <CornerDownRight size={16} />
-                    </span>
-                    <span>
-                      <strong>{t('tasks.direct_subtasks_title')}</strong>
-                      <small>
-                        {t('tasks.direct_subtasks_count', {
-                          count: directDrawerSubtasks.length + pendingSubtaskTitles.length,
-                        })}
-                      </small>
-                    </span>
-                  </header>
-
-                  {directDrawerSubtasks.length > 0 && (
-                    <div className="task-drawer__subtask-list">
-                      {directDrawerSubtasks.map((subtask) => (
-                        <div className="task-drawer__subtask-row" key={subtask.id}>
-                          <span className="task-drawer__subtask-title">{subtask.title}</span>
-                          <span className="task-drawer__subtask-status" data-status={subtask.status}>
-                            {getStatusLabel(subtask.status)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {pendingSubtaskTitles.length > 0 && (
-                    <div className="task-drawer__subtask-list">
-                      {pendingSubtaskTitles.map((title, index) => (
-                        <div className="task-drawer__subtask-row is-pending" key={`${title}-${index}`}>
-                          <span className="task-drawer__subtask-title">{title}</span>
-                          <span className="task-drawer__subtask-pending">
-                            {t('tasks.subtask_pending_create')}
-                          </span>
-                          <button
-                            type="button"
-                            className="btn btn-icon-close"
-                            title={t('tasks.remove_pending_subtask')}
-                            aria-label={t('tasks.remove_pending_subtask')}
-                            onClick={() =>
-                              setPendingSubtaskTitles((current) =>
-                                current.filter((_, currentIndex) => currentIndex !== index),
-                              )
-                            }
-                          >
-                            <X size={14} aria-hidden="true" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {drawerMode === 'create' && taskDraft.repeat !== 'none' ? (
-                    <p className="task-drawer__subtask-note">
-                      {t('tasks.recurring_subtask_instance_hint')}
-                    </p>
-                  ) : (
-                    <>
-                      <div className="task-drawer__subtask-add">
-                        <input
-                          className="form-field"
-                          value={newSubtaskTitle}
-                          placeholder={t('tasks.subtask_title_placeholder')}
-                          onChange={(event) => setNewSubtaskTitle(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key !== 'Enter') return
-                            event.preventDefault()
-                            addPendingSubtask()
-                          }}
-                        />
+                {drawerMode === 'edit' && (
+                  <section className="task-drawer__hierarchy-section">
+                    <header className="task-drawer__section-header">
+                      <span className="task-drawer__section-icon" aria-hidden="true">
+                        <ListChecks size={16} />
+                      </span>
+                      <span>
+                        <strong>{t('tasks.peer_tasks_title')}</strong>
+                        <small>{t('tasks.peer_tasks_hint')}</small>
+                      </span>
+                    </header>
+                    {eligiblePeerTasks.length === 0 ? (
+                      <p className="task-drawer__peer-empty">{t('tasks.peer_tasks_empty')}</p>
+                    ) : (
+                      <div className="task-drawer__peer-picker" ref={peerDropdownRef}>
                         <button
                           type="button"
-                          className="btn btn-icon primary"
-                          disabled={!newSubtaskTitle.trim()}
-                          title={t('tasks.add_subtask_tooltip')}
-                          aria-label={t('tasks.add_subtask_tooltip')}
-                          onClick={addPendingSubtask}
+                          className="task-drawer__peer-trigger"
+                          aria-expanded={isPeerDropdownOpen}
+                          aria-controls="task-peer-options"
+                          onClick={() => setIsPeerDropdownOpen((current) => !current)}
                         >
-                          <Plus size={15} aria-hidden="true" />
+                          <span className="task-drawer__peer-trigger-values">
+                            {selectedPeerTasks.length > 0 ? (
+                              selectedPeerTasks.map((peer) => (
+                                <span className="task-drawer__peer-selection" key={peer.id}>
+                                  <span className="task-code">{formatTaskCode(peer.id)}</span>
+                                  <span title={peer.title}>{peer.title}</span>
+                                </span>
+                              ))
+                            ) : (
+                              <span>{t('tasks.peer_tasks_select')}</span>
+                            )}
+                          </span>
+                          {isPeerDropdownOpen ? (
+                            <ChevronUp size={15} aria-hidden="true" />
+                          ) : (
+                            <ChevronDown size={15} aria-hidden="true" />
+                          )}
                         </button>
+                        {isPeerDropdownOpen && (
+                          <div className="task-drawer__peer-dropdown" id="task-peer-options">
+                            <label className="task-drawer__peer-search">
+                              <Search size={14} aria-hidden="true" />
+                              <input
+                                className="form-field"
+                                autoFocus
+                                value={peerTaskQuery}
+                                placeholder={t('tasks.peer_tasks_search_placeholder')}
+                                onChange={(event) => {
+                                  setPeerTaskQuery(event.target.value)
+                                  setPeerTaskVisibleCount(20)
+                                }}
+                              />
+                            </label>
+                            <div
+                              className="task-drawer__peer-list"
+                              onScroll={(event) => {
+                                const element = event.currentTarget
+                                if (
+                                  canLoadMorePeerTasks &&
+                                  element.scrollHeight - element.scrollTop - element.clientHeight <
+                                    28
+                                ) {
+                                  setPeerTaskVisibleCount((count) => count + 20)
+                                }
+                              }}
+                            >
+                              {visiblePeerTasks.map((peer) => {
+                                const selected = peerTaskIds.includes(peer.id)
+                                return (
+                                  <label className="task-drawer__peer-option" key={peer.id}>
+                                    <input
+                                      type="checkbox"
+                                      checked={selected}
+                                      onChange={(event) =>
+                                        setPeerTaskIds((current) =>
+                                          event.target.checked
+                                            ? [...current, peer.id]
+                                            : current.filter((id) => id !== peer.id),
+                                        )
+                                      }
+                                    />
+                                    <span className="task-code">{formatTaskCode(peer.id)}</span>
+                                    <span>{peer.title}</span>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <p className="task-drawer__subtask-note">
-                        {t('tasks.subtask_inheritance_hint')}
+                    )}
+                  </section>
+                )}
+
+                {taskDraft.repeat === 'none' && (
+                  <div className="task-drawer__schedule-section">
+                    <div className="task-drawer__grid">
+                      <div className="task-form-section">
+                        <span>{t('tasks.details_start_prefix')}</span>
+                        <div className="task-due-picker">
+                          <DatePicker
+                            ref={drawerStartDatePickerRef}
+                            selected={toLocalDateTime(taskDraft.startDate, taskDraft.startTime)}
+                            onInputClick={() => {
+                              drawerDueDatePickerRef.current?.setOpen(false)
+                              drawerRuleStartDatePickerRef.current?.setOpen(false)
+                            }}
+                            onChange={(date: Date | null) => {
+                              if (!date) return
+                              const startDate = toLocalDateKey(date)
+                              setTaskDraft({
+                                ...taskDraft,
+                                startDate,
+                                startTime: toLocalTimeValue(date),
+                              })
+                              if (drawerErrors.timeWindow) {
+                                setDrawerErrors((current) => ({
+                                  ...current,
+                                  timeWindow: undefined,
+                                }))
+                              }
+                            }}
+                            showTimeInput
+                            dateFormat="yyyy-MM-dd HH:mm"
+                            timeInputLabel={t('tasks.time_picker_time_label')}
+                            locale={datePickerLocale}
+                            portalId="task-drawer-datepicker-portal"
+                            popperPlacement="bottom-end"
+                            ariaInvalid={drawerErrors.timeWindow ? 'true' : undefined}
+                            customInput={
+                              <DatePickerInput
+                                aria-label={t('tasks.details_start_prefix')}
+                                aria-invalid={drawerErrors.timeWindow ? 'true' : undefined}
+                                aria-describedby={
+                                  drawerErrors.timeWindow ? 'task-time-window-error' : undefined
+                                }
+                              />
+                            }
+                          />
+                        </div>
+                      </div>
+                      <div className="task-form-section">
+                        <span>{t('tasks.details_due_prefix')}</span>
+                        <div className="task-due-picker">
+                          <DatePicker
+                            ref={drawerDueDatePickerRef}
+                            selected={toLocalDateTime(taskDraft.dueDate, taskDraft.time)}
+                            onInputClick={() => {
+                              drawerStartDatePickerRef.current?.setOpen(false)
+                              drawerRuleStartDatePickerRef.current?.setOpen(false)
+                            }}
+                            onChange={(date: Date | null) => {
+                              if (!date) return
+                              setTaskDraft({
+                                ...taskDraft,
+                                dueDate: toLocalDateKey(date),
+                                time: toLocalTimeValue(date),
+                              })
+                              if (drawerErrors.timeWindow) {
+                                setDrawerErrors((current) => ({
+                                  ...current,
+                                  timeWindow: undefined,
+                                }))
+                              }
+                            }}
+                            showTimeInput
+                            dateFormat="yyyy-MM-dd HH:mm"
+                            timeInputLabel={t('tasks.time_picker_time_label')}
+                            locale={datePickerLocale}
+                            portalId="task-drawer-datepicker-portal"
+                            popperPlacement="bottom-end"
+                            ariaInvalid={drawerErrors.timeWindow ? 'true' : undefined}
+                            customInput={
+                              <DatePickerInput
+                                aria-label={t('tasks.details_due_prefix')}
+                                aria-invalid={drawerErrors.timeWindow ? 'true' : undefined}
+                                aria-describedby={
+                                  drawerErrors.timeWindow ? 'task-time-window-error' : undefined
+                                }
+                              />
+                            }
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    {drawerErrors.timeWindow && (
+                      <p id="task-time-window-error" className="task-field-error" role="alert">
+                        {drawerErrors.timeWindow}
                       </p>
-                    </>
-                  )}
-                </section>
-                <div className="task-drawer__schedule-section">
-                  <div className="task-drawer__grid">
-                    <div className="task-form-section">
-                      <span>{t('tasks.details_start_prefix')}</span>
-                      <div className="task-due-picker">
-                        <DatePicker
-                          ref={drawerStartDatePickerRef}
-                          selected={toLocalDateTime(taskDraft.startDate, taskDraft.startTime)}
-                          onInputClick={() => {
-                            drawerDueDatePickerRef.current?.setOpen(false)
-                            drawerRuleStartDatePickerRef.current?.setOpen(false)
-                          }}
-                          onChange={(date: Date | null) => {
-                            if (!date) return
-                            const startDate = toLocalDateKey(date)
-                            setTaskDraft({
-                              ...taskDraft,
-                              startDate,
-                              startTime: toLocalTimeValue(date),
-                            })
-                            if (drawerErrors.timeWindow) {
-                              setDrawerErrors((current) => ({ ...current, timeWindow: undefined }))
-                            }
-                            if (taskDraft.repeat !== 'none') setRuleStartDate(startDate)
-                          }}
-                          showTimeInput
-                          dateFormat="yyyy-MM-dd HH:mm"
-                          timeInputLabel={t('tasks.time_picker_time_label')}
-                          locale={datePickerLocale}
-                          portalId="task-drawer-datepicker-portal"
-                          popperPlacement="bottom-end"
-                          ariaInvalid={drawerErrors.timeWindow ? 'true' : undefined}
-                          customInput={
-                            <DatePickerInput
-                              aria-label={t('tasks.details_start_prefix')}
-                              aria-invalid={drawerErrors.timeWindow ? 'true' : undefined}
-                              aria-describedby={
-                                drawerErrors.timeWindow ? 'task-time-window-error' : undefined
-                              }
-                            />
-                          }
-                        />
-                      </div>
-                    </div>
-                    <div className="task-form-section">
-                      <span>{t('tasks.details_due_prefix')}</span>
-                      <div className="task-due-picker">
-                        <DatePicker
-                          ref={drawerDueDatePickerRef}
-                          selected={toLocalDateTime(taskDraft.dueDate, taskDraft.time)}
-                          onInputClick={() => {
-                            drawerStartDatePickerRef.current?.setOpen(false)
-                            drawerRuleStartDatePickerRef.current?.setOpen(false)
-                          }}
-                          onChange={(date: Date | null) => {
-                            if (!date) return
-                            setTaskDraft({
-                              ...taskDraft,
-                              dueDate: toLocalDateKey(date),
-                              time: toLocalTimeValue(date),
-                            })
-                            if (drawerErrors.timeWindow) {
-                              setDrawerErrors((current) => ({ ...current, timeWindow: undefined }))
-                            }
-                          }}
-                          showTimeInput
-                          dateFormat="yyyy-MM-dd HH:mm"
-                          timeInputLabel={t('tasks.time_picker_time_label')}
-                          locale={datePickerLocale}
-                          portalId="task-drawer-datepicker-portal"
-                          popperPlacement="bottom-end"
-                          ariaInvalid={drawerErrors.timeWindow ? 'true' : undefined}
-                          customInput={
-                            <DatePickerInput
-                              aria-label={t('tasks.details_due_prefix')}
-                              aria-invalid={drawerErrors.timeWindow ? 'true' : undefined}
-                              aria-describedby={
-                                drawerErrors.timeWindow ? 'task-time-window-error' : undefined
-                              }
-                            />
-                          }
-                        />
-                      </div>
-                    </div>
-                    <label className="task-form-section">
-                      <span>{t('tasks.quick_add_priority_label')}</span>
-                      <select
-                        className="form-field"
-                        value={taskDraft.priority}
-                        onChange={(event) =>
-                          setTaskDraft({ ...taskDraft, priority: event.target.value })
-                        }
-                      >
-                        <option value="high">{t('tasks.priority_high')}</option>
-                        <option value="mid">{t('tasks.priority_mid')}</option>
-                        <option value="low">{t('tasks.priority_low')}</option>
-                      </select>
-                    </label>
+                    )}
                   </div>
-                  {drawerErrors.timeWindow && (
-                    <p id="task-time-window-error" className="task-field-error" role="alert">
-                      {drawerErrors.timeWindow}
-                    </p>
-                  )}
+                )}
+                <div className="task-drawer__schedule-section">
+                  <label className="task-form-section">
+                    <span>{t('tasks.quick_add_priority_label')}</span>
+                    <select
+                      className="form-field"
+                      value={taskDraft.priority}
+                      onChange={(event) =>
+                        setTaskDraft({ ...taskDraft, priority: event.target.value })
+                      }
+                    >
+                      <option value="high">{t('tasks.priority_high')}</option>
+                      <option value="mid">{t('tasks.priority_mid')}</option>
+                      <option value="low">{t('tasks.priority_low')}</option>
+                    </select>
+                  </label>
                 </div>
                 <label className="task-drawer__recurring-setting">
                   <span className="task-drawer__recurring-copy">
@@ -3897,7 +4071,6 @@ export const Tasks: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={taskDraft.repeat !== 'none'}
-                    disabled={recurrenceHierarchyLocked}
                     onChange={(event) => {
                       const recurring = event.target.checked
                       setTaskDraft({ ...taskDraft, repeat: recurring ? ruleFreq : 'none' })
@@ -3906,11 +4079,6 @@ export const Tasks: React.FC = () => {
                     }}
                   />
                 </label>
-                {recurrenceHierarchyLocked && (
-                  <p className="task-drawer__recurrence-lock-note">
-                    {t('tasks.recurring_hierarchy_lock_hint')}
-                  </p>
-                )}
                 {taskDraft.repeat !== 'none' && (
                   <div className="task-drawer__rule-panel">
                     <button
@@ -4254,6 +4422,19 @@ export const Tasks: React.FC = () => {
                           <header className="task-rule-section__header">
                             <span className="task-rule-section__number">3</span>
                             <span>
+                              <strong>{t('tasks.rule_section_deadline')}</strong>
+                              <small>{t('tasks.rule_instance_deadline_summary')}</small>
+                            </span>
+                          </header>
+                          <p className="task-rule-section__hint">
+                            {t('tasks.rule_instance_deadline_hint')}
+                          </p>
+                        </section>
+
+                        <section className="task-rule-section">
+                          <header className="task-rule-section__header">
+                            <span className="task-rule-section__number">4</span>
+                            <span>
                               <strong>{t('tasks.rule_section_range')}</strong>
                               <small>{getCurrentRuleRangeSummary()}</small>
                             </span>
@@ -4293,8 +4474,22 @@ export const Tasks: React.FC = () => {
                                 type="date"
                                 value={ruleEndDate}
                                 min={ruleStartDate || undefined}
-                                onChange={(event) => setRuleEndDate(event.target.value)}
+                                aria-invalid={drawerErrors.ruleEndDate ? 'true' : undefined}
+                                onChange={(event) => {
+                                  setRuleEndDate(event.target.value)
+                                  if (drawerErrors.ruleEndDate) {
+                                    setDrawerErrors((current) => ({
+                                      ...current,
+                                      ruleEndDate: undefined,
+                                    }))
+                                  }
+                                }}
                               />
+                              {drawerErrors.ruleEndDate && (
+                                <small className="task-field-error" role="alert">
+                                  {drawerErrors.ruleEndDate}
+                                </small>
+                              )}
                             </label>
                           </div>
                         </section>

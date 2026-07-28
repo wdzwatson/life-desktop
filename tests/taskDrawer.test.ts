@@ -32,6 +32,19 @@ test('task creation and editing use one right drawer with picker-based time and 
   assert.match(tasksView, /rule_instance_unchanged_note/)
 })
 
+test('recurring tasks use generation dates and a fixed per-instance deadline', () => {
+  const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
+
+  assert.match(tasksView, /taskDraft\.repeat === 'none' && \(/)
+  assert.match(tasksView, /rule_section_deadline/)
+  assert.match(tasksView, /rule_instance_deadline_summary/)
+  assert.match(tasksView, /rule_instance_deadline_hint/)
+  assert.match(tasksView, /ruleEndDate && ruleEndDate < ruleStartDate/)
+  assert.match(tasksView, /validation_rule_end_date_before_start/)
+  assert.match(tasksView, /task-drawer__schedule-section[\s\S]*quick_add_priority_label/)
+  assert.match(tasksView, /due_time = '23:59:59'/)
+})
+
 test('task drawer keeps its actions within the visible viewport', () => {
   const css = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.css'), 'utf8')
 

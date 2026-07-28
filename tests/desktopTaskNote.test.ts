@@ -11,3 +11,11 @@ test('desktop task note requires confirmation before closing and preserves compl
   assert.match(noteView, /closed_from_status = status, status = '已关闭'/)
   assert.doesNotMatch(noteView, /UPDATE tasks SET is_completed = .*已关闭/)
 })
+
+test('desktop task note uses the shared execution-date deadline presentation', () => {
+  const noteView = readFileSync(join(process.cwd(), 'src', 'views', 'DesktopTaskNote.tsx'), 'utf8')
+
+  assert.match(noteView, /getTaskDuePresentation/)
+  assert.match(noteView, /const formatTaskSchedule/)
+  assert.match(noteView, /const schedule = formatTaskSchedule\(task, todayKey\)/)
+})
