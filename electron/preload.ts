@@ -204,6 +204,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('note:export', data),
 
   selectBookFile: () => ipcRenderer.invoke('book:select-file'),
+  selectBookBatchFiles: () => ipcRenderer.invoke('book:batch-select-books'),
+  selectBookBatchCovers: (sessionId: string) =>
+    ipcRenderer.invoke('book:batch-select-covers', sessionId),
+  removeBookBatchItem: (input: { sessionId: string; itemId: string }) =>
+    ipcRenderer.invoke('book:batch-remove-item', input),
+  importBookBatch: (input: {
+    sessionId: string
+    category: string
+    itemIds?: string[]
+    unknownAuthor?: string
+  }) =>
+    ipcRenderer.invoke('book:batch-import', input),
   deleteBookFile: (relativePath: string) => ipcRenderer.invoke('fs:delete-file', relativePath),
   openExternalFile: (relativePath: string) => ipcRenderer.invoke('fs:open-external', relativePath),
   getBookChapters: (relativePath: string) => ipcRenderer.invoke('book:get-chapters', relativePath),

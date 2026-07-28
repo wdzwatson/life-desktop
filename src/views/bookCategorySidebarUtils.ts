@@ -25,6 +25,68 @@ export type DbMutationStatement = {
   params: unknown[]
 }
 
+export type BookCategoryHierarchyRecord = {
+  id: string | number
+  parent_id?: string | number | null
+}
+
+export function getBookCategoryDescendantIds(
+  categories: BookCategoryHierarchyRecord[],
+  categoryId: string | number,
+) {
+  const descendantIds = new Set<string>([String(categoryId)])
+  let hasNewDescendants = true
+
+  while (hasNewDescendants) {
+    hasNewDescendants = false
+    for (const category of categories) {
+      if (
+        category.parent_id != null &&
+        descendantIds.has(String(category.parent_id)) &&
+        !descendantIds.has(String(category.id))
+      ) {
+        descendantIds.add(String(category.id))
+        hasNewDescendants = true
+      }
+    }
+  }
+
+  return descendantIds
+}
+
+export function flattenBookCategoryTree<T extends BookCategoryHierarchyRecord>(categories: T[]) {
+  const categoriesById = new Map(categories.map((category) => [String(category.id), category]))
+  const childrenByParentId = new Map<string, T[]>()
+  const roots: T[] = []
+
+  for (const category of categories) {
+    const parentId = category.parent_id == null ? null : String(category.parent_id)
+    if (parentId == null || !categoriesById.has(parentId)) {
+      roots.push(category)
+      continue
+    }
+    const siblings = childrenByParentId.get(parentId) ?? []
+    siblings.push(category)
+    childrenByParentId.set(parentId, siblings)
+  }
+
+  const rows: Array<{ category: T; depth: number }> = []
+  const visited = new Set<string>()
+  const appendBranch = (category: T, depth: number) => {
+    const categoryId = String(category.id)
+    if (visited.has(categoryId)) return
+    visited.add(categoryId)
+    rows.push({ category, depth })
+    for (const child of childrenByParentId.get(categoryId) ?? []) {
+      appendBranch(child, depth + 1)
+    }
+  }
+
+  for (const category of roots) appendBranch(category, 0)
+  for (const category of categories) appendBranch(category, 0)
+  return rows
+}
+
 export function buildBookCategoryMigrationStatements(
   aliases: Iterable<string>,
   nextName: string,

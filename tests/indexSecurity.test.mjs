@@ -31,6 +31,15 @@ test('renderer CSP allows only the controlled AI asset protocol for generated me
   assert.match(cspMatch[1], /media-src[^;]*life-ai-asset:/)
 })
 
+test('renderer CSP allows the controlled local book-cover protocol', () => {
+  const cspMatch = indexHtml.match(
+    /<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"/,
+  )
+
+  assert.ok(cspMatch, 'index.html should declare a Content-Security-Policy meta tag')
+  assert.match(cspMatch[1], /img-src[^;]*life-book-cover:/)
+})
+
 test('renderer CSP allows Douyin CDN thumbnails without allowing arbitrary HTTPS images', () => {
   const cspMatch = indexHtml.match(
     /<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"/,

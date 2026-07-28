@@ -17,4 +17,5 @@ test('full-screen book reader renders through the viewport portal', () => {
 
   const readerFrameSource = readerSource.slice(0, readerSource.indexOf('{/* Reader Header */}'))
   assert.doesNotMatch(readerFrameSource, /animation:\s*'enter/)
+  assert.match(readerFrameSource, /top:\s*0/)
 })

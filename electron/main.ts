@@ -34,6 +34,13 @@ import {
   resolveChapterTitleFromHtml,
   resolveTocTarget,
 } from '../src/views/bookReaderUtils'
+import { handleBookCoverProtocolRequest } from './bookCoverProtocol'
+import {
+  buildBatchImportItems,
+  createManagedBookCover,
+  importBookBatch,
+  type BatchImportItem,
+} from './bookBatchImport'
 import {
   checkVideoTools,
   createInitialVideoEngineStatus,
@@ -151,6 +158,7 @@ let aiMcpManager: AIMcpManager | null = null
 const aiImageControllers = new Set<AbortController>()
 const aiVideoControllers = new Set<AbortController>()
 let aiRecoveryController: AbortController | null = null
+const bookBatchImportSessions = new Map<string, { userId: string; items: BatchImportItem[] }>()
 
 function logDouyinSyncWindow(event: string, details?: Record<string, unknown>) {
   console.info('[DouyinSyncWindow]', event, details || {})
@@ -239,6 +247,14 @@ protocol.registerSchemesAsPrivileged([
       standard: true,
       secure: true,
       stream: true,
+      supportFetchAPI: true,
+    },
+  },
+  {
+    scheme: 'life-book-cover',
+    privileges: {
+      standard: true,
+      secure: true,
       supportFetchAPI: true,
     },
   },
@@ -1114,6 +1130,10 @@ function getActiveUserVideoDir() {
   )
 }
 
+function getActiveUserFilesDir() {
+  return path.join(BASE_DIR, 'users', activeUserId, 'files')
+}
+
 function removeDouyinFavoriteFiles(db: Database.Database, itemIds?: number[]) {
   const rows = itemIds
     ? (() => {
@@ -1215,11 +1235,18 @@ function setupAIMediaProtocol() {
   )
 }
 
+function setupBookCoverProtocol() {
+  protocol.handle('life-book-cover', (request) =>
+    handleBookCoverProtocolRequest({ request, filesRoot: getActiveUserFilesDir() }),
+  )
+}
+
 // Switch user and initialize
 function switchUserSession(userId: string) {
   closeDouyinReaderView()
   closeUserDbs()
   activeUserId = userId
+  bookBatchImportSessions.clear()
 
   // Set up local folder paths for this user
   const userDir = path.join(BASE_DIR, 'users', userId)
@@ -1578,6 +1605,7 @@ function createAppTray() {
 app.whenReady().then(() => {
   setupVideoProtocol()
   setupAIMediaProtocol()
+  setupBookCoverProtocol()
   configureApplicationMenu()
   createWindow()
   createDesktopTaskNoteWindow()
@@ -2088,7 +2116,8 @@ ipcMain.handle('book:select-file', async (event) => {
   const ext = path.extname(sourcePath).toLowerCase()
   const title = path.basename(sourcePath, ext)
 
-  const targetDir = path.join(BASE_DIR, 'users', activeUserId, 'files', 'books')
+  const filesRoot = getActiveUserFilesDir()
+  const targetDir = path.join(filesRoot, 'books')
   if (!fs.existsSync(targetDir)) {
     fs.mkdirSync(targetDir, { recursive: true })
   }
@@ -2097,18 +2126,121 @@ ipcMain.handle('book:select-file', async (event) => {
 
   try {
     fs.copyFileSync(sourcePath, targetPath)
+    let coverPath: string | null = null
+    try {
+      coverPath = await createManagedBookCover({
+        sourcePath,
+        format: ext.slice(1).toUpperCase(),
+        filesRoot,
+      })
+    } catch (coverError) {
+      console.warn('Failed to generate book cover:', coverError)
+    }
     return {
       success: true,
       title,
       fileName,
       filePath: targetPath,
       relativePath: `/books/${fileName}`,
+      coverPath,
     }
   } catch (error: any) {
     console.error('Failed to copy book file:', error)
     return { success: false, error: error.message }
   }
 })
+
+function serializeBookBatchImportItems(items: BatchImportItem[]) {
+  return items.map(({ sourcePath: _sourcePath, coverSourcePath: _coverSourcePath, ...item }) => item)
+}
+
+ipcMain.handle('book:batch-select-books', async (event) => {
+  const { filePaths, canceled } = await dialog.showOpenDialog(
+    BrowserWindow.fromWebContents(event.sender) || mainWindow!,
+    {
+      title: '选择电子书文件',
+      filters: [{ name: 'eBooks', extensions: ['epub', 'pdf', 'mobi', 'txt', 'docx'] }],
+      properties: ['openFile', 'multiSelections'],
+    },
+  )
+  if (canceled || filePaths.length === 0) return { success: false, error: 'Canceled' }
+
+  const booksDb = getUserDb('books')
+  const existingBookFileNames = (
+    booksDb.prepare('SELECT path FROM books').all() as Array<{ path: string | null }>
+  ).map((book) => book.path || '')
+  const items = buildBatchImportItems({ bookPaths: filePaths, existingBookFileNames })
+  const sessionId = crypto.randomUUID()
+  bookBatchImportSessions.set(sessionId, { userId: activeUserId, items })
+  return { success: true, sessionId, items: serializeBookBatchImportItems(items) }
+})
+
+ipcMain.handle('book:batch-select-covers', async (event, sessionId: string) => {
+  const session = bookBatchImportSessions.get(sessionId)
+  if (!session || session.userId !== activeUserId) {
+    return { success: false, error: 'Import session is unavailable' }
+  }
+  const { filePaths, canceled } = await dialog.showOpenDialog(
+    BrowserWindow.fromWebContents(event.sender) || mainWindow!,
+    {
+      title: '选择书籍封面图片',
+      filters: [{ name: 'Cover images', extensions: ['jpg', 'jpeg', 'png', 'webp'] }],
+      properties: ['openFile', 'multiSelections'],
+    },
+  )
+  if (canceled) return { success: false, error: 'Canceled' }
+
+  const existingBookFileNames = (
+    getUserDb('books').prepare('SELECT path FROM books').all() as Array<{ path: string | null }>
+  ).map((book) => book.path || '')
+  session.items = buildBatchImportItems({
+    bookPaths: session.items.map((item) => item.sourcePath),
+    coverPaths: filePaths,
+    existingBookFileNames,
+  })
+  return { success: true, items: serializeBookBatchImportItems(session.items) }
+})
+
+ipcMain.handle('book:batch-remove-item', async (_, input: { sessionId?: string; itemId?: string }) => {
+  const session = input?.sessionId ? bookBatchImportSessions.get(input.sessionId) : undefined
+  if (!session || session.userId !== activeUserId || typeof input.itemId !== 'string') {
+    return { success: false, error: 'Import session is unavailable' }
+  }
+  session.items = session.items.filter((item) => item.id !== input.itemId)
+  return { success: true, items: serializeBookBatchImportItems(session.items) }
+})
+
+ipcMain.handle(
+  'book:batch-import',
+  async (
+    _,
+    input: { sessionId?: string; category?: string; itemIds?: string[]; unknownAuthor?: string },
+  ) => {
+    const session = input?.sessionId ? bookBatchImportSessions.get(input.sessionId) : undefined
+    if (!session || session.userId !== activeUserId) {
+      return { success: false, error: 'Import session is unavailable' }
+    }
+    const category = typeof input.category === 'string' && input.category.trim() ? input.category.trim() : '未分类'
+    if (category !== '未分类') {
+      const categoryExists = getUserDb('books')
+        .prepare('SELECT 1 FROM categories WHERE name = ?')
+        .get(category)
+      if (!categoryExists) return { success: false, error: 'Selected shelf is unavailable' }
+    }
+    const selectedIds = new Set(input.itemIds ?? session.items.map((item) => item.id))
+    const results = await importBookBatch({
+      db: getUserDb('books'),
+      filesRoot: getActiveUserFilesDir(),
+      category,
+      unknownAuthor:
+        typeof input.unknownAuthor === 'string' && input.unknownAuthor.trim()
+          ? input.unknownAuthor.trim()
+          : 'Unknown author',
+      items: session.items.filter((item) => selectedIds.has(item.id)),
+    })
+    return { success: true, results }
+  },
+)
 
 // IPC Handlers: File Deletion
 ipcMain.handle('fs:delete-file', async (_, relativePath: string) => {

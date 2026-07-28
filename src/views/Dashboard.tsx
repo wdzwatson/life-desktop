@@ -9,6 +9,8 @@ import {
   FileText,
   TrendingUp,
 } from 'lucide-react'
+import './Dashboard.css'
+import { getBookCoverUrl } from './bookCoverUtils'
 
 export const Dashboard: React.FC = () => {
   const { t } = useTranslation()
@@ -218,14 +220,13 @@ export const Dashboard: React.FC = () => {
                   )}
                   <div style={{ minWidth: 0, flexGrow: 1 }}>
                     <p
+                      className="dashboard-content-title"
+                      title={task.title}
                       style={{
                         fontSize: '13px',
                         fontWeight: 600,
                         textDecoration: task.is_completed === 1 ? 'line-through' : 'none',
                         color: task.is_completed === 1 ? 'var(--text-muted)' : 'var(--text-main)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
                       }}
                     >
                       {task.title}
@@ -281,6 +282,7 @@ export const Dashboard: React.FC = () => {
             {currentBook ? (
               <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
                 <div
+                  className="dashboard-book-cover"
                   style={{
                     width: '64px',
                     height: '88px',
@@ -294,24 +296,38 @@ export const Dashboard: React.FC = () => {
                     fontSize: '12px',
                     boxShadow: 'var(--shadow-app)',
                     flexShrink: 0,
+                    position: 'relative',
+                    overflow: 'hidden',
                   }}
                 >
                   {currentBook.cover || 'BOOK'}
+                  {getBookCoverUrl(currentBook.cover_path) && (
+                    <img
+                      src={getBookCoverUrl(currentBook.cover_path) ?? undefined}
+                      alt={currentBook.title ? `${currentBook.title} cover` : ''}
+                      onError={(event) => {
+                        event.currentTarget.style.display = 'none'
+                      }}
+                    />
+                  )}
                 </div>
                 <div style={{ minWidth: 0, width: '100%' }}>
                   <h3
+                    className="dashboard-content-title dashboard-content-title--two-lines"
+                    title={currentBook.title}
                     style={{
                       fontSize: '14px',
                       fontWeight: 700,
                       margin: 0,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
                     }}
                   >
                     {currentBook.title}
                   </h3>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '12px', margin: '4px 0 8px' }}>
+                  <p
+                    className="dashboard-content-meta"
+                    title={currentBook.author || t('dashboard.unknown_author')}
+                    style={{ color: 'var(--text-muted)', fontSize: '12px', margin: '4px 0 8px' }}
+                  >
                     {currentBook.author || t('dashboard.unknown_author')}
                   </p>
 
@@ -446,17 +462,15 @@ export const Dashboard: React.FC = () => {
                 }}
               >
                 <h4
+                  className="dashboard-note-title"
                   style={{
                     fontSize: '13px',
                     fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
                     marginBottom: '4px',
                   }}
                 >
                   <FileText size={14} color="var(--color-accent)" />
-                  {recentNote.title}
+                  <span title={recentNote.title}>{recentNote.title}</span>
                 </h4>
                 <p
                   style={{
@@ -526,18 +540,23 @@ export const Dashboard: React.FC = () => {
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <h4
+                    className="dashboard-content-title"
+                    title={recentVideo.title}
                     style={{
                       fontSize: '13px',
                       fontWeight: 700,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
                       margin: 0,
                     }}
                   >
                     {recentVideo.title}
                   </h4>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '2px' }}>
+                  <p
+                    className="dashboard-content-meta"
+                    title={`${recentVideo.source} · ${recentVideo.duration || '00:00'} · ${t(
+                      'dashboard.downloaded',
+                    )}`}
+                    style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '2px' }}
+                  >
                     {recentVideo.source} · {recentVideo.duration || '00:00'} ·{' '}
                     {t('dashboard.downloaded')}
                   </p>

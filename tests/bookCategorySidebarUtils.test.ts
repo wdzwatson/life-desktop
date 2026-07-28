@@ -2,10 +2,45 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   buildCategoryStorageAliasMap,
+  flattenBookCategoryTree,
   getActiveCategoryAfterDelete,
+  getBookCategoryDescendantIds,
   getContextMenuPosition,
   isReservedBookCategory,
 } from '../src/views/bookCategorySidebarUtils.ts'
+
+test('book shelf hierarchy flattens children in tree order and retains malformed rows', () => {
+  const categories = [
+    { id: 1, name: '技术', parent_id: null },
+    { id: 2, name: '前端', parent_id: 1 },
+    { id: 3, name: 'React', parent_id: 2 },
+    { id: 4, name: '设计', parent_id: null },
+    { id: 5, name: '孤立', parent_id: 99 },
+  ]
+
+  assert.deepEqual(
+    flattenBookCategoryTree(categories).map(({ category, depth }) => [category.id, depth]),
+    [
+      [1, 0],
+      [2, 1],
+      [3, 2],
+      [4, 0],
+      [5, 0],
+    ],
+  )
+})
+
+test('parent shelf selection includes every descendant shelf', () => {
+  const categories = [
+    { id: 1, parent_id: null },
+    { id: 2, parent_id: 1 },
+    { id: 3, parent_id: 2 },
+    { id: 4, parent_id: null },
+  ]
+
+  assert.deepEqual([...getBookCategoryDescendantIds(categories, 1)].sort(), ['1', '2', '3'])
+  assert.deepEqual([...getBookCategoryDescendantIds(categories, 4)], ['4'])
+})
 
 test('buildCategoryStorageAliasMap keeps only uniquely owned translation aliases', () => {
   const categories = [

@@ -2,9 +2,13 @@ import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/TextLayer.css'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
+import './Books.css'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url'
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker
+const pdfWasmUrl = import.meta.env.DEV
+  ? `${window.location.origin}/pdfjs/wasm/`
+  : new URL('pdfjs/wasm/', document.baseURI).toString()
 
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
@@ -41,12 +45,28 @@ import { BookCategorySidebar, type BookShelf } from './BookCategorySidebar'
 import { AccessibleDialog } from '../components/AccessibleDialog'
 import { ViewportPortal } from '../components/ViewportPortal'
 import { getConfiguredLocales } from '../localeRegistry'
+import { getBookCoverUrl } from './bookCoverUtils'
 import {
   buildBookCategoryMigrationStatements,
   buildCategoryStorageAliasMap,
+  flattenBookCategoryTree,
+  getBookCategoryDescendantIds,
   getActiveCategoryAfterDelete,
   isReservedBookCategory,
 } from './bookCategorySidebarUtils'
+
+type BookBatchQueueItem = {
+  id: string
+  fileName: string
+  title: string
+  format: string
+  coverFileName?: string
+  coverConflict: boolean
+  duplicateReason?: 'existing-book' | 'duplicate-in-queue'
+  status: 'pending' | 'importing' | 'success' | 'skipped' | 'failed'
+  error?: string
+  coverWarning?: string
+}
 
 export const Books: React.FC = () => {
   const { t, i18n } = useTranslation()
@@ -61,6 +81,8 @@ export const Books: React.FC = () => {
   const [categories, setCategories] = useState<any[]>([])
   const [books, setBooks] = useState<any[]>([])
   const [activeCategory, setActiveCategory] = useState<string>('all')
+  const [draggingBookId, setDraggingBookId] = useState<string | null>(null)
+  const didDragBookRef = useRef(false)
 
   // Reader Overlay State
   const [readingBook, setReadingBook] = useState<any | null>(null)
@@ -68,12 +90,18 @@ export const Books: React.FC = () => {
 
   // Modals state
   const [isImportOpen, setIsImportOpen] = useState(false)
+  const [isBatchImportOpen, setIsBatchImportOpen] = useState(false)
+  const [batchImportSessionId, setBatchImportSessionId] = useState<string | null>(null)
+  const [batchImportItems, setBatchImportItems] = useState<BookBatchQueueItem[]>([])
+  const [batchImportCategory, setBatchImportCategory] = useState('')
+  const [isBatchImporting, setIsBatchImporting] = useState(false)
   const [importTitle, setImportTitle] = useState('')
   const [importAuthor, setImportAuthor] = useState('')
   const [importCategory, setImportCategory] = useState('')
   const [importCustomCategory, setImportCustomCategory] = useState('')
   const [isCustomCategory, setIsCustomCategory] = useState(false)
   const [importFilePath, setImportFilePath] = useState('')
+  const [importCoverPath, setImportCoverPath] = useState<string | null>(null)
   const [selectedFileName, setSelectedFileName] = useState('')
   const [importFormat, setImportFormat] = useState('EPUB')
 
@@ -223,6 +251,7 @@ export const Books: React.FC = () => {
   const [readerMainWidth, setReaderMainWidth] = useState(0)
 
   const api = (window as any).electronAPI
+  const pdfDocumentOptions = useMemo(() => ({ wasmUrl: pdfWasmUrl }), [])
 
   const loadData = async () => {
     if (!api) return
@@ -276,7 +305,7 @@ export const Books: React.FC = () => {
     }
   }, [userId])
 
-  const createCategory = async (name: string) => {
+  const createCategory = async (name: string, parentId: BookShelf['id'] | null) => {
     if (!api?.dbTransaction) {
       return { ok: false as const, error: t('books.toast_category_create_failed') }
     }
@@ -291,17 +320,24 @@ export const Books: React.FC = () => {
     ) {
       return { ok: false as const, error: t('books.shelf_name_duplicate') }
     }
+    if (parentId != null && !categories.some((category) => String(category.id) === String(parentId))) {
+      return { ok: false as const, error: t('books.toast_category_create_failed') }
+    }
 
     try {
+      const siblingCount = categories.filter(
+        (category) => String(category.parent_id ?? '') === String(parentId ?? ''),
+      ).length
       const transactionResult = await api.dbTransaction('books', [
         {
-          sql: 'INSERT INTO categories (name, sort_order) VALUES (?, ?)',
-          params: [mainName, categories.length + 1],
+          sql: 'INSERT INTO categories (name, parent_id, sort_order) VALUES (?, ?, ?)',
+          params: [mainName, parentId, siblingCount + 1],
         },
         {
           sql: `
             INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation)
-            VALUES ('category', CAST(last_insert_rowid() AS TEXT), ?, ?)
+            SELECT 'category', CAST(last_insert_rowid() AS TEXT), ?, ?
+            WHERE changes() > 0
           `,
           params: [i18n.language, mainName],
         },
@@ -422,6 +458,7 @@ export const Books: React.FC = () => {
     const res = await api.selectBookFile()
     if (res?.success) {
       setImportFilePath(res.relativePath)
+      setImportCoverPath(res.coverPath ?? null)
       setSelectedFileName(res.fileName)
       const ext = res.fileName.split('.').pop()?.toUpperCase() || 'EPUB'
       setImportFormat(ext)
@@ -431,6 +468,120 @@ export const Books: React.FC = () => {
       }
     } else if (res?.error && res.error !== 'Canceled') {
       showToast(res.error)
+    }
+  }
+
+  const resetBatchImport = () => {
+    setBatchImportSessionId(null)
+    setBatchImportItems([])
+    setBatchImportCategory('')
+    setIsBatchImporting(false)
+  }
+
+  const closeBatchImport = () => {
+    if (isBatchImporting) return
+    setIsBatchImportOpen(false)
+    resetBatchImport()
+  }
+
+  const handleSelectBatchBooks = async () => {
+    if (!api?.selectBookBatchFiles) {
+      showToast(t('books.toast_file_picker_unavailable'))
+      return
+    }
+    const result = await api.selectBookBatchFiles()
+    if (result?.success) {
+      const items: BookBatchQueueItem[] = (result.items ?? []).map((item: Omit<BookBatchQueueItem, 'status'>) => ({
+        ...item,
+        status: 'pending' as const,
+      }))
+      if (items.length > 0 && items.every((item) => item.duplicateReason === 'existing-book')) {
+        showToast(t('books.batch_all_already_imported'))
+        setIsBatchImportOpen(false)
+        resetBatchImport()
+        return
+      }
+      setBatchImportSessionId(result.sessionId)
+      setBatchImportItems(items)
+    } else if (result?.error && result.error !== 'Canceled') {
+      showToast(result.error)
+    }
+  }
+
+  const handleSelectBatchCovers = async () => {
+    if (!batchImportSessionId || !api?.selectBookBatchCovers) return
+    const result = await api.selectBookBatchCovers(batchImportSessionId)
+    if (result?.success) {
+      setBatchImportItems(
+        (result.items ?? []).map((item: Omit<BookBatchQueueItem, 'status'>) => ({
+          ...item,
+          status: 'pending',
+        })),
+      )
+    } else if (result?.error && result.error !== 'Canceled') {
+      showToast(result.error)
+    }
+  }
+
+  const handleRemoveBatchItem = async (itemId: string) => {
+    if (!batchImportSessionId || !api?.removeBookBatchItem || isBatchImporting) return
+    const result = await api.removeBookBatchItem({ sessionId: batchImportSessionId, itemId })
+    if (result?.success) {
+      setBatchImportItems(
+        (result.items ?? []).map((item: Omit<BookBatchQueueItem, 'status'>) => ({
+          ...item,
+          status: 'pending',
+        })),
+      )
+    }
+  }
+
+  const runBatchImport = async (onlyFailed = false) => {
+    if (!batchImportSessionId || !api?.importBookBatch || isBatchImporting) return
+    const itemIds = batchImportItems
+      .filter((item) => !item.duplicateReason && (onlyFailed ? item.status === 'failed' : item.status === 'pending'))
+      .map((item) => item.id)
+    if (itemIds.length === 0) return
+
+    setIsBatchImporting(true)
+    let importedCount = 0
+    try {
+      for (const itemId of itemIds) {
+        setBatchImportItems((items) =>
+          items.map((item) => (item.id === itemId ? { ...item, status: 'importing', error: undefined } : item)),
+        )
+        const result = await api.importBookBatch({
+          sessionId: batchImportSessionId,
+          category: batchImportCategory,
+          itemIds: [itemId],
+          unknownAuthor: t('books.unknown_author'),
+        })
+        const itemResult = result?.results?.[0]
+        if (result?.success && itemResult) {
+          if (itemResult.status === 'success') importedCount += 1
+          setBatchImportItems((items) =>
+            items.map((item) =>
+              item.id === itemId
+                ? { ...item, ...itemResult, status: itemResult.status as BookBatchQueueItem['status'] }
+                : item,
+            ),
+          )
+        } else {
+          setBatchImportItems((items) =>
+            items.map((item) =>
+              item.id === itemId
+                ? { ...item, status: 'failed', error: result?.error || t('books.batch_import_failed') }
+                : item,
+            ),
+          )
+        }
+      }
+      if (importedCount > 0) {
+        await loadData()
+        showToast(t('books.batch_import_success', { count: importedCount }))
+      }
+    } finally {
+      setIsBatchImporting(false)
     }
   }
 
@@ -464,14 +615,15 @@ export const Books: React.FC = () => {
 
     const finalPath = importFilePath || `/books/${title}.epub`
     const query = `
-      INSERT INTO books (title, author, path, cover, category, progress, status)
-      VALUES (?, ?, ?, ?, ?, 0.0, 'want')
+      INSERT INTO books (title, author, path, cover, cover_path, category, progress, status)
+      VALUES (?, ?, ?, ?, ?, ?, 0.0, 'want')
     `
     const res = await api.dbQuery('books', query, [
       title,
       author,
       finalPath,
       importFormat,
+      importCoverPath,
       finalCategory,
     ])
 
@@ -484,6 +636,7 @@ export const Books: React.FC = () => {
       setImportCustomCategory('')
       setIsCustomCategory(false)
       setImportFilePath('')
+      setImportCoverPath(null)
       setSelectedFileName('')
       setImportFormat('EPUB')
       loadData()
@@ -571,6 +724,7 @@ export const Books: React.FC = () => {
       const category = deletingCategory
       const categoryName = category.name
       const categoryId = String(category.id)
+      const parentId = category.parent_id ?? null
       const mappedAliases = categoryStorageAliases.get(categoryId)
       const storageAliases = new Set(mappedAliases ?? [])
       if (!mappedAliases && typeof categoryName === 'string' && categoryName.trim()) {
@@ -582,6 +736,10 @@ export const Books: React.FC = () => {
         params: [alias],
       }))
       statements.push(
+        {
+          sql: 'UPDATE categories SET parent_id = ? WHERE parent_id = ?',
+          params: [parentId, category.id],
+        },
         { sql: 'DELETE FROM categories WHERE id = ?', params: [category.id] },
         {
           sql: "DELETE FROM translations WHERE entity_type = 'category' AND entity_id = ?",
@@ -681,6 +839,42 @@ export const Books: React.FC = () => {
       setDeletingBookInfo(null)
       loadData()
     }
+  }
+
+  const moveBookToCategory = async (bookId: string, category: BookShelf) => {
+    if (!api) return { ok: false as const, error: t('books.toast_book_move_failed') }
+
+    const book = books.find((candidate) => String(candidate.id) === String(bookId))
+    const targetCategory = categories.find(
+      (candidate) => String(candidate.id) === String(category.id),
+    )
+    if (!book || !targetCategory) {
+      return { ok: false as const, error: t('books.toast_book_move_failed') }
+    }
+    if (isBookInCategory(book, targetCategory)) return { ok: true as const }
+
+    const result = await api.dbQuery('books', 'UPDATE books SET category = ? WHERE id = ?', [
+      targetCategory.name,
+      book.id,
+    ])
+    if (!result?.success) {
+      return { ok: false as const, error: t('books.toast_book_move_failed') }
+    }
+
+    setBooks((current) =>
+      current.map((candidate) =>
+        String(candidate.id) === String(book.id)
+          ? { ...candidate, category: targetCategory.name }
+          : candidate,
+      ),
+    )
+    showToast(
+      t('books.toast_book_moved', {
+        title: book.title,
+        shelf: getCategoryDisplayName(targetCategory.name, targetCategory.id),
+      }),
+    )
+    return { ok: true as const }
   }
 
   // Open book in custom reader overlay
@@ -1375,8 +1569,19 @@ export const Books: React.FC = () => {
       return isUncategorized(b)
     }
     const cat = categories.find((c) => c.name === activeCategory)
-    return cat ? isBookInCategory(b, cat) : b.category === activeCategory
+    if (!cat) return b.category === activeCategory
+    const categoryIds = getBookCategoryDescendantIds(categories, cat.id)
+    return categories.some(
+      (candidate) => categoryIds.has(String(candidate.id)) && isBookInCategory(b, candidate),
+    )
   })
+  const batchImportShelfRows = flattenBookCategoryTree(
+    categories.filter((category) => !isReservedBookCategory(category.name)),
+  )
+  const batchImportFailedCount = batchImportItems.filter((item) => item.status === 'failed').length
+  const batchImportPendingCount = batchImportItems.filter(
+    (item) => item.status === 'pending' && !item.duplicateReason,
+  ).length
 
   // Styling variables for Modals
   const modalOverlayStyle: React.CSSProperties = {
@@ -1581,17 +1786,27 @@ export const Books: React.FC = () => {
           <h1 style={{ fontSize: '22px', fontWeight: 800 }}>{t('books.title')}</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{t('books.subtitle')}</p>
         </div>
-        <button
-          type="button"
-          className="btn primary"
-          aria-label={t('books.import_book')}
-          onPointerDown={() => setIsImportOpen(true)}
-          onClick={() => setIsImportOpen(true)}
-          style={{ position: 'relative', zIndex: 3, pointerEvents: 'auto' }}
-        >
-          <Plus size={16} />
-          {t('books.import_book')}
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            type="button"
+            className="btn"
+            aria-label={t('books.batch_import')}
+            onClick={() => setIsBatchImportOpen(true)}
+          >
+            {t('books.batch_import')}
+          </button>
+          <button
+            type="button"
+            className="btn primary"
+            aria-label={t('books.import_book')}
+            onPointerDown={() => setIsImportOpen(true)}
+            onClick={() => setIsImportOpen(true)}
+            style={{ position: 'relative', zIndex: 3, pointerEvents: 'auto' }}
+          >
+            <Plus size={16} />
+            {t('books.import_book')}
+          </button>
+        </div>
       </div>
 
       {/* Grid Shelf Layout */}
@@ -1610,11 +1825,18 @@ export const Books: React.FC = () => {
           allBooksCount={books.length}
           toOrganizeCount={uncategorizedBooksCount}
           getCategoryDisplayName={(category) => getCategoryDisplayName(category.name, category.id)}
-          getCategoryBookCount={(category) =>
-            books.filter((book) => isBookInCategory(book, category)).length
-          }
+          getCategoryBookCount={(category) => {
+            const categoryIds = getBookCategoryDescendantIds(categories, category.id)
+            return books.filter((book) =>
+              categories.some(
+                (candidate) =>
+                  categoryIds.has(String(candidate.id)) && isBookInCategory(book, candidate),
+              ),
+            ).length
+          }}
           onSelectCategory={setActiveCategory}
           onCreateCategory={createCategory}
+          onMoveBookToCategory={moveBookToCategory}
           onRenameCategory={renameCategoryInline}
           onEditTranslations={openCategoryTranslationEditor}
           onRequestDelete={openCategoryDeleteDialog}
@@ -1648,7 +1870,10 @@ export const Books: React.FC = () => {
             filteredBooks.map((book) => (
               <div
                 key={book.id}
-                className="card"
+                className={`card book-shelf-card ${
+                  String(draggingBookId) === String(book.id) ? 'is-dragging' : ''
+                }`}
+                draggable
                 style={{
                   display: 'flex',
                   gap: '12px',
@@ -1656,7 +1881,22 @@ export const Books: React.FC = () => {
                   transition: 'transform 0.15s ease',
                   position: 'relative',
                 }}
-                onClick={() => handleOpenReader(book)}
+                onDragStart={(event) => {
+                  didDragBookRef.current = true
+                  event.dataTransfer.effectAllowed = 'move'
+                  event.dataTransfer.setData('application/x-lifeos-book-id', String(book.id))
+                  setDraggingBookId(String(book.id))
+                }}
+                onDragEnd={() => {
+                  setDraggingBookId(null)
+                  window.setTimeout(() => {
+                    didDragBookRef.current = false
+                  }, 0)
+                }}
+                onClick={() => {
+                  if (didDragBookRef.current) return
+                  void handleOpenReader(book)
+                }}
               >
                 <div
                   className="book-actions"
@@ -1671,15 +1911,14 @@ export const Books: React.FC = () => {
                     zIndex: 10,
                   }}
                   onClick={(e) => e.stopPropagation()}
+                  onDragStart={(event) => event.preventDefault()}
                 >
                   <button
-                    className="btn sm"
+                    className="btn sm book-shelf-card__edit-action"
                     style={{
                       padding: '4px 6px',
                       display: 'flex',
                       alignItems: 'center',
-                      background: 'var(--bg-surface)',
-                      border: '1px solid var(--color-border)',
                     }}
                     onClick={() => handleStartEditBook(book)}
                     title={t('books.edit_book') || '编辑'}
@@ -1703,6 +1942,7 @@ export const Books: React.FC = () => {
                   </button>
                 </div>
                 <div
+                  className="book-shelf-card__cover"
                   style={{
                     width: '64px',
                     height: '88px',
@@ -1715,9 +1955,20 @@ export const Books: React.FC = () => {
                     fontSize: '11px',
                     flexShrink: 0,
                     boxShadow: 'var(--shadow-app)',
+                    position: 'relative',
+                    overflow: 'hidden',
                   }}
                 >
                   {book.cover || 'EPUB'}
+                  {getBookCoverUrl(book.cover_path) && (
+                    <img
+                      src={getBookCoverUrl(book.cover_path) ?? undefined}
+                      alt={book.title ? `${book.title} ${t('books.batch_cover_matched')}` : ''}
+                      onError={(event) => {
+                        event.currentTarget.style.display = 'none'
+                      }}
+                    />
+                  )}
                 </div>
                 <div
                   style={{
@@ -1730,12 +1981,11 @@ export const Books: React.FC = () => {
                 >
                   <div>
                     <h3
+                      className="book-shelf-card__title"
+                      title={book.title}
                       style={{
                         fontSize: '13px',
                         fontWeight: 700,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
                         margin: 0,
                       }}
                     >
@@ -1800,7 +2050,7 @@ export const Books: React.FC = () => {
           className="book-reader-overlay"
           style={{
             position: 'fixed',
-            top: '38px',
+            top: 0,
             bottom: 0,
             left: 0,
             right: 0,
@@ -1808,41 +2058,25 @@ export const Books: React.FC = () => {
             color: readerTextColor,
             zIndex: 1000,
             display: 'grid',
-            gridTemplateRows: '50px 1fr',
+            gridTemplateRows: 'minmax(0, auto) minmax(0, 1fr)',
           }}
         >
           {/* Reader Header */}
           <header
+            className="book-reader__header"
             style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '0 24px',
               borderBottom: `1px solid ${readerBorderColor}`,
               backgroundColor: isDarkReader ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)',
             }}
           >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                minWidth: 0,
-                flex: '1 1 auto',
-                overflow: 'hidden',
-              }}
-            >
-              <button className="btn sm" onClick={handleCloseReader}>
+            <div className="book-reader__identity">
+              <button className="btn sm" type="button" onClick={handleCloseReader}>
                 ✕ {t('books.exit_reader')}
               </button>
               <strong
+                className="book-reader__title"
                 style={{
                   fontSize: '13.5px',
-                  flex: '1 1 auto',
-                  minWidth: 0,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
                 }}
                 title={`${t('books.reading_label')}:《${readingBook.title}》`}
               >
@@ -1851,13 +2085,9 @@ export const Books: React.FC = () => {
 
               {/* Progress Slider */}
               <div
+                className="book-reader__progress"
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  marginLeft: '12px',
                   borderLeft: `1px solid ${readerBorderColor}`,
-                  paddingLeft: '16px',
                 }}
               >
                 <span style={{ fontSize: '11px', color: isDarkReader ? '#888' : '#666' }}>
@@ -1885,7 +2115,7 @@ export const Books: React.FC = () => {
             </div>
 
             {/* Custom font and bg adjustments */}
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: '0 0 auto' }}>
+            <div className="book-reader__toolbar">
               <button className="btn sm" onClick={() => handleExportHighlights()}>
                 <ExternalLink size={12} /> {t('books.export_notes_btn')}
               </button>
@@ -2397,6 +2627,7 @@ export const Books: React.FC = () => {
                           so switching view modes no longer re-parses the whole PDF. */}
                       <Document
                         file={pdfFile}
+                        options={pdfDocumentOptions}
                         onLoadSuccess={handlePdfLoadSuccess}
                         loading={
                           <div style={{ color: 'var(--text-muted)' }}>{t('books.pdf_loading')}</div>
@@ -2968,6 +3199,128 @@ export const Books: React.FC = () => {
         </ViewportPortal>
       )}
 
+      {isBatchImportOpen && (
+        <ViewportPortal>
+          <div className="dialog-overlay" style={modalOverlayStyle}>
+            <div className="dialog-surface book-batch-import" role="dialog" aria-modal="true">
+              <div className="book-batch-import__header">
+                <div>
+                  <h3>{t('books.batch_import_title')}</h3>
+                  <p>{t('books.batch_import_hint')}</p>
+                </div>
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={closeBatchImport}
+                  disabled={isBatchImporting}
+                  aria-label={t('common.close')}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="book-batch-import__controls">
+                <button type="button" className="btn" onClick={handleSelectBatchBooks} disabled={isBatchImporting}>
+                  {t('books.batch_select_books')}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={handleSelectBatchCovers}
+                  disabled={!batchImportSessionId || isBatchImporting}
+                >
+                  {t('books.batch_match_covers')}
+                </button>
+                <label className="book-batch-import__category">
+                  <span>{t('books.batch_target_shelf')}</span>
+                  <select
+                    className="form-field"
+                    value={batchImportCategory}
+                    disabled={isBatchImporting}
+                    onChange={(event) => setBatchImportCategory(event.target.value)}
+                  >
+                    <option value="">{t('books.uncategorized')}</option>
+                    {batchImportShelfRows.map(({ category, depth }) => (
+                      <option key={category.id} value={category.name}>
+                        {'— '.repeat(depth)}{getCategoryDisplayName(category.name, category.id)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="book-batch-import__summary">
+                {t('books.batch_queue_summary', {
+                  count: batchImportItems.length,
+                  pending: batchImportPendingCount,
+                })}
+              </div>
+
+              <div className="book-batch-import__queue" aria-live="polite">
+                {batchImportItems.length === 0 ? (
+                  <p className="book-batch-import__empty">{t('books.batch_empty_queue')}</p>
+                ) : (
+                  batchImportItems.map((item) => (
+                    <div key={item.id} className="book-batch-import__item">
+                      <div className={`book-batch-import__cover ${item.coverFileName ? 'matched' : ''}`}>
+                        {item.coverFileName ? t('books.batch_cover_matched') : item.format}
+                      </div>
+                      <div className="book-batch-import__details">
+                        <strong title={item.title}>{item.title}</strong>
+                        <span title={item.fileName}>{item.fileName}</span>
+                        {item.coverConflict && <em>{t('books.batch_cover_conflict')}</em>}
+                        {item.error && <em className="error">{item.error}</em>}
+                        {item.coverWarning && <em>{t('books.batch_cover_warning')}</em>}
+                      </div>
+                      <span className="book-batch-import__format">{item.format}</span>
+                      <span className={`book-batch-import__status ${item.status}`}>
+                        {item.duplicateReason
+                          ? t('books.batch_status_skipped')
+                          : t(`books.batch_status_${item.status}`)}
+                      </span>
+                      {item.status === 'pending' && (
+                        <button
+                          type="button"
+                          className="btn sm"
+                          onClick={() => void handleRemoveBatchItem(item.id)}
+                          disabled={isBatchImporting}
+                        >
+                          {t('books.batch_remove')}
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="book-batch-import__footer">
+                <button type="button" className="btn" onClick={closeBatchImport} disabled={isBatchImporting}>
+                  {t('common.cancel')}
+                </button>
+                {batchImportFailedCount > 0 && (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => void runBatchImport(true)}
+                    disabled={isBatchImporting}
+                  >
+                    {t('books.batch_retry_failed', { count: batchImportFailedCount })}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => void runBatchImport()}
+                  disabled={isBatchImporting || batchImportPendingCount === 0}
+                >
+                  {isBatchImporting ? t('books.batch_importing') : t('books.batch_start_import')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ViewportPortal>
+      )}
+
       {/* Premium Import Book Modal */}
       {isImportOpen && (
         <ViewportPortal>
@@ -3076,6 +3429,7 @@ export const Books: React.FC = () => {
                     setImportCustomCategory('')
                     setIsCustomCategory(false)
                     setImportFilePath('')
+                    setImportCoverPath(null)
                     setSelectedFileName('')
                   }}
                 >

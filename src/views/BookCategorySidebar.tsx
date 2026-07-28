@@ -1,9 +1,13 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
+  type CSSProperties,
+  type DragEvent,
   type FormEvent,
   type KeyboardEvent,
   type MouseEvent,
@@ -11,12 +15,13 @@ import {
 import { BookOpen, Inbox, Languages, Library, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { ViewportPortal } from '../components/ViewportPortal'
-import { getContextMenuPosition } from './bookCategorySidebarUtils'
+import { flattenBookCategoryTree, getContextMenuPosition } from './bookCategorySidebarUtils'
 import './BookCategorySidebar.css'
 
 export type BookShelf = {
   id: string | number
   name: string
+  parent_id?: string | number | null
 }
 
 export type MutationResult = { ok: true } | { ok: false; error: string }
@@ -29,7 +34,8 @@ export type BookCategorySidebarProps = {
   getCategoryDisplayName: (category: BookShelf) => string
   getCategoryBookCount: (category: BookShelf) => number
   onSelectCategory: (category: string) => void
-  onCreateCategory: (name: string) => Promise<MutationResult>
+  onCreateCategory: (name: string, parentId: BookShelf['id'] | null) => Promise<MutationResult>
+  onMoveBookToCategory: (bookId: string, category: BookShelf) => Promise<MutationResult>
   onRenameCategory: (category: BookShelf, name: string) => Promise<MutationResult>
   onEditTranslations: (category: BookShelf, returnFocus: () => void) => void
   onRequestDelete: (category: BookShelf, returnFocus: () => void) => void
@@ -42,7 +48,8 @@ type ContextMenuState = {
 }
 
 const CONTEXT_MENU_WIDTH = 176
-const CONTEXT_MENU_HEIGHT = 132
+const CONTEXT_MENU_HEIGHT = 168
+const MAX_VISUAL_DEPTH = 6
 
 export function BookCategorySidebar({
   categories,
@@ -53,18 +60,21 @@ export function BookCategorySidebar({
   getCategoryBookCount,
   onSelectCategory,
   onCreateCategory,
+  onMoveBookToCategory,
   onRenameCategory,
   onEditTranslations,
   onRequestDelete,
 }: BookCategorySidebarProps) {
   const { t } = useTranslation()
   const [addName, setAddName] = useState<string | null>(null)
+  const [addParentId, setAddParentId] = useState<BookShelf['id'] | null>(null)
   const [renamingId, setRenamingId] = useState<BookShelf['id'] | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [initialRenameValue, setInitialRenameValue] = useState('')
   const [inlineError, setInlineError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  const [dragOverCategoryId, setDragOverCategoryId] = useState<BookShelf['id'] | null>(null)
   const [menuFocusIndex, setMenuFocusIndex] = useState(0)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const originatingRowRef = useRef<HTMLButtonElement | null>(null)
@@ -74,6 +84,10 @@ export function BookCategorySidebar({
   const inlineErrorId = useId()
 
   const isAdding = addName !== null
+  const categoryRows = useMemo(() => flattenBookCategoryTree(categories), [categories])
+
+  const getDepthStyle = (depth: number) =>
+    ({ '--book-shelf-depth': Math.min(depth, MAX_VISUAL_DEPTH) } as CSSProperties)
 
   const closeContextMenu = useCallback((restoreFocus = true) => {
     setContextMenu(null)
@@ -111,12 +125,14 @@ export function BookCategorySidebar({
 
   const cancelAdd = () => {
     setAddName(null)
+    setAddParentId(null)
     setInlineError('')
   }
 
-  const startAdd = () => {
+  const startAdd = (parentId: BookShelf['id'] | null = null) => {
     if (isSubmittingRef.current) return
     setAddName('')
+    setAddParentId(parentId)
     setRenamingId(null)
     setRenameValue('')
     setInitialRenameValue('')
@@ -135,13 +151,14 @@ export function BookCategorySidebar({
     isSubmittingRef.current = true
     setIsSubmitting(true)
     try {
-      const result = await onCreateCategory(name)
+      const result = await onCreateCategory(name, addParentId)
       if (!isMountedRef.current) return
       if (!result.ok) {
         setInlineError(result.error)
         return
       }
       setAddName(null)
+      setAddParentId(null)
       setInlineError('')
     } catch (error) {
       if (isMountedRef.current) {
@@ -277,6 +294,30 @@ export function BookCategorySidebar({
     void submitRename(category)
   }
 
+  const getDraggedBookId = (event: DragEvent<HTMLElement>) =>
+    event.dataTransfer.getData('application/x-lifeos-book-id')
+
+  const isDraggingBook = (event: DragEvent<HTMLElement>) =>
+    Array.from(event.dataTransfer.types).includes('application/x-lifeos-book-id')
+
+  const handleCategoryDragOver = (event: DragEvent<HTMLButtonElement>, category: BookShelf) => {
+    if (!isDraggingBook(event)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    setDragOverCategoryId(category.id)
+  }
+
+  const handleCategoryDrop = async (
+    event: DragEvent<HTMLButtonElement>,
+    category: BookShelf,
+  ) => {
+    const bookId = getDraggedBookId(event)
+    if (!bookId) return
+    event.preventDefault()
+    setDragOverCategoryId(null)
+    await onMoveBookToCategory(bookId, category)
+  }
+
   return (
     <aside className="book-category-sidebar card" aria-label={t('books.sidebar_title')}>
       <h2 className="book-category-sidebar__title">{t('books.sidebar_title')}</h2>
@@ -322,14 +363,14 @@ export function BookCategorySidebar({
             className="book-category-sidebar__add-button"
             aria-label={t('books.add_shelf')}
             title={t('books.add_shelf')}
-            onClick={startAdd}
+            onClick={() => startAdd()}
           >
             <Plus aria-hidden="true" />
           </button>
         </div>
 
         <div className="book-category-sidebar__custom-list">
-          {isAdding && (
+          {isAdding && addParentId === null && (
             <form className="book-category-sidebar__editor" onSubmit={handleAddSubmit}>
               <div className="book-category-sidebar__editor-row">
                 <BookOpen aria-hidden="true" />
@@ -360,13 +401,14 @@ export function BookCategorySidebar({
             </form>
           )}
 
-          {categories.map((category) => {
+          {categoryRows.map(({ category, depth }) => {
             const displayName = getCategoryDisplayName(category)
             if (renamingId === category.id) {
               return (
                 <form
                   key={category.id}
                   className="book-category-sidebar__editor"
+                  style={getDepthStyle(depth)}
                   onSubmit={(event) => handleRenameSubmit(event, category)}
                 >
                   <div className="book-category-sidebar__editor-row">
@@ -401,24 +443,65 @@ export function BookCategorySidebar({
 
             const isContextOpen = contextMenu?.category.id === category.id
             return (
-              <button
-                key={category.id}
-                type="button"
-                className={`book-category-sidebar__row ${
-                  activeCategory === category.name ? 'active' : ''
-                } ${isContextOpen ? 'context-open' : ''}`}
-                aria-current={activeCategory === category.name ? 'page' : undefined}
-                onClick={() => onSelectCategory(category.name)}
-                onContextMenu={(event) => openContextMenu(event, category)}
-              >
-                <BookOpen aria-hidden="true" />
-                <span className="book-category-sidebar__label" title={displayName}>
-                  {displayName}
-                </span>
-                <span className="book-category-sidebar__count">
-                  {getCategoryBookCount(category)}
-                </span>
-              </button>
+              <Fragment key={category.id}>
+                <button
+                  type="button"
+                  className={`book-category-sidebar__row ${
+                    activeCategory === category.name ? 'active' : ''
+                  } ${isContextOpen ? 'context-open' : ''} ${
+                    String(dragOverCategoryId) === String(category.id) ? 'drop-target' : ''
+                  }`}
+                  style={getDepthStyle(depth)}
+                  aria-current={activeCategory === category.name ? 'page' : undefined}
+                  onClick={() => onSelectCategory(category.name)}
+                  onContextMenu={(event) => openContextMenu(event, category)}
+                  onDragOver={(event) => handleCategoryDragOver(event, category)}
+                  onDragLeave={() => setDragOverCategoryId(null)}
+                  onDrop={(event) => void handleCategoryDrop(event, category)}
+                >
+                  <BookOpen aria-hidden="true" />
+                  <span className="book-category-sidebar__label" title={displayName}>
+                    {displayName}
+                  </span>
+                  <span className="book-category-sidebar__count">
+                    {getCategoryBookCount(category)}
+                  </span>
+                </button>
+                {isAdding && String(addParentId) === String(category.id) && (
+                  <form
+                    className="book-category-sidebar__editor"
+                    style={getDepthStyle(depth + 1)}
+                    onSubmit={handleAddSubmit}
+                  >
+                    <div className="book-category-sidebar__editor-row">
+                      <BookOpen aria-hidden="true" />
+                      <input
+                        autoFocus
+                        value={addName ?? ''}
+                        disabled={isSubmitting}
+                        aria-invalid={inlineError ? 'true' : undefined}
+                        aria-describedby={inlineError ? inlineErrorId : undefined}
+                        aria-label={t('books.add_sub_shelf')}
+                        onChange={(event) => setAddName(event.target.value)}
+                        onBlur={() => {
+                          if (!isSubmittingRef.current) cancelAdd()
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Escape') {
+                            event.preventDefault()
+                            cancelAdd()
+                          }
+                        }}
+                      />
+                    </div>
+                    {inlineError && (
+                      <p id={inlineErrorId} className="book-category-sidebar__error" role="alert">
+                        {inlineError}
+                      </p>
+                    )}
+                  </form>
+                )}
+              </Fragment>
             )
           })}
         </div>
@@ -439,6 +522,19 @@ export function BookCategorySidebar({
               role="menuitem"
               tabIndex={menuFocusIndex === 0 ? 0 : -1}
               onFocus={() => setMenuFocusIndex(0)}
+              onClick={() => {
+                startAdd(contextMenu.category.id)
+                closeContextMenu(false)
+              }}
+            >
+              <Plus aria-hidden="true" />
+              <span>{t('books.add_sub_shelf')}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={menuFocusIndex === 1 ? 0 : -1}
+              onFocus={() => setMenuFocusIndex(1)}
               onClick={() => startRename(contextMenu.category)}
             >
               <Pencil aria-hidden="true" />
@@ -447,8 +543,8 @@ export function BookCategorySidebar({
             <button
               type="button"
               role="menuitem"
-              tabIndex={menuFocusIndex === 1 ? 0 : -1}
-              onFocus={() => setMenuFocusIndex(1)}
+              tabIndex={menuFocusIndex === 2 ? 0 : -1}
+              onFocus={() => setMenuFocusIndex(2)}
               onClick={() => {
                 onEditTranslations(contextMenu.category, createMenuReturnFocus())
                 closeContextMenu(false)
@@ -462,8 +558,8 @@ export function BookCategorySidebar({
               type="button"
               role="menuitem"
               className="danger"
-              tabIndex={menuFocusIndex === 2 ? 0 : -1}
-              onFocus={() => setMenuFocusIndex(2)}
+              tabIndex={menuFocusIndex === 3 ? 0 : -1}
+              onFocus={() => setMenuFocusIndex(3)}
               onClick={() => {
                 onRequestDelete(contextMenu.category, createMenuReturnFocus())
                 closeContextMenu(false)
