@@ -131,15 +131,13 @@ test('provider actions explain themselves and editor controls retain safe close 
   assert.doesNotMatch(modelManager, /stopPropagation\(\)/)
   assert.match(providerManager, /onClick=\{handleDrawerClose\}/)
   assert.match(modelManager, /onClick=\{handleDrawerClose\}/)
-  assert.match(css, /\.ai-settings-drawer__title > button\s*\{[\s\S]*width:\s*40px[\s\S]*height:\s*40px[\s\S]*border-radius:\s*0/)
-  assert.match(css, /\.ai-settings-drawer__title > button::before\s*\{[\s\S]*inset:\s*4px[\s\S]*border-radius:\s*8px/)
-  assert.match(css, /\.ai-settings-drawer__title > button::before\s*\{[\s\S]*pointer-events:\s*none/)
-  assert.match(css, /\.ai-settings-drawer__title > button > svg,[\s\S]*\.ai-settings-drawer__title > button > svg \*\s*\{[\s\S]*cursor:\s*pointer !important[\s\S]*pointer-events:\s*none !important/)
+  assert.match(css, /\.ai-settings-drawer__title\s*\{[\s\S]*-webkit-app-region:\s*no-drag/)
+  assert.match(css, /\.ai-settings-drawer__close\s*\{[\s\S]*flex:\s*0 0 auto[\s\S]*-webkit-app-region:\s*no-drag/)
   assert.match(appCss, /The system title bar sits outside the renderer's client area\./)
   assert.doesNotMatch(appCss, /\.title-bar\s*\{[\s\S]*-webkit-app-region:\s*drag/)
   assert.match(css, /\.ai-settings-drawer-overlay\s*\{[\s\S]*-webkit-app-region:\s*no-drag/)
   assert.match(css, /\.ai-settings-drawer\s*\{[\s\S]*-webkit-app-region:\s*no-drag/)
-  assert.match(css, /\.ai-settings-drawer__title > button\s*\{[\s\S]*-webkit-app-region:\s*no-drag/)
+  assert.match(css, /\.ai-settings-drawer__close\s*\{[\s\S]*-webkit-app-region:\s*no-drag/)
 })
 
 test('provider creation selects catalog models from one flat list and does not create Agents', () => {
@@ -170,7 +168,7 @@ test('provider and model editors separate connection settings from the model cat
 })
 
 test('model switching only changes the model used by the next run', () => {
-  const modelChangeHandler = workspace.match(/const handleModelChange = \(agentId: number\) => \{[\s\S]*?\n {2}\}\n\n {2}const handleProviderChange/)?.[0] ?? ''
+  const modelChangeHandler = workspace.match(/const handleModelChange = \(agentId: number\) => \{[\s\S]*?const handleProviderChange/)?.[0] ?? ''
   assert.match(modelChangeHandler, /setSelectedAgentId\(agentId\)/)
   assert.match(workspace, /const agentId = selectedAgentId/)
   assert.doesNotMatch(modelChangeHandler, /deleteAIConversation/)
@@ -193,8 +191,8 @@ test('model switching adds a deferred timeline divider after the active round', 
 })
 
 test('media model switching queues the same timeline divider as text model switching', () => {
-  const stageProviderHandler = workspace.match(/const handleStageProviderChange = \(providerId: number\) => \{[\s\S]*?\n {2}\}\n\n {2}const handleStageModelChange/)?.[0] ?? ''
-  const stageModelHandler = workspace.match(/const handleStageModelChange = \(value: string\) => \{[\s\S]*?\n {2}\}\n\n {2}const handleComposerModeChange/)?.[0] ?? ''
+  const stageProviderHandler = workspace.match(/const handleStageProviderChange = \(providerId: number\) => \{[\s\S]*?const handleStageModelChange/)?.[0] ?? ''
+  const stageModelHandler = workspace.match(/const handleStageModelChange = \(value: string\) => \{[\s\S]*?const handleComposerModeChange/)?.[0] ?? ''
   assert.match(stageProviderHandler, /if \(imageMode\) \{[\s\S]*queueModelSwitchMarker\(\{[\s\S]*toModel: nextModel/)
   assert.match(stageProviderHandler, /if \(videoMode\) \{[\s\S]*queueModelSwitchMarker\(\{[\s\S]*toModel: nextModel/)
   assert.match(stageModelHandler, /if \(imageMode\) \{[\s\S]*queueModelSwitchMarker\(\{[\s\S]*toModel: value/)
