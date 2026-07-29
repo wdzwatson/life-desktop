@@ -35,3 +35,16 @@ test('task completion follows the review requirement before closing a task', () 
   assert.match(tasksView, /reviewTask\(task, false\)/)
   assert.match(tasksView, /reviewTask\(task, true\)/)
 })
+
+test('overdue task review action is available only when review is required', () => {
+  const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
+
+  assert.match(
+    tasksView,
+    /status === TASK_STATUS\.review && !task\.requires_review/,
+  )
+  assert.match(
+    tasksView,
+    /Boolean\(completionConfirmationTask\.requires_review\) && \([\s\S]*?resolveOverdueTask\(TASK_STATUS\.review\)/,
+  )
+})

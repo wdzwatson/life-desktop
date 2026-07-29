@@ -1120,7 +1120,14 @@ export const Tasks: React.FC = () => {
     status: typeof TASK_STATUS.review | typeof TASK_STATUS.closed,
   ) => {
     const task = completionConfirmationTask
-    if (!api || !task || task.status !== TASK_STATUS.overdue || isCompletionConfirming) return
+    if (
+      !api ||
+      !task ||
+      task.status !== TASK_STATUS.overdue ||
+      isCompletionConfirming ||
+      (status === TASK_STATUS.review && !task.requires_review)
+    )
+      return
 
     setIsCompletionConfirming(true)
     try {
@@ -4549,14 +4556,16 @@ export const Tasks: React.FC = () => {
               >
                 {t('common.cancel')}
               </button>
-              <button
-                type="button"
-                className="btn primary"
-                disabled={isCompletionConfirming}
-                onClick={() => void resolveOverdueTask(TASK_STATUS.review)}
-              >
-                {t('tasks.confirm_resolve_overdue_review_action')}
-              </button>
+              {Boolean(completionConfirmationTask.requires_review) && (
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={isCompletionConfirming}
+                  onClick={() => void resolveOverdueTask(TASK_STATUS.review)}
+                >
+                  {t('tasks.confirm_resolve_overdue_review_action')}
+                </button>
+              )}
               <button
                 type="button"
                 className="btn"
