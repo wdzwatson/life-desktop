@@ -144,6 +144,15 @@ export const Books: React.FC = () => {
   const [selectedFileName, setSelectedFileName] = useState('')
   const [importFormat, setImportFormat] = useState('EPUB')
 
+  useEffect(() => {
+    const openImport = () => {
+      setActiveCategory('all')
+      setIsImportOpen(true)
+    }
+    window.addEventListener('books:import', openImport)
+    return () => window.removeEventListener('books:import', openImport)
+  }, [])
+
   // eBook edit and delete states
   const [editingBookInfo, setEditingBookInfo] = useState<any | null>(null)
   const [editBookTitle, setEditBookTitle] = useState('')

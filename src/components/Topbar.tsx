@@ -49,13 +49,8 @@ export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch })
   }
 
   const handleImportFile = () => {
-    const api = (window as any).electronAPI
-    if (api) {
-      // Trigger a mock file load or open workspace settings
-      setActiveScreen('settings')
-      setTaskTab('appearance') // Default settings page
-      useAppStore.getState().showToast(t('topbar.manage_dir_hint'))
-    }
+    setActiveScreen('books')
+    window.setTimeout(() => window.dispatchEvent(new Event('books:import')), 0)
   }
 
   const handleShowDesktopTaskNote = () => {
