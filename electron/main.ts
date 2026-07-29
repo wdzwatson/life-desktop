@@ -193,23 +193,39 @@ async function captureScreen(displayId?: number) {
 }
 
 function registerScreenshotShortcut(settings = getSettings()) {
-  if (registeredScreenshotShortcut) globalShortcut.unregister(registeredScreenshotShortcut)
+  const previousAccelerator = registeredScreenshotShortcut
+  if (previousAccelerator) globalShortcut.unregister(previousAccelerator)
   registeredScreenshotShortcut = null
   const accelerator = getShortcuts(settings).screenshot
-  if (!accelerator || typeof accelerator !== 'string') return
+  const triggerScreenshot = () => {
+    void captureScreen()
+      .then((imageDataUrl) => {
+        showMainWindow()
+        mainWindow?.webContents.send('screen-capture:open', { imageDataUrl })
+      })
+      .catch((error) => console.warn('[ScreenCapture] failed:', error))
+  }
+  const restorePrevious = () => {
+    if (previousAccelerator && globalShortcut.register(previousAccelerator, triggerScreenshot)) {
+      registeredScreenshotShortcut = previousAccelerator
+    }
+  }
+  if (!accelerator || typeof accelerator !== 'string') {
+    restorePrevious()
+    return { success: false, error: 'The shortcut is invalid.' }
+  }
   try {
-    const registered = globalShortcut.register(accelerator, () => {
-      void captureScreen()
-        .then((imageDataUrl) => {
-          showMainWindow()
-          mainWindow?.webContents.send('screen-capture:open', { imageDataUrl })
-        })
-        .catch((error) => console.warn('[ScreenCapture] failed:', error))
-    })
-    if (registered) registeredScreenshotShortcut = accelerator
-    else console.warn(`[ScreenCapture] shortcut unavailable: ${accelerator}`)
+    const registered = globalShortcut.register(accelerator, triggerScreenshot)
+    if (registered) {
+      registeredScreenshotShortcut = accelerator
+      return { success: true }
+    }
+    restorePrevious()
+    return { success: false, error: 'The shortcut is already in use by another application.' }
   } catch (error) {
+    restorePrevious()
     console.warn(`[ScreenCapture] invalid shortcut: ${accelerator}`, error)
+    return { success: false, error: 'The shortcut is invalid or unavailable.' }
   }
 }
 
@@ -2013,6 +2029,12 @@ ipcMain.handle('settings:get', async () => {
 
 ipcMain.handle('settings:save', async (_, newSettings: any) => {
   const previousSettings = getSettings()
+  if (previousSettings.shortcuts?.screenshot !== newSettings.shortcuts?.screenshot) {
+    const shortcutRegistration = registerScreenshotShortcut(newSettings)
+    if (!shortcutRegistration.success) {
+      return { ...previousSettings, shortcutRegistration }
+    }
+  }
   const savedSettings = saveSettings(newSettings)
   const videoSettingKeys = [
     'ytDlpPath',
@@ -2027,10 +2049,7 @@ ipcMain.handle('settings:save', async (_, newSettings: any) => {
   if (videoSettingKeys.some((key) => previousSettings[key] !== newSettings[key])) {
     void loadVideoEngine({ force: true })
   }
-  if (previousSettings.shortcuts?.screenshot !== newSettings.shortcuts?.screenshot) {
-    registerScreenshotShortcut(savedSettings)
-  }
-  return savedSettings
+  return { ...savedSettings, shortcutRegistration: { success: true } }
 })
 
 // Screen capture is intentionally mediated by the main process so the renderer never

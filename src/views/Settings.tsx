@@ -319,7 +319,13 @@ export const Settings: React.FC = () => {
   const handleSaveShortcuts = async () => {
     if (!api) return
     const current = (await api.getSettings()) as Record<string, any>
-    await api.saveSettings({ ...current, shortcuts })
+    const result = await api.saveSettings({ ...current, shortcuts }) as Record<string, any>
+    if (result?.shortcutRegistration?.success === false) {
+      setShortcuts({ ...DEFAULT_SHORTCUTS, ...(result.shortcuts || {}) })
+      setShortcutError(t('settings.shortcut_system_unavailable'))
+      return
+    }
+    window.dispatchEvent(new CustomEvent('reader-shortcuts:changed', { detail: shortcuts }))
     setShortcutError('')
     showToast(t('settings.shortcut_saved'))
   }

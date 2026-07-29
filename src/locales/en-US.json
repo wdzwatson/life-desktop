@@ -1633,6 +1633,7 @@
     "shortcut_reader_hint": "Reader shortcut",
     "shortcut_invalid": "Use a modifier key (Ctrl/Command, Alt, Shift) or a function key.",
     "shortcut_conflict": "This shortcut is already used by another action.",
+    "shortcut_system_unavailable": "The screenshot shortcut could not be registered by the system. Your previous working shortcut was kept. Choose another combination and try again.",
     "shortcut_saved": "Shortcuts saved and applied.",
     "shortcut_reset": "Restore defaults",
     "shortcut_save": "Save shortcuts",

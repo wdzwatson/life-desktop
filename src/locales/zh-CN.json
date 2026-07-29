@@ -1633,6 +1633,7 @@
     "shortcut_reader_hint": "阅读模式快捷键",
     "shortcut_invalid": "请按下包含 Ctrl/Command、Alt、Shift 的组合键，或使用功能键。",
     "shortcut_conflict": "该快捷键已被另一项功能使用。",
+    "shortcut_system_unavailable": "截图快捷键未能被系统注册，已保留原有效快捷键。请更换组合键后重试。",
     "shortcut_saved": "快捷键设置已保存并生效。",
     "shortcut_reset": "恢复默认",
     "shortcut_save": "保存快捷键",

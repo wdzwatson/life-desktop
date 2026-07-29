@@ -1704,6 +1704,15 @@ export const Books: React.FC = () => {
   }, [readingBook, api])
 
   useEffect(() => {
+    const handleReaderShortcutsChanged = (event: Event) => {
+      const shortcuts = (event as CustomEvent<Partial<typeof DEFAULT_READER_SHORTCUTS>>).detail
+      setReaderShortcuts((current) => ({ ...current, ...shortcuts }))
+    }
+    window.addEventListener('reader-shortcuts:changed', handleReaderShortcutsChanged)
+    return () => window.removeEventListener('reader-shortcuts:changed', handleReaderShortcutsChanged)
+  }, [])
+
+  useEffect(() => {
     if (!readingBook) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
