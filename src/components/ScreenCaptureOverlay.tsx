@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Copy, Download, Pencil, RotateCcw, Undo2, X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 type Point = { x: number; y: number }
 type Rect = Point & { width: number; height: number }
@@ -23,6 +24,7 @@ export function ScreenCaptureOverlay({
   initialImageDataUrl?: string | null
   onClose: () => void
 }) {
+  const { t } = useTranslation()
   const api = (window as any).electronAPI
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(initialImageDataUrl ?? null)
   const [selection, setSelection] = useState<Rect | null>(null)
@@ -34,7 +36,7 @@ export function ScreenCaptureOverlay({
   const [brushColor, setBrushColor] = useState('#ef4444')
   const [brushSize, setBrushSize] = useState(4)
   const [canUndo, setCanUndo] = useState(false)
-  const [message, setMessage] = useState('拖动框选截图区域；未框选时将使用全屏。')
+  const [message, setMessage] = useState(() => t('screen_capture.select_hint'))
   const imageRef = useRef<HTMLImageElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const editorDrawingRef = useRef(false)
@@ -55,7 +57,7 @@ export function ScreenCaptureOverlay({
     setIsLoading(true)
     api?.captureScreen?.({ displayId: selectedDisplayId }).then((result: any) => {
       if (result?.success) setImageDataUrl(result.imageDataUrl)
-      else setMessage(result?.error || '截图失败，请重试。')
+      else setMessage(result?.error || t('screen_capture.capture_failed'))
     }).finally(() => setIsLoading(false))
   }, [api, initialImageDataUrl, selectedDisplayId])
 
@@ -109,14 +111,14 @@ export function ScreenCaptureOverlay({
     const image = ensureOutput()
     if (!image) return
     const result = await api?.copyScreenshot?.(image)
-    setMessage(result?.success ? '截图已复制到剪贴板。' : result?.error || '复制截图失败。')
+    setMessage(result?.success ? t('screen_capture.copied') : result?.error || t('screen_capture.copy_failed'))
   }
 
   const saveScreenshot = async () => {
     const image = ensureOutput()
     if (!image) return
     const result = await api?.saveScreenshot?.(image)
-    setMessage(result?.success ? (result.saved ? '截图已另存为 PNG 图片。' : '已取消另存。') : result?.error || '保存截图失败。')
+    setMessage(result?.success ? (result.saved ? t('screen_capture.saved') : t('screen_capture.save_cancelled')) : result?.error || t('screen_capture.save_failed'))
   }
 
   const startEditing = () => {
@@ -125,7 +127,7 @@ export function ScreenCaptureOverlay({
     setImageDataUrl(image)
     setSelection(null)
     setIsEditing(true)
-    setMessage('编辑模式：按住鼠标绘制；可复制或另存编辑后的图片。')
+    setMessage(t('screen_capture.editor_hint'))
   }
 
   const renderEditor = (resetHistory = true) => {
@@ -195,16 +197,16 @@ export function ScreenCaptureOverlay({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="截图"
+      aria-label={t('screen_capture.title')}
       style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(7, 12, 22, .88)', display: 'grid', placeItems: 'center', padding: 24 }}
     >
       <div style={{ width: 'min(1120px, 100%)', maxHeight: '100%', display: 'flex', flexDirection: 'column', gap: 12, color: '#f8fafc' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-          <div><strong>截图</strong><span style={{ marginLeft: 10, color: '#cbd5e1', fontSize: 12 }}>{message}</span></div>
-          <button className="btn sm" onClick={onClose} aria-label="关闭截图"><X size={16} /> Esc</button>
+          <div><strong>{t('screen_capture.title')}</strong><span style={{ marginLeft: 10, color: '#cbd5e1', fontSize: 12 }}>{message}</span></div>
+          <button className="btn sm" onClick={onClose} aria-label={t('screen_capture.close')}><X size={16} /> Esc</button>
         </div>
         {displays.length > 1 && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }} aria-label="选择显示器">
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }} aria-label={t('screen_capture.select_display')}>
             {displays.map((display) => (
               <button
                 key={display.id}
@@ -218,22 +220,22 @@ export function ScreenCaptureOverlay({
                   setIsEditing(false)
                 }}
               >
-                {display.label}{display.primary ? '（主显示器）' : ''}
+                {display.label}{display.primary ? ` (${t('screen_capture.primary_display')})` : ''}
               </button>
             ))}
           </div>
         )}
         <div style={{ minHeight: 220, overflow: 'auto', display: 'grid', placeItems: 'center', background: '#020617', borderRadius: 10, padding: 12 }}>
-          {isLoading && <span>正在捕获屏幕…</span>}
+          {isLoading && <span>{t('screen_capture.loading')}</span>}
           {!isLoading && !imageDataUrl && <span>{message}</span>}
           {imageDataUrl && !isEditing && (
             <div style={{ position: 'relative', display: 'inline-flex', lineHeight: 0 }}>
               <img
                 ref={imageRef}
                 src={imageDataUrl}
-                alt="屏幕截图"
+                alt={t('screen_capture.image_alt')}
                 draggable={false}
-                onLoad={() => setMessage('拖动框选截图区域；未框选时将使用全屏。')}
+                onLoad={() => setMessage(t('screen_capture.select_hint'))}
                 onPointerDown={(event) => { const point = toLocalPoint(event); if (point) { event.currentTarget.setPointerCapture(event.pointerId); setDragStart(point); setSelection(null) } }}
                 onPointerMove={(event) => { if (!dragStart) return; const point = toLocalPoint(event); if (point) setSelection(normalizeRect(dragStart, point)) }}
                 onPointerUp={(event) => { const point = toLocalPoint(event); if (dragStart && point) setSelection(normalizeRect(dragStart, point)); setDragStart(null) }}
@@ -255,15 +257,15 @@ export function ScreenCaptureOverlay({
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
           {isEditing && (
             <>
-              <input aria-label="画笔颜色" type="color" value={brushColor} onChange={(event) => setBrushColor(event.target.value)} style={{ width: 34, padding: 2 }} />
-              <input aria-label="画笔粗细" type="range" min="2" max="16" value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} />
-              <button className="btn sm" disabled={!canUndo} onClick={undoEditor}><Undo2 size={14} /> 撤销</button>
-              <button className="btn sm" onClick={() => renderEditor()}><RotateCcw size={14} /> 清除编辑</button>
+              <input aria-label={t('screen_capture.brush_color')} type="color" value={brushColor} onChange={(event) => setBrushColor(event.target.value)} style={{ width: 34, padding: 2 }} />
+              <input aria-label={t('screen_capture.brush_size')} type="range" min="2" max="16" value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} />
+              <button className="btn sm" disabled={!canUndo} onClick={undoEditor}><Undo2 size={14} /> {t('screen_capture.undo')}</button>
+              <button className="btn sm" onClick={() => renderEditor()}><RotateCcw size={14} /> {t('screen_capture.clear')}</button>
             </>
           )}
-          {!isEditing && <button className="btn sm" disabled={!imageDataUrl} onClick={startEditing}><Pencil size={14} /> 编辑</button>}
-          <button className="btn sm" disabled={!imageDataUrl} onClick={copyScreenshot}><Copy size={14} /> 复制</button>
-          <button className="btn sm primary" disabled={!imageDataUrl} onClick={saveScreenshot}><Download size={14} /> 另存为</button>
+          {!isEditing && <button className="btn sm" disabled={!imageDataUrl} onClick={startEditing}><Pencil size={14} /> {t('screen_capture.edit')}</button>}
+          <button className="btn sm" disabled={!imageDataUrl} onClick={copyScreenshot}><Copy size={14} /> {t('screen_capture.copy')}</button>
+          <button className="btn sm primary" disabled={!imageDataUrl} onClick={saveScreenshot}><Download size={14} /> {t('screen_capture.save')}</button>
         </div>
       </div>
     </div>
