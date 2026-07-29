@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { readdirSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 
@@ -40,6 +40,9 @@ const electronNodeTests = new Set([
   'tests/videoSchema.test.mjs',
   'tests/douyinFavorites.test.mjs',
 ])
+for (const testFile of allTests) {
+  if (readFileSync(testFile, 'utf8').includes('better-sqlite3')) electronNodeTests.add(testFile)
+}
 const nodeTests = allTests.filter((file) => !electronNodeTests.has(file))
 const nodeTestBatchSize = 12
 
