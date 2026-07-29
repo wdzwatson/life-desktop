@@ -112,7 +112,8 @@ export const Books: React.FC = () => {
   // DB States
   const [categories, setCategories] = useState<any[]>([])
   const [books, setBooks] = useState<any[]>([])
-  const [activeCategory, setActiveCategory] = useState<string>(TO_READ_BOOK_SHELF_ID)
+  // New libraries should open in a view where the first import is visible.
+  const [activeCategory, setActiveCategory] = useState<string>('all')
   const [draggingBookId, setDraggingBookId] = useState<string | null>(null)
   const [toReadDropTarget, setToReadDropTarget] = useState<{
     id: string
@@ -2160,8 +2161,10 @@ export const Books: React.FC = () => {
             type="button"
             className="btn"
             aria-label={t('books.batch_import')}
-            disabled={isToReadShelfActive}
-            onClick={() => setIsBatchImportOpen(true)}
+            onClick={() => {
+              setActiveCategory('all')
+              setIsBatchImportOpen(true)
+            }}
           >
             {t('books.batch_import')}
           </button>
@@ -2169,9 +2172,10 @@ export const Books: React.FC = () => {
             type="button"
             className="btn primary"
             aria-label={t('books.import_book')}
-            disabled={isToReadShelfActive}
-            onPointerDown={() => setIsImportOpen(true)}
-            onClick={() => setIsImportOpen(true)}
+            onClick={() => {
+              setActiveCategory('all')
+              setIsImportOpen(true)
+            }}
             style={{ position: 'relative', zIndex: 3, pointerEvents: 'auto' }}
           >
             <Plus size={16} />
