@@ -42,8 +42,8 @@ function createProvider(db, name, defaults = {}) {
   )
 }
 
-function expectedCatalogRows() {
-  return [...DEFAULT_MODEL_CATALOG]
+function expectedCatalogRows(additionalModels = []) {
+  return [...DEFAULT_MODEL_CATALOG, ...additionalModels]
     .map((model) => ({
       name: model.name,
       category: model.category,
@@ -193,7 +193,11 @@ test('AI schema migrates version 4 media models into multi-select catalogs', () 
   assert.equal(provider.video_models_json, '["video-1"]')
   assert.deepEqual(
     db.prepare('SELECT name, category, capabilities_json FROM ai_model_catalog ORDER BY name COLLATE NOCASE').all(),
-    expectedCatalogRows(),
+    expectedCatalogRows([
+      { name: 'model', category: 'other', capabilities: ['text'] },
+      { name: 'image-1', category: 'other', capabilities: ['image'] },
+      { name: 'video-1', category: 'other', capabilities: ['video'] },
+    ]),
   )
   db.close()
 })
@@ -220,7 +224,10 @@ test('AI schema migrates version 5 catalog rows into composite capabilities', ()
 
   assert.deepEqual(
     db.prepare('SELECT name, category, capabilities_json FROM ai_model_catalog ORDER BY name COLLATE NOCASE').all(),
-    expectedCatalogRows(),
+    expectedCatalogRows([
+      { name: 'omni-model', category: 'other', capabilities: ['text', 'image'] },
+      { name: 'video-model', category: 'other', capabilities: ['video'] },
+    ]),
   )
   assert.equal(db.prepare('SELECT schema_version FROM ai_schema_meta WHERE id = 1').get().schema_version, AI_SCHEMA_VERSION)
   db.close()
