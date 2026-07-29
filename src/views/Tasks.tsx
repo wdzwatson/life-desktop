@@ -1580,6 +1580,7 @@ export const Tasks: React.FC = () => {
             SELECT id FROM tasks
             WHERE recur_rule_id = ?
               AND recur_instance_root = 1
+              AND parent_id IS NULL
               AND is_completed = 0
               AND (due_date > ? OR (due_date = ? AND instance_key > ?))
           `,
@@ -1592,7 +1593,7 @@ export const Tasks: React.FC = () => {
         )
       : await api.dbQuery(
           'tasks',
-          'SELECT id FROM tasks WHERE recur_rule_id = ? AND recur_instance_root = 1 AND is_completed = 0',
+          'SELECT id FROM tasks WHERE recur_rule_id = ? AND parent_id IS NULL AND recur_instance_root = 1 AND is_completed = 0',
           [ruleId],
         )
 
@@ -1606,7 +1607,7 @@ export const Tasks: React.FC = () => {
 
     const result = await api.dbQuery(
       'tasks',
-      'SELECT id FROM tasks WHERE recur_rule_id = ? AND recur_instance_root = 1',
+      'SELECT id FROM tasks WHERE recur_rule_id = ? AND parent_id IS NULL AND recur_instance_root = 1',
       [ruleId],
     )
 
