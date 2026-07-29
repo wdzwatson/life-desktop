@@ -286,6 +286,7 @@
     "repeat_summary_source": "来自重复计划",
     "details_label_progress": "完成进度",
     "btn_save_changes": "保存修改",
+    "btn_create_task": "创建任务",
     "select_task_tip": "选择一条任务以查看详情",
     "details_empty_title": "还没有选择任务",
     "details_empty_description": "从左侧选择一条任务，或直接创建新任务开始。",

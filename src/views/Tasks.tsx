@@ -358,10 +358,10 @@ export const Tasks: React.FC = () => {
     description: '',
     startDate: toLocalDateKey(new Date()),
     startTime: getCurrentTimeValue(),
-    dueDate: toLocalDateKey(new Date()),
+    dueDate: '',
     time: getDefaultDueTime(),
     priority: 'mid',
-    requiresReview: true,
+    requiresReview: false,
     repeat: 'none',
     parentId: null,
   })
@@ -753,10 +753,10 @@ export const Tasks: React.FC = () => {
       description: '',
       startDate: toLocalDateKey(new Date()),
       startTime: getCurrentTimeValue(),
-      dueDate: toLocalDateKey(new Date()),
+      dueDate: '',
       time: getDefaultDueTime(),
       priority: 'mid',
-      requiresReview: true,
+      requiresReview: false,
       repeat: 'none',
       parentId: null,
     })
@@ -1306,7 +1306,7 @@ export const Tasks: React.FC = () => {
     }
     if (
       taskDraft.repeat === 'none' &&
-      `${taskDraft.dueDate}T${normalizeTaskDueTime(taskDraft.time)}` <
+      taskDraft.dueDate && `${taskDraft.dueDate}T${normalizeTaskDueTime(taskDraft.time)}` <
         `${taskDraft.startDate}T${normalizeTaskDueTime(taskDraft.startTime)}`
     ) {
       nextErrors.timeWindow = t('tasks.invalid_time_window')
@@ -1352,7 +1352,7 @@ export const Tasks: React.FC = () => {
             taskDraft.requiresReview ? 1 : 0,
             taskDraft.startDate,
             normalizeTaskDueTime(taskDraft.startTime),
-            taskDraft.dueDate,
+            taskDraft.dueDate || null,
             normalizeTaskDueTime(taskDraft.time),
             targetParentId,
           ],
@@ -4528,7 +4528,7 @@ export const Tasks: React.FC = () => {
                   {t('common.cancel')}
                 </button>
                 <button type="button" className="btn primary" onClick={handleSaveDrawer}>
-                  {t('tasks.btn_save_changes')}
+                  {drawerMode === 'create' ? t('tasks.btn_create_task') : t('tasks.btn_save_changes')}
                 </button>
               </footer>
             </aside>

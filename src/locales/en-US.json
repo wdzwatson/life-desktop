@@ -286,6 +286,7 @@
     "repeat_summary_source": "From a recurring plan",
     "details_label_progress": "Progress",
     "btn_save_changes": "Save Changes",
+    "btn_create_task": "Create Task",
     "select_task_tip": "Select a task to view details",
     "details_empty_title": "No task selected",
     "details_empty_description": "Choose a task on the left, or create a new one to get started.",
