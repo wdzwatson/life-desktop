@@ -15,7 +15,7 @@ const tsxBin = path.resolve(
 const allTests = readdirSync(testsDir)
   .filter((file) => file.endsWith('.test.ts') || file.endsWith('.test.mjs'))
   .sort()
-  .map((file) => path.join('tests', file))
+  .map((file) => path.posix.join('tests', file))
 
 const electronNodeTests = new Set([
   'tests/aiSchema.test.mjs',
@@ -41,6 +41,7 @@ const electronNodeTests = new Set([
   'tests/douyinFavorites.test.mjs',
 ])
 const nodeTests = allTests.filter((file) => !electronNodeTests.has(file))
+const nodeTestBatchSize = 12
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -66,8 +67,10 @@ function run(command, args, options = {}) {
   })
 }
 
-if (nodeTests.length > 0) {
-  await run(tsxBin, ['--test', ...nodeTests])
+for (let start = 0; start < nodeTests.length; start += nodeTestBatchSize) {
+  const batch = nodeTests.slice(start, start + nodeTestBatchSize)
+  console.log(`Running Node test batch ${start / nodeTestBatchSize + 1}: ${batch[0]} through ${batch.at(-1)}`)
+  await run(tsxBin, ['--test', ...batch])
 }
 
 for (const testFile of electronNodeTests) {
