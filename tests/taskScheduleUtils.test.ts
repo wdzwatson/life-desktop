@@ -15,7 +15,7 @@ test('rule number lists ignore blank values and enforce valid ranges', () => {
   assert.deepEqual(parseRuleNumberList('0, 1, 7, invalid', 0, 6), [0, 1])
 })
 
-test('task template becomes effective at the start of its start date', () => {
+test('task template waits for its configured time on the start date', () => {
   const rule = {
     id: 1,
     title: 'Morning review',
@@ -25,11 +25,7 @@ test('task template becomes effective at the start of its start date', () => {
     start_time: '09:00',
   }
 
-  assert.deepEqual(getDueTemplateOccurrence(rule, new Date(2026, 6, 21, 0, 0)), {
-    dateKey: '2026-07-21',
-    time: '09:00',
-    instanceKey: '2026-07-21T09:00',
-  })
+  assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 21, 0, 0)), null)
   assert.deepEqual(getDueTemplateOccurrence(rule, new Date(2026, 6, 21, 9, 0)), {
     dateKey: '2026-07-21',
     time: '09:00',
@@ -211,7 +207,7 @@ test('date rules combine weekdays and month dates, then apply exclusions', () =>
     start_time: '09:00',
   }
 
-  assert.ok(getDueTemplateOccurrence(rule, new Date(2026, 6, 20, 0, 0)))
+  assert.ok(getDueTemplateOccurrence(rule, new Date(2026, 6, 20, 0, 0), { ignoreStartTime: true }))
   assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 22, 0, 0)), null)
   assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 25, 0, 0)), null)
 })
@@ -229,7 +225,7 @@ test('interval rules ignore date selections and recur from the effective date', 
     start_time: '09:00',
   }
 
-  assert.ok(getDueTemplateOccurrence(rule, new Date(2026, 6, 21, 0, 0)))
+  assert.ok(getDueTemplateOccurrence(rule, new Date(2026, 6, 21, 0, 0), { ignoreStartTime: true }))
   assert.equal(getDueTemplateOccurrence(rule, new Date(2026, 6, 22, 0, 0)), null)
   assert.ok(getDueTemplateOccurrence(rule, new Date(2026, 6, 23, 0, 0)))
 })
