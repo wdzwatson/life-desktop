@@ -9,11 +9,8 @@ test('materializing a virtual occurrence copies its configured subtasks', () => 
   assert.match(tasksView, /parent_id, progress\)/)
 })
 
-test('weekly plans use the selected start date weekday', () => {
+test('new recurring plans persist their selected calendar conditions', () => {
   const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
-  assert.match(tasksView, /serializeRuleWeekDays\(\s*ruleFreq, ruleWeekDays, ruleStartDate\)/)
-  assert.match(
-    tasksView,
-    /serializeRuleWeekDays\(\s*effectiveFrequency,\s*ruleWeekDays,\s*ruleStartDate,\s*\)/,
-  )
+  assert.match(tasksView, /ruleScheduleMode === 'rules' \? ruleWeekDays\.join\(','\) : ''/)
+  assert.match(tasksView, /ruleScheduleMode === 'rules' \? ruleMonthDays\.join\(','\) : ''/)
 })
