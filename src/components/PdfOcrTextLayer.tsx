@@ -15,15 +15,17 @@ type SelectionPoint = { x: number; y: number }
 export function PdfOcrTextLayer({
   words,
   status,
-  onSelectArea,
+  onSelectAreas,
   isRecognizingSelection = false,
+  onClearSelection,
   onRetry,
   onFallback,
 }: {
   words: PdfOcrWord[]
   status: 'idle' | 'loading' | 'ready' | 'error'
-  onSelectArea: (area: PdfOcrSelectionArea) => void
+  onSelectAreas: (areas: PdfOcrSelectionArea[]) => void
   isRecognizingSelection?: boolean
+  onClearSelection?: () => void
   onRetry?: () => void
   onFallback?: () => void
 }) {
@@ -39,10 +41,11 @@ export function PdfOcrTextLayer({
       event.preventDefault()
       dragStartIndexRef.current = null
       setSelectedIndexes(new Set())
+      onClearSelection?.()
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedIndexes])
+  }, [onClearSelection, selectedIndexes])
 
   const pointFromEvent = (event: { clientX: number; clientY: number }): SelectionPoint | null => {
     const bounds = layerRef.current?.getBoundingClientRect()
@@ -82,22 +85,12 @@ export function PdfOcrTextLayer({
     return new Set(Array.from({ length: to - from + 1 }, (_, index) => from + index))
   }
 
-  const getSelectionArea = (indexes: Set<number>): PdfOcrSelectionArea | null => {
-    const selectedWords = words.filter((_, index) => indexes.has(index))
-    if (selectedWords.length === 0) return null
-    const left = Math.min(...selectedWords.map((word) => word.x))
-    const top = Math.min(...selectedWords.map((word) => word.y))
-    const right = Math.max(...selectedWords.map((word) => word.x + word.width))
-    const bottom = Math.max(...selectedWords.map((word) => word.y + word.height))
-    return { x: left, y: top, width: right - left, height: bottom - top }
-  }
-
-  const highlightRows = (() => {
+  const getSelectionRows = (indexes: Set<number>) => {
     const rows: {
       x: number; y: number; width: number; height: number; centerY: number; words: PdfOcrWord[]
     }[] = []
     const selectedWords = words
-      .filter((_, index) => selectedIndexes.has(index))
+      .filter((_, index) => indexes.has(index))
       .sort((left, right) => (left.y + left.height / 2) - (right.y + right.height / 2) || left.x - right.x)
     const heights = selectedWords.map((word) => word.height).sort((left, right) => left - right)
     const medianHeight = heights.length ? heights[Math.floor(heights.length / 2)] : 0
@@ -134,7 +127,9 @@ export function PdfOcrTextLayer({
       const bottom = Math.max(...visibleWords.map((word) => word.y + word.height))
       return { x: left, y: top, width: right - left, height: bottom - top, centerY: row.centerY, words: visibleWords }
     })
-  })()
+  }
+
+  const highlightRows = getSelectionRows(selectedIndexes)
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     // OCR selection is deliberately a primary-button gesture. Secondary
@@ -170,8 +165,8 @@ export function PdfOcrTextLayer({
     if (endIndex < 0) return
     const indexes = getRangeIndexes(startIndex, endIndex)
     setSelectedIndexes(indexes)
-    const area = getSelectionArea(indexes)
-    if (area) onSelectArea(area)
+    const areas = getSelectionRows(indexes).map(({ x, y, width, height }) => ({ x, y, width, height }))
+    if (areas.length > 0) onSelectAreas(areas)
   }
 
   const handleContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -184,6 +179,7 @@ export function PdfOcrTextLayer({
     if (wordIndex < 0 || !selectedIndexes.has(wordIndex)) {
       dragStartIndexRef.current = null
       setSelectedIndexes(new Set())
+      onClearSelection?.()
     }
   }
 
