@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar'
 import { Topbar } from './components/Topbar'
 import { Statusbar } from './components/Statusbar'
 import { ViewportPortal } from './components/ViewportPortal'
+import { ScreenCaptureOverlay } from './components/ScreenCaptureOverlay'
 import { useAppStore } from './store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { AIChatBoundary } from './views/ai/AIChatBoundary'
@@ -59,6 +60,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [screenProgressVisible, setScreenProgressVisible] = useState(false)
+  const [screenCaptureImage, setScreenCaptureImage] = useState<string | null>(null)
   const hasMountedScreen = useRef(false)
 
   const api = (window as any).electronAPI
@@ -104,10 +106,14 @@ function App() {
 
     // 3. Register scheduler notifications from IPC
     let unsubUpdate: (() => void) | undefined
+    let unsubscribeScreenshot: (() => void) | undefined
 
     if (api) {
       api.onDownloadFinished?.((data: any) => {
         showToast(t('app.download_finished', { title: data.title }))
+      })
+      unsubscribeScreenshot = api.onScreenshotRequested?.((data: { imageDataUrl: string }) => {
+        setScreenCaptureImage(data.imageDataUrl)
       })
 
       // Auto check updates if enabled
@@ -129,6 +135,7 @@ function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       if (unsubUpdate) unsubUpdate()
+      if (unsubscribeScreenshot) unsubscribeScreenshot()
     }
   }, [])
 
@@ -481,6 +488,12 @@ function App() {
             </div>
           </div>
         </ViewportPortal>
+      )}
+      {screenCaptureImage && (
+        <ScreenCaptureOverlay
+          initialImageDataUrl={screenCaptureImage}
+          onClose={() => setScreenCaptureImage(null)}
+        />
       )}
     </div>
   )

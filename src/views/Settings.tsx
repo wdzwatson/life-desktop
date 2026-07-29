@@ -14,7 +14,42 @@ import {
   FolderOpen,
   KeyRound,
   LogOut,
+  Keyboard,
 } from 'lucide-react'
+
+const DEFAULT_SHORTCUTS = {
+  screenshot: 'CommandOrControl+Shift+S',
+  readerTranslate: 'Alt+T',
+  readerAnnotate: 'Alt+A',
+  readerOcr: 'Alt+O',
+}
+
+type ShortcutId = keyof typeof DEFAULT_SHORTCUTS
+
+const shortcutLabels: Record<ShortcutId, string> = {
+  screenshot: 'settings.shortcut_screenshot',
+  readerTranslate: 'settings.shortcut_reader_translate',
+  readerAnnotate: 'settings.shortcut_reader_annotate',
+  readerOcr: 'settings.shortcut_reader_ocr',
+}
+
+function displayShortcut(shortcut: string, isMac: boolean) {
+  return shortcut
+    .replace('CommandOrControl', isMac ? '⌘' : 'Ctrl')
+    .replaceAll('+', ' + ')
+}
+
+function shortcutFromKeyboardEvent(event: React.KeyboardEvent<HTMLInputElement>) {
+  const key = event.key.length === 1 ? event.key.toUpperCase() : event.key
+  if (['Control', 'Meta', 'Alt', 'Shift'].includes(key)) return null
+  const parts: string[] = []
+  if (event.ctrlKey || event.metaKey) parts.push('CommandOrControl')
+  if (event.altKey) parts.push('Alt')
+  if (event.shiftKey) parts.push('Shift')
+  if (parts.length === 0 && !/^F\d{1,2}$/.test(key)) return null
+  parts.push(key === ' ' ? 'Space' : key)
+  return parts.join('+')
+}
 
 interface UpdateInfo {
   version: string
@@ -65,6 +100,8 @@ export const Settings: React.FC = () => {
   const [updateErrorMsg, setUpdateErrorMsg] = useState('')
   const [updateIsMock, setUpdateIsMock] = useState(false)
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(true)
+  const [shortcuts, setShortcuts] = useState<Record<ShortcutId, string>>(DEFAULT_SHORTCUTS)
+  const [shortcutError, setShortcutError] = useState('')
   const [videoSettings, setVideoSettings] = useState({
     ytDlpPath: '',
     ffmpegPath: '',
@@ -150,6 +187,7 @@ export const Settings: React.FC = () => {
       const settings = s as Record<string, any>
       if (settings) {
         setAutoCheckUpdates(settings.autoCheckUpdates !== false)
+        setShortcuts({ ...DEFAULT_SHORTCUTS, ...(settings.shortcuts || {}) })
         setVideoSettings({
           ytDlpPath: settings.ytDlpPath || '',
           ffmpegPath: settings.ffmpegPath || '',
@@ -256,6 +294,32 @@ export const Settings: React.FC = () => {
     setVideoSettings(nextSettings)
     await api.saveSettings({ ...(current as Record<string, any>), ...nextSettings })
     showToast(t('settings.toast_video_settings_saved'))
+  }
+
+  const handleShortcutChange = (id: ShortcutId, event: React.KeyboardEvent<HTMLInputElement>) => {
+    event.preventDefault()
+    const shortcut = shortcutFromKeyboardEvent(event)
+    if (!shortcut) {
+      setShortcutError(t('settings.shortcut_invalid'))
+      return
+    }
+    const conflict = (Object.keys(shortcuts) as ShortcutId[]).find(
+      (otherId) => otherId !== id && shortcuts[otherId].toLowerCase() === shortcut.toLowerCase(),
+    )
+    if (conflict) {
+      setShortcutError(t('settings.shortcut_conflict'))
+      return
+    }
+    setShortcutError('')
+    setShortcuts((current) => ({ ...current, [id]: shortcut }))
+  }
+
+  const handleSaveShortcuts = async () => {
+    if (!api) return
+    const current = (await api.getSettings()) as Record<string, any>
+    await api.saveSettings({ ...current, shortcuts })
+    setShortcutError('')
+    showToast(t('settings.shortcut_saved'))
   }
 
   const handleSelectVideoDownloadDir = async () => {
@@ -583,6 +647,14 @@ export const Settings: React.FC = () => {
               <span className="settings-nav-label">{t('settings.menu_appearance')}</span>
             </button>
             <button
+              className={`nav-item ${activeMenu === 'shortcuts' ? 'active' : ''}`}
+              onClick={() => setActiveMenu('shortcuts')}
+              style={{ width: '100%', border: 'none', background: 'none' }}
+            >
+              <span className="nav-icon"><Keyboard size={15} /></span>
+              <span className="settings-nav-label">{t('settings.menu_shortcuts')}</span>
+            </button>
+            <button
               className={`nav-item ${activeMenu === 'profile' ? 'active' : ''}`}
               onClick={() => setActiveMenu('profile')}
               style={{ width: '100%', border: 'none', background: 'none' }}
@@ -706,6 +778,50 @@ export const Settings: React.FC = () => {
                 </div>
               </div>
             </>
+          )}
+
+          {activeMenu === 'shortcuts' && (
+            <div style={{ maxWidth: 680 }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 800, marginBottom: '4px' }}>
+                {t('settings.shortcuts_title')}
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', marginBottom: '18px' }}>
+                {t('settings.shortcuts_desc')}
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {(Object.keys(DEFAULT_SHORTCUTS) as ShortcutId[]).map((id) => (
+                  <div
+                    key={id}
+                    style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) minmax(230px, 1fr)', gap: 16, alignItems: 'center', border: '1px solid var(--color-border)', borderRadius: 8, padding: 14 }}
+                  >
+                    <div>
+                      <strong style={{ fontSize: 13 }}>{t(shortcutLabels[id])}</strong>
+                      <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 11 }}>
+                        {id === 'screenshot' ? t('settings.shortcut_global_hint') : t('settings.shortcut_reader_hint')}
+                      </p>
+                    </div>
+                    <input
+                      className="form-field"
+                      readOnly
+                      value={displayShortcut(shortcuts[id], isMacPlatform)}
+                      aria-label={t(shortcutLabels[id])}
+                      onKeyDown={(event) => handleShortcutChange(id, event)}
+                      onFocus={(event) => event.currentTarget.select()}
+                      style={{ fontFamily: 'var(--font-mono)', cursor: 'pointer' }}
+                    />
+                  </div>
+                ))}
+              </div>
+              {shortcutError && <p style={{ color: 'var(--color-danger, #dc2626)', fontSize: 12, marginTop: 12 }}>{shortcutError}</p>}
+              <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
+                <button className="btn" onClick={() => { setShortcuts(DEFAULT_SHORTCUTS); setShortcutError('') }}>
+                  {t('settings.shortcut_reset')}
+                </button>
+                <button className="btn primary" onClick={handleSaveShortcuts}>
+                  <KeyRound size={14} /> {t('settings.shortcut_save')}
+                </button>
+              </div>
+            </div>
           )}
 
           {/* TAB: PROFILE CENTER & PASSWORD SETUP */}

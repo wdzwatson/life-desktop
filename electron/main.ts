@@ -10,6 +10,9 @@ import {
   screen,
   Tray,
   nativeImage,
+  clipboard,
+  desktopCapturer,
+  globalShortcut,
   session,
 } from 'electron'
 import path from 'path'
@@ -159,6 +162,53 @@ const aiImageControllers = new Set<AbortController>()
 const aiVideoControllers = new Set<AbortController>()
 let aiRecoveryController: AbortController | null = null
 const bookBatchImportSessions = new Map<string, { userId: string; items: BatchImportItem[] }>()
+let registeredScreenshotShortcut: string | null = null
+
+const DEFAULT_SHORTCUTS = {
+  screenshot: 'CommandOrControl+Shift+S',
+  readerTranslate: 'Alt+T',
+  readerAnnotate: 'Alt+A',
+  readerOcr: 'Alt+O',
+}
+
+function getShortcuts(settings = getSettings()) {
+  const configured = settings.shortcuts && typeof settings.shortcuts === 'object' ? settings.shortcuts : {}
+  return { ...DEFAULT_SHORTCUTS, ...configured }
+}
+
+async function capturePrimaryScreen() {
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const size = primaryDisplay.size
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: { width: size.width, height: size.height },
+  })
+  const source =
+    sources.find((candidate) => candidate.display_id === String(primaryDisplay.id)) ?? sources[0]
+  if (!source || source.thumbnail.isEmpty()) throw new Error('Unable to capture the current display.')
+  return source.thumbnail.toDataURL()
+}
+
+function registerScreenshotShortcut(settings = getSettings()) {
+  if (registeredScreenshotShortcut) globalShortcut.unregister(registeredScreenshotShortcut)
+  registeredScreenshotShortcut = null
+  const accelerator = getShortcuts(settings).screenshot
+  if (!accelerator || typeof accelerator !== 'string') return
+  try {
+    const registered = globalShortcut.register(accelerator, () => {
+      void capturePrimaryScreen()
+        .then((imageDataUrl) => {
+          showMainWindow()
+          mainWindow?.webContents.send('screen-capture:open', { imageDataUrl })
+        })
+        .catch((error) => console.warn('[ScreenCapture] failed:', error))
+    })
+    if (registered) registeredScreenshotShortcut = accelerator
+    else console.warn(`[ScreenCapture] shortcut unavailable: ${accelerator}`)
+  } catch (error) {
+    console.warn(`[ScreenCapture] invalid shortcut: ${accelerator}`, error)
+  }
+}
 
 function logDouyinSyncWindow(event: string, details?: Record<string, unknown>) {
   console.info('[DouyinSyncWindow]', event, details || {})
@@ -273,6 +323,7 @@ function initConfig() {
       lastUserId: 'guest',
       maxDownloads: 3,
       autoCheckUpdates: true,
+      shortcuts: DEFAULT_SHORTCUTS,
       baseFolder: BASE_DIR,
       userProfiles: {
         guest: { nickname: '访客模式', avatar: 'G' },
@@ -1610,6 +1661,7 @@ app.whenReady().then(() => {
   createWindow()
   createDesktopTaskNoteWindow()
   createAppTray()
+  registerScreenshotShortcut()
 })
 
 app.on('window-all-closed', () => {
@@ -1625,6 +1677,7 @@ app.on('before-quit', () => {
   destroyDouyinSyncWindowForAppQuit()
   closeDouyinReaderView()
   closeUserDbs()
+  globalShortcut.unregisterAll()
 })
 
 app.on('activate', () => {
@@ -1971,7 +2024,79 @@ ipcMain.handle('settings:save', async (_, newSettings: any) => {
   if (videoSettingKeys.some((key) => previousSettings[key] !== newSettings[key])) {
     void loadVideoEngine({ force: true })
   }
+  if (previousSettings.shortcuts?.screenshot !== newSettings.shortcuts?.screenshot) {
+    registerScreenshotShortcut(savedSettings)
+  }
   return savedSettings
+})
+
+// Screen capture is intentionally mediated by the main process so the renderer never
+// receives filesystem or native clipboard access. The editor only submits a PNG data URL.
+ipcMain.handle('screen-capture:capture', async () => {
+  try {
+    return { success: true, imageDataUrl: await capturePrimaryScreen() }
+  } catch (error: any) {
+    return { success: false, error: error?.message || 'Unable to capture the current display.' }
+  }
+})
+
+ipcMain.handle('screen-capture:copy', async (_, imageDataUrl: unknown) => {
+  if (typeof imageDataUrl !== 'string' || !imageDataUrl.startsWith('data:image/png;base64,')) {
+    return { success: false, error: 'Invalid screenshot image.' }
+  }
+  try {
+    const image = nativeImage.createFromDataURL(imageDataUrl)
+    if (image.isEmpty()) return { success: false, error: 'Invalid screenshot image.' }
+    clipboard.writeImage(image)
+    return { success: true }
+  } catch {
+    return { success: false, error: 'Unable to copy the screenshot.' }
+  }
+})
+
+ipcMain.handle('screen-capture:save', async (_, imageDataUrl: unknown) => {
+  if (typeof imageDataUrl !== 'string' || !imageDataUrl.startsWith('data:image/png;base64,')) {
+    return { success: false, error: 'Invalid screenshot image.' }
+  }
+  const result = mainWindow
+    ? await dialog.showSaveDialog(mainWindow, {
+        defaultPath: `LifeOS Screenshot ${new Date().toISOString().replace(/[:.]/g, '-')}.png`,
+        filters: [{ name: 'PNG image', extensions: ['png'] }],
+      })
+    : await dialog.showSaveDialog({ filters: [{ name: 'PNG image', extensions: ['png'] }] })
+  if (result.canceled || !result.filePath) return { success: true, saved: false }
+  try {
+    fs.writeFileSync(result.filePath, nativeImage.createFromDataURL(imageDataUrl).toPNG())
+    return { success: true, saved: true, filePath: result.filePath }
+  } catch (error: any) {
+    return { success: false, error: error?.message || 'Unable to save the screenshot.' }
+  }
+})
+
+ipcMain.handle('reader:translate', async (_, input: { text?: unknown; targetLanguage?: unknown }) => {
+  const text = typeof input?.text === 'string' ? input.text.trim().slice(0, 500) : ''
+  if (!text) return { success: false, error: 'Text is required.' }
+  try {
+    // MyMemory returns "PLEASE SELECT TWO DISTINCT LANGUAGES" when auto-detection
+    // resolves to the same target language. Reading assistance therefore switches
+    // between Chinese and English based on the selected text before making the call.
+    const containsChinese = /[\u3400-\u9fff]/u.test(text)
+    const sourceLanguage = containsChinese ? 'zh-CN' : 'en'
+    const targetLanguage = containsChinese ? 'en' : 'zh-CN'
+    const endpoint = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLanguage}|${targetLanguage}`
+    const response = await fetch(endpoint, { headers: { Accept: 'application/json' } })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const payload = (await response.json()) as { responseData?: { translatedText?: unknown } }
+    const translation = typeof payload.responseData?.translatedText === 'string'
+      ? payload.responseData.translatedText.trim()
+      : ''
+    if (!translation || /please select two distinct languages/i.test(translation)) {
+      throw new Error('No translation returned.')
+    }
+    return { success: true, translation }
+  } catch {
+    return { success: false, error: 'Free translation service is temporarily unavailable.' }
+  }
 })
 
 ipcMain.handle('settings:clearAppData', async () => {

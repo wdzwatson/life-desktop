@@ -19,6 +19,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: any) => ipcRenderer.invoke('settings:save', settings),
   clearAppData: () => ipcRenderer.invoke('settings:clearAppData'),
+  captureScreen: () => ipcRenderer.invoke('screen-capture:capture'),
+  copyScreenshot: (imageDataUrl: string) => ipcRenderer.invoke('screen-capture:copy', imageDataUrl),
+  saveScreenshot: (imageDataUrl: string) => ipcRenderer.invoke('screen-capture:save', imageDataUrl),
+  onScreenshotRequested: (callback: (data: { imageDataUrl: string }) => void) => {
+    const subscription = (_event: unknown, data: { imageDataUrl: string }) => callback(data)
+    ipcRenderer.on('screen-capture:open', subscription)
+    return () => ipcRenderer.removeListener('screen-capture:open', subscription)
+  },
+  translateReaderText: (input: { text: string; targetLanguage?: string }) =>
+    ipcRenderer.invoke('reader:translate', input),
   selectBackupDirectory: () => ipcRenderer.invoke('backup:selectDirectory'),
   selectBackupFile: () => ipcRenderer.invoke('backup:selectFile'),
   inspectBackup: (filePath: string) => ipcRenderer.invoke('backup:inspect', { filePath }),
