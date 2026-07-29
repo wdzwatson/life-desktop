@@ -182,31 +182,38 @@ test('stdio MCP calls support cancellation, unexpected exit detection, and recon
       env: { ELECTRON_RUN_AS_NODE: '1' },
     },
   })
-  await context.manager.connect(server.id)
-  const controller = new AbortController()
-  const slowCall = context.manager.callTool(
-    { serverId: server.id, toolName: 'fixture.slow', arguments: { delayMs: 5_000 } },
-    { signal: controller.signal },
-  )
-  setTimeout(() => controller.abort(), 25)
-  await assert.rejects(
-    slowCall,
-    (error) => error instanceof AIServiceError && error.detail.code === 'cancelled',
-  )
-  await assert.rejects(
-    () => context.manager.callTool(
+  try {
+    await context.manager.connect(server.id)
+    const controller = new AbortController()
+    const slowCall = context.manager.callTool(
       { serverId: server.id, toolName: 'fixture.slow', arguments: { delayMs: 5_000 } },
-      { timeoutMs: 1_000 },
-    ),
-    (error) => error instanceof AIServiceError && error.detail.code === 'timeout',
-  )
-  await context.manager.callTool({ serverId: server.id, toolName: 'fixture.terminate', arguments: {} })
-  assert.equal(await waitFor(() => context.config.get(server.id).connectionStatus === 'failed'), true)
-  const reconnected = await context.manager.connect(server.id)
-  assert.equal(reconnected.connected, true)
-  assert.equal(reconnected.tools.some((tool) => tool.name === 'fixture.echo'), true)
-  await context.manager.dispose()
-  context.db.close()
+      { signal: controller.signal },
+    )
+    setTimeout(() => controller.abort(), 25)
+    await assert.rejects(
+      slowCall,
+      (error) => error instanceof AIServiceError && error.detail.code === 'cancelled',
+    )
+    await assert.rejects(
+      () =>
+        context.manager.callTool(
+          { serverId: server.id, toolName: 'fixture.slow', arguments: { delayMs: 5_000 } },
+          { timeoutMs: 1_000 },
+        ),
+      (error) => error instanceof AIServiceError && error.detail.code === 'timeout',
+    )
+    await context.manager.callTool({ serverId: server.id, toolName: 'fixture.terminate', arguments: {} })
+    assert.equal(
+      await waitFor(() => context.config.get(server.id).connectionStatus === 'failed', 6_000),
+      true,
+    )
+    const reconnected = await context.manager.connect(server.id)
+    assert.equal(reconnected.connected, true)
+    assert.equal(reconnected.tools.some((tool) => tool.name === 'fixture.echo'), true)
+  } finally {
+    await context.manager.dispose()
+    context.db.close()
+  }
 })
 
 test('Streamable HTTP and legacy SSE transports discover and call real MCP tools', async () => {
