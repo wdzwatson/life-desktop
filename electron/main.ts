@@ -176,15 +176,18 @@ function getShortcuts(settings = getSettings()) {
   return { ...DEFAULT_SHORTCUTS, ...configured }
 }
 
-async function capturePrimaryScreen() {
+async function captureScreen(displayId?: number) {
+  const displays = screen.getAllDisplays()
   const primaryDisplay = screen.getPrimaryDisplay()
-  const size = primaryDisplay.size
+  const requestedDisplay = displays.find((display) => display.id === displayId)
+  const targetDisplay = requestedDisplay ?? primaryDisplay
+  const size = targetDisplay.size
   const sources = await desktopCapturer.getSources({
     types: ['screen'],
     thumbnailSize: { width: size.width, height: size.height },
   })
   const source =
-    sources.find((candidate) => candidate.display_id === String(primaryDisplay.id)) ?? sources[0]
+    sources.find((candidate) => candidate.display_id === String(targetDisplay.id)) ?? sources[0]
   if (!source || source.thumbnail.isEmpty()) throw new Error('Unable to capture the current display.')
   return source.thumbnail.toDataURL()
 }
@@ -196,7 +199,7 @@ function registerScreenshotShortcut(settings = getSettings()) {
   if (!accelerator || typeof accelerator !== 'string') return
   try {
     const registered = globalShortcut.register(accelerator, () => {
-      void capturePrimaryScreen()
+      void captureScreen()
         .then((imageDataUrl) => {
           showMainWindow()
           mainWindow?.webContents.send('screen-capture:open', { imageDataUrl })
@@ -2032,9 +2035,18 @@ ipcMain.handle('settings:save', async (_, newSettings: any) => {
 
 // Screen capture is intentionally mediated by the main process so the renderer never
 // receives filesystem or native clipboard access. The editor only submits a PNG data URL.
-ipcMain.handle('screen-capture:capture', async () => {
+ipcMain.handle('screen-capture:displays', async () => {
+  return screen.getAllDisplays().map((display, index) => ({
+    id: display.id,
+    label: display.label || `Display ${index + 1}`,
+    primary: display.id === screen.getPrimaryDisplay().id,
+  }))
+})
+
+ipcMain.handle('screen-capture:capture', async (_, input?: { displayId?: unknown }) => {
   try {
-    return { success: true, imageDataUrl: await capturePrimaryScreen() }
+    const displayId = typeof input?.displayId === 'number' ? input.displayId : undefined
+    return { success: true, imageDataUrl: await captureScreen(displayId) }
   } catch (error: any) {
     return { success: false, error: error?.message || 'Unable to capture the current display.' }
   }

@@ -60,7 +60,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [screenProgressVisible, setScreenProgressVisible] = useState(false)
-  const [screenCaptureImage, setScreenCaptureImage] = useState<string | null>(null)
+  const [screenCaptureRequest, setScreenCaptureRequest] = useState<{ imageDataUrl?: string } | null>(null)
   const hasMountedScreen = useRef(false)
 
   const api = (window as any).electronAPI
@@ -106,6 +106,8 @@ function App() {
 
     // 3. Register scheduler notifications from IPC
     let unsubUpdate: (() => void) | undefined
+    const openScreenCapture = () => setScreenCaptureRequest({})
+    window.addEventListener('screen-capture:open', openScreenCapture)
     let unsubscribeScreenshot: (() => void) | undefined
 
     if (api) {
@@ -113,7 +115,7 @@ function App() {
         showToast(t('app.download_finished', { title: data.title }))
       })
       unsubscribeScreenshot = api.onScreenshotRequested?.((data: { imageDataUrl: string }) => {
-        setScreenCaptureImage(data.imageDataUrl)
+        setScreenCaptureRequest({ imageDataUrl: data.imageDataUrl })
       })
 
       // Auto check updates if enabled
@@ -134,6 +136,7 @@ function App() {
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('screen-capture:open', openScreenCapture)
       if (unsubUpdate) unsubUpdate()
       if (unsubscribeScreenshot) unsubscribeScreenshot()
     }
@@ -489,10 +492,10 @@ function App() {
           </div>
         </ViewportPortal>
       )}
-      {screenCaptureImage && (
+      {screenCaptureRequest && (
         <ScreenCaptureOverlay
-          initialImageDataUrl={screenCaptureImage}
-          onClose={() => setScreenCaptureImage(null)}
+          initialImageDataUrl={screenCaptureRequest.imageDataUrl}
+          onClose={() => setScreenCaptureRequest(null)}
         />
       )}
     </div>

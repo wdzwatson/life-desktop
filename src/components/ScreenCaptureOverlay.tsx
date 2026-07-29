@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Copy, Download, Pencil, RotateCcw, X } from 'lucide-react'
+import { Copy, Download, Pencil, RotateCcw, Undo2, X } from 'lucide-react'
 
 type Point = { x: number; y: number }
 type Rect = Point & { width: number; height: number }
+type ScreenDisplay = { id: number; label: string; primary: boolean }
 
 const minimumSelection = 8
 
@@ -28,19 +29,35 @@ export function ScreenCaptureOverlay({
   const [dragStart, setDragStart] = useState<Point | null>(null)
   const [isLoading, setIsLoading] = useState(!initialImageDataUrl)
   const [isEditing, setIsEditing] = useState(false)
+  const [displays, setDisplays] = useState<ScreenDisplay[]>([])
+  const [selectedDisplayId, setSelectedDisplayId] = useState<number | undefined>()
+  const [brushColor, setBrushColor] = useState('#ef4444')
+  const [brushSize, setBrushSize] = useState(4)
+  const [canUndo, setCanUndo] = useState(false)
   const [message, setMessage] = useState('拖动框选截图区域；未框选时将使用全屏。')
   const imageRef = useRef<HTMLImageElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const editorDrawingRef = useRef(false)
   const editorLastPointRef = useRef<Point | null>(null)
+  const editorHistoryRef = useRef<ImageData[]>([])
+  const initialCaptureRef = useRef(Boolean(initialImageDataUrl))
 
   useEffect(() => {
-    if (initialImageDataUrl) return
-    api?.captureScreen?.().then((result: any) => {
+    api?.listScreenDisplays?.().then((items: ScreenDisplay[]) => {
+      if (!Array.isArray(items)) return
+      setDisplays(items)
+      setSelectedDisplayId((current) => current ?? items.find((item) => item.primary)?.id ?? items[0]?.id)
+    })
+  }, [api])
+
+  useEffect(() => {
+    if (initialCaptureRef.current || selectedDisplayId === undefined) return
+    setIsLoading(true)
+    api?.captureScreen?.({ displayId: selectedDisplayId }).then((result: any) => {
       if (result?.success) setImageDataUrl(result.imageDataUrl)
       else setMessage(result?.error || '截图失败，请重试。')
     }).finally(() => setIsLoading(false))
-  }, [api, initialImageDataUrl])
+  }, [api, initialImageDataUrl, selectedDisplayId])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -111,7 +128,7 @@ export function ScreenCaptureOverlay({
     setMessage('编辑模式：按住鼠标绘制；可复制或另存编辑后的图片。')
   }
 
-  const renderEditor = () => {
+  const renderEditor = (resetHistory = true) => {
     const canvas = canvasRef.current
     if (!canvas || !imageDataUrl) return
     const image = new Image()
@@ -119,6 +136,10 @@ export function ScreenCaptureOverlay({
       canvas.width = image.naturalWidth
       canvas.height = image.naturalHeight
       canvas.getContext('2d')?.drawImage(image, 0, 0)
+      if (resetHistory) {
+        editorHistoryRef.current = []
+        setCanUndo(false)
+      }
     }
     image.src = imageDataUrl
   }
@@ -142,8 +163,8 @@ export function ScreenCaptureOverlay({
     const previous = editorLastPointRef.current
     const context = canvas?.getContext('2d')
     if (!canvas || !previous || !context) return
-    context.strokeStyle = '#ef4444'
-    context.lineWidth = Math.max(3, canvas.width / 260)
+    context.strokeStyle = brushColor
+    context.lineWidth = Math.max(2, (canvas.width / 900) * brushSize)
     context.lineCap = 'round'
     context.lineJoin = 'round'
     context.beginPath()
@@ -151,6 +172,23 @@ export function ScreenCaptureOverlay({
     context.lineTo(point.x, point.y)
     context.stroke()
     editorLastPointRef.current = point
+  }
+
+  const saveEditorHistory = () => {
+    const canvas = canvasRef.current
+    const context = canvas?.getContext('2d')
+    if (!canvas || !context) return
+    editorHistoryRef.current = [...editorHistoryRef.current.slice(-19), context.getImageData(0, 0, canvas.width, canvas.height)]
+    setCanUndo(true)
+  }
+
+  const undoEditor = () => {
+    const canvas = canvasRef.current
+    const context = canvas?.getContext('2d')
+    const previous = editorHistoryRef.current.pop()
+    if (!canvas || !context || !previous) return
+    context.putImageData(previous, 0, 0)
+    setCanUndo(editorHistoryRef.current.length > 0)
   }
 
   return (
@@ -165,6 +203,26 @@ export function ScreenCaptureOverlay({
           <div><strong>截图</strong><span style={{ marginLeft: 10, color: '#cbd5e1', fontSize: 12 }}>{message}</span></div>
           <button className="btn sm" onClick={onClose} aria-label="关闭截图"><X size={16} /> Esc</button>
         </div>
+        {displays.length > 1 && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }} aria-label="选择显示器">
+            {displays.map((display) => (
+              <button
+                key={display.id}
+                type="button"
+                className={`btn sm ${selectedDisplayId === display.id ? 'primary' : ''}`}
+                onClick={() => {
+                  setSelectedDisplayId(display.id)
+                  initialCaptureRef.current = false
+                  setImageDataUrl(null)
+                  setSelection(null)
+                  setIsEditing(false)
+                }}
+              >
+                {display.label}{display.primary ? '（主显示器）' : ''}
+              </button>
+            ))}
+          </div>
+        )}
         <div style={{ minHeight: 220, overflow: 'auto', display: 'grid', placeItems: 'center', background: '#020617', borderRadius: 10, padding: 12 }}>
           {isLoading && <span>正在捕获屏幕…</span>}
           {!isLoading && !imageDataUrl && <span>{message}</span>}
@@ -187,7 +245,7 @@ export function ScreenCaptureOverlay({
           {imageDataUrl && isEditing && (
             <canvas
               ref={canvasRef}
-              onPointerDown={(event) => { const point = editorPoint(event); if (point) { event.currentTarget.setPointerCapture(event.pointerId); editorDrawingRef.current = true; editorLastPointRef.current = point } }}
+              onPointerDown={(event) => { const point = editorPoint(event); if (point) { saveEditorHistory(); event.currentTarget.setPointerCapture(event.pointerId); editorDrawingRef.current = true; editorLastPointRef.current = point } }}
               onPointerMove={(event) => { if (!editorDrawingRef.current) return; const point = editorPoint(event); if (point) drawTo(point) }}
               onPointerUp={() => { editorDrawingRef.current = false; editorLastPointRef.current = null }}
               style={{ maxWidth: 'min(100%, 1000px)', maxHeight: '68vh', cursor: 'crosshair', touchAction: 'none', background: '#fff' }}
@@ -195,7 +253,14 @@ export function ScreenCaptureOverlay({
           )}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
-          {isEditing && <button className="btn sm" onClick={renderEditor}><RotateCcw size={14} /> 清除编辑</button>}
+          {isEditing && (
+            <>
+              <input aria-label="画笔颜色" type="color" value={brushColor} onChange={(event) => setBrushColor(event.target.value)} style={{ width: 34, padding: 2 }} />
+              <input aria-label="画笔粗细" type="range" min="2" max="16" value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} />
+              <button className="btn sm" disabled={!canUndo} onClick={undoEditor}><Undo2 size={14} /> 撤销</button>
+              <button className="btn sm" onClick={() => renderEditor()}><RotateCcw size={14} /> 清除编辑</button>
+            </>
+          )}
           {!isEditing && <button className="btn sm" disabled={!imageDataUrl} onClick={startEditing}><Pencil size={14} /> 编辑</button>}
           <button className="btn sm" disabled={!imageDataUrl} onClick={copyScreenshot}><Copy size={14} /> 复制</button>
           <button className="btn sm primary" disabled={!imageDataUrl} onClick={saveScreenshot}><Download size={14} /> 另存为</button>

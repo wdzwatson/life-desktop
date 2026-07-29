@@ -20,13 +20,17 @@ test('screen capture keeps native capture, clipboard, and file saving behind IPC
   assert.match(main, /desktopCapturer/)
   assert.match(main, /globalShortcut\.register/)
   assert.match(main, /ipcMain\.handle\('screen-capture:capture'/)
+  assert.match(main, /ipcMain\.handle\('screen-capture:displays'/)
   assert.match(main, /ipcMain\.handle\('screen-capture:copy'/)
   assert.match(main, /ipcMain\.handle\('screen-capture:save'/)
   assert.match(preload, /onScreenshotRequested/)
+  assert.match(preload, /listScreenDisplays/)
   assert.match(app, /ScreenCaptureOverlay/)
   assert.match(overlay, /cropToDataUrl/)
   assert.match(overlay, /copyScreenshot/)
   assert.match(overlay, /saveScreenshot/)
+  assert.match(overlay, /selectedDisplayId/)
+  assert.match(overlay, /undoEditor/)
 })
 
 test('reader selection assistance exposes free translation and reusable annotation content', () => {

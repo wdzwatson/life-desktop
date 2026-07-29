@@ -19,7 +19,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: any) => ipcRenderer.invoke('settings:save', settings),
   clearAppData: () => ipcRenderer.invoke('settings:clearAppData'),
-  captureScreen: () => ipcRenderer.invoke('screen-capture:capture'),
+  listScreenDisplays: () => ipcRenderer.invoke('screen-capture:displays'),
+  captureScreen: (input?: { displayId?: number }) => ipcRenderer.invoke('screen-capture:capture', input),
   copyScreenshot: (imageDataUrl: string) => ipcRenderer.invoke('screen-capture:copy', imageDataUrl),
   saveScreenshot: (imageDataUrl: string) => ipcRenderer.invoke('screen-capture:save', imageDataUrl),
   onScreenshotRequested: (callback: (data: { imageDataUrl: string }) => void) => {

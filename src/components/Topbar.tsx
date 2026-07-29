@@ -11,6 +11,7 @@ import {
   Plus,
   Search,
   StickyNote,
+  MonitorUp,
   Upload,
 } from 'lucide-react'
 import { shouldHighlightTopbarNewTask } from './topbarUtils'
@@ -59,6 +60,10 @@ export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch })
 
   const handleShowDesktopTaskNote = () => {
     void (window as any).electronAPI?.showDesktopTaskNote?.()
+  }
+
+  const handleScreenCapture = () => {
+    window.dispatchEvent(new Event('screen-capture:open'))
   }
 
   const isMac = navigator.userAgent.includes('Mac')
@@ -156,6 +161,16 @@ export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch })
         <button className="btn" onClick={handleImportFile}>
           <Upload size={14} />
           {t('common.imported')}
+        </button>
+
+        <button
+          className="btn btn-icon"
+          type="button"
+          onClick={handleScreenCapture}
+          title={t('topbar.screen_capture')}
+          aria-label={t('topbar.screen_capture')}
+        >
+          <MonitorUp size={16} />
         </button>
 
         <button
