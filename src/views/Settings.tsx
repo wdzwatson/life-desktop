@@ -102,6 +102,7 @@ export const Settings: React.FC = () => {
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(true)
   const [shortcuts, setShortcuts] = useState<Record<ShortcutId, string>>(DEFAULT_SHORTCUTS)
   const [shortcutError, setShortcutError] = useState('')
+  const [readerTranslationEnabled, setReaderTranslationEnabled] = useState(false)
   const [videoSettings, setVideoSettings] = useState({
     ytDlpPath: '',
     ffmpegPath: '',
@@ -188,6 +189,7 @@ export const Settings: React.FC = () => {
       if (settings) {
         setAutoCheckUpdates(settings.autoCheckUpdates !== false)
         setShortcuts({ ...DEFAULT_SHORTCUTS, ...(settings.shortcuts || {}) })
+        setReaderTranslationEnabled(settings.readerTranslationEnabled === true)
         setVideoSettings({
           ytDlpPath: settings.ytDlpPath || '',
           ffmpegPath: settings.ffmpegPath || '',
@@ -320,6 +322,14 @@ export const Settings: React.FC = () => {
     await api.saveSettings({ ...current, shortcuts })
     setShortcutError('')
     showToast(t('settings.shortcut_saved'))
+  }
+
+  const handleToggleReaderTranslation = async (enabled: boolean) => {
+    setReaderTranslationEnabled(enabled)
+    if (!api) return
+    const current = (await api.getSettings()) as Record<string, any>
+    await api.saveSettings({ ...current, readerTranslationEnabled: enabled })
+    showToast(t('settings.reader_translation_saved'))
   }
 
   const handleSelectVideoDownloadDir = async () => {
@@ -820,6 +830,25 @@ export const Settings: React.FC = () => {
                 <button className="btn primary" onClick={handleSaveShortcuts}>
                   <KeyRound size={14} /> {t('settings.shortcut_save')}
                 </button>
+              </div>
+              <div style={{ borderTop: '1px solid var(--color-border)', marginTop: 22, paddingTop: 18 }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 800, marginBottom: 4 }}>
+                  {t('settings.reader_translation_title')}
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', margin: '0 0 12px' }}>
+                  {t('settings.reader_translation_desc')}
+                </p>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={readerTranslationEnabled}
+                    onChange={(event) => void handleToggleReaderTranslation(event.target.checked)}
+                  />
+                  {t('settings.reader_translation_enable')}
+                </label>
+                <p style={{ color: 'var(--text-muted)', fontSize: 11, margin: '8px 0 0' }}>
+                  {t('settings.reader_ocr_local_note')}
+                </p>
               </div>
             </div>
           )}

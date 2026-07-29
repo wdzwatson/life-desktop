@@ -46,6 +46,7 @@ import {
 } from './bookReaderUtils'
 import { BookCategorySidebar, type BookShelf } from './BookCategorySidebar'
 import { AccessibleDialog } from '../components/AccessibleDialog'
+import { useConfirmation } from '../components/ConfirmationProvider'
 import { ViewportPortal } from '../components/ViewportPortal'
 import { PdfOcrOverlay } from '../components/PdfOcrOverlay'
 import { PdfOcrTextLayer, type PdfOcrSelectionArea } from '../components/PdfOcrTextLayer'
@@ -102,6 +103,7 @@ function matchesShortcut(event: KeyboardEvent, shortcut: string) {
 
 export const Books: React.FC = () => {
   const { t, i18n } = useTranslation()
+  const { confirm } = useConfirmation()
   const showToast = useAppStore((state) => state.showToast)
   const userId = useAppStore((state) => state.userId)
   const configuredLocales = useMemo(
@@ -1383,6 +1385,18 @@ export const Books: React.FC = () => {
     if (!text) {
       showToast(t('books.ai_select_text_first'))
       return
+    }
+    // Translation is the reader action that sends selected content off-device.
+    const currentSettings = (await api?.getSettings?.()) as Record<string, unknown> | undefined
+    if (currentSettings?.readerTranslationEnabled !== true) {
+      const allowed = await confirm({
+        title: t('books.ai_translation_consent_title'),
+        description: t('books.ai_translation_consent_desc'),
+        confirmLabel: t('books.ai_translation_consent_confirm'),
+        tone: 'primary',
+      })
+      if (!allowed) return
+      await api?.saveSettings?.({ ...currentSettings, readerTranslationEnabled: true })
     }
     setSelectedHighlightText(text)
     setIsAnnotationsDrawerOpen(true)
