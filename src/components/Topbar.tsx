@@ -155,12 +155,12 @@ export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch })
           onClick={handleNewTask}
         >
           <Plus size={15} />
-          {t('common.new_task')}
+          <span className="topbar-action-label">{t('common.new_task')}</span>
         </button>
 
         <button className="btn" onClick={handleImportFile}>
           <Upload size={14} />
-          {t('common.imported')}
+          <span className="topbar-action-label">{t('common.imported')}</span>
         </button>
 
         <button

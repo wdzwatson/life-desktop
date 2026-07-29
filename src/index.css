@@ -357,6 +357,32 @@ body.theme-dense .nav-item.active {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 900px) {
+  .top-bar { padding: 0 12px; gap: 10px; }
+  .global-search-btn { width: min(260px, 30vw); }
+  .topbar-actions { gap: 6px; }
+  .topbar-actions .btn { padding-left: 8px; padding-right: 8px; }
+}
+
+@media (max-width: 640px) {
+  .shell-container,
+  .shell-container.sidebar-display-dynamic:has(.sidebar-nav:hover),
+  .shell-container.sidebar-display-expanded { grid-template-columns: 48px minmax(0, 1fr); }
+  .sidebar-nav { padding: 10px 4px; }
+  .nav-item { padding: 0 12px; }
+  .top-bar { padding: 0 8px; gap: 6px; }
+  .topbar-search-controls { flex: 1 1 auto; }
+  .global-search-btn { width: 36px; padding: 0; justify-content: center; }
+  .global-search-btn > span,
+  .kbd-shortcut,
+  .topbar-action-label { display: none; }
+  .topbar-actions { gap: 4px; }
+  .topbar-actions .btn { min-width: 36px; padding-left: 8px; padding-right: 8px; }
+  .content-pane { padding: 14px; }
 }
 
 .content-pane {
