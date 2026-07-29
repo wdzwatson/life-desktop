@@ -155,6 +155,7 @@ export const getDueTemplateOccurrences = (
   const dateKey = toLocalDateKey(now)
   const startDateKey = getTemplateStartDateKey(rule, now)
   if (localDayNumber(dateKey) < localDayNumber(startDateKey)) return []
+  if (!options.ignoreStartTime && dateKey === startDateKey && now < new Date(`${startDateKey}T${getTemplateStartTime(rule)}`)) return []
   const endDateKey = parseDateKey(rule.end_date)
   if (endDateKey && localDayNumber(dateKey) > localDayNumber(endDateKey)) return []
 

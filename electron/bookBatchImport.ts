@@ -39,7 +39,9 @@ export function normalizeBookImportStem(fileName: string) {
   return path
     .basename(fileName, extension)
     .normalize('NFKC')
-    .replace(/[《》\[\](){}（）【】]/g, '')
+    .replaceAll('[', '')
+    .replaceAll(']', '')
+    .replace(/[《》(){}（）【】]/g, '')
     .replace(/\s+/g, '')
     .toLocaleLowerCase()
 }

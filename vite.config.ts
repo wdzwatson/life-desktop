@@ -18,8 +18,8 @@ const copyPdfWorker = () => {
 
   return {
     name: 'copy-pdf-runtime-files',
-    configureServer(server: { middlewares: { use: Function } }) {
-      server.middlewares.use('/pdfjs/wasm', (request: any, response: any, next: Function) => {
+    configureServer(server: { middlewares: { use: (path: string, handler: (request: any, response: any, next: () => void) => void) => void } }) {
+      server.middlewares.use('/pdfjs/wasm', (request: any, response: any, next: () => void) => {
         const fileName = path.basename((request.url || '').split('?')[0])
         if (!wasmFiles.includes(fileName)) return next()
         const source = path.join(pdfWasmDir, fileName)
@@ -27,7 +27,7 @@ const copyPdfWorker = () => {
         response.setHeader('Content-Type', 'application/wasm')
         fs.createReadStream(source).pipe(response)
       })
-      server.middlewares.use('/ocr', (request: any, response: any, next: Function) => {
+      server.middlewares.use('/ocr', (request: any, response: any, next: () => void) => {
         const fileName = path.basename((request.url || '').split('?')[0])
         if (fileName === 'worker.min.js') {
           response.setHeader('Content-Type', 'application/javascript')

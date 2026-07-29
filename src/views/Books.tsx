@@ -25,7 +25,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Languages,
-  ScanText,
 } from 'lucide-react'
 import {
   getActiveTocIndex,
@@ -2002,7 +2001,6 @@ export const Books: React.FC = () => {
   })
   const sortedFilteredBooks =
     activeCategory === TO_READ_BOOK_SHELF_ID ? toReadBooks : filteredBooks
-  const isToReadShelfActive = activeCategory === TO_READ_BOOK_SHELF_ID
   const batchImportShelfRows = flattenBookCategoryTree(
     categories.filter((category) => !isReservedBookCategory(category.name)),
   )

@@ -83,8 +83,6 @@ export function PdfOcrOverlay({
       workerRef.current = null
       void worker?.terminate?.()
     }
-    // OCR resources are prepared once for the modal lifecycle.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const pointFromEvent = (event: React.PointerEvent) => {

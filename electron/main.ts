@@ -2307,7 +2307,12 @@ ipcMain.handle('book:select-file', async (event) => {
 })
 
 function serializeBookBatchImportItems(items: BatchImportItem[]) {
-  return items.map(({ sourcePath: _sourcePath, coverSourcePath: _coverSourcePath, ...item }) => item)
+  return items.map((item) => {
+    const serialized = { ...item }
+    delete serialized.sourcePath
+    delete serialized.coverSourcePath
+    return serialized
+  })
 }
 
 ipcMain.handle('book:batch-select-books', async (event) => {
