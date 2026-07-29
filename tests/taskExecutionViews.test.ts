@@ -22,7 +22,7 @@ test('list includes pending instances while kanban stays scoped to the execution
   assert.match(tasksView, /const taskMatchesFilters = useCallback/)
   assert.match(tasksView, /task\.status === TASK_STATUS\.closed/)
   assert.match(tasksView, /task\.due_date < dueDateFrom/)
-  assert.match(tasksView, /task\.due_date <= dueDateTo/)
+  assert.match(tasksView, /task\.due_date > dueDateTo/)
   assert.match(tasksView, /projectCalendarOccurrences[\s\S]*\.filter\(\s*taskMatchesFilters/)
 })
 
