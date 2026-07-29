@@ -12,7 +12,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from 'react'
-import { BookOpen, Inbox, Languages, Library, Pencil, Plus, Trash2 } from 'lucide-react'
+import { BookOpen, Inbox, Languages, Library, ListOrdered, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { ViewportPortal } from '../components/ViewportPortal'
 import { flattenBookCategoryTree, getContextMenuPosition } from './bookCategorySidebarUtils'
@@ -30,11 +30,13 @@ export type BookCategorySidebarProps = {
   categories: BookShelf[]
   activeCategory: string
   allBooksCount: number
+  toReadCount: number
   toOrganizeCount: number
   getCategoryDisplayName: (category: BookShelf) => string
   getCategoryBookCount: (category: BookShelf) => number
   onSelectCategory: (category: string) => void
   onCreateCategory: (name: string, parentId: BookShelf['id'] | null) => Promise<MutationResult>
+  onMoveBookToToRead: (bookId: string) => Promise<MutationResult>
   onMoveBookToCategory: (bookId: string, category: BookShelf) => Promise<MutationResult>
   onRenameCategory: (category: BookShelf, name: string) => Promise<MutationResult>
   onEditTranslations: (category: BookShelf, returnFocus: () => void) => void
@@ -55,11 +57,13 @@ export function BookCategorySidebar({
   categories,
   activeCategory,
   allBooksCount,
+  toReadCount,
   toOrganizeCount,
   getCategoryDisplayName,
   getCategoryBookCount,
   onSelectCategory,
   onCreateCategory,
+  onMoveBookToToRead,
   onMoveBookToCategory,
   onRenameCategory,
   onEditTranslations,
@@ -318,12 +322,43 @@ export function BookCategorySidebar({
     await onMoveBookToCategory(bookId, category)
   }
 
+  const handleToReadDragOver = (event: DragEvent<HTMLButtonElement>) => {
+    if (!isDraggingBook(event)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleToReadDrop = async (event: DragEvent<HTMLButtonElement>) => {
+    const bookId = getDraggedBookId(event)
+    if (!bookId) return
+    event.preventDefault()
+    await onMoveBookToToRead(bookId)
+  }
+
   return (
     <aside className="book-category-sidebar card" aria-label={t('books.sidebar_title')}>
       <h2 className="book-category-sidebar__title">{t('books.sidebar_title')}</h2>
 
       <div className="book-category-sidebar__content">
         <div className="book-category-sidebar__fixed-list">
+          <button
+            type="button"
+            className={`book-category-sidebar__row book-category-sidebar__to-read ${
+              toReadCount > 0 ? 'has-items' : ''
+            } ${activeCategory === 'to_read' ? 'active' : ''}`}
+            aria-current={activeCategory === 'to_read' ? 'page' : undefined}
+            onClick={() => onSelectCategory('to_read')}
+            onContextMenu={(event) => event.preventDefault()}
+            onDragOver={handleToReadDragOver}
+            onDrop={(event) => void handleToReadDrop(event)}
+          >
+            <ListOrdered aria-hidden="true" />
+            <span className="book-category-sidebar__label" title={t('books.to_read')}>
+              {t('books.to_read')}
+            </span>
+            <span className="book-category-sidebar__count">{toReadCount}</span>
+          </button>
+
           <button
             type="button"
             className={`book-category-sidebar__row ${activeCategory === 'all' ? 'active' : ''}`}

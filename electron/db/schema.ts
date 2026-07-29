@@ -536,6 +536,7 @@ export function initializeUserDatabase(userDbDir: string) {
       category TEXT DEFAULT '未分类',
       progress REAL DEFAULT 0.0,
       status TEXT CHECK(status IN ('want', 'reading', 'read')) DEFAULT 'want',
+      to_read_order INTEGER,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -546,6 +547,16 @@ export function initializeUserDatabase(userDbDir: string) {
       annotation TEXT,
       anchor TEXT NOT NULL, -- JSON location info for PDF/EPUB js
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS pdf_ocr_pages (
+      book_id INTEGER NOT NULL,
+      page_number INTEGER NOT NULL,
+      engine_version TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (book_id, page_number, engine_version),
       FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
     );
 
@@ -575,6 +586,36 @@ export function initializeUserDatabase(userDbDir: string) {
   if (!bookColumns.some((column) => column.name === 'cover_path')) {
     booksDb.prepare('ALTER TABLE books ADD COLUMN cover_path TEXT').run()
   }
+  if (!bookColumns.some((column) => column.name === 'to_read_order')) {
+    booksDb.prepare('ALTER TABLE books ADD COLUMN to_read_order INTEGER').run()
+  }
+
+  // Migrate the legacy "待读" category into the independent reading queue. Queue
+  // membership now lives solely in to_read_order, so a book can retain its shelf.
+  const initializeToReadOrder = booksDb.transaction(() => {
+    const legacyToReadBooks = booksDb
+      .prepare(
+        `SELECT id
+         FROM books
+         WHERE TRIM(category) IN ('待读', 'To Read')
+         ORDER BY CASE WHEN to_read_order IS NULL THEN 1 ELSE 0 END,
+                  to_read_order ASC,
+                  created_at DESC,
+                  id DESC`,
+      )
+      .all() as { id: number }[]
+    if (legacyToReadBooks.length === 0) return
+    const maxOrder =
+      (booksDb.prepare('SELECT MAX(to_read_order) AS value FROM books').get() as {
+        value: number | null
+      }).value ?? 0
+    const setOrder = booksDb.prepare('UPDATE books SET to_read_order = ? WHERE id = ?')
+    legacyToReadBooks.forEach((book, index) => setOrder.run(maxOrder + index + 1, book.id))
+    booksDb
+      .prepare("UPDATE books SET category = '未分类' WHERE TRIM(category) IN ('待读', 'To Read')")
+      .run()
+  })
+  initializeToReadOrder()
 
   // Seed default book categories if empty
   const countStmt = booksDb.prepare('SELECT count(*) as count FROM categories')
@@ -584,7 +625,6 @@ export function initializeUserDatabase(userDbDir: string) {
     insertCat.run('技术', 1)
     insertCat.run('设计', 2)
     insertCat.run('商业', 3)
-    insertCat.run('待读', 4)
   }
 
   // Seed default category translations if empty
@@ -602,7 +642,6 @@ export function initializeUserDatabase(userDbDir: string) {
         { name: '技术', en: 'Technology', zh: '技术' },
         { name: '设计', en: 'Design', zh: '设计' },
         { name: '商业', en: 'Business', zh: '商业' },
-        { name: '待读', en: 'To Read', zh: '待读' },
       ]
       const insertTrans = booksDb.prepare(
         "INSERT OR REPLACE INTO translations (entity_type, entity_id, locale, translation) VALUES ('category', ?, ?, ?)",

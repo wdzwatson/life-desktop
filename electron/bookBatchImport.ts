@@ -216,6 +216,7 @@ export async function importBookBatch(input: {
   unknownAuthor: string
   items: BatchImportItem[]
 }) {
+  const category = ['待读', 'To Read'].includes(input.category.trim()) ? '未分类' : input.category
   const existingNames = getExistingBookFileNames(input.db)
   const results: BatchImportItemResult[] = []
   const booksDir = path.join(input.filesRoot, 'books')
@@ -277,7 +278,7 @@ export async function importBookBatch(input: {
           `INSERT INTO books (title, author, path, cover, cover_path, category, progress, status)
            VALUES (?, ?, ?, ?, ?, ?, 0.0, 'want')`,
         )
-        .run(item.title, input.unknownAuthor, bookRelativePath, item.format, coverRelativePath, input.category)
+        .run(item.title, input.unknownAuthor, bookRelativePath, item.format, coverRelativePath, category)
       existingNames.add(normalizedFileName)
       results.push({ ...resultBase, status: 'success', coverWarning })
     } catch (error) {

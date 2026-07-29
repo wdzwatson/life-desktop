@@ -1,0 +1,63 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import test from 'node:test'
+
+const read = (file: string) => readFileSync(path.resolve(file), 'utf8')
+const main = read('electron/main.ts')
+const preload = read('electron/preload.ts')
+const app = read('src/App.tsx')
+const overlay = read('src/components/ScreenCaptureOverlay.tsx')
+const pdfOcrOverlay = read('src/components/PdfOcrOverlay.tsx')
+const pdfOcrTextLayer = read('src/components/PdfOcrTextLayer.tsx')
+const pdfOcrService = read('src/views/pdfOcrService.ts')
+const books = read('src/views/Books.tsx')
+const settings = read('src/views/Settings.tsx')
+const viteConfig = read('vite.config.ts')
+const pdfOcrHtml = read('index.html')
+
+test('screen capture keeps native capture, clipboard, and file saving behind IPC', () => {
+  assert.match(main, /desktopCapturer/)
+  assert.match(main, /globalShortcut\.register/)
+  assert.match(main, /ipcMain\.handle\('screen-capture:capture'/)
+  assert.match(main, /ipcMain\.handle\('screen-capture:copy'/)
+  assert.match(main, /ipcMain\.handle\('screen-capture:save'/)
+  assert.match(preload, /onScreenshotRequested/)
+  assert.match(app, /ScreenCaptureOverlay/)
+  assert.match(overlay, /cropToDataUrl/)
+  assert.match(overlay, /copyScreenshot/)
+  assert.match(overlay, /saveScreenshot/)
+})
+
+test('reader selection assistance exposes free translation and reusable annotation content', () => {
+  assert.match(main, /api\.mymemory\.translated\.net/)
+  assert.match(main, /ipcMain\.handle\('reader:translate'/)
+  assert.match(preload, /translateReaderText/)
+  assert.match(books, /handleTranslateSelection/)
+  assert.match(books, /ai_use_as_annotation/)
+  assert.match(books, /readerTranslate: 'Alt\+T'/)
+  assert.match(books, /readerAnnotate: 'Alt\+A'/)
+  assert.match(books, /readerOcr: 'Alt\+O'/)
+  assert.match(books, /requestPdfOcrForCurrentPage/)
+  assert.match(books, /handleOpenPdfOcrFallback/)
+  assert.match(books, /handlePdfOcrAreaSelected/)
+  assert.match(books, /cropped\.toDataURL\('image\/png'\)/)
+  assert.match(books, /ensurePdfOcrPage\(currentPageIndex \+ 1\)/)
+  assert.match(pdfOcrTextLayer, /ocr_text_layer_label/)
+  assert.match(pdfOcrTextLayer, /onSelectArea/)
+  assert.match(pdfOcrTextLayer, /onFallback/)
+  assert.match(pdfOcrService, /recognitionQueue/)
+  assert.match(pdfOcrOverlay, /createWorker\(\['eng', 'chi_sim'\]/)
+  assert.match(pdfOcrOverlay, /workerPath: `\$\{ocrRuntimeBase\}worker\.min\.js`/)
+  assert.match(pdfOcrOverlay, /corePath: `\$\{ocrRuntimeBase\}tesseract-core-simd-lstm\.wasm\.js`/)
+  assert.match(viteConfig, /Successfully copied OCR worker and WASM runtime files/)
+  assert.match(viteConfig, /Warning: Parameter not found:/)
+  assert.match(pdfOcrHtml, /https:\/\/cdn\.jsdelivr\.net/)
+})
+
+test('settings manages the shared shortcut set with duplicate prevention', () => {
+  assert.match(settings, /DEFAULT_SHORTCUTS/)
+  assert.match(settings, /shortcut_conflict/)
+  assert.match(settings, /handleSaveShortcuts/)
+  assert.match(settings, /settings\.menu_shortcuts/)
+})

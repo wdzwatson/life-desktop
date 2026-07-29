@@ -19,10 +19,13 @@ import {
   Save,
   Copy,
   Trash2,
+  GripVertical,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Languages,
+  ScanText,
 } from 'lucide-react'
 import {
   getActiveTocIndex,
@@ -44,6 +47,9 @@ import {
 import { BookCategorySidebar, type BookShelf } from './BookCategorySidebar'
 import { AccessibleDialog } from '../components/AccessibleDialog'
 import { ViewportPortal } from '../components/ViewportPortal'
+import { PdfOcrOverlay } from '../components/PdfOcrOverlay'
+import { PdfOcrTextLayer, type PdfOcrSelectionArea } from '../components/PdfOcrTextLayer'
+import { recognizePdfPage, type PdfOcrPage } from './pdfOcrService'
 import { getConfiguredLocales } from '../localeRegistry'
 import { getBookCoverUrl } from './bookCoverUtils'
 import {
@@ -53,6 +59,8 @@ import {
   getBookCategoryDescendantIds,
   getActiveCategoryAfterDelete,
   isReservedBookCategory,
+  isToReadBookCategory,
+  TO_READ_BOOK_SHELF_ID,
 } from './bookCategorySidebarUtils'
 
 type BookBatchQueueItem = {
@@ -68,6 +76,30 @@ type BookBatchQueueItem = {
   coverWarning?: string
 }
 
+const DEFAULT_READER_SHORTCUTS = {
+  readerTranslate: 'Alt+T',
+  readerAnnotate: 'Alt+A',
+  readerOcr: 'Alt+O',
+}
+
+const PDF_OCR_ENGINE_VERSION = 'tesseract-v3'
+type PdfOcrPageState = {
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  data?: PdfOcrPage
+}
+
+function matchesShortcut(event: KeyboardEvent, shortcut: string) {
+  const parts = shortcut.toLowerCase().split('+')
+  const key = parts.at(-1)
+  const primary = parts.includes('commandorcontrol')
+  const hasAlt = parts.includes('alt')
+  const hasShift = parts.includes('shift')
+  if (primary !== (event.ctrlKey || event.metaKey) || hasAlt !== event.altKey || hasShift !== event.shiftKey) {
+    return false
+  }
+  return event.key.toLowerCase() === key
+}
+
 export const Books: React.FC = () => {
   const { t, i18n } = useTranslation()
   const showToast = useAppStore((state) => state.showToast)
@@ -80,8 +112,13 @@ export const Books: React.FC = () => {
   // DB States
   const [categories, setCategories] = useState<any[]>([])
   const [books, setBooks] = useState<any[]>([])
-  const [activeCategory, setActiveCategory] = useState<string>('all')
+  const [activeCategory, setActiveCategory] = useState<string>(TO_READ_BOOK_SHELF_ID)
   const [draggingBookId, setDraggingBookId] = useState<string | null>(null)
+  const [toReadDropTarget, setToReadDropTarget] = useState<{
+    id: string
+    position: 'before' | 'after'
+  } | null>(null)
+  const [isUpdatingToReadOrder, setIsUpdatingToReadOrder] = useState(false)
   const didDragBookRef = useRef(false)
 
   // Reader Overlay State
@@ -246,6 +283,13 @@ export const Books: React.FC = () => {
   const [highlights, setHighlights] = useState<any[]>([])
   const [newAnnotation, setNewAnnotation] = useState('')
   const [selectedHighlightText, setSelectedHighlightText] = useState('')
+  const [aiTranslation, setAiTranslation] = useState('')
+  const [isTranslatingSelection, setIsTranslatingSelection] = useState(false)
+  const [readerShortcuts, setReaderShortcuts] = useState(DEFAULT_READER_SHORTCUTS)
+  const [pdfOcrImageDataUrl, setPdfOcrImageDataUrl] = useState<string | null>(null)
+  const [pdfOcrPages, setPdfOcrPages] = useState<Record<number, PdfOcrPageState>>({})
+  const [pdfOcrSelectionPage, setPdfOcrSelectionPage] = useState<number | null>(null)
+  const pdfOcrInFlightRef = useRef(new Set<number>())
   const [isTocDrawerOpen, setIsTocDrawerOpen] = useState(false)
   const [isAnnotationsDrawerOpen, setIsAnnotationsDrawerOpen] = useState(false)
   const [readerMainWidth, setReaderMainWidth] = useState(0)
@@ -602,6 +646,9 @@ export const Books: React.FC = () => {
     if (!finalCategory) {
       finalCategory = '未分类'
     }
+    if (isToReadBookCategory(finalCategory)) {
+      finalCategory = '未分类'
+    }
 
     // Insert category automatically if not existing and not "未分类"
     const isUncat = isReservedBookCategory(finalCategory)
@@ -795,6 +842,9 @@ export const Books: React.FC = () => {
     if (!finalCategory) {
       finalCategory = '未分类'
     }
+    if (isToReadBookCategory(finalCategory)) {
+      finalCategory = '未分类'
+    }
 
     // Insert category automatically if not existing and not "未分类"
     const isUncat = isReservedBookCategory(finalCategory)
@@ -832,8 +882,22 @@ export const Books: React.FC = () => {
       await api.deleteBookFile(deletingBookInfo.path)
     }
 
-    // 2. Delete database record
-    const res = await api.dbQuery('books', 'DELETE FROM books WHERE id = ?', [deletingBookInfo.id])
+    // 2. Delete the record and close the resulting gap in the reading queue.
+    const deletedToReadOrder = Number(deletingBookInfo.to_read_order)
+    const isInToRead = Number.isFinite(deletedToReadOrder) && deletedToReadOrder > 0
+    const res = api.dbTransaction
+      ? await api.dbTransaction('books', [
+          { sql: 'DELETE FROM books WHERE id = ?', params: [deletingBookInfo.id] },
+          ...(isInToRead
+            ? [
+                {
+                  sql: 'UPDATE books SET to_read_order = to_read_order - 1 WHERE to_read_order > ?',
+                  params: [deletedToReadOrder],
+                },
+              ]
+            : []),
+        ])
+      : await api.dbQuery('books', 'DELETE FROM books WHERE id = ?', [deletingBookInfo.id])
     if (res?.success) {
       showToast(t('books.toast_book_deleted') || '书籍已成功删除')
       setDeletingBookInfo(null)
@@ -864,7 +928,10 @@ export const Books: React.FC = () => {
     setBooks((current) =>
       current.map((candidate) =>
         String(candidate.id) === String(book.id)
-          ? { ...candidate, category: targetCategory.name }
+          ? {
+              ...candidate,
+              category: targetCategory.name,
+            }
           : candidate,
       ),
     )
@@ -875,6 +942,116 @@ export const Books: React.FC = () => {
       }),
     )
     return { ok: true as const }
+  }
+
+  const getToReadBooks = (sourceBooks: any[]) =>
+    sourceBooks
+      .filter((book) => book.to_read_order != null)
+      .sort((left, right) => {
+        const leftOrder = Number(left.to_read_order)
+        const rightOrder = Number(right.to_read_order)
+        const leftHasOrder = Number.isFinite(leftOrder) && leftOrder > 0
+        const rightHasOrder = Number.isFinite(rightOrder) && rightOrder > 0
+        if (leftHasOrder && rightHasOrder) return leftOrder - rightOrder
+        if (leftHasOrder) return -1
+        if (rightHasOrder) return 1
+        return Number(left.id) - Number(right.id)
+      })
+
+  const saveToReadOrder = async (orderedBooks: any[]) => {
+    if (!api?.dbTransaction) return false
+
+    const result = await api.dbTransaction(
+      'books',
+      orderedBooks.map((book, index) => ({
+        sql: 'UPDATE books SET to_read_order = ? WHERE id = ?',
+        params: [index + 1, book.id],
+      })),
+    )
+    return Boolean(result?.success)
+  }
+
+  const moveBookToToRead = async (bookId: string) => {
+    if (!api?.dbTransaction) {
+      return { ok: false as const, error: t('books.toast_book_move_failed') }
+    }
+
+    const book = books.find((candidate) => String(candidate.id) === String(bookId))
+    if (!book) return { ok: false as const, error: t('books.toast_book_move_failed') }
+    if (book.to_read_order != null) return { ok: true as const }
+
+    const orderedBooks = [...getToReadBooks(books), book]
+    setIsUpdatingToReadOrder(true)
+    try {
+      const result = await api.dbTransaction('books', [
+        {
+          sql: 'UPDATE books SET to_read_order = ? WHERE id = ?',
+          params: [orderedBooks.length, book.id],
+        },
+      ])
+      if (!result?.success) {
+        await loadData()
+        return { ok: false as const, error: t('books.toast_book_move_failed') }
+      }
+
+      setBooks((current) =>
+        current.map((candidate) => {
+          const order = orderedBooks.findIndex((item) => String(item.id) === String(candidate.id))
+          if (order < 0) return candidate
+          return {
+            ...candidate,
+            to_read_order: order + 1,
+          }
+        }),
+      )
+      showToast(t('books.toast_book_added_to_read', { title: book.title }))
+      return { ok: true as const }
+    } catch {
+      await loadData()
+      return { ok: false as const, error: t('books.toast_book_move_failed') }
+    } finally {
+      setIsUpdatingToReadOrder(false)
+    }
+  }
+
+  const reorderToReadBooks = async (
+    sourceId: string,
+    targetId: string | null,
+    position: 'before' | 'after' = 'after',
+  ) => {
+    const currentOrder = getToReadBooks(books)
+    const sourceIndex = currentOrder.findIndex((book) => String(book.id) === String(sourceId))
+    if (sourceIndex < 0) return
+
+    const withoutSource = currentOrder.filter((book) => String(book.id) !== String(sourceId))
+    let insertionIndex = withoutSource.length
+    if (targetId) {
+      const targetIndex = withoutSource.findIndex((book) => String(book.id) === String(targetId))
+      if (targetIndex >= 0) insertionIndex = targetIndex + (position === 'after' ? 1 : 0)
+    }
+    const orderedBooks = [...withoutSource]
+    orderedBooks.splice(insertionIndex, 0, currentOrder[sourceIndex])
+    if (orderedBooks.every((book, index) => String(book.id) === String(currentOrder[index]?.id))) return
+
+    setIsUpdatingToReadOrder(true)
+    try {
+      if (!(await saveToReadOrder(orderedBooks))) {
+        await loadData()
+        showToast(t('books.toast_to_read_order_failed'))
+        return
+      }
+      const orderById = new Map(orderedBooks.map((book, index) => [String(book.id), index + 1]))
+      setBooks((current) =>
+        current.map((book) => ({ ...book, to_read_order: orderById.get(String(book.id)) ?? book.to_read_order })),
+      )
+      showToast(t('books.toast_to_read_order_saved'))
+    } catch {
+      await loadData()
+      showToast(t('books.toast_to_read_order_failed'))
+    } finally {
+      setIsUpdatingToReadOrder(false)
+      setToReadDropTarget(null)
+    }
   }
 
   // Open book in custom reader overlay
@@ -991,6 +1168,8 @@ export const Books: React.FC = () => {
     setReadingBook(null)
     setBookChapters(null)
     setBookToc(null)
+    setPdfOcrPages({})
+    pdfOcrInFlightRef.current.clear()
     setCurrentChapterIndex(0)
     setCurrentParagraphOffset(0)
     setPdfData(null)
@@ -1188,9 +1367,162 @@ export const Books: React.FC = () => {
       const selectedText = selection.toString().trim()
       if (selectedText) {
         setSelectedHighlightText(selectedText)
+        setAiTranslation('')
         setIsAnnotationsDrawerOpen(true)
       }
     }
+  }
+
+  const handleTranslateSelection = async (textOverride?: string) => {
+    const text = textOverride || selectedHighlightText || window.getSelection()?.toString().trim()
+    if (!text) {
+      showToast(t('books.ai_select_text_first'))
+      return
+    }
+    setSelectedHighlightText(text)
+    setIsAnnotationsDrawerOpen(true)
+    setIsTranslatingSelection(true)
+    setAiTranslation('')
+    try {
+      const result = await api?.translateReaderText?.({ text, targetLanguage: i18n.language })
+      if (result?.success) setAiTranslation(result.translation)
+      else showToast(result?.error || t('books.ai_translate_failed'))
+    } finally {
+      setIsTranslatingSelection(false)
+    }
+  }
+
+  const handleOpenPdfOcrFallback = () => {
+    const currentPageCanvas = readerMainRef.current?.querySelector<HTMLCanvasElement>(
+      `[data-page-number="${currentPageIndex + 1}"] canvas`,
+    )
+    if (!currentPageCanvas) {
+      showToast(t('books.ocr_page_not_ready'))
+      return
+    }
+    setPdfOcrImageDataUrl(currentPageCanvas.toDataURL('image/png'))
+  }
+
+  const handlePdfOcrRecognized = (text: string) => {
+    setSelectedHighlightText(text)
+    setAiTranslation('')
+    setIsAnnotationsDrawerOpen(true)
+    void handleTranslateSelection(text)
+  }
+
+  const getPdfPageElement = (pageNumber: number) =>
+    readerMainRef.current?.querySelector<HTMLElement>(`[data-page-number="${pageNumber}"]`)
+
+  const ensurePdfOcrPage = async (pageNumber: number) => {
+    if (!readingBook || pdfOcrInFlightRef.current.has(pageNumber)) return
+    if (pdfOcrPages[pageNumber]?.status === 'ready') return
+    const pageElement = getPdfPageElement(pageNumber)
+    const canvas = pageElement?.querySelector<HTMLCanvasElement>('canvas')
+    if (!canvas || canvas.width === 0 || canvas.height === 0) return
+
+    pdfOcrInFlightRef.current.add(pageNumber)
+    setPdfOcrPages((current) => ({ ...current, [pageNumber]: { status: 'loading' } }))
+    try {
+      const cached = await api?.dbQuery(
+        'books',
+        'SELECT payload FROM pdf_ocr_pages WHERE book_id = ? AND page_number = ? AND engine_version = ?',
+        [readingBook.id, pageNumber, PDF_OCR_ENGINE_VERSION],
+      )
+      const cachedPayload = cached?.success && cached.data?.[0]?.payload
+      if (typeof cachedPayload === 'string') {
+        const parsed = JSON.parse(cachedPayload) as PdfOcrPage
+        if (Array.isArray(parsed.words)) {
+          setPdfOcrPages((current) => ({ ...current, [pageNumber]: { status: 'ready', data: parsed } }))
+          return
+        }
+      }
+
+      const result = await recognizePdfPage(canvas.toDataURL('image/png'), (status) => {
+        if (status === 'recognizing text') return
+        setPdfOcrPages((current) =>
+          current[pageNumber]?.status === 'loading' ? current : { ...current, [pageNumber]: { status: 'loading' } },
+        )
+      })
+      const normalized: PdfOcrPage = {
+        text: result.text,
+        words: result.words.map((word) => ({
+          ...word,
+          x: word.x / canvas.width,
+          y: word.y / canvas.height,
+          width: word.width / canvas.width,
+          height: word.height / canvas.height,
+        })),
+      }
+      setPdfOcrPages((current) => ({ ...current, [pageNumber]: { status: 'ready', data: normalized } }))
+      await api?.dbQuery(
+        'books',
+        'INSERT OR REPLACE INTO pdf_ocr_pages (book_id, page_number, engine_version, payload) VALUES (?, ?, ?, ?)',
+        [readingBook.id, pageNumber, PDF_OCR_ENGINE_VERSION, JSON.stringify(normalized)],
+      )
+    } catch (error) {
+      console.warn('PDF page OCR failed:', error)
+      setPdfOcrPages((current) => ({ ...current, [pageNumber]: { status: 'error' } }))
+    } finally {
+      pdfOcrInFlightRef.current.delete(pageNumber)
+    }
+  }
+
+  const handlePdfOcrAreaSelected = async (pageNumber: number, area: PdfOcrSelectionArea) => {
+    if (pdfOcrSelectionPage !== null) return
+    const source = getPdfPageElement(pageNumber)?.querySelector<HTMLCanvasElement>('canvas')
+    if (!source || source.width === 0 || source.height === 0) {
+      showToast(t('books.ocr_page_not_ready'))
+      return
+    }
+
+    // Preserve a small edge around the drag so characters touching the frame
+    // are not clipped before the second, selection-specific OCR pass.
+    const padding = 12
+    const x = Math.max(0, Math.floor(area.x * source.width - padding))
+    const y = Math.max(0, Math.floor(area.y * source.height - padding))
+    const right = Math.min(source.width, Math.ceil((area.x + area.width) * source.width + padding))
+    const bottom = Math.min(source.height, Math.ceil((area.y + area.height) * source.height + padding))
+    if (right <= x || bottom <= y) return
+
+    const cropped = document.createElement('canvas')
+    cropped.width = right - x
+    cropped.height = bottom - y
+    const context = cropped.getContext('2d')
+    if (!context) return
+    context.drawImage(source, x, y, cropped.width, cropped.height, 0, 0, cropped.width, cropped.height)
+
+    setPdfOcrSelectionPage(pageNumber)
+    try {
+      const result = await recognizePdfPage(cropped.toDataURL('image/png'), () => {})
+      if (!result.text) {
+        showToast(t('books.ocr_selection_empty'))
+        return
+      }
+      handlePdfOcrRecognized(result.text)
+    } catch (error) {
+      console.warn('Selected PDF area OCR failed:', error)
+      showToast(t('books.ocr_selection_failed'))
+    } finally {
+      setPdfOcrSelectionPage(null)
+    }
+  }
+
+  const handlePdfPageRendered = (pageNumber: number) => {
+    window.setTimeout(() => {
+      const pageElement = getPdfPageElement(pageNumber)
+      const nativeText = pageElement?.querySelector('.react-pdf__Page__textContent')?.textContent?.trim()
+      if (!nativeText) void ensurePdfOcrPage(pageNumber)
+    }, 0)
+  }
+
+  const requestPdfOcrForCurrentPage = () => {
+    const pageNumber = currentPageIndex + 1
+    const canvas = getPdfPageElement(pageNumber)?.querySelector<HTMLCanvasElement>('canvas')
+    if (!canvas || canvas.width === 0 || canvas.height === 0) {
+      showToast(t('books.ocr_page_not_ready'))
+      return
+    }
+    void ensurePdfOcrPage(pageNumber)
   }
 
   const handleReaderContentClick = () => {
@@ -1312,6 +1644,18 @@ export const Books: React.FC = () => {
   useEffect(() => {
     if (!readingBook) return
 
+    let active = true
+    api?.getSettings?.().then((settings: { shortcuts?: Partial<typeof DEFAULT_READER_SHORTCUTS> }) => {
+      if (active) setReaderShortcuts({ ...DEFAULT_READER_SHORTCUTS, ...(settings?.shortcuts || {}) })
+    })
+    return () => {
+      active = false
+    }
+  }, [readingBook, api])
+
+  useEffect(() => {
+    if (!readingBook) return
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
         document.activeElement?.tagName === 'INPUT' ||
@@ -1320,7 +1664,23 @@ export const Books: React.FC = () => {
         return
       }
 
-      if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+      if (matchesShortcut(e, readerShortcuts.readerTranslate)) {
+        e.preventDefault()
+        void handleTranslateSelection()
+      } else if (matchesShortcut(e, readerShortcuts.readerAnnotate)) {
+        const text = selectedHighlightText || window.getSelection()?.toString().trim()
+        if (!text) {
+          showToast(t('books.ai_select_text_first'))
+          return
+        }
+        e.preventDefault()
+        setSelectedHighlightText(text)
+        setAiTranslation('')
+        setIsAnnotationsDrawerOpen(true)
+      } else if (isPdf && matchesShortcut(e, readerShortcuts.readerOcr)) {
+        e.preventDefault()
+        requestPdfOcrForCurrentPage()
+      } else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
         e.preventDefault()
         handleNextPage()
       } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
@@ -1341,6 +1701,10 @@ export const Books: React.FC = () => {
     pdfNumPages,
     epubLayoutMode,
     pdfLayoutMode,
+    readerShortcuts,
+    selectedHighlightText,
+    showToast,
+    t,
   ])
 
   // Keep the latest handleNextPage in a ref so the auto-play interval doesn't get
@@ -1563,8 +1927,10 @@ export const Books: React.FC = () => {
     ? books.filter((book) => isBookInCategory(book, deletingCategory)).length
     : 0
 
+  const toReadBooks = getToReadBooks(books)
   const filteredBooks = books.filter((b) => {
     if (activeCategory === 'all') return true
+    if (activeCategory === TO_READ_BOOK_SHELF_ID) return b.to_read_order != null
     if (activeCategory === 'uncategorized') {
       return isUncategorized(b)
     }
@@ -1575,6 +1941,9 @@ export const Books: React.FC = () => {
       (candidate) => categoryIds.has(String(candidate.id)) && isBookInCategory(b, candidate),
     )
   })
+  const sortedFilteredBooks =
+    activeCategory === TO_READ_BOOK_SHELF_ID ? toReadBooks : filteredBooks
+  const isToReadShelfActive = activeCategory === TO_READ_BOOK_SHELF_ID
   const batchImportShelfRows = flattenBookCategoryTree(
     categories.filter((category) => !isReservedBookCategory(category.name)),
   )
@@ -1791,6 +2160,7 @@ export const Books: React.FC = () => {
             type="button"
             className="btn"
             aria-label={t('books.batch_import')}
+            disabled={isToReadShelfActive}
             onClick={() => setIsBatchImportOpen(true)}
           >
             {t('books.batch_import')}
@@ -1799,6 +2169,7 @@ export const Books: React.FC = () => {
             type="button"
             className="btn primary"
             aria-label={t('books.import_book')}
+            disabled={isToReadShelfActive}
             onPointerDown={() => setIsImportOpen(true)}
             onClick={() => setIsImportOpen(true)}
             style={{ position: 'relative', zIndex: 3, pointerEvents: 'auto' }}
@@ -1823,6 +2194,7 @@ export const Books: React.FC = () => {
           categories={categories.filter((category) => !isReservedBookCategory(category.name))}
           activeCategory={activeCategory}
           allBooksCount={books.length}
+          toReadCount={toReadBooks.length}
           toOrganizeCount={uncategorizedBooksCount}
           getCategoryDisplayName={(category) => getCategoryDisplayName(category.name, category.id)}
           getCategoryBookCount={(category) => {
@@ -1836,6 +2208,7 @@ export const Books: React.FC = () => {
           }}
           onSelectCategory={setActiveCategory}
           onCreateCategory={createCategory}
+          onMoveBookToToRead={moveBookToToRead}
           onMoveBookToCategory={moveBookToCategory}
           onRenameCategory={renameCategoryInline}
           onEditTranslations={openCategoryTranslationEditor}
@@ -1852,8 +2225,35 @@ export const Books: React.FC = () => {
             overflowY: 'auto',
             height: '100%',
           }}
+          onDragOver={(event) => {
+            if (activeCategory !== TO_READ_BOOK_SHELF_ID || !draggingBookId) return
+            event.preventDefault()
+            event.dataTransfer.dropEffect = 'move'
+          }}
+          onDrop={(event) => {
+            if (activeCategory !== TO_READ_BOOK_SHELF_ID || !draggingBookId) return
+            if (event.target !== event.currentTarget) return
+            event.preventDefault()
+            void reorderToReadBooks(draggingBookId, null)
+          }}
         >
-          {filteredBooks.length === 0 ? (
+          {activeCategory === TO_READ_BOOK_SHELF_ID && (
+            <div
+              style={{
+                gridColumn: '1 / -1',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                color: 'var(--text-muted)',
+                fontSize: '12px',
+                padding: '2px 2px 6px',
+              }}
+            >
+              <GripVertical size={15} aria-hidden="true" />
+              <span>{t('books.to_read_priority_hint')}</span>
+            </div>
+          )}
+          {sortedFilteredBooks.length === 0 ? (
             <div
               style={{
                 textAlign: 'center',
@@ -1864,16 +2264,29 @@ export const Books: React.FC = () => {
                 fontSize: '13px',
               }}
             >
-              {t('books.empty_shelf')}
+              {activeCategory === TO_READ_BOOK_SHELF_ID
+                ? t('books.to_read_empty_shelf')
+                : t('books.empty_shelf')}
             </div>
           ) : (
-            filteredBooks.map((book) => (
+            sortedFilteredBooks.map((book, index) => (
               <div
                 key={book.id}
                 className={`card book-shelf-card ${
                   String(draggingBookId) === String(book.id) ? 'is-dragging' : ''
+                } ${
+                  activeCategory === TO_READ_BOOK_SHELF_ID ? 'book-shelf-card--to-read' : ''
+                } ${
+                  toReadDropTarget?.id === String(book.id) &&
+                  toReadDropTarget.position === 'before'
+                    ? 'is-drop-before'
+                    : ''
+                } ${
+                  toReadDropTarget?.id === String(book.id) && toReadDropTarget.position === 'after'
+                    ? 'is-drop-after'
+                    : ''
                 }`}
-                draggable
+                draggable={!isUpdatingToReadOrder}
                 style={{
                   display: 'flex',
                   gap: '12px',
@@ -1889,15 +2302,60 @@ export const Books: React.FC = () => {
                 }}
                 onDragEnd={() => {
                   setDraggingBookId(null)
+                  setToReadDropTarget(null)
                   window.setTimeout(() => {
                     didDragBookRef.current = false
                   }, 0)
+                }}
+                onDragOver={(event) => {
+                  if (
+                    activeCategory !== TO_READ_BOOK_SHELF_ID ||
+                    !draggingBookId ||
+                    String(draggingBookId) === String(book.id)
+                  ) {
+                    return
+                  }
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                  const rect = event.currentTarget.getBoundingClientRect()
+                  setToReadDropTarget({
+                    id: String(book.id),
+                    position: event.clientY - rect.top < rect.height / 2 ? 'before' : 'after',
+                  })
+                }}
+                onDragLeave={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    setToReadDropTarget((current) =>
+                      current?.id === String(book.id) ? null : current,
+                    )
+                  }
+                }}
+                onDrop={(event) => {
+                  if (activeCategory !== TO_READ_BOOK_SHELF_ID || !draggingBookId) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  const rect = event.currentTarget.getBoundingClientRect()
+                  const position =
+                    event.clientY - rect.top < rect.height / 2 ? 'before' : 'after'
+                  void reorderToReadBooks(draggingBookId, String(book.id), position)
                 }}
                 onClick={() => {
                   if (didDragBookRef.current) return
                   void handleOpenReader(book)
                 }}
               >
+                {activeCategory === TO_READ_BOOK_SHELF_ID && (
+                  <span
+                    className="book-shelf-card__drag-handle"
+                    aria-label={t('books.to_read_priority_hint')}
+                    title={t('books.to_read_priority_hint')}
+                  >
+                    <GripVertical size={16} aria-hidden="true" />
+                  </span>
+                )}
+                {activeCategory === TO_READ_BOOK_SHELF_ID && index === 0 && (
+                  <span className="book-shelf-card__next-up">{t('books.to_read_next')}</span>
+                )}
                 <div
                   className="book-actions"
                   style={{
@@ -2116,6 +2574,24 @@ export const Books: React.FC = () => {
 
             {/* Custom font and bg adjustments */}
             <div className="book-reader__toolbar">
+              <button
+                className="btn sm"
+                onClick={() => void handleTranslateSelection()}
+                title={t('books.ai_translate_shortcut', {
+                  shortcut: readerShortcuts.readerTranslate.replace('CommandOrControl', 'Ctrl'),
+                })}
+              >
+                <Languages size={12} /> {t('books.ai_translate')}
+              </button>
+              {isPdf && (
+                <button
+                  className="btn sm"
+                  onClick={requestPdfOcrForCurrentPage}
+                  title={t('books.ocr_shortcut', { shortcut: readerShortcuts.readerOcr })}
+                >
+                  <Languages size={12} /> {t('books.ocr_extract')}
+                </button>
+              )}
               <button className="btn sm" onClick={() => handleExportHighlights()}>
                 <ExternalLink size={12} /> {t('books.export_notes_btn')}
               </button>
@@ -2677,17 +3153,27 @@ export const Books: React.FC = () => {
                                   key={idx}
                                   className="react-pdf__Page"
                                   data-page-number={idx + 1}
+                                  style={{ position: 'relative' }}
                                 >
                                   <Page
                                     pageNumber={idx + 1}
                                     renderTextLayer={true}
                                     renderAnnotationLayer={false}
                                     width={pdfPageRenderWidth || undefined}
+                                    onRenderSuccess={() => handlePdfPageRendered(idx + 1)}
                                     loading={
                                       <div style={{ color: 'var(--text-muted)' }}>
                                         {t('books.pdf_rendering_page', { num: idx + 1 })}
                                       </div>
                                     }
+                                  />
+                                  <PdfOcrTextLayer
+                                    words={pdfOcrPages[idx + 1]?.data?.words || []}
+                                    status={pdfOcrPages[idx + 1]?.status || 'idle'}
+                                    onSelectArea={(area) => void handlePdfOcrAreaSelected(idx + 1, area)}
+                                    isRecognizingSelection={pdfOcrSelectionPage === idx + 1}
+                                    onRetry={() => void ensurePdfOcrPage(idx + 1)}
+                                    onFallback={handleOpenPdfOcrFallback}
                                   />
                                 </div>
                               )
@@ -2712,12 +3198,16 @@ export const Books: React.FC = () => {
                                   <div
                                     className="react-pdf__Page"
                                     data-page-number={currentPageIndex + 1}
+                                    style={{ position: 'relative' }}
                                   >
                                     <Page
                                       pageNumber={currentPageIndex + 1}
                                       renderTextLayer={true}
                                       renderAnnotationLayer={false}
                                       width={pdfPageRenderWidth || undefined}
+                                      onRenderSuccess={() =>
+                                        handlePdfPageRendered(currentPageIndex + 1)
+                                      }
                                       loading={
                                         <div style={{ color: 'var(--text-muted)' }}>
                                           {t('books.pdf_rendering_page', {
@@ -2726,17 +3216,29 @@ export const Books: React.FC = () => {
                                         </div>
                                       }
                                     />
+                                    <PdfOcrTextLayer
+                                      words={pdfOcrPages[currentPageIndex + 1]?.data?.words || []}
+                                      status={pdfOcrPages[currentPageIndex + 1]?.status || 'idle'}
+                                      onSelectArea={(area) => void handlePdfOcrAreaSelected(currentPageIndex + 1, area)}
+                                      isRecognizingSelection={pdfOcrSelectionPage === currentPageIndex + 1}
+                                      onRetry={() => void ensurePdfOcrPage(currentPageIndex + 1)}
+                                      onFallback={handleOpenPdfOcrFallback}
+                                    />
                                   </div>
                                   {currentPageIndex + 1 < pdfNumPages && (
                                     <div
                                       className="react-pdf__Page"
                                       data-page-number={currentPageIndex + 2}
+                                      style={{ position: 'relative' }}
                                     >
                                       <Page
                                         pageNumber={currentPageIndex + 2}
                                         renderTextLayer={true}
                                         renderAnnotationLayer={false}
                                         width={pdfPageRenderWidth || undefined}
+                                        onRenderSuccess={() =>
+                                          handlePdfPageRendered(currentPageIndex + 2)
+                                        }
                                         loading={
                                           <div style={{ color: 'var(--text-muted)' }}>
                                             {t('books.pdf_rendering_page', {
@@ -2745,23 +3247,46 @@ export const Books: React.FC = () => {
                                           </div>
                                         }
                                       />
+                                      <PdfOcrTextLayer
+                                        words={pdfOcrPages[currentPageIndex + 2]?.data?.words || []}
+                                        status={pdfOcrPages[currentPageIndex + 2]?.status || 'idle'}
+                                        onSelectArea={(area) => void handlePdfOcrAreaSelected(currentPageIndex + 2, area)}
+                                        isRecognizingSelection={pdfOcrSelectionPage === currentPageIndex + 2}
+                                        onRetry={() => void ensurePdfOcrPage(currentPageIndex + 2)}
+                                        onFallback={handleOpenPdfOcrFallback}
+                                      />
                                     </div>
                                   )}
                                 </div>
                               ) : (
-                                <Page
-                                  pageNumber={currentPageIndex + 1}
-                                  renderTextLayer={true}
-                                  renderAnnotationLayer={false}
-                                  width={pdfPageRenderWidth || undefined}
-                                  loading={
-                                    <div style={{ color: 'var(--text-muted)' }}>
-                                      {t('books.pdf_rendering_page', {
-                                        num: currentPageIndex + 1,
-                                      })}
-                                    </div>
-                                  }
-                                />
+                                <div
+                                  className="react-pdf__Page"
+                                  data-page-number={currentPageIndex + 1}
+                                  style={{ position: 'relative' }}
+                                >
+                                  <Page
+                                    pageNumber={currentPageIndex + 1}
+                                    renderTextLayer={true}
+                                    renderAnnotationLayer={false}
+                                    width={pdfPageRenderWidth || undefined}
+                                    onRenderSuccess={() => handlePdfPageRendered(currentPageIndex + 1)}
+                                    loading={
+                                      <div style={{ color: 'var(--text-muted)' }}>
+                                        {t('books.pdf_rendering_page', {
+                                          num: currentPageIndex + 1,
+                                        })}
+                                      </div>
+                                    }
+                                  />
+                                  <PdfOcrTextLayer
+                                    words={pdfOcrPages[currentPageIndex + 1]?.data?.words || []}
+                                    status={pdfOcrPages[currentPageIndex + 1]?.status || 'idle'}
+                                    onSelectArea={(area) => void handlePdfOcrAreaSelected(currentPageIndex + 1, area)}
+                                    isRecognizingSelection={pdfOcrSelectionPage === currentPageIndex + 1}
+                                    onRetry={() => void ensurePdfOcrPage(currentPageIndex + 1)}
+                                    onFallback={handleOpenPdfOcrFallback}
+                                  />
+                                </div>
                               )}
                             </div>
 
@@ -3063,6 +3588,54 @@ export const Books: React.FC = () => {
                         <strong>{t('books.selected_text_label')}：</strong>
                         <span style={{ fontStyle: 'italic' }}>"{selectedHighlightText}"</span>
                       </div>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <button
+                          className="btn sm"
+                          type="button"
+                          onClick={() => void handleTranslateSelection()}
+                          disabled={isTranslatingSelection}
+                          style={{ padding: '4px 8px', fontSize: '11px' }}
+                        >
+                          <Languages size={11} />{' '}
+                          {isTranslatingSelection
+                            ? t('books.ai_translating')
+                            : t('books.ai_translate')}
+                        </button>
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            color: isDarkReader ? '#888' : 'var(--text-muted)',
+                          }}
+                        >
+                          {t('books.ai_translate_shortcut', {
+                            shortcut: readerShortcuts.readerTranslate.replace(
+                              'CommandOrControl',
+                              'Ctrl',
+                            ),
+                          })}
+                        </span>
+                      </div>
+                      {aiTranslation && (
+                        <div
+                          style={{
+                            padding: '8px',
+                            borderRadius: '6px',
+                            background: isDarkReader ? '#202020' : '#f1f5f9',
+                            fontSize: '12px',
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          <strong>{t('books.ai_translation_label')}：</strong> {aiTranslation}
+                          <button
+                            className="btn sm"
+                            type="button"
+                            onClick={() => setNewAnnotation((current) => current || aiTranslation)}
+                            style={{ marginLeft: '8px', padding: '2px 6px', fontSize: '10px' }}
+                          >
+                            {t('books.ai_use_as_annotation')}
+                          </button>
+                        </div>
+                      )}
                       <input
                         ref={annotationInputRef}
                         className="form-field"
@@ -3196,6 +3769,15 @@ export const Books: React.FC = () => {
             )}
           </div>
         </div>
+        </ViewportPortal>
+      )}
+      {pdfOcrImageDataUrl && (
+        <ViewportPortal>
+          <PdfOcrOverlay
+            imageDataUrl={pdfOcrImageDataUrl}
+            onRecognized={handlePdfOcrRecognized}
+            onClose={() => setPdfOcrImageDataUrl(null)}
+          />
         </ViewportPortal>
       )}
 

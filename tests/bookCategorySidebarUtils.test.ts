@@ -7,6 +7,7 @@ import {
   getBookCategoryDescendantIds,
   getContextMenuPosition,
   isReservedBookCategory,
+  isToReadBookCategory,
 } from '../src/views/bookCategorySidebarUtils.ts'
 
 test('book shelf hierarchy flattens children in tree order and retains malformed rows', () => {
@@ -81,6 +82,10 @@ test('isReservedBookCategory recognizes reserved category names', () => {
   assert.equal(isReservedBookCategory(undefined), true)
   assert.equal(isReservedBookCategory('技术'), false)
   assert.equal(isReservedBookCategory('Design'), false)
+  assert.equal(isReservedBookCategory('待读'), true)
+  assert.equal(isReservedBookCategory('To Read'), true)
+  assert.equal(isToReadBookCategory(' 待读 '), true)
+  assert.equal(isToReadBookCategory('技术'), false)
 })
 
 test('getContextMenuPosition clamps a menu inside the viewport', () => {

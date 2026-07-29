@@ -7,6 +7,14 @@ import path from 'path'
 const copyPdfWorker = () => {
   const pdfWasmDir = path.resolve(process.cwd(), 'node_modules/pdfjs-dist/wasm')
   const wasmFiles = ['openjpeg.wasm', 'qcms_bg.wasm']
+  const ocrRuntimeDir = path.resolve(process.cwd(), 'node_modules/tesseract.js-core')
+  const ocrFiles = ['tesseract-core-simd-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm']
+  const ocrWorkerPath = path.resolve(process.cwd(), 'node_modules/tesseract.js/dist/worker.min.js')
+  const ocrKnownWarning = 'Warning: Parameter not found:'
+  const getOcrWorkerSource = () => {
+    const warningFilter = `;(()=>{const suppress=(method)=>{const original=console[method].bind(console);console[method]=(...args)=>{if(args.some((value)=>String(value).includes('${ocrKnownWarning}')))return;original(...args)}};suppress('log');suppress('info');suppress('warn');suppress('error')})();\n`
+    return Buffer.concat([Buffer.from(warningFilter), fs.readFileSync(ocrWorkerPath)])
+  }
 
   return {
     name: 'copy-pdf-runtime-files',
@@ -17,6 +25,21 @@ const copyPdfWorker = () => {
         const source = path.join(pdfWasmDir, fileName)
         if (!fs.existsSync(source)) return next()
         response.setHeader('Content-Type', 'application/wasm')
+        fs.createReadStream(source).pipe(response)
+      })
+      server.middlewares.use('/ocr', (request: any, response: any, next: Function) => {
+        const fileName = path.basename((request.url || '').split('?')[0])
+        if (fileName === 'worker.min.js') {
+          response.setHeader('Content-Type', 'application/javascript')
+          response.end(getOcrWorkerSource())
+          return
+        }
+        const source = ocrFiles.includes(fileName) ? path.join(ocrRuntimeDir, fileName) : null
+        if (!source || !fs.existsSync(source)) return next()
+        response.setHeader(
+          'Content-Type',
+          fileName.endsWith('.wasm') ? 'application/wasm' : 'application/javascript',
+        )
         fs.createReadStream(source).pipe(response)
       })
     },
@@ -41,6 +64,14 @@ const copyPdfWorker = () => {
         }
       }
       console.log('✓ Successfully copied PDF.js WASM files to dist/pdfjs/wasm/')
+
+      const ocrDestDir = path.resolve(process.cwd(), 'dist', 'ocr')
+      fs.mkdirSync(ocrDestDir, { recursive: true })
+      fs.writeFileSync(path.join(ocrDestDir, 'worker.min.js'), getOcrWorkerSource())
+      for (const fileName of ocrFiles) {
+        fs.copyFileSync(path.join(ocrRuntimeDir, fileName), path.join(ocrDestDir, fileName))
+      }
+      console.log('✓ Successfully copied OCR worker and WASM runtime files to dist/ocr/')
     },
   }
 }

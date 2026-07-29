@@ -1,3 +1,6 @@
+export const TO_READ_BOOK_CATEGORY = '待读'
+export const TO_READ_BOOK_SHELF_ID = 'to_read'
+
 const reservedBookCategories = new Set([
   '',
   '未分类',
@@ -7,6 +10,8 @@ const reservedBookCategories = new Set([
   'all',
   'uncategorized',
 ])
+
+const toReadBookCategories = new Set([TO_READ_BOOK_CATEGORY, 'To Read'])
 
 function normalizeCategoryId(value: unknown) {
   if (typeof value !== 'string' && typeof value !== 'number') return null
@@ -153,7 +158,12 @@ export function buildCategoryStorageAliasMap(
 }
 
 export function isReservedBookCategory(name?: string | null) {
-  return reservedBookCategories.has(name?.trim() ?? '')
+  const normalizedName = name?.trim() ?? ''
+  return reservedBookCategories.has(normalizedName) || toReadBookCategories.has(normalizedName)
+}
+
+export function isToReadBookCategory(name?: string | null) {
+  return toReadBookCategories.has(name?.trim() ?? '')
 }
 
 export function getContextMenuPosition({
