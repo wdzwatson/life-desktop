@@ -5,6 +5,7 @@ import { getConfiguredLocales } from '../localeRegistry'
 import { clampVideoConcurrentDownloads } from './videoLibraryUtils'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import { PasswordInput } from '../components/PasswordInput'
+import { displayShortcut, shortcutFromKeyboardEvent } from '../shortcutUtils'
 import {
   Palette,
   User,
@@ -31,24 +32,6 @@ const shortcutLabels: Record<ShortcutId, string> = {
   readerTranslate: 'settings.shortcut_reader_translate',
   readerAnnotate: 'settings.shortcut_reader_annotate',
   readerOcr: 'settings.shortcut_reader_ocr',
-}
-
-function displayShortcut(shortcut: string, isMac: boolean) {
-  return shortcut
-    .replace('CommandOrControl', isMac ? '⌘' : 'Ctrl')
-    .replaceAll('+', ' + ')
-}
-
-function shortcutFromKeyboardEvent(event: React.KeyboardEvent<HTMLInputElement>) {
-  const key = event.key.length === 1 ? event.key.toUpperCase() : event.key
-  if (['Control', 'Meta', 'Alt', 'Shift'].includes(key)) return null
-  const parts: string[] = []
-  if (event.ctrlKey || event.metaKey) parts.push('CommandOrControl')
-  if (event.altKey) parts.push('Alt')
-  if (event.shiftKey) parts.push('Shift')
-  if (parts.length === 0 && !/^F\d{1,2}$/.test(key)) return null
-  parts.push(key === ' ' ? 'Space' : key)
-  return parts.join('+')
 }
 
 interface UpdateInfo {

@@ -49,6 +49,7 @@ import { useConfirmation } from '../components/ConfirmationProvider'
 import { ViewportPortal } from '../components/ViewportPortal'
 import { PdfOcrOverlay } from '../components/PdfOcrOverlay'
 import { PdfOcrTextLayer, type PdfOcrSelectionArea } from '../components/PdfOcrTextLayer'
+import { matchesShortcut } from '../shortcutUtils'
 import { recognizePdfPage, type PdfOcrPage } from './pdfOcrService'
 import { getConfiguredLocales } from '../localeRegistry'
 import { getBookCoverUrl } from './bookCoverUtils'
@@ -87,18 +88,6 @@ type PdfOcrPageState = {
   status: 'idle' | 'loading' | 'ready' | 'error'
   data?: PdfOcrPage
   progressLabel?: string
-}
-
-function matchesShortcut(event: KeyboardEvent, shortcut: string) {
-  const parts = shortcut.toLowerCase().split('+')
-  const key = parts.at(-1)
-  const primary = parts.includes('commandorcontrol')
-  const hasAlt = parts.includes('alt')
-  const hasShift = parts.includes('shift')
-  if (primary !== (event.ctrlKey || event.metaKey) || hasAlt !== event.altKey || hasShift !== event.shiftKey) {
-    return false
-  }
-  return event.key.toLowerCase() === key
 }
 
 export const Books: React.FC = () => {
