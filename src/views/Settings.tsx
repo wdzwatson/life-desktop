@@ -5,7 +5,7 @@ import { getConfiguredLocales } from '../localeRegistry'
 import { clampVideoConcurrentDownloads } from './videoLibraryUtils'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import { PasswordInput } from '../components/PasswordInput'
-import { displayShortcut, shortcutFromKeyboardEvent } from '../shortcutUtils'
+import { displayShortcut, isShortcutModifierKey, shortcutFromKeyboardEvent } from '../shortcutUtils'
 import {
   Palette,
   User,
@@ -283,6 +283,15 @@ export const Settings: React.FC = () => {
 
   const handleShortcutChange = (id: ShortcutId, event: React.KeyboardEvent<HTMLInputElement>) => {
     event.preventDefault()
+    if (event.key === 'Escape') {
+      setShortcutError('')
+      event.currentTarget.blur()
+      return
+    }
+    if (isShortcutModifierKey(event.key)) {
+      setShortcutError('')
+      return
+    }
     const shortcut = shortcutFromKeyboardEvent(event)
     if (!shortcut) {
       setShortcutError(t('settings.shortcut_invalid'))

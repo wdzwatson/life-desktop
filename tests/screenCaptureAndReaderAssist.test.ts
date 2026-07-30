@@ -93,6 +93,8 @@ test('settings manages the shared shortcut set with duplicate prevention', () =>
   assert.match(settings, /shortcut_conflict/)
   assert.match(settings, /handleSaveShortcuts/)
   assert.match(settings, /shortcut_system_unavailable/)
+  assert.match(settings, /event\.key === 'Escape'/)
+  assert.match(settings, /isShortcutModifierKey/)
   assert.match(settings, /handleToggleReaderTranslation/)
   assert.match(settings, /reader_translation_enable/)
   assert.match(settings, /settings\.menu_shortcuts/)

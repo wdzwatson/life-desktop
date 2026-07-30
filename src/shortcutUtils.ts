@@ -36,6 +36,12 @@ const supportedSpecialKeys = new Set([
   'Return',
 ])
 
+const modifierKeys = new Set(['Control', 'Meta', 'Alt', 'Shift'])
+
+export function isShortcutModifierKey(key: string) {
+  return modifierKeys.has(key)
+}
+
 export function normalizeShortcutKey(key: string) {
   const trimmed = key.trim()
   const normalized = keyAliases[key] || keyAliases[trimmed.toLowerCase()] || trimmed
@@ -49,7 +55,7 @@ function isSupportedShortcutKey(key: string) {
 
 export function shortcutFromKeyboardEvent(event: ShortcutKeyboardEvent) {
   const key = normalizeShortcutKey(event.key)
-  if (['Control', 'Meta', 'Alt', 'Shift'].includes(key) || !isSupportedShortcutKey(key)) return null
+  if (isShortcutModifierKey(key) || !isSupportedShortcutKey(key)) return null
   const parts: string[] = []
   if (event.ctrlKey || event.metaKey) parts.push('CommandOrControl')
   if (event.altKey) parts.push('Alt')
