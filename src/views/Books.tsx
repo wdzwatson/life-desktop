@@ -286,6 +286,7 @@ export const Books: React.FC = () => {
   const [selectedHighlightText, setSelectedHighlightText] = useState('')
   const [aiTranslation, setAiTranslation] = useState('')
   const [isTranslatingSelection, setIsTranslatingSelection] = useState(false)
+  const translationRequestRef = useRef(0)
   const [readerShortcuts, setReaderShortcuts] = useState(DEFAULT_READER_SHORTCUTS)
   const [pdfOcrImageDataUrl, setPdfOcrImageDataUrl] = useState<string | null>(null)
   const [pdfOcrPages, setPdfOcrPages] = useState<Record<number, PdfOcrPageState>>({})
@@ -1379,6 +1380,7 @@ export const Books: React.FC = () => {
       showToast(t('books.ai_select_text_first'))
       return
     }
+    const requestId = ++translationRequestRef.current
     // Translation is the reader action that sends selected content off-device.
     const currentSettings = (await api?.getSettings?.()) as Record<string, unknown> | undefined
     if (currentSettings?.readerTranslationEnabled !== true) {
@@ -1391,16 +1393,18 @@ export const Books: React.FC = () => {
       if (!allowed) return
       await api?.saveSettings?.({ ...currentSettings, readerTranslationEnabled: true })
     }
+    if (requestId !== translationRequestRef.current) return
     setSelectedHighlightText(text)
     setIsAnnotationsDrawerOpen(true)
     setIsTranslatingSelection(true)
     setAiTranslation('')
     try {
       const result = await api?.translateReaderText?.({ text, targetLanguage: i18n.language })
+      if (requestId !== translationRequestRef.current) return
       if (result?.success) setAiTranslation(result.translation)
       else showToast(result?.error || t('books.ai_translate_failed'))
     } finally {
-      setIsTranslatingSelection(false)
+      if (requestId === translationRequestRef.current) setIsTranslatingSelection(false)
     }
   }
 

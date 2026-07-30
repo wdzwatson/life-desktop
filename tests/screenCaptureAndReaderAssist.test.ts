@@ -46,6 +46,8 @@ test('reader selection assistance exposes free translation and reusable annotati
   assert.match(main, /ipcMain\.handle\(\s*'reader:translate'/)
   assert.match(preload, /translateReaderText/)
   assert.match(books, /handleTranslateSelection/)
+  assert.match(books, /translationRequestRef/)
+  assert.match(books, /requestId !== translationRequestRef\.current/)
   assert.match(books, /readerTranslationEnabled/)
   assert.match(books, /ai_translation_consent_title/)
   assert.match(books, /ai_use_as_annotation/)
