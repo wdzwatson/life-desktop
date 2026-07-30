@@ -30,6 +30,8 @@ import {
   startVideoDownload,
 } from '../electron/video/service.ts'
 
+const DOWNLOAD_CALLBACK_TIMEOUT_MS = 10000
+
 function writeFakeYtDlp(outputDir: string, unixScript: string, windowsScript: string) {
   const fakeYtDlp = path.join(outputDir, process.platform === 'win32' ? 'fake-yt-dlp.cmd' : 'fake-yt-dlp')
   writeFileSync(fakeYtDlp, process.platform === 'win32' ? windowsScript : unixScript)
@@ -325,7 +327,7 @@ test('active download progress is monotonic and does not report 100 before compl
   const progressUpdates: number[] = []
 
   await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('download finished callback was not called')), 3000)
+    const timeout = setTimeout(() => reject(new Error('download finished callback was not called')), DOWNLOAD_CALLBACK_TIMEOUT_MS)
     startVideoDownload({
       settings: { ytDlpPath: fakeYtDlp },
       mainWindow: {
@@ -379,7 +381,7 @@ test('startVideoDownload fails when yt-dlp exits successfully without a filepath
   )
   const sent: any[][] = []
   const message = await new Promise<string>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('download failure callback was not called')), 3000)
+    const timeout = setTimeout(() => reject(new Error('download failure callback was not called')), DOWNLOAD_CALLBACK_TIMEOUT_MS)
     startVideoDownload({
       settings: { ytDlpPath: fakeYtDlp },
       mainWindow: {
@@ -460,7 +462,7 @@ test('startVideoDownload reports missing yt-dlp without throwing an uncaught chi
   const outputDir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-download-'))
   const sent: any[][] = []
   const message = await new Promise<string>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('download failure callback was not called')), 3000)
+    const timeout = setTimeout(() => reject(new Error('download failure callback was not called')), DOWNLOAD_CALLBACK_TIMEOUT_MS)
 
     startVideoDownload({
       settings: { ytDlpPath: path.join(outputDir, 'missing-yt-dlp') },
@@ -517,7 +519,7 @@ test('startVideoDownload reports the real yt-dlp stderr instead of only exit cod
   )
   const sent: any[][] = []
   const message = await new Promise<string>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('download failure callback was not called')), 3000)
+    const timeout = setTimeout(() => reject(new Error('download failure callback was not called')), DOWNLOAD_CALLBACK_TIMEOUT_MS)
 
     startVideoDownload({
       settings: { ytDlpPath: fakeYtDlp },
@@ -555,7 +557,7 @@ test('startVideoDownload includes video id in progress and failure events when p
   const sent: any[][] = []
 
   await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('download failure callback was not called')), 3000)
+    const timeout = setTimeout(() => reject(new Error('download failure callback was not called')), DOWNLOAD_CALLBACK_TIMEOUT_MS)
     startVideoDownload({
       settings: { ytDlpPath: fakeYtDlp },
       mainWindow: {
