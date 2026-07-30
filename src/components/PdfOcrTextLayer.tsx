@@ -15,6 +15,7 @@ type SelectionPoint = { x: number; y: number }
 export function PdfOcrTextLayer({
   words,
   status,
+  progressLabel,
   onSelectAreas,
   isRecognizingSelection = false,
   onClearSelection,
@@ -23,6 +24,7 @@ export function PdfOcrTextLayer({
 }: {
   words: PdfOcrWord[]
   status: 'idle' | 'loading' | 'ready' | 'error'
+  progressLabel?: string
   onSelectAreas: (areas: PdfOcrSelectionArea[]) => void
   isRecognizingSelection?: boolean
   onClearSelection?: () => void
@@ -193,7 +195,7 @@ export function PdfOcrTextLayer({
           pointerEvents: 'none',
         }}
       >
-        {t('books.ocr_recognizing_page')}
+        {progressLabel || t('books.ocr_recognizing_page')}
       </span>
     )
     if (status === 'error') return (

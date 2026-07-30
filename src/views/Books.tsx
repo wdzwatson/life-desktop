@@ -86,6 +86,7 @@ const PDF_OCR_ENGINE_VERSION = 'tesseract-v3'
 type PdfOcrPageState = {
   status: 'idle' | 'loading' | 'ready' | 'error'
   data?: PdfOcrPage
+  progressLabel?: string
 }
 
 function matchesShortcut(event: KeyboardEvent, shortcut: string) {
@@ -1440,6 +1441,18 @@ export const Books: React.FC = () => {
   const getPdfPageElement = (pageNumber: number) =>
     readerMainRef.current?.querySelector<HTMLElement>(`[data-page-number="${pageNumber}"]`)
 
+  const getPdfOcrProgressLabel = (status: string, progress?: number) => {
+    if (status === 'loading tesseract core') return t('books.ocr_modal_loading_engine')
+    if (status === 'loading language traineddata') {
+      return t('books.ocr_modal_downloading', { progress: Math.round((progress || 0) * 100) })
+    }
+    if (status === 'initializing tesseract') return t('books.ocr_modal_initializing')
+    if (status === 'recognizing text') {
+      return t('books.ocr_modal_recognizing_progress', { progress: Math.round((progress || 0) * 100) })
+    }
+    return t('books.ocr_recognizing_page')
+  }
+
   const ensurePdfOcrPage = async (pageNumber: number) => {
     if (!readingBook || pdfOcrInFlightRef.current.has(pageNumber)) return
     if (pdfOcrPages[pageNumber]?.status === 'ready') return
@@ -1448,7 +1461,10 @@ export const Books: React.FC = () => {
     if (!canvas || canvas.width === 0 || canvas.height === 0) return
 
     pdfOcrInFlightRef.current.add(pageNumber)
-    setPdfOcrPages((current) => ({ ...current, [pageNumber]: { status: 'loading' } }))
+    setPdfOcrPages((current) => ({
+      ...current,
+      [pageNumber]: { status: 'loading', progressLabel: t('books.ocr_modal_preparing') },
+    }))
     try {
       const cached = await api?.dbQuery(
         'books',
@@ -1466,11 +1482,14 @@ export const Books: React.FC = () => {
 
       const result = await recognizePdfPage(
         canvas.toDataURL('image/png'),
-        (status) => {
-          if (status === 'recognizing text') return
-          setPdfOcrPages((current) =>
-            current[pageNumber]?.status === 'loading' ? current : { ...current, [pageNumber]: { status: 'loading' } },
-          )
+        (status, progress) => {
+          setPdfOcrPages((current) => ({
+            ...current,
+            [pageNumber]: {
+              status: 'loading',
+              progressLabel: getPdfOcrProgressLabel(status, progress),
+            },
+          }))
         },
         { priority: 'background' },
       )
@@ -3239,6 +3258,7 @@ export const Books: React.FC = () => {
                                   <PdfOcrTextLayer
                                     words={pdfOcrPages[idx + 1]?.data?.words || []}
                                     status={pdfOcrPages[idx + 1]?.status || 'idle'}
+                                    progressLabel={pdfOcrPages[idx + 1]?.progressLabel}
                                     onSelectAreas={(areas) => void handlePdfOcrAreasSelected(idx + 1, areas)}
                                     isRecognizingSelection={pdfOcrSelectionPage === idx + 1}
                                     onClearSelection={cancelPdfOcrSelection}
@@ -3289,6 +3309,7 @@ export const Books: React.FC = () => {
                                     <PdfOcrTextLayer
                                       words={pdfOcrPages[currentPageIndex + 1]?.data?.words || []}
                                       status={pdfOcrPages[currentPageIndex + 1]?.status || 'idle'}
+                                      progressLabel={pdfOcrPages[currentPageIndex + 1]?.progressLabel}
                                       onSelectAreas={(areas) => void handlePdfOcrAreasSelected(currentPageIndex + 1, areas)}
                                       isRecognizingSelection={pdfOcrSelectionPage === currentPageIndex + 1}
                                       onClearSelection={cancelPdfOcrSelection}
@@ -3321,6 +3342,7 @@ export const Books: React.FC = () => {
                                       <PdfOcrTextLayer
                                         words={pdfOcrPages[currentPageIndex + 2]?.data?.words || []}
                                         status={pdfOcrPages[currentPageIndex + 2]?.status || 'idle'}
+                                        progressLabel={pdfOcrPages[currentPageIndex + 2]?.progressLabel}
                                         onSelectAreas={(areas) => void handlePdfOcrAreasSelected(currentPageIndex + 2, areas)}
                                         isRecognizingSelection={pdfOcrSelectionPage === currentPageIndex + 2}
                                         onClearSelection={cancelPdfOcrSelection}
@@ -3353,6 +3375,7 @@ export const Books: React.FC = () => {
                                   <PdfOcrTextLayer
                                     words={pdfOcrPages[currentPageIndex + 1]?.data?.words || []}
                                     status={pdfOcrPages[currentPageIndex + 1]?.status || 'idle'}
+                                    progressLabel={pdfOcrPages[currentPageIndex + 1]?.progressLabel}
                                     onSelectAreas={(areas) => void handlePdfOcrAreasSelected(currentPageIndex + 1, areas)}
                                     isRecognizingSelection={pdfOcrSelectionPage === currentPageIndex + 1}
                                     onClearSelection={cancelPdfOcrSelection}
