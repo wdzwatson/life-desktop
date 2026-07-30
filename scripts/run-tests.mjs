@@ -43,13 +43,21 @@ const nodeTests = allTests.filter((file) => !electronNodeTests.has(file))
 const nodeTestBatchSize = 12
 
 function run(command, args, options = {}) {
+  const { timeoutMs, ...spawnOptions } = options
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: 'inherit',
-      ...options,
+      ...spawnOptions,
     })
+    const timeout = timeoutMs
+      ? setTimeout(() => {
+          child.kill()
+          reject(new Error(`${command} timed out after ${timeoutMs}ms`))
+        }, timeoutMs)
+      : null
 
     child.on('exit', (code, signal) => {
+      if (timeout) clearTimeout(timeout)
       if (signal) {
         reject(new Error(`${command} was terminated by ${signal}`))
         return
@@ -73,10 +81,12 @@ for (let start = 0; start < nodeTests.length; start += nodeTestBatchSize) {
 
 for (const testFile of electronNodeTests) {
   if (!allTests.includes(testFile)) continue
-  await run(electronPath, ['--import', 'tsx', '--test', testFile], {
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
-    },
-  })
+  const options = { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeoutMs: 60000 }
+  try {
+    await run(electronPath, ['--import', 'tsx', '--test', testFile], options)
+  } catch (error) {
+    if (!String(error).includes('timed out')) throw error
+    console.warn(`Retrying timed out Electron test: ${testFile}`)
+    await run(electronPath, ['--import', 'tsx', '--test', testFile], options)
+  }
 }
