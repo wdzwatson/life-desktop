@@ -49,6 +49,8 @@ test('reader selection assistance exposes free translation and reusable annotati
   assert.match(books, /handleOpenPdfOcrFallback/)
   assert.match(books, /handlePdfOcrAreasSelected/)
   assert.match(books, /reader-shortcuts:changed/)
+  assert.match(books, /e\.isComposing/)
+  assert.match(books, /input, textarea, select, button/)
   assert.match(books, /handlePdfOcrRecognized\(text\)/)
   assert.doesNotMatch(books, /cropped\.toDataURL\('image\/png'\)/)
   assert.match(books, /ensurePdfOcrPage\(currentPageIndex \+ 1\)/)

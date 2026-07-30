@@ -1686,9 +1686,11 @@ export const Books: React.FC = () => {
     if (!readingBook) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const activeElement = document.activeElement
       if (
-        document.activeElement?.tagName === 'INPUT' ||
-        document.activeElement?.tagName === 'TEXTAREA'
+        e.isComposing ||
+        activeElement?.matches('input, textarea, select, button, [contenteditable="true"]') ||
+        activeElement?.closest('[contenteditable="true"]')
       ) {
         return
       }
