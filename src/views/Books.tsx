@@ -1523,65 +1523,19 @@ export const Books: React.FC = () => {
     setPdfOcrSelectionPage(null)
   }
 
-  const handlePdfOcrAreasSelected = async (pageNumber: number, areas: PdfOcrSelectionArea[]) => {
-    if (pdfOcrSelectionAbortRef.current || areas.length === 0) return
-    const source = getPdfPageElement(pageNumber)?.querySelector<HTMLCanvasElement>('canvas')
-    if (!source || source.width === 0 || source.height === 0) {
-      showToast(t('books.ocr_page_not_ready'))
+  const handlePdfOcrAreasSelected = (
+    _pageNumber: number,
+    _areas: PdfOcrSelectionArea[],
+    selectedText: string,
+  ) => {
+    const text = selectedText.replace(/\s+/g, ' ').trim()
+    if (!text) {
+      showToast(t('books.ocr_selection_empty'))
       return
     }
-
-    // Compose only the selected line segments. This keeps the OCR image aligned
-    // with the visible word selection instead of recognizing its outer rectangle.
-    const paddingX = 10
-    const paddingY = 6
-    const crops = areas.map((area) => {
-      const x = Math.max(0, Math.floor(area.x * source.width - paddingX))
-      const y = Math.max(0, Math.floor(area.y * source.height - paddingY))
-      const right = Math.min(source.width, Math.ceil((area.x + area.width) * source.width + paddingX))
-      const bottom = Math.min(source.height, Math.ceil((area.y + area.height) * source.height + paddingY))
-      return { x, y, width: right - x, height: bottom - y }
-    }).filter((crop) => crop.width > 0 && crop.height > 0)
-    if (crops.length === 0) return
-
-    const cropped = document.createElement('canvas')
-    cropped.width = Math.max(...crops.map((crop) => crop.width))
-    cropped.height = crops.reduce((height, crop) => height + crop.height, 0) + Math.max(0, crops.length - 1) * 12
-    const context = cropped.getContext('2d')
-    if (!context) return
-    context.fillStyle = '#fff'
-    context.fillRect(0, 0, cropped.width, cropped.height)
-    let offsetY = 0
-    for (const crop of crops) {
-      context.drawImage(source, crop.x, crop.y, crop.width, crop.height, 0, offsetY, crop.width, crop.height)
-      offsetY += crop.height + 12
-    }
-
-    const controller = new AbortController()
-    pdfOcrSelectionAbortRef.current = controller
-    setPdfOcrSelectionPage(pageNumber)
-    try {
-      const result = await recognizePdfPage(
-        cropped.toDataURL('image/png'),
-        () => {},
-        { priority: 'user', signal: controller.signal },
-      )
-      if (controller.signal.aborted) return
-      if (!result.text) {
-        showToast(t('books.ocr_selection_empty'))
-        return
-      }
-      handlePdfOcrRecognized(result.text)
-    } catch (error) {
-      if (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return
-      console.warn('Selected PDF area OCR failed:', error)
-      showToast(t('books.ocr_selection_failed'))
-    } finally {
-      if (pdfOcrSelectionAbortRef.current === controller) {
-        pdfOcrSelectionAbortRef.current = null
-        setPdfOcrSelectionPage(null)
-      }
-    }
+    // The user has selected words from the page-level OCR result already.
+    // Re-running OCR on a cropped image adds latency and can alter that text.
+    handlePdfOcrRecognized(text)
   }
 
   const handlePdfPageRendered = (pageNumber: number) => {
@@ -3259,7 +3213,7 @@ export const Books: React.FC = () => {
                                     words={pdfOcrPages[idx + 1]?.data?.words || []}
                                     status={pdfOcrPages[idx + 1]?.status || 'idle'}
                                     progressLabel={pdfOcrPages[idx + 1]?.progressLabel}
-                                    onSelectAreas={(areas) => void handlePdfOcrAreasSelected(idx + 1, areas)}
+                                    onSelectAreas={(areas, selectedText) => void handlePdfOcrAreasSelected(idx + 1, areas, selectedText)}
                                     isRecognizingSelection={pdfOcrSelectionPage === idx + 1}
                                     onClearSelection={cancelPdfOcrSelection}
                                     onRetry={() => void ensurePdfOcrPage(idx + 1)}
@@ -3310,7 +3264,7 @@ export const Books: React.FC = () => {
                                       words={pdfOcrPages[currentPageIndex + 1]?.data?.words || []}
                                       status={pdfOcrPages[currentPageIndex + 1]?.status || 'idle'}
                                       progressLabel={pdfOcrPages[currentPageIndex + 1]?.progressLabel}
-                                      onSelectAreas={(areas) => void handlePdfOcrAreasSelected(currentPageIndex + 1, areas)}
+                                      onSelectAreas={(areas, selectedText) => void handlePdfOcrAreasSelected(currentPageIndex + 1, areas, selectedText)}
                                       isRecognizingSelection={pdfOcrSelectionPage === currentPageIndex + 1}
                                       onClearSelection={cancelPdfOcrSelection}
                                       onRetry={() => void ensurePdfOcrPage(currentPageIndex + 1)}
@@ -3343,7 +3297,7 @@ export const Books: React.FC = () => {
                                         words={pdfOcrPages[currentPageIndex + 2]?.data?.words || []}
                                         status={pdfOcrPages[currentPageIndex + 2]?.status || 'idle'}
                                         progressLabel={pdfOcrPages[currentPageIndex + 2]?.progressLabel}
-                                        onSelectAreas={(areas) => void handlePdfOcrAreasSelected(currentPageIndex + 2, areas)}
+                                        onSelectAreas={(areas, selectedText) => void handlePdfOcrAreasSelected(currentPageIndex + 2, areas, selectedText)}
                                         isRecognizingSelection={pdfOcrSelectionPage === currentPageIndex + 2}
                                         onClearSelection={cancelPdfOcrSelection}
                                         onRetry={() => void ensurePdfOcrPage(currentPageIndex + 2)}
@@ -3376,7 +3330,7 @@ export const Books: React.FC = () => {
                                     words={pdfOcrPages[currentPageIndex + 1]?.data?.words || []}
                                     status={pdfOcrPages[currentPageIndex + 1]?.status || 'idle'}
                                     progressLabel={pdfOcrPages[currentPageIndex + 1]?.progressLabel}
-                                    onSelectAreas={(areas) => void handlePdfOcrAreasSelected(currentPageIndex + 1, areas)}
+                                    onSelectAreas={(areas, selectedText) => void handlePdfOcrAreasSelected(currentPageIndex + 1, areas, selectedText)}
                                     isRecognizingSelection={pdfOcrSelectionPage === currentPageIndex + 1}
                                     onClearSelection={cancelPdfOcrSelection}
                                     onRetry={() => void ensurePdfOcrPage(currentPageIndex + 1)}

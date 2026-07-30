@@ -25,7 +25,7 @@ export function PdfOcrTextLayer({
   words: PdfOcrWord[]
   status: 'idle' | 'loading' | 'ready' | 'error'
   progressLabel?: string
-  onSelectAreas: (areas: PdfOcrSelectionArea[]) => void
+  onSelectAreas: (areas: PdfOcrSelectionArea[], selectedText: string) => void
   isRecognizingSelection?: boolean
   onClearSelection?: () => void
   onRetry?: () => void
@@ -133,6 +133,14 @@ export function PdfOcrTextLayer({
 
   const highlightRows = getSelectionRows(selectedIndexes)
 
+  const getSelectedText = (indexes: Set<number>) =>
+    getSelectionRows(indexes)
+      .sort((left, right) => left.centerY - right.centerY || left.x - right.x)
+      .map((row) => row.words.sort((left, right) => left.x - right.x).map((word) => word.text).join(' '))
+      .join('\n')
+      .replace(/\s+/g, ' ')
+      .trim()
+
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     // OCR selection is deliberately a primary-button gesture. Secondary
     // clicks are reserved for dismissing an existing selection below.
@@ -168,7 +176,8 @@ export function PdfOcrTextLayer({
     const indexes = getRangeIndexes(startIndex, endIndex)
     setSelectedIndexes(indexes)
     const areas = getSelectionRows(indexes).map(({ x, y, width, height }) => ({ x, y, width, height }))
-    if (areas.length > 0) onSelectAreas(areas)
+    const selectedText = getSelectedText(indexes)
+    if (areas.length > 0 && selectedText) onSelectAreas(areas, selectedText)
   }
 
   const handleContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
