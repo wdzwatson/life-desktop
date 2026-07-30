@@ -300,9 +300,7 @@ export const Books: React.FC = () => {
   const [readerShortcuts, setReaderShortcuts] = useState(DEFAULT_READER_SHORTCUTS)
   const [pdfOcrImageDataUrl, setPdfOcrImageDataUrl] = useState<string | null>(null)
   const [pdfOcrPages, setPdfOcrPages] = useState<Record<number, PdfOcrPageState>>({})
-  const [pdfOcrSelectionPage, setPdfOcrSelectionPage] = useState<number | null>(null)
   const pdfOcrInFlightRef = useRef(new Set<number>())
-  const pdfOcrSelectionAbortRef = useRef<AbortController | null>(null)
   const [isTocDrawerOpen, setIsTocDrawerOpen] = useState(false)
   const [isAnnotationsDrawerOpen, setIsAnnotationsDrawerOpen] = useState(false)
   const [readerMainWidth, setReaderMainWidth] = useState(0)
@@ -1183,9 +1181,6 @@ export const Books: React.FC = () => {
     setBookToc(null)
     setPdfOcrPages({})
     pdfOcrInFlightRef.current.clear()
-    pdfOcrSelectionAbortRef.current?.abort()
-    pdfOcrSelectionAbortRef.current = null
-    setPdfOcrSelectionPage(null)
     setCurrentChapterIndex(0)
     setCurrentParagraphOffset(0)
     setPdfData(null)
@@ -1515,12 +1510,6 @@ export const Books: React.FC = () => {
     } finally {
       pdfOcrInFlightRef.current.delete(pageNumber)
     }
-  }
-
-  const cancelPdfOcrSelection = () => {
-    pdfOcrSelectionAbortRef.current?.abort()
-    pdfOcrSelectionAbortRef.current = null
-    setPdfOcrSelectionPage(null)
   }
 
   const handlePdfOcrAreasSelected = (
@@ -3214,8 +3203,6 @@ export const Books: React.FC = () => {
                                     status={pdfOcrPages[idx + 1]?.status || 'idle'}
                                     progressLabel={pdfOcrPages[idx + 1]?.progressLabel}
                                     onSelectAreas={(areas, selectedText) => void handlePdfOcrAreasSelected(idx + 1, areas, selectedText)}
-                                    isRecognizingSelection={pdfOcrSelectionPage === idx + 1}
-                                    onClearSelection={cancelPdfOcrSelection}
                                     onRetry={() => void ensurePdfOcrPage(idx + 1)}
                                     onFallback={handleOpenPdfOcrFallback}
                                   />
@@ -3265,8 +3252,6 @@ export const Books: React.FC = () => {
                                       status={pdfOcrPages[currentPageIndex + 1]?.status || 'idle'}
                                       progressLabel={pdfOcrPages[currentPageIndex + 1]?.progressLabel}
                                       onSelectAreas={(areas, selectedText) => void handlePdfOcrAreasSelected(currentPageIndex + 1, areas, selectedText)}
-                                      isRecognizingSelection={pdfOcrSelectionPage === currentPageIndex + 1}
-                                      onClearSelection={cancelPdfOcrSelection}
                                       onRetry={() => void ensurePdfOcrPage(currentPageIndex + 1)}
                                       onFallback={handleOpenPdfOcrFallback}
                                     />
@@ -3298,8 +3283,6 @@ export const Books: React.FC = () => {
                                         status={pdfOcrPages[currentPageIndex + 2]?.status || 'idle'}
                                         progressLabel={pdfOcrPages[currentPageIndex + 2]?.progressLabel}
                                         onSelectAreas={(areas, selectedText) => void handlePdfOcrAreasSelected(currentPageIndex + 2, areas, selectedText)}
-                                        isRecognizingSelection={pdfOcrSelectionPage === currentPageIndex + 2}
-                                        onClearSelection={cancelPdfOcrSelection}
                                         onRetry={() => void ensurePdfOcrPage(currentPageIndex + 2)}
                                         onFallback={handleOpenPdfOcrFallback}
                                       />
@@ -3331,8 +3314,6 @@ export const Books: React.FC = () => {
                                     status={pdfOcrPages[currentPageIndex + 1]?.status || 'idle'}
                                     progressLabel={pdfOcrPages[currentPageIndex + 1]?.progressLabel}
                                     onSelectAreas={(areas, selectedText) => void handlePdfOcrAreasSelected(currentPageIndex + 1, areas, selectedText)}
-                                    isRecognizingSelection={pdfOcrSelectionPage === currentPageIndex + 1}
-                                    onClearSelection={cancelPdfOcrSelection}
                                     onRetry={() => void ensurePdfOcrPage(currentPageIndex + 1)}
                                     onFallback={handleOpenPdfOcrFallback}
                                   />

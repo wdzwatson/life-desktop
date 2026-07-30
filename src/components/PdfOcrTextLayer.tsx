@@ -17,8 +17,6 @@ export function PdfOcrTextLayer({
   status,
   progressLabel,
   onSelectAreas,
-  isRecognizingSelection = false,
-  onClearSelection,
   onRetry,
   onFallback,
 }: {
@@ -26,8 +24,6 @@ export function PdfOcrTextLayer({
   status: 'idle' | 'loading' | 'ready' | 'error'
   progressLabel?: string
   onSelectAreas: (areas: PdfOcrSelectionArea[], selectedText: string) => void
-  isRecognizingSelection?: boolean
-  onClearSelection?: () => void
   onRetry?: () => void
   onFallback?: () => void
 }) {
@@ -43,11 +39,10 @@ export function PdfOcrTextLayer({
       event.preventDefault()
       dragStartIndexRef.current = null
       setSelectedIndexes(new Set())
-      onClearSelection?.()
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onClearSelection, selectedIndexes])
+  }, [selectedIndexes])
 
   const pointFromEvent = (event: { clientX: number; clientY: number }): SelectionPoint | null => {
     const bounds = layerRef.current?.getBoundingClientRect()
@@ -144,7 +139,7 @@ export function PdfOcrTextLayer({
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     // OCR selection is deliberately a primary-button gesture. Secondary
     // clicks are reserved for dismissing an existing selection below.
-    if (isRecognizingSelection || event.button !== 0) return
+    if (event.button !== 0) return
     const start = pointFromEvent(event)
     if (!start) return
     const startIndex = getWordIndexAtPoint(start)
@@ -190,7 +185,6 @@ export function PdfOcrTextLayer({
     if (wordIndex < 0 || !selectedIndexes.has(wordIndex)) {
       dragStartIndexRef.current = null
       setSelectedIndexes(new Set())
-      onClearSelection?.()
     }
   }
 
@@ -232,7 +226,7 @@ export function PdfOcrTextLayer({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onContextMenu={handleContextMenu}
-      style={{ position: 'absolute', inset: 0, zIndex: 3, cursor: isRecognizingSelection ? 'wait' : 'text', touchAction: 'none' }}
+      style={{ position: 'absolute', inset: 0, zIndex: 3, cursor: 'text', touchAction: 'none' }}
     >
       {highlightRows.map((row, index) => (
         <div
@@ -246,18 +240,6 @@ export function PdfOcrTextLayer({
           }}
         />
       ))}
-      {isRecognizingSelection && (
-        <span
-          role="status"
-          style={{
-            position: 'absolute', right: 8, top: 8, zIndex: 4, padding: '3px 6px',
-            borderRadius: 4, background: 'rgba(15, 23, 42, .8)', color: '#fff', fontSize: 10,
-            pointerEvents: 'none',
-          }}
-        >
-          {t('books.ocr_recognizing_selection')}
-        </span>
-      )}
     </div>
   )
 }
