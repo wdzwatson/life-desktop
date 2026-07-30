@@ -210,9 +210,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   revealVaultCredential: (id: number) => ipcRenderer.invoke('vault:reveal', id),
   deleteVaultCredential: (id: number) => ipcRenderer.invoke('vault:delete', id),
 
-  // Note Export IPC Bridge
+  // Note export and attachment IPC Bridge
   exportNote: (data: { title: string; content: string; htmlContent: string; format: string }) =>
     ipcRenderer.invoke('note:export', data),
+  selectNoteAttachments: () => ipcRenderer.invoke('note:attachments:select'),
+  saveNotePastedImage: (data: { dataUrl: string; fileName?: string }) =>
+    ipcRenderer.invoke('note:attachments:pasteImage', data),
+  openNoteAttachment: (url: string) => ipcRenderer.invoke('note:attachments:open', { url }),
 
   selectBookFile: () => ipcRenderer.invoke('book:select-file'),
   selectBookBatchFiles: () => ipcRenderer.invoke('book:batch-select-books'),

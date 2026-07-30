@@ -39,6 +39,13 @@ import {
 } from '../src/views/bookReaderUtils'
 import { handleBookCoverProtocolRequest } from './bookCoverProtocol'
 import {
+  getNoteAssetRelativePath,
+  getNoteAssetUrl,
+  handleNoteAssetProtocolRequest,
+  isNoteImageFile,
+  resolveNoteAssetPath,
+} from './noteAssetProtocol'
+import {
   buildBatchImportItems,
   createManagedBookCover,
   importBookBatch,
@@ -321,6 +328,14 @@ protocol.registerSchemesAsPrivileged([
   },
   {
     scheme: 'life-book-cover',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+    },
+  },
+  {
+    scheme: 'life-note-asset',
     privileges: {
       standard: true,
       secure: true,
@@ -1228,6 +1243,72 @@ function getActiveUserFilesDir() {
   return path.join(BASE_DIR, 'users', activeUserId, 'files')
 }
 
+function getActiveUserNoteAssetsDir() {
+  return path.join(getActiveUserFilesDir(), 'notes')
+}
+
+function sanitizeNoteAttachmentName(value: string) {
+  const fileName = path
+    .basename(value)
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .split('')
+    .filter((character) => character.charCodeAt(0) >= 32)
+    .join('')
+    .replace(/[. ]+$/g, '')
+    .trim()
+  return fileName.slice(0, 160) || 'attachment'
+}
+
+function createStoredNoteAttachment(storedName: string, originalName: string) {
+  const url = getNoteAssetUrl(storedName)
+  if (!url) throw new Error('Unable to create a safe note attachment URL.')
+  return {
+    name: originalName,
+    url,
+    kind: isNoteImageFile(storedName) ? 'image' : 'file',
+  }
+}
+
+async function copyNoteAttachment(sourcePath: string) {
+  const sourceStat = await fs.promises.stat(sourcePath)
+  if (!sourceStat.isFile()) throw new Error('Only files can be attached to a note.')
+  if (sourceStat.size > 50 * 1024 * 1024)
+    throw new Error('Note attachments must be 50 MB or smaller.')
+
+  const originalName = sanitizeNoteAttachmentName(path.basename(sourcePath))
+  const storedName = `${crypto.randomUUID()}-${originalName}`
+  const targetDir = getActiveUserNoteAssetsDir()
+  await fs.promises.mkdir(targetDir, { recursive: true })
+  await fs.promises.copyFile(sourcePath, path.join(targetDir, storedName))
+  return createStoredNoteAttachment(storedName, originalName)
+}
+
+async function storePastedNoteImage(input: { dataUrl: unknown; fileName?: unknown }) {
+  if (typeof input.dataUrl !== 'string') throw new Error('The pasted image is invalid.')
+  const match = /^data:(image\/(?:png|jpeg|gif|webp));base64,([a-z0-9+/=\s]+)$/i.exec(input.dataUrl)
+  if (!match) throw new Error('Only PNG, JPEG, GIF, and WebP images can be pasted into a note.')
+
+  const bytes = Buffer.from(match[2].replace(/\s/g, ''), 'base64')
+  if (bytes.length === 0 || bytes.length > 50 * 1024 * 1024) {
+    throw new Error('The pasted image must be between 1 byte and 50 MB.')
+  }
+  const extensionByMime: Record<string, string> = {
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+  }
+  const extension = extensionByMime[match[1].toLowerCase()]
+  const requestedName = typeof input.fileName === 'string' ? input.fileName : ''
+  const baseName = path.basename(requestedName, path.extname(requestedName)) || 'pasted-image'
+  const originalName = sanitizeNoteAttachmentName(`${baseName}${extension}`)
+  const storedName = `${crypto.randomUUID()}-${originalName}`
+  const targetDir = getActiveUserNoteAssetsDir()
+  await fs.promises.mkdir(targetDir, { recursive: true })
+  await fs.promises.writeFile(path.join(targetDir, storedName), bytes)
+  return createStoredNoteAttachment(storedName, originalName)
+}
+
 function removeDouyinFavoriteFiles(db: Database.Database, itemIds?: number[]) {
   const rows = itemIds
     ? (() => {
@@ -1332,6 +1413,12 @@ function setupAIMediaProtocol() {
 function setupBookCoverProtocol() {
   protocol.handle('life-book-cover', (request) =>
     handleBookCoverProtocolRequest({ request, filesRoot: getActiveUserFilesDir() }),
+  )
+}
+
+function setupNoteAssetProtocol() {
+  protocol.handle('life-note-asset', (request) =>
+    handleNoteAssetProtocolRequest({ request, filesRoot: getActiveUserFilesDir() }),
   )
 }
 
@@ -1701,6 +1788,7 @@ app.whenReady().then(() => {
   setupVideoProtocol()
   setupAIMediaProtocol()
   setupBookCoverProtocol()
+  setupNoteAssetProtocol()
   configureApplicationMenu()
   createWindow()
   createDesktopTaskNoteWindow()
@@ -1818,6 +1906,56 @@ ipcMain.handle('ai:attachments:select', async () => {
         ? error.detail
         : { code: 'storage_error', message: 'The attachment could not be added.', retryable: false }
     return { success: false, error: detail }
+  }
+})
+
+ipcMain.handle('note:attachments:select', async () => {
+  try {
+    const options = {
+      properties: ['openFile', 'multiSelections'] as Array<'openFile' | 'multiSelections'>,
+    }
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options)
+    if (result.canceled) return { success: true, data: [] }
+    return { success: true, data: await Promise.all(result.filePaths.map(copyNoteAttachment)) }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unable to add attachment.',
+    }
+  }
+})
+
+ipcMain.handle(
+  'note:attachments:pasteImage',
+  async (_event, input: { dataUrl?: unknown; fileName?: unknown }) => {
+    try {
+      return { success: true, data: await storePastedNoteImage(input || {}) }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unable to add pasted image.',
+      }
+    }
+  },
+)
+
+ipcMain.handle('note:attachments:open', async (_event, payload: { url?: unknown }) => {
+  try {
+    if (typeof payload?.url !== 'string') throw new Error('The attachment URL is invalid.')
+    const relativePath = getNoteAssetRelativePath(payload.url)
+    if (!relativePath) throw new Error('The attachment URL is invalid.')
+    const filePath = await resolveNoteAssetPath(getActiveUserFilesDir(), relativePath)
+    if (!filePath) throw new Error('The attachment could not be found.')
+    const openError = await shell.openPath(filePath)
+    if (openError) throw new Error(openError)
+    return { success: true }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unable to open attachment.',
+    }
   }
 })
 

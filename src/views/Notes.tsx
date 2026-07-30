@@ -11,12 +11,19 @@ import {
   Trash2,
   Download,
   Languages,
+  Paperclip,
 } from 'lucide-react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { getConfiguredLocales } from '../localeRegistry'
 import { ViewportPortal } from '../components/ViewportPortal'
 import { NotebookSidebar } from './NotebookSidebar'
+import {
+  clampNoteImageDimension,
+  renderSizedNoteImages,
+  updateNoteImageDimensions as updateNoteImageDimensionsInContent,
+  type NoteImageDimensions,
+} from './noteImageSizing'
 import {
   ALL_NOTES_SCOPE,
   UNCATEGORIZED_NOTEBOOK,
@@ -51,6 +58,31 @@ interface DBResponse {
   error?: string
 }
 
+interface NoteAttachment {
+  name: string
+  url: string
+  kind: 'image' | 'file'
+}
+
+interface NoteAttachmentResponse<T> {
+  success: boolean
+  data?: T
+  error?: string
+}
+
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Unable to read the pasted image.'))
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result)
+      else reject(new Error('Unable to read the pasted image.'))
+    }
+    reader.readAsDataURL(file)
+  })
+
+const escapeMarkdownLabel = (value: string) => value.replace(/([\\[\\]])/g, '\\$1')
+
 interface ElectronAPI {
   dbQuery: (dbName: string, sql: string, params?: unknown[]) => Promise<DBResponse>
   dbTransaction?: (
@@ -63,6 +95,12 @@ interface ElectronAPI {
     htmlContent: string
     format: string
   }) => Promise<{ success: boolean; filePath?: string; error?: string }>
+  selectNoteAttachments?: () => Promise<NoteAttachmentResponse<NoteAttachment[]>>
+  saveNotePastedImage?: (data: {
+    dataUrl: string
+    fileName?: string
+  }) => Promise<NoteAttachmentResponse<NoteAttachment>>
+  openNoteAttachment?: (url: string) => Promise<{ success: boolean; error?: string }>
 }
 
 export const Notes: React.FC = () => {
@@ -83,7 +121,10 @@ export const Notes: React.FC = () => {
   const [viewMode, setViewMode] = useState<'edit' | 'split' | 'preview'>('split')
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const [isAttaching, setIsAttaching] = useState(false)
+  const [selectedNoteImage, setSelectedNoteImage] = useState<NoteImageDimensions | null>(null)
   const exportDropdownRef = useRef<HTMLDivElement | null>(null)
+  const editorRef = useRef<HTMLTextAreaElement | null>(null)
 
   // Notebook Modal States
   const [isNbModalOpen, setIsNbModalOpen] = useState(false)
@@ -279,6 +320,100 @@ export const Notes: React.FC = () => {
     if (res?.success) {
       showToast(t('notes.toast_saved'))
       loadNotes()
+    }
+  }
+
+  const insertAttachments = useCallback(
+    async (attachments: NoteAttachment[]) => {
+      if (!api || !activeNoteId || attachments.length === 0) return
+
+      const textarea = editorRef.current
+      const selectionStart = textarea?.selectionStart ?? noteContent.length
+      const selectionEnd = textarea?.selectionEnd ?? noteContent.length
+      const before = noteContent.slice(0, selectionStart)
+      const after = noteContent.slice(selectionEnd)
+      const markdown = attachments
+        .map((attachment) => {
+          const label = escapeMarkdownLabel(attachment.name)
+          return attachment.kind === 'image'
+            ? `![${label}](${attachment.url})`
+            : `[📎 ${label}](${attachment.url})`
+        })
+        .join('\n')
+      const prefix = before && !before.endsWith('\n') ? '\n\n' : ''
+      const suffix = after && !after.startsWith('\n') ? '\n\n' : ''
+      const nextContent = `${before}${prefix}${markdown}${suffix}${after}`
+
+      setNoteContent(nextContent)
+      const res = await api.dbQuery(
+        'notes',
+        'UPDATE notes SET title = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [noteTitle, nextContent, activeNoteId],
+      )
+      if (!res?.success) {
+        showToast(res?.error || t('notes.error_attachment_failed'))
+        return
+      }
+
+      showToast(t('notes.toast_attachment_added'))
+      void loadNotes()
+      const cursorPosition = before.length + prefix.length + markdown.length
+      requestAnimationFrame(() => {
+        if (!textarea) return
+        textarea.focus()
+        textarea.setSelectionRange(cursorPosition, cursorPosition)
+      })
+    },
+    [activeNoteId, api, loadNotes, noteContent, noteTitle, showToast, t],
+  )
+
+  const handleSelectAttachments = async () => {
+    if (!api?.selectNoteAttachments || !activeNoteId) {
+      showToast(t('common.error_electron_required'))
+      return
+    }
+    setIsAttaching(true)
+    try {
+      const res = await api.selectNoteAttachments()
+      if (!res.success) {
+        showToast(res.error || t('notes.error_attachment_failed'))
+        return
+      }
+      await insertAttachments(res.data || [])
+    } catch (error) {
+      showToast(`${t('notes.error_attachment_failed')}: ${(error as Error).message}`)
+    } finally {
+      setIsAttaching(false)
+    }
+  }
+
+  const handleEditorPaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const imageItem = Array.from(event.clipboardData.items).find((item) =>
+      item.type.startsWith('image/'),
+    )
+    if (!imageItem) return
+
+    const imageFile = imageItem.getAsFile()
+    if (!imageFile) return
+    event.preventDefault()
+    if (!api?.saveNotePastedImage || !activeNoteId) {
+      showToast(t('common.error_electron_required'))
+      return
+    }
+
+    setIsAttaching(true)
+    try {
+      const dataUrl = await readFileAsDataUrl(imageFile)
+      const res = await api.saveNotePastedImage({ dataUrl, fileName: imageFile.name || undefined })
+      if (!res.success || !res.data) {
+        showToast(res.error || t('notes.error_attachment_failed'))
+        return
+      }
+      await insertAttachments([res.data])
+    } catch (error) {
+      showToast(`${t('notes.error_attachment_failed')}: ${(error as Error).message}`)
+    } finally {
+      setIsAttaching(false)
     }
   }
 
@@ -631,6 +766,27 @@ export const Notes: React.FC = () => {
     [notes, selectNote, showToast, t, setActiveScreen],
   )
 
+  const updateNoteImageDimensions = useCallback(
+    (url: string, width: number, height: number, reset = false) => {
+      if (!activeNoteId) return
+      const nextContent = updateNoteImageDimensionsInContent(noteContent, { url, width, height }, reset)
+      if (nextContent === noteContent) return
+
+      setNoteContent(nextContent)
+      if (!api) return
+      void api
+        .dbQuery(
+          'notes',
+          'UPDATE notes SET title = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+          [noteTitle, nextContent, activeNoteId],
+        )
+        .then((res) => {
+          if (!res?.success) showToast(res?.error || t('notes.error_save_failed'))
+        })
+    },
+    [activeNoteId, api, noteContent, noteTitle, showToast, t],
+  )
+
   // Mature Markdown parser using 'marked' and sanitized with 'DOMPurify'
   const parseMarkdown = (md: string) => {
     // 1. Process double links before parsing, so they are not treated as plain text or wrapped incorrectly.
@@ -642,7 +798,7 @@ export const Notes: React.FC = () => {
     })
 
     // 2. Parse Markdown to HTML using marked
-    const rawHtml = marked.parse(mdWithLinks, {
+    const rawHtml = marked.parse(renderSizedNoteImages(mdWithLinks), {
       gfm: true,
       breaks: true,
     }) as string
@@ -650,25 +806,133 @@ export const Notes: React.FC = () => {
     // 3. Sanitize HTML using DOMPurify to prevent XSS but allow our custom buttons and style/class attributes.
     const cleanHtml = DOMPurify.sanitize(rawHtml, {
       ADD_TAGS: ['button', 'span'],
-      ADD_ATTR: ['data-link', 'style', 'class'],
+      ADD_ATTR: ['data-link', 'data-note-image', 'data-note-width', 'data-note-height', 'style', 'class'],
+      ALLOWED_URI_REGEXP:
+        /^(?:(?:https?|mailto|tel|life-note-asset):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
     })
 
     return cleanHtml
   }
 
-  // Attach event handlers to dynamic HTML buttons
+  // Attach event handlers to dynamic preview content.
   useEffect(() => {
     const previewContainer = document.getElementById('markdown-preview')
-    if (previewContainer) {
-      const buttons = previewContainer.querySelectorAll('.deep-link-btn')
-      buttons.forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-          const link = (e.currentTarget as HTMLElement).getAttribute('data-link')
-          if (link) handleDeepLinkClick(link)
-        })
+    if (!previewContainer) return
+
+    const getImageDimensions = (image: HTMLImageElement): NoteImageDimensions => {
+      const bounds = image.getBoundingClientRect()
+      return {
+        url: image.src,
+        width: clampNoteImageDimension(Number(image.dataset.noteWidth) || bounds.width || image.naturalWidth),
+        height: clampNoteImageDimension(Number(image.dataset.noteHeight) || bounds.height || image.naturalHeight),
+      }
+    }
+
+    const selectImage = (image: HTMLImageElement) => {
+      const selected = getImageDimensions(image)
+      setSelectedNoteImage(selected)
+      previewContainer.querySelectorAll<HTMLImageElement>('img[data-note-image]').forEach((candidate) => {
+        candidate.classList.toggle('note-image-selected', candidate.src === selected.url)
       })
     }
-  }, [noteContent, viewMode, handleDeepLinkClick])
+
+    const handlePreviewClick = (event: MouseEvent) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const image = target.closest<HTMLImageElement>('img[src^="life-note-asset://attachment/"]')
+      if (image) {
+        selectImage(image)
+        return
+      }
+      const deepLinkButton = target.closest<HTMLElement>('.deep-link-btn')
+      if (deepLinkButton) {
+        const link = deepLinkButton.getAttribute('data-link')
+        if (link) handleDeepLinkClick(link)
+        return
+      }
+
+      const attachmentLink = target.closest<HTMLAnchorElement>(
+        'a[href^="life-note-asset://attachment/"]',
+      )
+      const attachmentUrl = attachmentLink?.getAttribute('href')
+      if (!attachmentUrl) return
+      event.preventDefault()
+      void api?.openNoteAttachment?.(attachmentUrl).then((res) => {
+        if (!res?.success) showToast(res?.error || t('notes.error_attachment_open_failed'))
+      })
+    }
+
+    let resizeState:
+      | {
+          image: HTMLImageElement
+          startX: number
+          startY: number
+          width: number
+          height: number
+          maxWidth: number
+        }
+      | undefined
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof HTMLImageElement) || !target.src.startsWith('life-note-asset://attachment/')) return
+      const bounds = target.getBoundingClientRect()
+      const isResizeCorner = event.clientX >= bounds.right - 20 && event.clientY >= bounds.bottom - 20
+      if (!isResizeCorner) return
+
+      event.preventDefault()
+      const dimensions = getImageDimensions(target)
+      resizeState = {
+        image: target,
+        startX: event.clientX,
+        startY: event.clientY,
+        width: dimensions.width,
+        height: dimensions.height,
+        maxWidth: Math.max(48, previewContainer.clientWidth - 32),
+      }
+      target.setPointerCapture?.(event.pointerId)
+      selectImage(target)
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (resizeState) {
+        const width = Math.min(resizeState.maxWidth, clampNoteImageDimension(resizeState.width + event.clientX - resizeState.startX))
+        const height = clampNoteImageDimension(resizeState.height + event.clientY - resizeState.startY)
+        resizeState.image.style.width = `${width}px`
+        resizeState.image.style.height = `${height}px`
+        setSelectedNoteImage({ url: resizeState.image.src, width, height })
+        return
+      }
+
+      const target = event.target
+      if (!(target instanceof HTMLImageElement) || !target.src.startsWith('life-note-asset://attachment/')) return
+      const bounds = target.getBoundingClientRect()
+      target.style.cursor = event.clientX >= bounds.right - 20 && event.clientY >= bounds.bottom - 20 ? 'nwse-resize' : 'pointer'
+    }
+
+    const handlePointerUp = () => {
+      if (!resizeState) return
+      const bounds = resizeState.image.getBoundingClientRect()
+      const dimensions = {
+        url: resizeState.image.src,
+        width: clampNoteImageDimension(bounds.width),
+        height: clampNoteImageDimension(bounds.height),
+      }
+      updateNoteImageDimensions(dimensions.url, dimensions.width, dimensions.height)
+      resizeState = undefined
+    }
+
+    previewContainer.addEventListener('click', handlePreviewClick)
+    previewContainer.addEventListener('pointerdown', handlePointerDown)
+    previewContainer.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+    return () => {
+      previewContainer.removeEventListener('click', handlePreviewClick)
+      previewContainer.removeEventListener('pointerdown', handlePointerDown)
+      previewContainer.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [api, handleDeepLinkClick, noteContent, selectedNoteImage?.url, showToast, t, updateNoteImageDimensions, viewMode])
 
   useEffect(() => {
     if (!isExportDropdownOpen) return
@@ -868,6 +1132,16 @@ export const Notes: React.FC = () => {
                   </button>
                 </div>
 
+                <button
+                  className="btn sm"
+                  onClick={() => void handleSelectAttachments()}
+                  disabled={isAttaching}
+                  title={t('notes.attachment_hint')}
+                >
+                  <Paperclip size={12} />
+                  {isAttaching ? t('notes.adding_attachment') : t('notes.add_attachment')}
+                </button>
+
                 {/* Export Button & Dropdown */}
                 <div ref={exportDropdownRef} style={{ position: 'relative' }}>
                   <button
@@ -899,121 +1173,121 @@ export const Notes: React.FC = () => {
                         overflow: 'hidden',
                       }}
                     >
-                        <button
-                          style={{
-                            padding: '8px 12px',
-                            background: 'none',
-                            border: 'none',
-                            textAlign: 'left',
-                            fontSize: '12px',
-                            cursor: 'pointer',
-                            color: 'var(--text-main)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                          }}
-                          onClick={() => handleExportNote('md')}
-                          onMouseEnter={(e) =>
-                            (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
-                          }
-                          onMouseLeave={(e) =>
-                            (e.currentTarget.style.backgroundColor = 'transparent')
-                          }
-                        >
-                          📄 Markdown (.md)
-                        </button>
-                        <button
-                          style={{
-                            padding: '8px 12px',
-                            background: 'none',
-                            border: 'none',
-                            textAlign: 'left',
-                            fontSize: '12px',
-                            cursor: 'pointer',
-                            color: 'var(--text-main)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                          }}
-                          onClick={() => handleExportNote('html')}
-                          onMouseEnter={(e) =>
-                            (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
-                          }
-                          onMouseLeave={(e) =>
-                            (e.currentTarget.style.backgroundColor = 'transparent')
-                          }
-                        >
-                          🌐 Web Page (.html)
-                        </button>
-                        <button
-                          style={{
-                            padding: '8px 12px',
-                            background: 'none',
-                            border: 'none',
-                            textAlign: 'left',
-                            fontSize: '12px',
-                            cursor: 'pointer',
-                            color: 'var(--text-main)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                          }}
-                          onClick={() => handleExportNote('doc')}
-                          onMouseEnter={(e) =>
-                            (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
-                          }
-                          onMouseLeave={(e) =>
-                            (e.currentTarget.style.backgroundColor = 'transparent')
-                          }
-                        >
-                          📝 Word Doc (.doc)
-                        </button>
-                        <button
-                          style={{
-                            padding: '8px 12px',
-                            background: 'none',
-                            border: 'none',
-                            textAlign: 'left',
-                            fontSize: '12px',
-                            cursor: 'pointer',
-                            color: 'var(--text-main)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                          }}
-                          onClick={() => handleExportNote('pdf')}
-                          onMouseEnter={(e) =>
-                            (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
-                          }
-                          onMouseLeave={(e) =>
-                            (e.currentTarget.style.backgroundColor = 'transparent')
-                          }
-                        >
-                          📕 PDF Document (.pdf)
-                        </button>
-                        <button
-                          style={{
-                            padding: '8px 12px',
-                            background: 'none',
-                            border: 'none',
-                            textAlign: 'left',
-                            fontSize: '12px',
-                            cursor: 'pointer',
-                            color: 'var(--text-main)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                          }}
-                          onClick={() => handleExportNote('txt')}
-                          onMouseEnter={(e) =>
-                            (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
-                          }
-                          onMouseLeave={(e) =>
-                            (e.currentTarget.style.backgroundColor = 'transparent')
-                          }
-                        >
-                          ✏️ Plain Text (.txt)
-                        </button>
+                      <button
+                        style={{
+                          padding: '8px 12px',
+                          background: 'none',
+                          border: 'none',
+                          textAlign: 'left',
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          color: 'var(--text-main)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                        onClick={() => handleExportNote('md')}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                        }
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.backgroundColor = 'transparent')
+                        }
+                      >
+                        📄 Markdown (.md)
+                      </button>
+                      <button
+                        style={{
+                          padding: '8px 12px',
+                          background: 'none',
+                          border: 'none',
+                          textAlign: 'left',
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          color: 'var(--text-main)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                        onClick={() => handleExportNote('html')}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                        }
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.backgroundColor = 'transparent')
+                        }
+                      >
+                        🌐 Web Page (.html)
+                      </button>
+                      <button
+                        style={{
+                          padding: '8px 12px',
+                          background: 'none',
+                          border: 'none',
+                          textAlign: 'left',
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          color: 'var(--text-main)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                        onClick={() => handleExportNote('doc')}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                        }
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.backgroundColor = 'transparent')
+                        }
+                      >
+                        📝 Word Doc (.doc)
+                      </button>
+                      <button
+                        style={{
+                          padding: '8px 12px',
+                          background: 'none',
+                          border: 'none',
+                          textAlign: 'left',
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          color: 'var(--text-main)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                        onClick={() => handleExportNote('pdf')}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                        }
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.backgroundColor = 'transparent')
+                        }
+                      >
+                        📕 PDF Document (.pdf)
+                      </button>
+                      <button
+                        style={{
+                          padding: '8px 12px',
+                          background: 'none',
+                          border: 'none',
+                          textAlign: 'left',
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          color: 'var(--text-main)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                        onClick={() => handleExportNote('txt')}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
+                        }
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.backgroundColor = 'transparent')
+                        }
+                      >
+                        ✏️ Plain Text (.txt)
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1045,6 +1319,7 @@ export const Notes: React.FC = () => {
                   }}
                 >
                   <textarea
+                    ref={editorRef}
                     style={{
                       flexGrow: 1,
                       border: 'none',
@@ -1059,6 +1334,7 @@ export const Notes: React.FC = () => {
                     }}
                     value={noteContent}
                     onChange={(e) => setNoteContent(e.target.value)}
+                    onPaste={(event) => void handleEditorPaste(event)}
                     onBlur={handleSaveNote}
                     placeholder={t('notes.editor_placeholder')}
                   />
@@ -1091,6 +1367,70 @@ export const Notes: React.FC = () => {
                       }}
                     >
                       {t('notes.live_preview')}
+                    </div>
+                  )}
+                  {selectedNoteImage && (
+                    <div className="note-image-size-controls">
+                      <span>{t('notes.image_size')}</span>
+                      <label>
+                        {t('notes.image_width')}
+                        <input
+                          type="number"
+                          min={48}
+                          max={4096}
+                          value={selectedNoteImage.width}
+                          onChange={(event) => {
+                            const width = Number(event.target.value)
+                            if (Number.isFinite(width)) {
+                              setSelectedNoteImage((current) =>
+                                current ? { ...current, width: clampNoteImageDimension(width) } : current,
+                              )
+                            }
+                          }}
+                          onBlur={() =>
+                            updateNoteImageDimensions(
+                              selectedNoteImage.url,
+                              selectedNoteImage.width,
+                              selectedNoteImage.height,
+                            )
+                          }
+                        />
+                      </label>
+                      <label>
+                        {t('notes.image_height')}
+                        <input
+                          type="number"
+                          min={48}
+                          max={4096}
+                          value={selectedNoteImage.height}
+                          onChange={(event) => {
+                            const height = Number(event.target.value)
+                            if (Number.isFinite(height)) {
+                              setSelectedNoteImage((current) =>
+                                current ? { ...current, height: clampNoteImageDimension(height) } : current,
+                              )
+                            }
+                          }}
+                          onBlur={() =>
+                            updateNoteImageDimensions(
+                              selectedNoteImage.url,
+                              selectedNoteImage.width,
+                              selectedNoteImage.height,
+                            )
+                          }
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="btn sm"
+                        onClick={() => {
+                          updateNoteImageDimensions(selectedNoteImage.url, 0, 0, true)
+                          setSelectedNoteImage(null)
+                        }}
+                      >
+                        {t('notes.image_size_reset')}
+                      </button>
+                      <span className="note-image-size-hint">{t('notes.image_resize_hint')}</span>
                     </div>
                   )}
                   <div
