@@ -6,11 +6,7 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const electronPath = require('electron')
 const testsDir = path.resolve('tests')
-const tsxBin = path.resolve(
-  'node_modules',
-  '.bin',
-  process.platform === 'win32' ? 'tsx.cmd' : 'tsx',
-)
+const tsxCli = path.resolve('node_modules', 'tsx', 'dist', 'cli.mjs')
 
 const allTests = readdirSync(testsDir)
   .filter((file) => file.endsWith('.test.ts') || file.endsWith('.test.mjs'))
@@ -50,7 +46,6 @@ function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: 'inherit',
-      shell: process.platform === 'win32',
       ...options,
     })
 
@@ -73,7 +68,7 @@ function run(command, args, options = {}) {
 for (let start = 0; start < nodeTests.length; start += nodeTestBatchSize) {
   const batch = nodeTests.slice(start, start + nodeTestBatchSize)
   console.log(`Running Node test batch ${start / nodeTestBatchSize + 1}: ${batch[0]} through ${batch.at(-1)}`)
-  await run(tsxBin, ['--test', ...batch])
+  await run(process.execPath, [tsxCli, '--test', ...batch])
 }
 
 for (const testFile of electronNodeTests) {
