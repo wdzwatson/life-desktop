@@ -68,10 +68,7 @@ export const Settings: React.FC = () => {
   const signOut = useAppStore((state) => state.signOut)
   const activeMenu = useAppStore((state) => state.settingsMenu)
   const setActiveMenu = useAppStore((state) => state.setSettingsMenu)
-  const configuredLocales = useMemo(
-    () => getConfiguredLocales(i18n.language),
-    [i18n.language],
-  )
+  const configuredLocales = useMemo(() => getConfiguredLocales(i18n.language), [i18n.language])
 
   // Update states
   const [appVersion, setAppVersion] = useState('1.0.0')
@@ -331,7 +328,7 @@ export const Settings: React.FC = () => {
   const handleSaveShortcuts = async () => {
     if (!api) return
     const current = (await api.getSettings()) as Record<string, any>
-    const result = await api.saveSettings({ ...current, shortcuts }) as Record<string, any>
+    const result = (await api.saveSettings({ ...current, shortcuts })) as Record<string, any>
     if (result?.shortcutRegistration?.success === false) {
       setShortcuts({ ...DEFAULT_SHORTCUTS, ...(result.shortcuts || {}) })
       setShortcutError(t('settings.shortcut_system_unavailable'))
@@ -481,7 +478,14 @@ export const Settings: React.FC = () => {
       payload.securityQuestion = editQuestion
       payload.securityAnswer = editAnswer.trim()
     } else if (hasPassword && editPassword === '' && editConfirmPassword === '') {
-      if (!(await confirm({ description: t('settings.confirm_clear_password'), confirmLabel: t('common.confirm'), tone: 'danger' }))) return
+      if (
+        !(await confirm({
+          description: t('settings.confirm_clear_password'),
+          confirmLabel: t('common.confirm'),
+          tone: 'danger',
+        }))
+      )
+        return
       payload.password = '' // empty password string tells main process to clear credentials
     }
 
@@ -679,7 +683,9 @@ export const Settings: React.FC = () => {
               onClick={() => setActiveMenu('shortcuts')}
               style={{ width: '100%', border: 'none', background: 'none' }}
             >
-              <span className="nav-icon"><Keyboard size={15} /></span>
+              <span className="nav-icon">
+                <Keyboard size={15} />
+              </span>
               <span className="settings-nav-label">{t('settings.menu_shortcuts')}</span>
             </button>
             <button
@@ -791,9 +797,7 @@ export const Settings: React.FC = () => {
                 <h3 style={{ fontSize: '15px', fontWeight: 800, marginBottom: '4px' }}>
                   {t('settings.lang_select')}
                 </h3>
-                <div
-                  style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}
-                >
+                <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
                   {configuredLocales.map((locale) => (
                     <button
                       key={locale.code}
@@ -820,12 +824,22 @@ export const Settings: React.FC = () => {
                 {(Object.keys(DEFAULT_SHORTCUTS) as ShortcutId[]).map((id) => (
                   <div
                     key={id}
-                    style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) minmax(230px, 1fr)', gap: 16, alignItems: 'center', border: '1px solid var(--color-border)', borderRadius: 8, padding: 14 }}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'minmax(160px, 1fr) minmax(230px, 1fr)',
+                      gap: 16,
+                      alignItems: 'center',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 8,
+                      padding: 14,
+                    }}
                   >
                     <div>
                       <strong style={{ fontSize: 13 }}>{t(shortcutLabels[id])}</strong>
                       <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 11 }}>
-                        {id === 'screenshot' ? t('settings.shortcut_global_hint') : t('settings.shortcut_reader_hint')}
+                        {id === 'screenshot'
+                          ? t('settings.shortcut_global_hint')
+                          : t('settings.shortcut_reader_hint')}
                       </p>
                     </div>
                     <input
@@ -840,23 +854,47 @@ export const Settings: React.FC = () => {
                   </div>
                 ))}
               </div>
-              {shortcutError && <p style={{ color: 'var(--color-danger, #dc2626)', fontSize: 12, marginTop: 12 }}>{shortcutError}</p>}
+              {shortcutError && (
+                <p style={{ color: 'var(--color-danger, #dc2626)', fontSize: 12, marginTop: 12 }}>
+                  {shortcutError}
+                </p>
+              )}
               <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
-                <button className="btn" onClick={() => { setShortcuts(DEFAULT_SHORTCUTS); setShortcutError('') }}>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    setShortcuts(DEFAULT_SHORTCUTS)
+                    setShortcutError('')
+                  }}
+                >
                   {t('settings.shortcut_reset')}
                 </button>
                 <button className="btn primary" onClick={handleSaveShortcuts}>
                   <KeyRound size={14} /> {t('settings.shortcut_save')}
                 </button>
               </div>
-              <div style={{ borderTop: '1px solid var(--color-border)', marginTop: 22, paddingTop: 18 }}>
+              <div
+                style={{
+                  borderTop: '1px solid var(--color-border)',
+                  marginTop: 22,
+                  paddingTop: 18,
+                }}
+              >
                 <h3 style={{ fontSize: '15px', fontWeight: 800, marginBottom: 4 }}>
                   {t('settings.reader_translation_title')}
                 </h3>
                 <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', margin: '0 0 12px' }}>
                   {t('settings.reader_translation_desc')}
                 </p>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 13,
+                    cursor: 'pointer',
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={readerTranslationEnabled}
@@ -1205,7 +1243,13 @@ export const Settings: React.FC = () => {
                     <div style={{ color: 'var(--color-success, #16a34a)', fontWeight: 700 }}>
                       {t('settings.backup_success', { count: backupResult.fileCount })}
                     </div>
-                    <div style={{ color: 'var(--text-muted)', marginTop: '4px', wordBreak: 'break-all' }}>
+                    <div
+                      style={{
+                        color: 'var(--text-muted)',
+                        marginTop: '4px',
+                        wordBreak: 'break-all',
+                      }}
+                    >
                       {backupResult.filePath}
                     </div>
                     <button
@@ -1298,7 +1342,12 @@ export const Settings: React.FC = () => {
                     <div style={{ color: 'var(--color-success, #16a34a)', fontWeight: 700 }}>
                       {t('settings.restore_success')}
                     </div>
-                    <button className="btn sm" onClick={handleRestartAfterRestore} type="button" style={{ marginTop: '8px' }}>
+                    <button
+                      className="btn sm"
+                      onClick={handleRestartAfterRestore}
+                      type="button"
+                      style={{ marginTop: '8px' }}
+                    >
                       {t('settings.restore_restart')}
                     </button>
                   </div>
@@ -1354,7 +1403,9 @@ export const Settings: React.FC = () => {
 
           {/* TAB: VIDEO DOWNLOADER */}
           {activeMenu === 'video' && (
-            <section style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxWidth: '680px' }}>
+            <section
+              style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxWidth: '680px' }}
+            >
               <div>
                 <h3 style={{ fontSize: '15px', fontWeight: 800, marginBottom: '4px' }}>
                   {t('settings.video_downloader_title')}
@@ -1365,7 +1416,9 @@ export const Settings: React.FC = () => {
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                <label
+                  style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}
+                >
                   {t('settings.video_ytdlp_path')}
                   <input
                     className="form-field"
@@ -1399,7 +1452,9 @@ export const Settings: React.FC = () => {
                 </label>
               </div>
 
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+              <label
+                style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}
+              >
                 {t('settings.video_download_dir')}
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input
@@ -1418,7 +1473,9 @@ export const Settings: React.FC = () => {
                 </div>
               </label>
 
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+              <label
+                style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}
+              >
                 {t('settings.video_max_downloads')}
                 <input
                   className="form-field"
@@ -1437,7 +1494,9 @@ export const Settings: React.FC = () => {
               </label>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                <label
+                  style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}
+                >
                   {t('settings.video_cookie_mode')}
                   <select
                     className="form-field"
@@ -1452,7 +1511,9 @@ export const Settings: React.FC = () => {
                     <option value="file">{t('settings.video_cookie_file')}</option>
                   </select>
                 </label>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                <label
+                  style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}
+                >
                   {t('settings.video_quality_preference')}
                   <select
                     className="form-field"
@@ -1470,7 +1531,9 @@ export const Settings: React.FC = () => {
               </div>
 
               {videoSettings.cookieMode === 'browser' && (
-                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                <label
+                  style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}
+                >
                   {t('settings.video_cookie_browser_label')}
                   <select
                     className="form-field"
@@ -1490,7 +1553,9 @@ export const Settings: React.FC = () => {
               )}
 
               {videoSettings.cookieMode === 'file' && (
-                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}>
+                <label
+                  style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}
+                >
                   {t('settings.video_cookies_path')}
                   <input
                     className="form-field"
@@ -1648,7 +1713,9 @@ export const Settings: React.FC = () => {
                   gap: '6px',
                 }}
               >
-                <strong style={{ fontSize: '12px' }}>{t('settings.video_bilibili_notes_title')}</strong>
+                <strong style={{ fontSize: '12px' }}>
+                  {t('settings.video_bilibili_notes_title')}
+                </strong>
                 {[
                   'settings.video_bilibili_note_login',
                   'settings.video_bilibili_note_verify',
