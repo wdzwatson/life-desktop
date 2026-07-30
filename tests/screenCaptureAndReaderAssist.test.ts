@@ -65,6 +65,8 @@ test('reader selection assistance exposes free translation and reusable annotati
   assert.match(books, /ensurePdfOcrPage\(currentPageIndex \+ 1\)/)
   assert.match(books, /readerSessionRef/)
   assert.match(books, /isCurrentSession/)
+  assert.match(books, /cancelPdfOcrRequests/)
+  assert.match(books, /signal: abortController\.signal/)
   assert.match(books, /getPdfOcrProgressLabel/)
   assert.match(pdfOcrTextLayer, /ocr_text_layer_label/)
   assert.match(pdfOcrTextLayer, /progressLabel/)

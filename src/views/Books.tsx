@@ -291,7 +291,15 @@ export const Books: React.FC = () => {
   const [pdfOcrImageDataUrl, setPdfOcrImageDataUrl] = useState<string | null>(null)
   const [pdfOcrPages, setPdfOcrPages] = useState<Record<number, PdfOcrPageState>>({})
   const pdfOcrInFlightRef = useRef(new Set<number>())
+  const pdfOcrAbortControllersRef = useRef(new Set<AbortController>())
   const readerSessionRef = useRef(0)
+
+  const cancelPdfOcrRequests = () => {
+    pdfOcrAbortControllersRef.current.forEach((controller) => controller.abort())
+    pdfOcrAbortControllersRef.current.clear()
+    pdfOcrInFlightRef.current.clear()
+    setPdfOcrPages({})
+  }
   const [isTocDrawerOpen, setIsTocDrawerOpen] = useState(false)
   const [isAnnotationsDrawerOpen, setIsAnnotationsDrawerOpen] = useState(false)
   const [readerMainWidth, setReaderMainWidth] = useState(0)
@@ -334,8 +342,7 @@ export const Books: React.FC = () => {
       if (res?.success && res.data.length > 0) {
         const book = res.data[0]
         readerSessionRef.current += 1
-        setPdfOcrPages({})
-        pdfOcrInFlightRef.current.clear()
+        cancelPdfOcrRequests()
         setReadingBook(book)
         setReadingProgress(Math.round(book.progress || 0))
         if (chapter) setCurrentChapter(decodeURIComponent(chapter))
@@ -1062,8 +1069,7 @@ export const Books: React.FC = () => {
   // Open book in custom reader overlay
   const handleOpenReader = async (book: any) => {
     readerSessionRef.current += 1
-    setPdfOcrPages({})
-    pdfOcrInFlightRef.current.clear()
+    cancelPdfOcrRequests()
     setReadingBook(book)
     setReadingProgress(Math.round(book.progress || 0))
     setCurrentPageIndex(0)
@@ -1177,8 +1183,7 @@ export const Books: React.FC = () => {
     setReadingBook(null)
     setBookChapters(null)
     setBookToc(null)
-    setPdfOcrPages({})
-    pdfOcrInFlightRef.current.clear()
+    cancelPdfOcrRequests()
     setCurrentChapterIndex(0)
     setCurrentParagraphOffset(0)
     setPdfData(null)
@@ -1457,8 +1462,10 @@ export const Books: React.FC = () => {
     if (!canvas || canvas.width === 0 || canvas.height === 0) return
     const sessionId = readerSessionRef.current
     const isCurrentSession = () => sessionId === readerSessionRef.current
+    const abortController = new AbortController()
 
     pdfOcrInFlightRef.current.add(pageNumber)
+    pdfOcrAbortControllersRef.current.add(abortController)
     setPdfOcrPages((current) => ({
       ...current,
       [pageNumber]: { status: 'loading', progressLabel: t('books.ocr_modal_preparing') },
@@ -1491,7 +1498,7 @@ export const Books: React.FC = () => {
             },
           }))
         },
-        { priority: 'background' },
+        { priority: 'background', signal: abortController.signal },
       )
       const normalized: PdfOcrPage = {
         text: result.text,
@@ -1512,9 +1519,10 @@ export const Books: React.FC = () => {
         [readingBook.id, pageNumber, PDF_OCR_ENGINE_VERSION, JSON.stringify(normalized)],
       )
     } catch (error) {
-      console.warn('PDF page OCR failed:', error)
+      if ((error as { name?: string })?.name !== 'AbortError') console.warn('PDF page OCR failed:', error)
       if (isCurrentSession()) setPdfOcrPages((current) => ({ ...current, [pageNumber]: { status: 'error' } }))
     } finally {
+      pdfOcrAbortControllersRef.current.delete(abortController)
       if (isCurrentSession()) pdfOcrInFlightRef.current.delete(pageNumber)
     }
   }
