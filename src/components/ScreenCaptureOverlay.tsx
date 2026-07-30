@@ -36,6 +36,7 @@ export function ScreenCaptureOverlay({
   const [brushColor, setBrushColor] = useState('#ef4444')
   const [brushSize, setBrushSize] = useState(4)
   const [canUndo, setCanUndo] = useState(false)
+  const [isSavingOutput, setIsSavingOutput] = useState(false)
   const [message, setMessage] = useState(() => t('screen_capture.select_hint'))
   const imageRef = useRef<HTMLImageElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -43,6 +44,12 @@ export function ScreenCaptureOverlay({
   const editorLastPointRef = useRef<Point | null>(null)
   const editorHistoryRef = useRef<ImageData[]>([])
   const initialCaptureRef = useRef(Boolean(initialImageDataUrl))
+  const isSavingOutputRef = useRef(false)
+
+  const setOutputBusy = (busy: boolean) => {
+    isSavingOutputRef.current = busy
+    setIsSavingOutput(busy)
+  }
 
   useEffect(() => {
     api?.listScreenDisplays?.().then((items: ScreenDisplay[]) => {
@@ -108,17 +115,29 @@ export function ScreenCaptureOverlay({
   const ensureOutput = () => canvasRef.current?.toDataURL('image/png') ?? cropToDataUrl()
 
   const copyScreenshot = async () => {
+    if (isSavingOutputRef.current) return
     const image = ensureOutput()
     if (!image) return
-    const result = await api?.copyScreenshot?.(image)
-    setMessage(result?.success ? t('screen_capture.copied') : result?.error || t('screen_capture.copy_failed'))
+    setOutputBusy(true)
+    try {
+      const result = await api?.copyScreenshot?.(image)
+      setMessage(result?.success ? t('screen_capture.copied') : result?.error || t('screen_capture.copy_failed'))
+    } finally {
+      setOutputBusy(false)
+    }
   }
 
   const saveScreenshot = async () => {
+    if (isSavingOutputRef.current) return
     const image = ensureOutput()
     if (!image) return
-    const result = await api?.saveScreenshot?.(image)
-    setMessage(result?.success ? (result.saved ? t('screen_capture.saved') : t('screen_capture.save_cancelled')) : result?.error || t('screen_capture.save_failed'))
+    setOutputBusy(true)
+    try {
+      const result = await api?.saveScreenshot?.(image)
+      setMessage(result?.success ? (result.saved ? t('screen_capture.saved') : t('screen_capture.save_cancelled')) : result?.error || t('screen_capture.save_failed'))
+    } finally {
+      setOutputBusy(false)
+    }
   }
 
   const startEditing = () => {
@@ -155,8 +174,8 @@ export function ScreenCaptureOverlay({
     if (!canvas) return null
     const rect = canvas.getBoundingClientRect()
     return {
-      x: (event.clientX - rect.left) * (canvas.width / rect.width),
-      y: (event.clientY - rect.top) * (canvas.height / rect.height),
+      x: Math.max(0, Math.min(canvas.width, (event.clientX - rect.left) * (canvas.width / rect.width))),
+      y: Math.max(0, Math.min(canvas.height, (event.clientY - rect.top) * (canvas.height / rect.height))),
     }
   }
 
@@ -191,6 +210,60 @@ export function ScreenCaptureOverlay({
     if (!canvas || !context || !previous) return
     context.putImageData(previous, 0, 0)
     setCanUndo(editorHistoryRef.current.length > 0)
+  }
+
+  const handleSelectionPointerDown = (event: React.PointerEvent<HTMLImageElement>) => {
+    if (event.button !== 0) return
+    const point = toLocalPoint(event)
+    if (!point) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setDragStart(point)
+    setSelection(null)
+  }
+
+  const handleSelectionPointerMove = (event: React.PointerEvent<HTMLImageElement>) => {
+    if (!dragStart) return
+    if ((event.buttons & 1) !== 1) {
+      resetSelectionDrag()
+      return
+    }
+    const point = toLocalPoint(event)
+    if (point) setSelection(normalizeRect(dragStart, point))
+  }
+
+  const handleSelectionPointerUp = (event: React.PointerEvent<HTMLImageElement>) => {
+    const point = toLocalPoint(event)
+    if (dragStart && point) setSelection(normalizeRect(dragStart, point))
+    setDragStart(null)
+  }
+
+  const resetSelectionDrag = () => setDragStart(null)
+
+  const stopEditorDrawing = () => {
+    editorDrawingRef.current = false
+    editorLastPointRef.current = null
+  }
+
+  const handleEditorPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.button !== 0) return
+    const point = editorPoint(event)
+    if (!point) return
+    event.preventDefault()
+    saveEditorHistory()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    editorDrawingRef.current = true
+    editorLastPointRef.current = point
+  }
+
+  const handleEditorPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!editorDrawingRef.current) return
+    if ((event.buttons & 1) !== 1) {
+      stopEditorDrawing()
+      return
+    }
+    const point = editorPoint(event)
+    if (point) drawTo(point)
   }
 
   return (
@@ -236,9 +309,11 @@ export function ScreenCaptureOverlay({
                 alt={t('screen_capture.image_alt')}
                 draggable={false}
                 onLoad={() => setMessage(t('screen_capture.select_hint'))}
-                onPointerDown={(event) => { const point = toLocalPoint(event); if (point) { event.currentTarget.setPointerCapture(event.pointerId); setDragStart(point); setSelection(null) } }}
-                onPointerMove={(event) => { if (!dragStart) return; const point = toLocalPoint(event); if (point) setSelection(normalizeRect(dragStart, point)) }}
-                onPointerUp={(event) => { const point = toLocalPoint(event); if (dragStart && point) setSelection(normalizeRect(dragStart, point)); setDragStart(null) }}
+                onPointerDown={handleSelectionPointerDown}
+                onPointerMove={handleSelectionPointerMove}
+                onPointerUp={handleSelectionPointerUp}
+                onPointerCancel={resetSelectionDrag}
+                onLostPointerCapture={resetSelectionDrag}
                 style={{ maxWidth: 'min(100%, 1000px)', maxHeight: '68vh', userSelect: 'none', touchAction: 'none', cursor: 'crosshair' }}
               />
               {selection && <div style={{ position: 'absolute', left: selection.x, top: selection.y, width: selection.width, height: selection.height, border: '2px solid #60a5fa', background: 'rgba(96,165,250,.12)', pointerEvents: 'none' }} />}
@@ -247,9 +322,11 @@ export function ScreenCaptureOverlay({
           {imageDataUrl && isEditing && (
             <canvas
               ref={canvasRef}
-              onPointerDown={(event) => { const point = editorPoint(event); if (point) { saveEditorHistory(); event.currentTarget.setPointerCapture(event.pointerId); editorDrawingRef.current = true; editorLastPointRef.current = point } }}
-              onPointerMove={(event) => { if (!editorDrawingRef.current) return; const point = editorPoint(event); if (point) drawTo(point) }}
-              onPointerUp={() => { editorDrawingRef.current = false; editorLastPointRef.current = null }}
+              onPointerDown={handleEditorPointerDown}
+              onPointerMove={handleEditorPointerMove}
+              onPointerUp={stopEditorDrawing}
+              onPointerCancel={stopEditorDrawing}
+              onLostPointerCapture={stopEditorDrawing}
               style={{ maxWidth: 'min(100%, 1000px)', maxHeight: '68vh', cursor: 'crosshair', touchAction: 'none', background: '#fff' }}
             />
           )}
@@ -264,8 +341,8 @@ export function ScreenCaptureOverlay({
             </>
           )}
           {!isEditing && <button className="btn sm" disabled={!imageDataUrl} onClick={startEditing}><Pencil size={14} /> {t('screen_capture.edit')}</button>}
-          <button className="btn sm" disabled={!imageDataUrl} onClick={copyScreenshot}><Copy size={14} /> {t('screen_capture.copy')}</button>
-          <button className="btn sm primary" disabled={!imageDataUrl} onClick={saveScreenshot}><Download size={14} /> {t('screen_capture.save')}</button>
+          <button className="btn sm" disabled={!imageDataUrl || isSavingOutput} onClick={copyScreenshot}><Copy size={14} /> {t('screen_capture.copy')}</button>
+          <button className="btn sm primary" disabled={!imageDataUrl || isSavingOutput} onClick={saveScreenshot}><Download size={14} /> {t('screen_capture.save')}</button>
         </div>
       </div>
     </div>

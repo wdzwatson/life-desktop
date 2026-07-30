@@ -32,6 +32,11 @@ test('screen capture keeps native capture, clipboard, and file saving behind IPC
   assert.match(overlay, /saveScreenshot/)
   assert.match(overlay, /selectedDisplayId/)
   assert.match(overlay, /undoEditor/)
+  assert.match(overlay, /isSavingOutputRef/)
+  assert.match(overlay, /event\.button !== 0/)
+  assert.match(overlay, /event\.buttons & 1/)
+  assert.match(overlay, /onPointerCancel/)
+  assert.match(overlay, /onLostPointerCapture/)
 })
 
 test('reader selection assistance exposes free translation and reusable annotation content', () => {
