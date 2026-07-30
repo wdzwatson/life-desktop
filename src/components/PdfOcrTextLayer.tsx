@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type P
 import { ScanText } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { PdfOcrWord } from '../views/pdfOcrService'
+import { joinOcrWords } from '../ocrTextUtils'
 
 export type PdfOcrSelectionArea = {
   x: number
@@ -131,7 +132,7 @@ export function PdfOcrTextLayer({
   const getSelectedText = (indexes: Set<number>) =>
     getSelectionRows(indexes)
       .sort((left, right) => left.centerY - right.centerY || left.x - right.x)
-      .map((row) => row.words.sort((left, right) => left.x - right.x).map((word) => word.text).join(' '))
+      .map((row) => joinOcrWords(row.words.sort((left, right) => left.x - right.x)))
       .join('\n')
       .replace(/\s+/g, ' ')
       .trim()
