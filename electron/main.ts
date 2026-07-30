@@ -179,7 +179,8 @@ const DEFAULT_SHORTCUTS = {
 }
 
 function getShortcuts(settings = getSettings()) {
-  const configured = settings.shortcuts && typeof settings.shortcuts === 'object' ? settings.shortcuts : {}
+  const configured =
+    settings.shortcuts && typeof settings.shortcuts === 'object' ? settings.shortcuts : {}
   return { ...DEFAULT_SHORTCUTS, ...configured }
 }
 
@@ -195,7 +196,8 @@ async function captureScreen(displayId?: number) {
   })
   const source =
     sources.find((candidate) => candidate.display_id === String(targetDisplay.id)) ?? sources[0]
-  if (!source || source.thumbnail.isEmpty()) throw new Error('Unable to capture the current display.')
+  if (!source || source.thumbnail.isEmpty())
+    throw new Error('Unable to capture the current display.')
   return source.thumbnail.toDataURL()
 }
 
@@ -638,7 +640,10 @@ async function openDouyinFavoriteReader(itemId: unknown, bounds: unknown) {
     (item.content_type !== 'note' && item.content_type !== 'article') ||
     !isDouyinReaderSourceUrl(item.source_url)
   ) {
-    return { success: false, error: 'Only official Douyin notes and articles can be opened in the reader.' }
+    return {
+      success: false,
+      error: 'Only official Douyin notes and articles can be opened in the reader.',
+    }
   }
   const normalizedBounds = normalizeDouyinReaderBounds(bounds)
   if (!normalizedBounds) return { success: false, error: 'A valid reader area is required.' }
@@ -1767,9 +1772,10 @@ function createAppTray() {
   const sourceIcon = fs.existsSync(iconPath)
     ? nativeImage.createFromPath(iconPath)
     : nativeImage.createEmpty()
-  const icon = process.platform === 'darwin'
-    ? sourceIcon.resize({ width: 18, height: 18, quality: 'best' })
-    : sourceIcon
+  const icon =
+    process.platform === 'darwin'
+      ? sourceIcon.resize({ width: 18, height: 18, quality: 'best' })
+      : sourceIcon
   appTray = new Tray(icon)
   appTray.setToolTip('LifeOS')
   appTray.setContextMenu(
@@ -2542,14 +2548,17 @@ ipcMain.handle('book:batch-select-covers', async (event, sessionId: string) => {
   return { success: true, items: serializeBookBatchImportItems(session.items) }
 })
 
-ipcMain.handle('book:batch-remove-item', async (_, input: { sessionId?: string; itemId?: string }) => {
-  const session = input?.sessionId ? bookBatchImportSessions.get(input.sessionId) : undefined
-  if (!session || session.userId !== activeUserId || typeof input.itemId !== 'string') {
-    return { success: false, error: 'Import session is unavailable' }
-  }
-  session.items = session.items.filter((item) => item.id !== input.itemId)
-  return { success: true, items: serializeBookBatchImportItems(session.items) }
-})
+ipcMain.handle(
+  'book:batch-remove-item',
+  async (_, input: { sessionId?: string; itemId?: string }) => {
+    const session = input?.sessionId ? bookBatchImportSessions.get(input.sessionId) : undefined
+    if (!session || session.userId !== activeUserId || typeof input.itemId !== 'string') {
+      return { success: false, error: 'Import session is unavailable' }
+    }
+    session.items = session.items.filter((item) => item.id !== input.itemId)
+    return { success: true, items: serializeBookBatchImportItems(session.items) }
+  },
+)
 
 ipcMain.handle(
   'book:batch-import',
@@ -2561,7 +2570,8 @@ ipcMain.handle(
     if (!session || session.userId !== activeUserId) {
       return { success: false, error: 'Import session is unavailable' }
     }
-    const category = typeof input.category === 'string' && input.category.trim() ? input.category.trim() : '未分类'
+    const category =
+      typeof input.category === 'string' && input.category.trim() ? input.category.trim() : '未分类'
     if (category !== '未分类') {
       const categoryExists = getUserDb('books')
         .prepare('SELECT 1 FROM categories WHERE name = ?')
@@ -3552,13 +3562,20 @@ ipcMain.handle('video:listDouyinFavoriteItems', async (_, folderId: unknown, opt
       : 100,
     query: typeof input.query === 'string' ? input.query.trim().slice(0, 200) : '',
     contentType:
-      input.contentType === 'video' || input.contentType === 'note' || input.contentType === 'article' || input.contentType === 'unknown'
+      input.contentType === 'video' ||
+      input.contentType === 'note' ||
+      input.contentType === 'article' ||
+      input.contentType === 'unknown'
         ? input.contentType
         : undefined,
   }
   return {
     success: true,
-    data: listDouyinFavoriteItems(getUserDb('videos'), showAll ? null : normalizedFolderId, normalizedOptions),
+    data: listDouyinFavoriteItems(
+      getUserDb('videos'),
+      showAll ? null : normalizedFolderId,
+      normalizedOptions,
+    ),
   }
 })
 

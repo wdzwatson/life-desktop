@@ -20,7 +20,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveSettings: (settings: any) => ipcRenderer.invoke('settings:save', settings),
   clearAppData: () => ipcRenderer.invoke('settings:clearAppData'),
   listScreenDisplays: () => ipcRenderer.invoke('screen-capture:displays'),
-  captureScreen: (input?: { displayId?: number }) => ipcRenderer.invoke('screen-capture:capture', input),
+  captureScreen: (input?: { displayId?: number }) =>
+    ipcRenderer.invoke('screen-capture:capture', input),
   copyScreenshot: (imageDataUrl: string) => ipcRenderer.invoke('screen-capture:copy', imageDataUrl),
   saveScreenshot: (imageDataUrl: string) => ipcRenderer.invoke('screen-capture:save', imageDataUrl),
   onScreenshotRequested: (callback: (data: { imageDataUrl: string }) => void) => {
@@ -229,8 +230,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     category: string
     itemIds?: string[]
     unknownAuthor?: string
-  }) =>
-    ipcRenderer.invoke('book:batch-import', input),
+  }) => ipcRenderer.invoke('book:batch-import', input),
   deleteBookFile: (relativePath: string) => ipcRenderer.invoke('fs:delete-file', relativePath),
   openExternalFile: (relativePath: string) => ipcRenderer.invoke('fs:open-external', relativePath),
   getBookChapters: (relativePath: string) => ipcRenderer.invoke('book:get-chapters', relativePath),
@@ -246,10 +246,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loginDouyin: () => ipcRenderer.invoke('video:loginDouyin'),
   getDouyinAuthStatus: () => ipcRenderer.invoke('video:getDouyinAuthStatus'),
   logoutDouyin: () => ipcRenderer.invoke('video:logoutDouyin'),
-  openDouyinFavoriteReader: (itemId: number, bounds: { x: number; y: number; width: number; height: number }) =>
-    ipcRenderer.invoke('video:openDouyinFavoriteReader', itemId, bounds),
-  setDouyinFavoriteReaderBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
-    ipcRenderer.invoke('video:setDouyinFavoriteReaderBounds', bounds),
+  openDouyinFavoriteReader: (
+    itemId: number,
+    bounds: { x: number; y: number; width: number; height: number },
+  ) => ipcRenderer.invoke('video:openDouyinFavoriteReader', itemId, bounds),
+  setDouyinFavoriteReaderBounds: (bounds: {
+    x: number
+    y: number
+    width: number
+    height: number
+  }) => ipcRenderer.invoke('video:setDouyinFavoriteReaderBounds', bounds),
   reloadDouyinFavoriteReader: () => ipcRenderer.invoke('video:reloadDouyinFavoriteReader'),
   closeDouyinFavoriteReader: () => ipcRenderer.invoke('video:closeDouyinFavoriteReader'),
   syncDouyinFavorites: () => ipcRenderer.invoke('video:syncDouyinFavorites'),
@@ -257,7 +263,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listDouyinFavoriteFolders: () => ipcRenderer.invoke('video:listDouyinFavoriteFolders'),
   listDouyinFavoriteItems: (
     folderId: number | null,
-    options?: { offset?: number; limit?: number; query?: string; contentType?: 'video' | 'note' | 'article' | 'unknown' },
+    options?: {
+      offset?: number
+      limit?: number
+      query?: string
+      contentType?: 'video' | 'note' | 'article' | 'unknown'
+    },
   ) => ipcRenderer.invoke('video:listDouyinFavoriteItems', folderId, options),
   deleteDouyinFavoriteItems: (itemIds: number[]) =>
     ipcRenderer.invoke('video:deleteDouyinFavoriteItems', itemIds),
