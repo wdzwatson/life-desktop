@@ -43,6 +43,8 @@ test('screen capture keeps native capture, clipboard, and file saving behind IPC
 
 test('reader selection assistance exposes free translation and reusable annotation content', () => {
   assert.match(main, /api\.mymemory\.translated\.net/)
+  assert.match(main, /abortController\.abort\(\), 12_000/)
+  assert.match(main, /signal: abortController\.signal/)
   assert.match(main, /ipcMain\.handle\(\s*'reader:translate'/)
   assert.match(preload, /translateReaderText/)
   assert.match(books, /handleTranslateSelection/)

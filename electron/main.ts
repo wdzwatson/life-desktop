@@ -2104,31 +2104,40 @@ ipcMain.handle('screen-capture:save', async (_, imageDataUrl: unknown) => {
   }
 })
 
-ipcMain.handle('reader:translate', async (_, input: { text?: unknown; targetLanguage?: unknown }) => {
-  const text = typeof input?.text === 'string' ? input.text.trim().slice(0, 500) : ''
-  if (!text) return { success: false, error: 'Text is required.' }
-  try {
-    // MyMemory returns "PLEASE SELECT TWO DISTINCT LANGUAGES" when auto-detection
-    // resolves to the same target language. Reading assistance therefore switches
-    // between Chinese and English based on the selected text before making the call.
-    const containsChinese = /[\u3400-\u9fff]/u.test(text)
-    const sourceLanguage = containsChinese ? 'zh-CN' : 'en'
-    const targetLanguage = containsChinese ? 'en' : 'zh-CN'
-    const endpoint = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLanguage}|${targetLanguage}`
-    const response = await fetch(endpoint, { headers: { Accept: 'application/json' } })
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const payload = (await response.json()) as { responseData?: { translatedText?: unknown } }
-    const translation = typeof payload.responseData?.translatedText === 'string'
-      ? payload.responseData.translatedText.trim()
-      : ''
-    if (!translation || /please select two distinct languages/i.test(translation)) {
-      throw new Error('No translation returned.')
+ipcMain.handle(
+  'reader:translate',
+  async (_, input: { text?: unknown; targetLanguage?: unknown }) => {
+    const text = typeof input?.text === 'string' ? input.text.trim().slice(0, 500) : ''
+    if (!text) return { success: false, error: 'Text is required.' }
+    try {
+      // MyMemory returns "PLEASE SELECT TWO DISTINCT LANGUAGES" when auto-detection
+      // resolves to the same target language. Reading assistance therefore switches
+      // between Chinese and English based on the selected text before making the call.
+      const containsChinese = /[\u3400-\u9fff]/u.test(text)
+      const sourceLanguage = containsChinese ? 'zh-CN' : 'en'
+      const targetLanguage = containsChinese ? 'en' : 'zh-CN'
+      const endpoint = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLanguage}|${targetLanguage}`
+      const abortController = new AbortController()
+      const timeout = setTimeout(() => abortController.abort(), 12_000)
+      const response = await fetch(endpoint, {
+        headers: { Accept: 'application/json' },
+        signal: abortController.signal,
+      }).finally(() => clearTimeout(timeout))
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const payload = (await response.json()) as { responseData?: { translatedText?: unknown } }
+      const translation =
+        typeof payload.responseData?.translatedText === 'string'
+          ? payload.responseData.translatedText.trim()
+          : ''
+      if (!translation || /please select two distinct languages/i.test(translation)) {
+        throw new Error('No translation returned.')
+      }
+      return { success: true, translation }
+    } catch {
+      return { success: false, error: 'Free translation service is temporarily unavailable.' }
     }
-    return { success: true, translation }
-  } catch {
-    return { success: false, error: 'Free translation service is temporarily unavailable.' }
-  }
-})
+  },
+)
 
 ipcMain.handle('settings:clearAppData', async () => {
   try {
