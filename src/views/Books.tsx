@@ -291,6 +291,7 @@ export const Books: React.FC = () => {
   const [pdfOcrImageDataUrl, setPdfOcrImageDataUrl] = useState<string | null>(null)
   const [pdfOcrPages, setPdfOcrPages] = useState<Record<number, PdfOcrPageState>>({})
   const pdfOcrInFlightRef = useRef(new Set<number>())
+  const readerSessionRef = useRef(0)
   const [isTocDrawerOpen, setIsTocDrawerOpen] = useState(false)
   const [isAnnotationsDrawerOpen, setIsAnnotationsDrawerOpen] = useState(false)
   const [readerMainWidth, setReaderMainWidth] = useState(0)
@@ -332,6 +333,9 @@ export const Books: React.FC = () => {
       const res = await api.dbQuery('books', 'SELECT * FROM books WHERE id = ?', [bookId])
       if (res?.success && res.data.length > 0) {
         const book = res.data[0]
+        readerSessionRef.current += 1
+        setPdfOcrPages({})
+        pdfOcrInFlightRef.current.clear()
         setReadingBook(book)
         setReadingProgress(Math.round(book.progress || 0))
         if (chapter) setCurrentChapter(decodeURIComponent(chapter))
@@ -1057,6 +1061,9 @@ export const Books: React.FC = () => {
 
   // Open book in custom reader overlay
   const handleOpenReader = async (book: any) => {
+    readerSessionRef.current += 1
+    setPdfOcrPages({})
+    pdfOcrInFlightRef.current.clear()
     setReadingBook(book)
     setReadingProgress(Math.round(book.progress || 0))
     setCurrentPageIndex(0)
@@ -1166,6 +1173,7 @@ export const Books: React.FC = () => {
         loadData()
       }
     }
+    readerSessionRef.current += 1
     setReadingBook(null)
     setBookChapters(null)
     setBookToc(null)
@@ -1447,6 +1455,8 @@ export const Books: React.FC = () => {
     const pageElement = getPdfPageElement(pageNumber)
     const canvas = pageElement?.querySelector<HTMLCanvasElement>('canvas')
     if (!canvas || canvas.width === 0 || canvas.height === 0) return
+    const sessionId = readerSessionRef.current
+    const isCurrentSession = () => sessionId === readerSessionRef.current
 
     pdfOcrInFlightRef.current.add(pageNumber)
     setPdfOcrPages((current) => ({
@@ -1459,10 +1469,11 @@ export const Books: React.FC = () => {
         'SELECT payload FROM pdf_ocr_pages WHERE book_id = ? AND page_number = ? AND engine_version = ?',
         [readingBook.id, pageNumber, PDF_OCR_ENGINE_VERSION],
       )
+      if (!isCurrentSession()) return
       const cachedPayload = cached?.success && cached.data?.[0]?.payload
       if (typeof cachedPayload === 'string') {
         const parsed = JSON.parse(cachedPayload) as PdfOcrPage
-        if (Array.isArray(parsed.words)) {
+        if (isCurrentSession() && Array.isArray(parsed.words)) {
           setPdfOcrPages((current) => ({ ...current, [pageNumber]: { status: 'ready', data: parsed } }))
           return
         }
@@ -1471,6 +1482,7 @@ export const Books: React.FC = () => {
       const result = await recognizePdfPage(
         canvas.toDataURL('image/png'),
         (status, progress) => {
+          if (!isCurrentSession()) return
           setPdfOcrPages((current) => ({
             ...current,
             [pageNumber]: {
@@ -1491,7 +1503,9 @@ export const Books: React.FC = () => {
           height: word.height / canvas.height,
         })),
       }
-      setPdfOcrPages((current) => ({ ...current, [pageNumber]: { status: 'ready', data: normalized } }))
+      if (isCurrentSession()) {
+        setPdfOcrPages((current) => ({ ...current, [pageNumber]: { status: 'ready', data: normalized } }))
+      }
       await api?.dbQuery(
         'books',
         'INSERT OR REPLACE INTO pdf_ocr_pages (book_id, page_number, engine_version, payload) VALUES (?, ?, ?, ?)',
@@ -1499,9 +1513,9 @@ export const Books: React.FC = () => {
       )
     } catch (error) {
       console.warn('PDF page OCR failed:', error)
-      setPdfOcrPages((current) => ({ ...current, [pageNumber]: { status: 'error' } }))
+      if (isCurrentSession()) setPdfOcrPages((current) => ({ ...current, [pageNumber]: { status: 'error' } }))
     } finally {
-      pdfOcrInFlightRef.current.delete(pageNumber)
+      if (isCurrentSession()) pdfOcrInFlightRef.current.delete(pageNumber)
     }
   }
 

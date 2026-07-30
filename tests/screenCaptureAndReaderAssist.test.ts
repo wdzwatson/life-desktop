@@ -63,6 +63,8 @@ test('reader selection assistance exposes free translation and reusable annotati
   assert.match(books, /handlePdfOcrRecognized\(text\)/)
   assert.doesNotMatch(books, /cropped\.toDataURL\('image\/png'\)/)
   assert.match(books, /ensurePdfOcrPage\(currentPageIndex \+ 1\)/)
+  assert.match(books, /readerSessionRef/)
+  assert.match(books, /isCurrentSession/)
   assert.match(books, /getPdfOcrProgressLabel/)
   assert.match(pdfOcrTextLayer, /ocr_text_layer_label/)
   assert.match(pdfOcrTextLayer, /progressLabel/)
