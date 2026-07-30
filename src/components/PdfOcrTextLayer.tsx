@@ -175,6 +175,11 @@ export function PdfOcrTextLayer({
     if (areas.length > 0 && selectedText) onSelectAreas(areas, selectedText)
   }
 
+  const cancelPointerSelection = () => {
+    dragStartIndexRef.current = null
+    setSelectedIndexes(new Set())
+  }
+
   const handleContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
     event.preventDefault()
     event.stopPropagation()
@@ -225,6 +230,7 @@ export function PdfOcrTextLayer({
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onPointerCancel={cancelPointerSelection}
       onContextMenu={handleContextMenu}
       style={{ position: 'absolute', inset: 0, zIndex: 3, cursor: 'text', touchAction: 'none' }}
     >

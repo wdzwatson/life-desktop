@@ -69,6 +69,8 @@ test('reader selection assistance exposes free translation and reusable annotati
   assert.match(pdfOcrTextLayer, /const getSelectedText/)
   assert.match(pdfOcrTextLayer, /event\.key !== 'Escape'/)
   assert.match(pdfOcrTextLayer, /handleContextMenu/)
+  assert.match(pdfOcrTextLayer, /cancelPointerSelection/)
+  assert.match(pdfOcrTextLayer, /onPointerCancel={cancelPointerSelection}/)
   assert.match(pdfOcrTextLayer, /onFallback/)
   assert.match(pdfOcrService, /userRecognitionQueue/)
   assert.match(pdfOcrService, /backgroundRecognitionQueue/)
