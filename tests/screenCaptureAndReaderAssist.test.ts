@@ -68,7 +68,9 @@ test('reader selection assistance exposes free translation and reusable annotati
   assert.match(pdfOcrOverlay, /corePath: `\$\{ocrRuntimeBase\}tesseract-core-simd-lstm\.wasm\.js`/)
   assert.match(viteConfig, /Successfully copied OCR worker and WASM runtime files/)
   assert.match(viteConfig, /Warning: Parameter not found:/)
+  assert.match(viteConfig, /https:\/\/unpkg\.com\/@tesseract\.js-data/)
   assert.match(pdfOcrHtml, /https:\/\/cdn\.jsdelivr\.net/)
+  assert.match(pdfOcrHtml, /https:\/\/unpkg\.com/)
 })
 
 test('settings manages the shared shortcut set with duplicate prevention', () => {

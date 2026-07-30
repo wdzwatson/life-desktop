@@ -12,8 +12,8 @@ const copyPdfWorker = () => {
   const ocrWorkerPath = path.resolve(process.cwd(), 'node_modules/tesseract.js/dist/worker.min.js')
   const ocrKnownWarning = 'Warning: Parameter not found:'
   const getOcrWorkerSource = () => {
-    const warningFilter = `;(()=>{const suppress=(method)=>{const original=console[method].bind(console);console[method]=(...args)=>{if(args.some((value)=>String(value).includes('${ocrKnownWarning}')))return;original(...args)}};suppress('log');suppress('info');suppress('warn');suppress('error')})();\n`
-    return Buffer.concat([Buffer.from(warningFilter), fs.readFileSync(ocrWorkerPath)])
+    const runtimePatch = `;(()=>{const suppress=(method)=>{const original=console[method].bind(console);console[method]=(...args)=>{if(args.some((value)=>String(value).includes('${ocrKnownWarning}')))return;original(...args)}};suppress('log');suppress('info');suppress('warn');suppress('error');const primary='https://cdn.jsdelivr.net/npm/@tesseract.js-data/';const fallback='https://unpkg.com/@tesseract.js-data/';const fetchOriginal=globalThis.fetch.bind(globalThis);globalThis.fetch=async(input,init)=>{const url=typeof input==='string'?input:input instanceof URL?input.href:input.url;if(!url.startsWith(primary))return fetchOriginal(input,init);try{const response=await fetchOriginal(input,init);if(response.ok)return response}catch{}return fetchOriginal(url.replace(primary,fallback),init)}})();\n`
+    return Buffer.concat([Buffer.from(runtimePatch), fs.readFileSync(ocrWorkerPath)])
   }
 
   return {
