@@ -61,11 +61,22 @@ export function ScreenCaptureOverlay({
 
   useEffect(() => {
     if (initialCaptureRef.current || selectedDisplayId === undefined) return
+    let isCurrent = true
     setIsLoading(true)
-    api?.captureScreen?.({ displayId: selectedDisplayId }).then((result: any) => {
+    const capture = api?.captureScreen?.({ displayId: selectedDisplayId })
+    if (!capture) {
+      setMessage(t('screen_capture.capture_failed'))
+      setIsLoading(false)
+      return () => { isCurrent = false }
+    }
+    capture.then((result: any) => {
+      if (!isCurrent) return
       if (result?.success) setImageDataUrl(result.imageDataUrl)
       else setMessage(result?.error || t('screen_capture.capture_failed'))
-    }).finally(() => setIsLoading(false))
+    }).finally(() => {
+      if (isCurrent) setIsLoading(false)
+    })
+    return () => { isCurrent = false }
   }, [api, initialImageDataUrl, selectedDisplayId])
 
   useEffect(() => {

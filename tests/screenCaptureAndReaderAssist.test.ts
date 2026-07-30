@@ -37,11 +37,13 @@ test('screen capture keeps native capture, clipboard, and file saving behind IPC
   assert.match(overlay, /event\.buttons & 1/)
   assert.match(overlay, /onPointerCancel/)
   assert.match(overlay, /onLostPointerCapture/)
+  assert.match(overlay, /let isCurrent = true/)
+  assert.match(overlay, /if \(!capture\)/)
 })
 
 test('reader selection assistance exposes free translation and reusable annotation content', () => {
   assert.match(main, /api\.mymemory\.translated\.net/)
-  assert.match(main, /ipcMain\.handle\('reader:translate'/)
+  assert.match(main, /ipcMain\.handle\(\s*'reader:translate'/)
   assert.match(preload, /translateReaderText/)
   assert.match(books, /handleTranslateSelection/)
   assert.match(books, /readerTranslationEnabled/)
