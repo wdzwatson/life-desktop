@@ -342,6 +342,7 @@ function initConfig() {
       lastUserId: 'guest',
       maxDownloads: 3,
       autoCheckUpdates: true,
+      openAtLogin: true,
       shortcuts: DEFAULT_SHORTCUTS,
       baseFolder: BASE_DIR,
       userProfiles: {
@@ -355,9 +356,32 @@ function initConfig() {
 function getSettings() {
   initConfig()
   try {
-    return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'))
+    const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'))
+    if (typeof settings.openAtLogin !== 'boolean') {
+      settings.openAtLogin = true
+      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2))
+    }
+    return settings
   } catch {
     return {}
+  }
+}
+
+function applyOpenAtLoginSetting(enabled: boolean) {
+  const options: { openAtLogin: boolean; path?: string; args?: string[] } = { openAtLogin: enabled }
+  if (process.defaultApp && process.argv[1]) {
+    options.path = process.execPath
+    options.args = [path.resolve(process.argv[1])]
+  }
+
+  try {
+    app.setLoginItemSettings(options)
+    return { success: true }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unable to update the login item.',
+    }
   }
 }
 
@@ -1673,6 +1697,7 @@ function createAppTray() {
 }
 
 app.whenReady().then(() => {
+  applyOpenAtLoginSetting(getSettings().openAtLogin !== false)
   setupVideoProtocol()
   setupAIMediaProtocol()
   setupBookCoverProtocol()
@@ -2029,13 +2054,21 @@ ipcMain.handle('settings:get', async () => {
 
 ipcMain.handle('settings:save', async (_, newSettings: any) => {
   const previousSettings = getSettings()
-  if (previousSettings.shortcuts?.screenshot !== newSettings.shortcuts?.screenshot) {
-    const shortcutRegistration = registerScreenshotShortcut(newSettings)
+  const nextSettings = { ...newSettings, openAtLogin: newSettings.openAtLogin !== false }
+  if (previousSettings.shortcuts?.screenshot !== nextSettings.shortcuts?.screenshot) {
+    const shortcutRegistration = registerScreenshotShortcut(nextSettings)
     if (!shortcutRegistration.success) {
       return { ...previousSettings, shortcutRegistration }
     }
   }
-  const savedSettings = saveSettings(newSettings)
+  let openAtLoginResult = { success: true }
+  if (previousSettings.openAtLogin !== nextSettings.openAtLogin) {
+    openAtLoginResult = applyOpenAtLoginSetting(nextSettings.openAtLogin)
+    if (!openAtLoginResult.success) {
+      return { ...previousSettings, openAtLoginResult }
+    }
+  }
+  const savedSettings = saveSettings(nextSettings)
   const videoSettingKeys = [
     'ytDlpPath',
     'ffmpegPath',
@@ -2046,10 +2079,10 @@ ipcMain.handle('settings:save', async (_, newSettings: any) => {
     'cookiesPath',
     'bilibiliCookiesPath',
   ]
-  if (videoSettingKeys.some((key) => previousSettings[key] !== newSettings[key])) {
+  if (videoSettingKeys.some((key) => previousSettings[key] !== nextSettings[key])) {
     void loadVideoEngine({ force: true })
   }
-  return { ...savedSettings, shortcutRegistration: { success: true } }
+  return { ...savedSettings, shortcutRegistration: { success: true }, openAtLoginResult }
 })
 
 // Screen capture is intentionally mediated by the main process so the renderer never

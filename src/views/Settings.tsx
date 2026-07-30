@@ -83,6 +83,7 @@ export const Settings: React.FC = () => {
   const [updateErrorMsg, setUpdateErrorMsg] = useState('')
   const [updateIsMock, setUpdateIsMock] = useState(false)
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(true)
+  const [openAtLogin, setOpenAtLogin] = useState(true)
   const [shortcuts, setShortcuts] = useState<Record<ShortcutId, string>>(DEFAULT_SHORTCUTS)
   const [shortcutError, setShortcutError] = useState('')
   const [readerTranslationEnabled, setReaderTranslationEnabled] = useState(false)
@@ -171,6 +172,7 @@ export const Settings: React.FC = () => {
       const settings = s as Record<string, any>
       if (settings) {
         setAutoCheckUpdates(settings.autoCheckUpdates !== false)
+        setOpenAtLogin(settings.openAtLogin !== false)
         setShortcuts({ ...DEFAULT_SHORTCUTS, ...(settings.shortcuts || {}) })
         setReaderTranslationEnabled(settings.readerTranslationEnabled === true)
         setVideoSettings({
@@ -279,6 +281,24 @@ export const Settings: React.FC = () => {
     setVideoSettings(nextSettings)
     await api.saveSettings({ ...(current as Record<string, any>), ...nextSettings })
     showToast(t('settings.toast_video_settings_saved'))
+  }
+
+  const handleToggleOpenAtLogin = async (enabled: boolean) => {
+    const previousValue = openAtLogin
+    setOpenAtLogin(enabled)
+    if (!api) return
+    const current = (await api.getSettings()) as Record<string, any>
+    const result = (await api.saveSettings({ ...current, openAtLogin: enabled })) as Record<
+      string,
+      any
+    >
+    if (result?.openAtLoginResult?.success === false) {
+      setOpenAtLogin(previousValue)
+      showToast(t('settings.open_at_login_failed', { error: result.openAtLoginResult.error || '' }))
+      return
+    }
+    setOpenAtLogin(result?.openAtLogin !== false)
+    showToast(t('settings.open_at_login_saved'))
   }
 
   const handleShortcutChange = (id: ShortcutId, event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -1745,6 +1765,40 @@ export const Settings: React.FC = () => {
                       />
                       <span>{t('settings.updates_auto_check')}</span>
                     </label>
+                  </div>
+
+                  <div
+                    style={{
+                      borderTop: '1px solid var(--color-border)',
+                      paddingTop: '10px',
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '12.5px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={openAtLogin}
+                        onChange={(event) => void handleToggleOpenAtLogin(event.target.checked)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <span>{t('settings.open_at_login')}</span>
+                    </label>
+                    <p
+                      style={{
+                        color: 'var(--text-muted)',
+                        fontSize: '11.5px',
+                        margin: '6px 0 0 24px',
+                      }}
+                    >
+                      {t('settings.open_at_login_desc')}
+                    </p>
                   </div>
 
                   {/* Update Status Details */}
