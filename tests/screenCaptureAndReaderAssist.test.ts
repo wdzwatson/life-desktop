@@ -60,6 +60,7 @@ test('reader selection assistance exposes free translation and reusable annotati
   assert.match(pdfOcrService, /backgroundRecognitionQueue/)
   assert.match(pdfOcrService, /options\.priority === 'user'/)
   assert.match(pdfOcrService, /AbortSignal/)
+  assert.match(pdfOcrService, /workerPromise = null/)
   assert.match(pdfOcrOverlay, /createWorker\(\['eng', 'chi_sim'\]/)
   assert.match(pdfOcrOverlay, /workerPath: `\$\{ocrRuntimeBase\}worker\.min\.js`/)
   assert.match(pdfOcrOverlay, /corePath: `\$\{ocrRuntimeBase\}tesseract-core-simd-lstm\.wasm\.js`/)

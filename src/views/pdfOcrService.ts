@@ -46,14 +46,20 @@ async function getWorker(progressListener: OcrProgress) {
   currentProgressListener = progressListener
   if (!workerPromise) {
     const runtimeBase = getRuntimeBase()
-    workerPromise = import('tesseract.js').then(({ createWorker }) =>
-      createWorker(['eng', 'chi_sim'], 1, {
-        workerPath: `${runtimeBase}worker.min.js`,
-        corePath: `${runtimeBase}tesseract-core-simd-lstm.wasm.js`,
-        workerBlobURL: false,
-        logger: (message) => currentProgressListener?.(message.status, message.progress),
-      }),
-    )
+    workerPromise = import('tesseract.js')
+      .then(({ createWorker }) =>
+        createWorker(['eng', 'chi_sim'], 1, {
+          workerPath: `${runtimeBase}worker.min.js`,
+          corePath: `${runtimeBase}tesseract-core-simd-lstm.wasm.js`,
+          workerBlobURL: false,
+          logger: (message) => currentProgressListener?.(message.status, message.progress),
+        }),
+      )
+      .catch((error) => {
+        // A rejected worker promise would make every later Retry fail until restart.
+        workerPromise = null
+        throw error
+      })
   }
   return workerPromise
 }
