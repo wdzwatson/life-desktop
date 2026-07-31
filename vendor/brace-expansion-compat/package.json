@@ -1,0 +1,9 @@
+{
+  "name": "@life-os/brace-expansion-compat",
+  "version": "5.0.9",
+  "private": true,
+  "main": "index.js",
+  "dependencies": {
+    "brace-expansion-core": "npm:brace-expansion@5.0.9"
+  }
+}

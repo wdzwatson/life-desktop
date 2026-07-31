@@ -48,12 +48,15 @@ export function resolveVideoToolPath(settings: Record<string, any>, executable: 
   return executable
 }
 
-function shouldSpawnWithShell(command: string) {
-  return process.platform === 'win32' && ['.cmd', '.bat'].includes(path.extname(command).toLocaleLowerCase())
+function getUnsupportedScriptMessage(command: string) {
+  if (process.platform !== 'win32' || !['.cmd', '.bat'].includes(path.extname(command).toLocaleLowerCase())) {
+    return undefined
+  }
+  return 'Batch script paths are not supported for video tools. Configure the executable (.exe) path instead.'
 }
 
-function buildSpawnOptions(command: string) {
-  return { windowsHide: true, shell: shouldSpawnWithShell(command) }
+function buildSpawnOptions() {
+  return { windowsHide: true, shell: false }
 }
 
 function getToolDownloadPlan(tool: ManagedVideoTool) {
@@ -252,7 +255,12 @@ export function runProcess(
   options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ) {
   return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
-    const child = spawn(command, args, buildSpawnOptions(command))
+    const unsupportedScriptMessage = getUnsupportedScriptMessage(command)
+    if (unsupportedScriptMessage) {
+      resolve({ code: -1, stdout: '', stderr: unsupportedScriptMessage })
+      return
+    }
+    const child = spawn(command, args, buildSpawnOptions())
     let stdout = ''
     let stderr = ''
     let settled = false
@@ -566,6 +574,11 @@ export async function startVideoDownload(input: {
 }) {
   fs.mkdirSync(input.outputDir, { recursive: true })
   const ytDlpPath = resolveVideoToolPath(input.settings, 'yt-dlp')
+  const unsupportedScriptMessage = getUnsupportedScriptMessage(ytDlpPath)
+  if (unsupportedScriptMessage) {
+    input.onFailed?.(unsupportedScriptMessage)
+    return { success: false, error: unsupportedScriptMessage }
+  }
   const quality = (input.settings.qualityPreference || 'best') as VideoQualityPreference
   const cookieConfig = resolveCookieConfigForUrl(input.settings, input.url)
   const ffmpegPath = resolveVideoToolPath(input.settings, 'ffmpeg')
@@ -629,7 +642,7 @@ export async function startVideoDownload(input: {
       })
     }
   }
-  const child = spawn(ytDlpPath, args, buildSpawnOptions(ytDlpPath))
+  const child = spawn(ytDlpPath, args, buildSpawnOptions())
   let downloadedFilePath: string | undefined
   let lastProgress = 0
   let outputLog = ''
@@ -660,45 +673,33 @@ export async function startVideoDownload(input: {
       message,
     })
   }
-  child.stdout.on('data', (chunk) => {
-    const message = chunk.toString()
+  const handleOutput = (message: string) => {
     appendOutputLog(message)
     for (const line of message.split(/\r?\n/)) {
+      if (!line) continue
       const filePath = parsePrintedFilePath(line)
       if (filePath) downloadedFilePath = filePath
+      const progress = parseDownloadProgressPercent(line)
+      const normalizedProgress =
+        typeof progress === 'number' ? normalizeActiveDownloadProgress(progress, lastProgress) : undefined
+      if (typeof normalizedProgress === 'number') {
+        lastProgress = normalizedProgress
+        input.onProgress?.(normalizedProgress, line)
+      }
+      input.mainWindow?.webContents.send('video:download-progress', {
+        videoId: input.videoId,
+        title: input.title,
+        message: line,
+        progress: normalizedProgress,
+        phase: inferDownloadPhase(line, normalizedProgress),
+      })
     }
-    const progress = parseDownloadProgressPercent(message)
-    const normalizedProgress =
-      typeof progress === 'number' ? normalizeActiveDownloadProgress(progress, lastProgress) : undefined
-    if (typeof normalizedProgress === 'number') {
-      lastProgress = normalizedProgress
-      input.onProgress?.(normalizedProgress, message)
-    }
-    input.mainWindow?.webContents.send('video:download-progress', {
-      videoId: input.videoId,
-      title: input.title,
-      message,
-      progress: normalizedProgress,
-      phase: inferDownloadPhase(message, normalizedProgress),
-    })
+  }
+  child.stdout.on('data', (chunk) => {
+    handleOutput(chunk.toString())
   })
   child.stderr.on('data', (chunk) => {
-    const message = chunk.toString()
-    appendOutputLog(message)
-    const progress = parseDownloadProgressPercent(message)
-    const normalizedProgress =
-      typeof progress === 'number' ? normalizeActiveDownloadProgress(progress, lastProgress) : undefined
-    if (typeof normalizedProgress === 'number') {
-      lastProgress = normalizedProgress
-      input.onProgress?.(normalizedProgress, message)
-    }
-    input.mainWindow?.webContents.send('video:download-progress', {
-      videoId: input.videoId,
-      title: input.title,
-      message,
-      progress: normalizedProgress,
-      phase: inferDownloadPhase(message, normalizedProgress),
-    })
+    handleOutput(chunk.toString())
   })
   child.on('error', (err) => {
     notifyFailed(`yt-dlp failed to start: ${err.message}`)

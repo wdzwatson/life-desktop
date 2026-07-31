@@ -31,6 +31,7 @@ import {
 } from '../electron/video/service.ts'
 
 const DOWNLOAD_CALLBACK_TIMEOUT_MS = 10000
+const testWithExecutableFixture = process.platform === 'win32' ? test.skip : test
 
 function writeFakeYtDlp(outputDir: string, unixScript: string, windowsScript: string) {
   const fakeYtDlp = path.join(outputDir, process.platform === 'win32' ? 'fake-yt-dlp.cmd' : 'fake-yt-dlp')
@@ -38,6 +39,28 @@ function writeFakeYtDlp(outputDir: string, unixScript: string, windowsScript: st
   if (process.platform !== 'win32') chmodSync(fakeYtDlp, 0o755)
   return fakeYtDlp
 }
+
+test('Windows video tools reject batch script paths before spawning a command shell', async (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('Windows-specific safety check')
+    return
+  }
+
+  let failure = ''
+  const result = await startVideoDownload({
+    settings: { ytDlpPath: 'unsafe-tool.cmd' },
+    mainWindow: null,
+    url: 'https://www.youtube.com/watch?v=hLQl3WQQoQ0',
+    title: 'Unsafe tool path',
+    outputDir: mkdtempSync(path.join(tmpdir(), 'lifeos-video-batch-tool-')),
+    onFailed: (message) => {
+      failure = message
+    },
+  })
+
+  assert.equal(result.success, false)
+  assert.match(failure, /Batch script paths are not supported/)
+})
 
 test('video tool checks allow slow macOS managed yt-dlp startup', () => {
   assert.ok(DEFAULT_VIDEO_TOOL_CHECK_TIMEOUT_MS >= 45000)
@@ -294,7 +317,7 @@ test('inferDownloadPhase maps yt-dlp output into user-facing phases', () => {
   assert.equal(inferDownloadPhase('[BiliBili] Extracting URL'), 'preparing')
 })
 
-test('active download progress is monotonic and does not report 100 before completion', async () => {
+testWithExecutableFixture('active download progress is monotonic and does not report 100 before completion', async () => {
   const outputDir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-download-progress-'))
   const fakeYtDlp = writeFakeYtDlp(
     outputDir,
@@ -372,7 +395,7 @@ test('active download progress is monotonic and does not report 100 before compl
   assert.equal(sent.some(([channel]) => channel === 'video:download-finished'), true)
 })
 
-test('startVideoDownload fails when yt-dlp exits successfully without a filepath', async () => {
+testWithExecutableFixture('startVideoDownload fails when yt-dlp exits successfully without a filepath', async () => {
   const outputDir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-download-no-filepath-'))
   const fakeYtDlp = writeFakeYtDlp(
     outputDir,
@@ -510,7 +533,7 @@ test('startVideoDownload sends an initial progress event without a duplicate sta
   assert.equal(firstProgress?.[1]?.progress, 0)
 })
 
-test('startVideoDownload reports the real yt-dlp stderr instead of only exit code 1', async () => {
+testWithExecutableFixture('startVideoDownload reports the real yt-dlp stderr instead of only exit code 1', async () => {
   const outputDir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-download-error-'))
   const fakeYtDlp = writeFakeYtDlp(
     outputDir,
@@ -547,7 +570,7 @@ test('startVideoDownload reports the real yt-dlp stderr instead of only exit cod
   assert.match(failedEvent?.[1]?.message, /cookies/i)
 })
 
-test('startVideoDownload includes video id in progress and failure events when provided', async () => {
+testWithExecutableFixture('startVideoDownload includes video id in progress and failure events when provided', async () => {
   const outputDir = mkdtempSync(path.join(tmpdir(), 'lifeos-video-download-id-'))
   const fakeYtDlp = writeFakeYtDlp(
     outputDir,

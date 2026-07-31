@@ -12,7 +12,7 @@ delete env.ELECTRON_RUN_AS_NODE
 
 const child = spawn(command, args, {
   env,
-  shell: process.platform === 'win32',
+  shell: false,
   stdio: 'inherit',
 })
 
