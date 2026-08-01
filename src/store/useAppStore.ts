@@ -1,5 +1,11 @@
 import { create } from 'zustand'
 import i18n from '../i18n'
+import {
+  normalizeLaunchpadSettings,
+  shouldShowLaunchpad,
+  toLaunchpadDateKey,
+  type LaunchpadSettings,
+} from '../views/launchpadUtils'
 
 export type SettingsMenu = 'appearance' | 'shortcuts' | 'profile' | 'security' | 'updates' | 'video'
 export type SidebarDisplayMode = 'dynamic' | 'collapsed' | 'expanded'
@@ -17,6 +23,8 @@ interface AppState {
   toastMessage: string | null
   isAuthenticated: boolean
   registeredUsers: any[]
+  launchpadSettings: LaunchpadSettings
+  isInitialConfigLoaded: boolean
 
   // Actions
   setActiveScreen: (screen: string) => void
@@ -25,6 +33,7 @@ interface AppState {
   setSidebarDisplayMode: (mode: SidebarDisplayMode) => Promise<void>
   setTheme: (theme: string) => Promise<void>
   setLanguage: (lang: string) => Promise<void>
+  setLaunchpadSettings: (settings: Partial<LaunchpadSettings>) => Promise<void>
   showToast: (msg: string) => void
   switchUser: (userId: string) => Promise<void>
   login: (userId: string, password?: string) => Promise<{ success: boolean; error?: string }>
@@ -71,7 +80,8 @@ const getMockSettings = () => {
     const initial = {
       theme: 'Minimal',
       language: 'zh-CN',
-      sidebarDisplayMode: 'dynamic',
+    sidebarDisplayMode: 'dynamic',
+    launchpad: { startupMode: 'daily' },
       lastUserId: 'guest',
     }
     localStorage.setItem('mock_settings', JSON.stringify(initial))
@@ -101,8 +111,30 @@ export const useAppStore = create<AppState>((set, get) => ({
   toastMessage: null,
   isAuthenticated: true, // Defaults to true initially; loadInitialConfig will correct it if a password exists
   registeredUsers: [],
+  launchpadSettings: normalizeLaunchpadSettings(undefined),
+  isInitialConfigLoaded: false,
 
-  setActiveScreen: (screen) => set({ activeScreen: screen }),
+  setActiveScreen: (screen) => {
+    if (screen === 'landing') {
+      set({ activeScreen: screen })
+      return
+    }
+    const launchpadSettings = {
+      ...get().launchpadSettings,
+      lastContext: { screen, updatedAt: Date.now() },
+    }
+    set({ activeScreen: screen, launchpadSettings })
+    const api = getElectronAPI()
+    if (api) {
+      void api.getSettings().then((settings: Record<string, unknown>) =>
+        api.saveSettings({ ...settings, launchpad: launchpadSettings }),
+      )
+    } else {
+      const settings = getMockSettings()
+      settings.launchpad = launchpadSettings
+      saveMockSettings(settings)
+    }
+  },
   setTaskTab: (tab) => set({ taskTab: tab }),
   setSettingsMenu: (menu) => set({ settingsMenu: menu }),
   setSidebarDisplayMode: async (sidebarDisplayMode) => {
@@ -151,6 +183,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ language })
     get().showToast(language === 'zh-CN' ? '语言已切换为中文' : 'Language switched to English')
+  },
+
+  setLaunchpadSettings: async (settings) => {
+    const launchpadSettings = normalizeLaunchpadSettings({ ...get().launchpadSettings, ...settings })
+    const api = getElectronAPI()
+    if (api) {
+      const current = await api.getSettings()
+      await api.saveSettings({ ...current, launchpad: launchpadSettings })
+    } else {
+      const current = getMockSettings()
+      current.launchpad = launchpadSettings
+      saveMockSettings(current)
+    }
+    set({ launchpadSettings })
   },
 
   showToast: (msg) => {
@@ -499,16 +545,31 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const settings = await api.getSettings()
       if (settings) {
+        const launchpadSettings = normalizeLaunchpadSettings(settings.launchpad)
+        const shouldOpenLaunchpad = shouldShowLaunchpad(launchpadSettings)
+        const nextLaunchpadSettings = shouldOpenLaunchpad
+          ? { ...launchpadSettings, lastShownDate: toLaunchpadDateKey() }
+          : launchpadSettings
         set({
           theme: settings.theme || 'Minimal',
           language: settings.language || 'zh-CN',
           sidebarDisplayMode: isSidebarDisplayMode(settings.sidebarDisplayMode)
             ? settings.sidebarDisplayMode
             : 'dynamic',
+          launchpadSettings: nextLaunchpadSettings,
+          activeScreen: shouldOpenLaunchpad
+            ? 'landing'
+            : launchpadSettings.lastContext?.screen || 'dashboard',
+          isInitialConfigLoaded: true,
         })
+        if (shouldOpenLaunchpad) {
+          await api.saveSettings({ ...settings, launchpad: nextLaunchpadSettings })
+        }
         const themeClass = `theme-${(settings.theme || 'Minimal').toLowerCase().replace(' ', '-')}`
         document.body.className = themeClass
         await i18n.changeLanguage(settings.language || 'zh-CN')
+      } else {
+        set({ isInitialConfigLoaded: true })
       }
     } else {
       // Browser Mock Fallback
@@ -516,6 +577,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       const profiles = getMockProfiles()
       const currentUserId = settings.lastUserId || 'guest'
       const profile = profiles[currentUserId] || { nickname: '访客模式', avatar: 'G' }
+      const launchpadSettings = normalizeLaunchpadSettings(settings.launchpad)
+      const shouldOpenLaunchpad = shouldShowLaunchpad(launchpadSettings)
+      const nextLaunchpadSettings = shouldOpenLaunchpad
+        ? { ...launchpadSettings, lastShownDate: toLaunchpadDateKey() }
+        : launchpadSettings
 
       let isAuthenticated = false
       if (!profile.password) {
@@ -542,7 +608,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         sidebarDisplayMode: isSidebarDisplayMode(settings.sidebarDisplayMode)
           ? settings.sidebarDisplayMode
           : 'dynamic',
+        launchpadSettings: nextLaunchpadSettings,
+        activeScreen: shouldOpenLaunchpad
+          ? 'landing'
+          : launchpadSettings.lastContext?.screen || 'dashboard',
+        isInitialConfigLoaded: true,
       })
+
+      if (shouldOpenLaunchpad) {
+        settings.launchpad = nextLaunchpadSettings
+        saveMockSettings(settings)
+      }
 
       const themeClass = `theme-${(settings.theme || 'Minimal').toLowerCase().replace(' ', '-')}`
       document.body.className = themeClass

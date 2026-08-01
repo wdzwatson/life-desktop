@@ -39,6 +39,12 @@ import {
 } from '../src/views/bookReaderUtils'
 import { handleBookCoverProtocolRequest } from './bookCoverProtocol'
 import {
+  handleLandingPosterProtocolRequest,
+  isLandingPosterExtension,
+  LANDING_POSTER_FILE_STEM,
+  LANDING_POSTER_PROTOCOL,
+} from './landingPosterProtocol'
+import {
   getNoteAssetRelativePath,
   getNoteAssetUrl,
   handleNoteAssetProtocolRequest,
@@ -338,6 +344,14 @@ protocol.registerSchemesAsPrivileged([
   },
   {
     scheme: 'life-note-asset',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+    },
+  },
+  {
+    scheme: LANDING_POSTER_PROTOCOL,
     privileges: {
       standard: true,
       secure: true,
@@ -1427,6 +1441,16 @@ function setupNoteAssetProtocol() {
   )
 }
 
+function getLandingPosterAssetDir() {
+  return path.join(BASE_DIR, 'assets')
+}
+
+function setupLandingPosterProtocol() {
+  protocol.handle(LANDING_POSTER_PROTOCOL, (request) =>
+    handleLandingPosterProtocolRequest({ request, assetRoot: getLandingPosterAssetDir() }),
+  )
+}
+
 // Switch user and initialize
 function switchUserSession(userId: string) {
   closeDouyinReaderView()
@@ -1795,6 +1819,7 @@ app.whenReady().then(() => {
   setupAIMediaProtocol()
   setupBookCoverProtocol()
   setupNoteAssetProtocol()
+  setupLandingPosterProtocol()
   configureApplicationMenu()
   createWindow()
   createDesktopTaskNoteWindow()
@@ -2227,6 +2252,67 @@ ipcMain.handle('settings:save', async (_, newSettings: any) => {
     void loadVideoEngine({ force: true })
   }
   return { ...savedSettings, shortcutRegistration: { success: true }, openAtLoginResult }
+})
+
+ipcMain.handle('launchpad:selectPoster', async () => {
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, {
+        title: 'Select Launchpad Poster',
+        properties: ['openFile'],
+        filters: [{ name: 'Images', extensions: ['avif', 'jpg', 'jpeg', 'png', 'webp'] }],
+      })
+    : await dialog.showOpenDialog({
+        title: 'Select Launchpad Poster',
+        properties: ['openFile'],
+        filters: [{ name: 'Images', extensions: ['avif', 'jpg', 'jpeg', 'png', 'webp'] }],
+      })
+  if (result.canceled || !result.filePaths[0]) return { success: false, cancelled: true }
+
+  const sourcePath = result.filePaths[0]
+  const extension = path.extname(sourcePath).toLowerCase()
+  if (!isLandingPosterExtension(extension)) {
+    return { success: false, error: 'Unsupported poster format.' }
+  }
+  const source = await fs.promises.stat(sourcePath)
+  if (!source.isFile() || source.size === 0 || source.size > 20 * 1024 * 1024) {
+    return { success: false, error: 'Poster must be an image smaller than 20 MB.' }
+  }
+
+  const assetDir = getLandingPosterAssetDir()
+  await fs.promises.mkdir(assetDir, { recursive: true })
+  const entries = await fs.promises.readdir(assetDir, { withFileTypes: true })
+  await Promise.all(
+    entries
+      .filter(
+        (entry) =>
+          entry.isFile() &&
+          path.parse(entry.name).name === LANDING_POSTER_FILE_STEM &&
+          isLandingPosterExtension(path.extname(entry.name)),
+      )
+      .map((entry) => fs.promises.rm(path.join(assetDir, entry.name), { force: true })),
+  )
+  await fs.promises.copyFile(sourcePath, path.join(assetDir, `${LANDING_POSTER_FILE_STEM}${extension}`))
+  return { success: true, posterVersion: crypto.randomUUID() }
+})
+
+ipcMain.handle('launchpad:removePoster', async () => {
+  const assetDir = getLandingPosterAssetDir()
+  try {
+    const entries = await fs.promises.readdir(assetDir, { withFileTypes: true })
+    await Promise.all(
+      entries
+        .filter(
+          (entry) =>
+            entry.isFile() &&
+            path.parse(entry.name).name === LANDING_POSTER_FILE_STEM &&
+            isLandingPosterExtension(path.extname(entry.name)),
+        )
+        .map((entry) => fs.promises.rm(path.join(assetDir, entry.name), { force: true })),
+    )
+  } catch {
+    // Absence is the desired final state.
+  }
+  return { success: true }
 })
 
 // Screen capture is intentionally mediated by the main process so the renderer never

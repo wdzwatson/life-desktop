@@ -361,6 +361,12 @@ body.theme-dense .nav-item.active {
   flex: 0 0 auto;
 }
 
+.app-boot-loading {
+  height: 100vh;
+  padding: 24px;
+  background: var(--bg-app);
+}
+
 @media (max-width: 900px) {
   .top-bar { padding: 0 12px; gap: 10px; }
   .global-search-btn { width: min(260px, 30vw); }

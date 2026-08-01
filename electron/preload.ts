@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   logoutUser: () => ipcRenderer.invoke('user:logout'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: any) => ipcRenderer.invoke('settings:save', settings),
+  selectLaunchpadPoster: () => ipcRenderer.invoke('launchpad:selectPoster'),
+  removeLaunchpadPoster: () => ipcRenderer.invoke('launchpad:removePoster'),
   clearAppData: () => ipcRenderer.invoke('settings:clearAppData'),
   listScreenDisplays: () => ipcRenderer.invoke('screen-capture:displays'),
   captureScreen: (input?: { displayId?: number }) =>

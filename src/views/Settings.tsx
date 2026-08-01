@@ -60,6 +60,8 @@ export const Settings: React.FC = () => {
   const setTheme = useAppStore((state) => state.setTheme)
   const language = useAppStore((state) => state.language)
   const setLanguage = useAppStore((state) => state.setLanguage)
+  const launchpadSettings = useAppStore((state) => state.launchpadSettings)
+  const setLaunchpadSettings = useAppStore((state) => state.setLaunchpadSettings)
   const userId = useAppStore((state) => state.userId)
   const userNickname = useAppStore((state) => state.userNickname)
   const userAvatar = useAppStore((state) => state.userAvatar)
@@ -296,6 +298,26 @@ export const Settings: React.FC = () => {
     }
     setOpenAtLogin(result?.openAtLogin !== false)
     showToast(t('settings.open_at_login_saved'))
+  }
+
+  const handleLaunchpadPosterSelect = async () => {
+    if (!api?.selectLaunchpadPoster) return
+    const result = await api.selectLaunchpadPoster()
+    if (result?.success && result.posterVersion) {
+      await setLaunchpadSettings({ posterVersion: result.posterVersion })
+      showToast(t('settings.launchpad_poster_saved'))
+    } else if (!result?.cancelled) {
+      showToast(t('settings.launchpad_poster_failed'))
+    }
+  }
+
+  const handleLaunchpadPosterRemove = async () => {
+    if (!api?.removeLaunchpadPoster) return
+    const result = await api.removeLaunchpadPoster()
+    if (result?.success) {
+      await setLaunchpadSettings({ posterVersion: undefined })
+      showToast(t('settings.launchpad_poster_removed'))
+    }
   }
 
   const handleShortcutChange = (id: ShortcutId, event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -807,6 +829,41 @@ export const Settings: React.FC = () => {
                       {locale.label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '20px' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 800, marginBottom: '4px' }}>
+                  {t('settings.launchpad_title')}
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', marginBottom: '12px' }}>
+                  {t('settings.launchpad_desc')}
+                </p>
+                <label style={{ display: 'grid', gap: 6, maxWidth: 300, fontSize: 13 }}>
+                  <span>{t('settings.launchpad_startup_mode')}</span>
+                  <select
+                    value={launchpadSettings.startupMode}
+                    onChange={(event) =>
+                      void setLaunchpadSettings({
+                        startupMode: event.target.value as 'always' | 'daily' | 'resume',
+                      })
+                    }
+                  >
+                    <option value="daily">{t('settings.launchpad_mode_daily')}</option>
+                    <option value="always">{t('settings.launchpad_mode_always')}</option>
+                    <option value="resume">{t('settings.launchpad_mode_resume')}</option>
+                  </select>
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+                  <button className="btn" type="button" onClick={() => void handleLaunchpadPosterSelect()}>
+                    <FolderOpen size={15} />
+                    {t('settings.launchpad_poster_select')}
+                  </button>
+                  {launchpadSettings.posterVersion && (
+                    <button className="btn" type="button" onClick={() => void handleLaunchpadPosterRemove()}>
+                      {t('settings.launchpad_poster_remove')}
+                    </button>
+                  )}
                 </div>
               </div>
             </>

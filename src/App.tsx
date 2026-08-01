@@ -43,6 +43,9 @@ const AIChat = lazy(() => import('./views/ai/AIChat').then(({ AIChat }) => ({ de
 const Settings = lazy(() =>
   import('./views/Settings').then(({ Settings }) => ({ default: Settings })),
 )
+const Launchpad = lazy(() =>
+  import('./views/Launchpad').then(({ Launchpad }) => ({ default: Launchpad })),
+)
 
 function App() {
   const { t } = useTranslation()
@@ -54,6 +57,7 @@ function App() {
   const sidebarDisplayMode = useAppStore((state) => state.sidebarDisplayMode)
   const loadInitialConfig = useAppStore((state) => state.loadInitialConfig)
   const showToast = useAppStore((state) => state.showToast)
+  const isInitialConfigLoaded = useAppStore((state) => state.isInitialConfigLoaded)
 
   // Command palette overlay states
   const [searchOpen, setSearchOpen] = useState(false)
@@ -313,6 +317,8 @@ function App() {
   // Screen View Switch Router
   const renderScreen = () => {
     switch (activeScreen) {
+      case 'landing':
+        return <Launchpad />
       case 'dashboard':
         return <Dashboard />
       case 'tasks':
@@ -336,6 +342,10 @@ function App() {
       default:
         return <Dashboard />
     }
+  }
+
+  if (!isInitialConfigLoaded) {
+    return <div className="app-boot-loading"><ScreenLoading screen="landing" /></div>
   }
 
   if (!isAuthenticated) {

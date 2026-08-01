@@ -1,0 +1,227 @@
+.launchpad {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.86fr) minmax(360px, 1fr);
+  min-height: min(720px, calc(100vh - 136px));
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-app);
+}
+
+.launchpad__poster {
+  position: relative;
+  min-height: 460px;
+  overflow: hidden;
+  background: #111827;
+  isolation: isolate;
+}
+
+.launchpad__poster-fallback,
+.launchpad__poster-custom {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.launchpad__poster-fallback {
+  object-position: center;
+  opacity: 0.82;
+  transform: scale(1.03);
+}
+
+.launchpad__poster-custom {
+  opacity: 0;
+  animation: launchpad-poster-reveal 360ms var(--ease-standard) forwards;
+}
+
+.launchpad__poster-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.08), rgba(15, 23, 42, 0.62));
+}
+
+.launchpad__poster-mark {
+  position: absolute;
+  left: 28px;
+  bottom: 24px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.launchpad__actions {
+  align-self: center;
+  max-width: 620px;
+  padding: clamp(36px, 6vw, 72px);
+}
+
+.launchpad__date,
+.launchpad__eyebrow {
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.launchpad h1 {
+  margin-top: 12px;
+  font-size: 32px;
+  line-height: 1.18;
+  letter-spacing: 0;
+}
+
+.launchpad__intro {
+  max-width: 440px;
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.launchpad__recommendation {
+  display: grid;
+  gap: 8px;
+  min-height: 118px;
+  margin: 34px 0 20px;
+  padding: 18px 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.launchpad__recommendation strong {
+  min-height: 22px;
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.launchpad__recommendation[aria-busy='true'] strong {
+  width: min(280px, 80%);
+  border-radius: 4px;
+  color: transparent;
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+
+.launchpad__recommendation-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  width: max-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.launchpad__recommendation-action:hover,
+.launchpad__recommendation-action:focus-visible {
+  color: var(--color-accent);
+}
+
+.launchpad__primary-actions,
+.launchpad__secondary-actions,
+.launchpad__status,
+.launchpad-capture__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.launchpad__button {
+  min-height: 42px;
+}
+
+.launchpad__secondary-actions {
+  margin-top: 20px;
+}
+
+.launchpad__secondary-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.launchpad__secondary-actions button:hover,
+.launchpad__secondary-actions button:focus-visible {
+  color: var(--text-main);
+}
+
+.launchpad__status {
+  margin-top: 44px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.launchpad__status span + span::before {
+  margin-right: 10px;
+  color: var(--color-border);
+  content: '•';
+}
+
+.launchpad-capture {
+  width: min(540px, calc(100vw - 32px));
+}
+
+.launchpad-capture > p {
+  margin: 8px 0 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.launchpad-capture textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.launchpad-capture__actions {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+@keyframes launchpad-poster-reveal {
+  to { opacity: 1; }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .launchpad__primary-actions .btn,
+  .launchpad__secondary-actions button,
+  .launchpad__recommendation-action {
+    transition: transform var(--motion-fast) var(--ease-standard), color var(--motion-fast) ease;
+  }
+
+  .launchpad__primary-actions .btn:hover,
+  .launchpad__secondary-actions button:hover,
+  .launchpad__recommendation-action:hover {
+    transform: translateY(-1px);
+  }
+}
+
+@media (max-width: 860px) {
+  .launchpad { grid-template-columns: 1fr; }
+  .launchpad__poster { min-height: 180px; max-height: 240px; }
+  .launchpad__actions { padding: 32px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launchpad__poster-custom { animation-duration: 1ms; }
+  .launchpad__primary-actions .btn,
+  .launchpad__secondary-actions button,
+  .launchpad__recommendation-action { transition: none; }
+}
