@@ -35,11 +35,14 @@ Authentication
       -> Dashboard -> existing overview
 ```
 
-The left navigation and top bar stay available, so Launchpad never traps the user.
+Launchpad renders before the standard workspace shell. While it is visible, the left navigation,
+top bar, status bar, and global command palette are not mounted. It is deliberately not a normal
+destination in the sidebar. Any primary or secondary Launchpad action exits into the standard
+workspace shell, where normal navigation becomes available.
 
 ## Layout
 
-The screen uses a two-column, full-height composition inside the existing content pane:
+The screen uses a two-column, full-window composition outside the existing content pane:
 
 - **Poster zone:** 42-48% width on desktop, fixed visual aspect ratio, no nested card. It shows the user-selected poster or the bundled `hero.png` fallback.
 - **Action zone:** a greeting, date, one recommendation, two primary actions, secondary actions, and a compact context row.

@@ -1,12 +1,10 @@
 .launchpad {
   display: grid;
   grid-template-columns: minmax(300px, 0.86fr) minmax(360px, 1fr);
-  min-height: min(720px, calc(100vh - 136px));
+  width: 100vw;
+  min-height: 100vh;
   overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
   background: var(--bg-surface);
-  box-shadow: var(--shadow-app);
 }
 
 .launchpad__poster {

@@ -317,8 +317,6 @@ function App() {
   // Screen View Switch Router
   const renderScreen = () => {
     switch (activeScreen) {
-      case 'landing':
-        return <Launchpad />
       case 'dashboard':
         return <Dashboard />
       case 'tasks':
@@ -350,6 +348,16 @@ function App() {
 
   if (!isAuthenticated) {
     return <AuthScreen />
+  }
+
+  // Launchpad intentionally sits outside the workspace shell. It is a focused startup
+  // moment, so navigation, topbar, and status information appear only after an action.
+  if (activeScreen === 'landing') {
+    return (
+      <Suspense fallback={<div className="app-boot-loading"><ScreenLoading screen="landing" /></div>}>
+        <Launchpad />
+      </Suspense>
+    )
   }
 
   return (

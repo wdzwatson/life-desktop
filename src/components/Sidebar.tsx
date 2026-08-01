@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next'
 import logoImg from '../assets/logo.png'
 import {
   LayoutDashboard,
-  Sparkles,
   CheckSquare,
   FileText,
   BookOpen,
@@ -116,15 +115,6 @@ export const Sidebar: React.FC = () => {
         </div>
 
         {/* Navigation Items */}
-        <button
-          className={`nav-item ${activeScreen === 'landing' ? 'active' : ''}`}
-          onClick={() => handleNavClick('landing')}
-        >
-          <span className="nav-icon">
-            <Sparkles size={18} />
-          </span>
-          <span className="nav-label">{t('sidebar.launchpad')}</span>
-        </button>
         <button
           className={`nav-item ${activeScreen === 'dashboard' ? 'active' : ''}`}
           onClick={() => handleNavClick('dashboard')}
