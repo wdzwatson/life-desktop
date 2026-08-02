@@ -413,6 +413,19 @@ body.theme-dense .nav-item.active {
   min-height: 0;
 }
 
+.toolbox-view__tabs {
+  position: sticky;
+  /* The content pane has 24px padding, so offset the sticky anchor to its true top edge. */
+  top: -24px;
+  z-index: 5;
+  padding: 10px 0 12px;
+  background: var(--bg-app);
+}
+
+@media (max-width: 640px) {
+  .toolbox-view__tabs { top: -14px; }
+}
+
 .screen-progress {
   position: absolute;
   top: 56px;
