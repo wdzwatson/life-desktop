@@ -5,6 +5,7 @@ import { Lock, Eye, EyeOff, Copy, Trash2 } from 'lucide-react'
 import { copySecretWithAutoClear } from './toolboxVaultUtils'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import { PasswordInput } from '../components/PasswordInput'
+import { SystemCleaner } from './SystemCleaner'
 
 type VaultStatus =
   | 'not_configured'
@@ -42,7 +43,7 @@ export const Toolbox: React.FC = () => {
   const userId = useAppStore((state) => state.userId)
 
   // Active Tool Tab
-  const [toolTab, setToolTab] = useState<'pomodoro' | 'converter' | 'vault'>('pomodoro')
+  const [toolTab, setToolTab] = useState<'pomodoro' | 'converter' | 'vault' | 'cleaner'>('pomodoro')
 
   // DB States (Tasks lookup for Pomodoro)
   const [activeTasks, setActiveTasks] = useState<any[]>([])
@@ -375,10 +376,11 @@ export const Toolbox: React.FC = () => {
 
   return (
     <div
-      className="toolbox-view"
+      className={`toolbox-view ${toolTab === 'cleaner' ? 'toolbox-view--cleaner' : ''}`}
       style={{
         animation: 'enter 0.15s ease both',
-        height: '100%',
+        height: toolTab === 'cleaner' ? 'auto' : '100%',
+        minHeight: '100%',
         display: 'flex',
         flexDirection: 'column',
       }}
@@ -427,9 +429,15 @@ export const Toolbox: React.FC = () => {
         >
           {t('toolbox.tab_vault')}
         </button>
+        <button
+          className={`tab ${toolTab === 'cleaner' ? 'active' : ''}`}
+          onClick={() => setToolTab('cleaner')}
+        >
+          {t('toolbox.tab_cleaner')}
+        </button>
       </div>
 
-      <div className="toolbox-view__body" style={{ flexGrow: 1, minHeight: 0 }}>
+      <div className="toolbox-view__body" style={{ flexGrow: toolTab === 'cleaner' ? 0 : 1, minHeight: 0, overflowY: toolTab === 'cleaner' ? 'visible' : 'auto' }}>
         {/* SUB-VIEW: POMODORO TIMER */}
         {toolTab === 'pomodoro' && (
           <div
@@ -1154,6 +1162,8 @@ export const Toolbox: React.FC = () => {
             )}
           </div>
         )}
+
+        {toolTab === 'cleaner' && <SystemCleaner />}
       </div>
     </div>
   )

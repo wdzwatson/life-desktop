@@ -1,0 +1,39 @@
+.toolbox-view--cleaner .toolbox-view__body { flex: 0 0 auto; overflow: visible !important; }
+.system-cleaner { display: grid; gap: 14px; min-height: 0; overflow: visible; padding-right: 2px; overflow-anchor: none; }
+.system-cleaner__toolbar, .system-cleaner__panel-heading, .system-cleaner__plan, .system-cleaner__diagnostics > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.system-cleaner h2, .system-cleaner h3, .system-cleaner p { margin: 0; }
+.system-cleaner h2 { font-size: 16px; }
+.system-cleaner h3 { font-size: 13px; }
+.system-cleaner p, .system-cleaner small { color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.system-cleaner__actions .btn, .system-cleaner__panel-heading .btn, .system-cleaner__plan .btn { display: inline-flex; align-items: center; gap: 7px; }
+.system-cleaner__notice, .system-cleaner__result { display: flex; align-items: center; gap: 8px; border-left: 3px solid var(--color-accent); background: color-mix(in srgb, var(--color-accent) 7%, var(--bg-surface)); padding: 10px 12px; font-size: 12px; }
+.system-cleaner__progress, .system-cleaner__panel, .system-cleaner__plan, .system-cleaner__diagnostics { border: 1px solid var(--color-border); background: var(--bg-surface); border-radius: var(--radius-card); padding: 14px; }
+.system-cleaner__progress { display: grid; gap: 8px; }
+.system-cleaner__progress > div:first-child { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+.system-cleaner__progress-track { overflow: hidden; height: 5px; background: var(--color-border); border-radius: 3px; }
+.system-cleaner__progress-track span { display: block; height: 100%; background: var(--color-accent); transition: width 180ms ease; }
+.system-cleaner__summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.system-cleaner__summary article { min-height: 78px; border: 1px solid var(--color-border); background: var(--bg-surface); border-radius: var(--radius-card); padding: 12px; display: grid; align-content: start; gap: 4px; }
+.system-cleaner__summary article:first-child { grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 8px; }
+.system-cleaner__summary article:first-child strong { grid-column: 2; }
+.system-cleaner__summary span, .system-cleaner__summary small { color: var(--text-muted); font-size: 11px; }
+.system-cleaner__summary strong { font-size: 18px; }
+.system-cleaner__mounts { display: flex; flex-wrap: wrap; gap: 8px; }
+.system-cleaner__mounts span { border: 1px solid var(--color-border); padding: 5px 8px; border-radius: 4px; font: 11px var(--font-mono); }
+.system-cleaner__panel { display: grid; gap: 12px; }
+.system-cleaner__categories { border-top: 1px solid var(--color-border); }
+.system-cleaner__category { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 4px; border-bottom: 1px solid var(--color-border); cursor: pointer; }
+.system-cleaner__category:last-child { border-bottom: 0; }
+.system-cleaner__category input { margin-top: 3px; accent-color: var(--color-accent); }
+.system-cleaner__category-main { display: grid; gap: 4px; min-width: 0; }
+.system-cleaner__category-main > span { display: flex; align-items: center; gap: 8px; }
+.system-cleaner__category em { font-size: 10px; font-style: normal; padding: 2px 5px; border-radius: 3px; }
+.risk-safe em { color: var(--color-success); background: color-mix(in srgb, var(--color-success) 12%, transparent); }
+.risk-optional em { color: var(--color-warn); background: color-mix(in srgb, var(--color-warn) 13%, transparent); }
+.system-cleaner__category-size { display: grid; text-align: right; gap: 3px; white-space: nowrap; font-size: 12px; }
+.system-cleaner__warning { display: inline-flex; align-items: center; gap: 5px; color: var(--color-warn) !important; }
+.system-cleaner__plan { border-color: color-mix(in srgb, var(--color-danger) 38%, var(--color-border)); }
+.system-cleaner__diagnostics { display: grid; gap: 8px; }
+.system-cleaner__diagnostics > div { justify-content: flex-start; align-items: flex-start; }
+.system-cleaner__diagnostics ul { display: grid; gap: 5px; margin: 0; padding-left: 20px; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+@media (max-width: 720px) { .system-cleaner__summary { grid-template-columns: 1fr; } .system-cleaner__toolbar, .system-cleaner__panel-heading, .system-cleaner__plan { align-items: flex-start; flex-direction: column; } .system-cleaner__category { grid-template-columns: auto minmax(0, 1fr); } .system-cleaner__category-size { grid-column: 2; text-align: left; } }
