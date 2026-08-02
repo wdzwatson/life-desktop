@@ -195,6 +195,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   revealAIAsset: (assetId: number) => ipcRenderer.invoke('ai:media:reveal', { assetId }),
   selectAIChatAttachments: () => ipcRenderer.invoke('ai:attachments:select'),
 
+  // System cleaner only accepts server-issued scan IDs, category IDs, and preview hashes.
+  startSystemCleanerScan: () => ipcRenderer.invoke('systemCleaner:startScan'),
+  getSystemCleanerScan: (taskId: string) => ipcRenderer.invoke('systemCleaner:getScan', { taskId }),
+  cancelSystemCleanerScan: (taskId: string) => ipcRenderer.invoke('systemCleaner:cancelScan', { taskId }),
+  previewSystemCleaner: (input: { taskId: string; categoryIds: string[] }) =>
+    ipcRenderer.invoke('systemCleaner:previewCleanup', input),
+  executeSystemCleaner: (planHash: string) => ipcRenderer.invoke('systemCleaner:executeCleanup', { planHash }),
+  onSystemCleanerProgress: (callback: (event: unknown) => void) => {
+    const listener = (_event: unknown, event: unknown) => callback(event)
+    ipcRenderer.on('systemCleaner:progress', listener)
+    return () => ipcRenderer.removeListener('systemCleaner:progress', listener)
+  },
+
   // Encrypted password vault
   getVaultStatus: () => ipcRenderer.invoke('vault:status'),
   setupVault: (masterPassword: string) => ipcRenderer.invoke('vault:setup', masterPassword),

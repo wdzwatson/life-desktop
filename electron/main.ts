@@ -141,6 +141,8 @@ import { AIServiceError } from './ai/types'
 import { AIRecoveryService } from './ai/recoveryService'
 import { AI_SCHEMA_VERSION } from './ai/schema'
 import { AIStorageService } from './ai/storageService'
+import { SystemCleanerService } from './systemCleaner/service'
+import { registerSystemCleanerIpc } from './systemCleaner/ipc'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -314,6 +316,13 @@ function reloadDouyinReaderView() {
 const BASE_DIR = path.join(app.getPath('home'), 'LifeOS')
 const CONFIG_DIR = path.join(BASE_DIR, 'config')
 const SETTINGS_FILE = path.join(CONFIG_DIR, 'settings.json')
+const systemCleanerService = new SystemCleanerService({
+  audit: async (record) => {
+    const auditDir = path.join(BASE_DIR, 'system-cleaner')
+    await fs.promises.mkdir(auditDir, { recursive: true })
+    await fs.promises.appendFile(path.join(auditDir, 'cleanup-audit.ndjson'), `${JSON.stringify(record)}\n`, 'utf8')
+  },
+})
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -3500,6 +3509,20 @@ registerAIStorageIpc(
   { handle: (channel, handler) => ipcMain.handle(channel, handler) },
   { getService: getAIStorageService },
 )
+
+registerSystemCleanerIpc(
+  { handle: (channel, handler) => ipcMain.handle(channel, handler) },
+  {
+    service: systemCleanerService,
+    confirm: (options) => mainWindow
+      ? dialog.showMessageBox(mainWindow, options)
+      : dialog.showMessageBox(options),
+  },
+)
+
+systemCleanerService.onProgress((progress) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('systemCleaner:progress', progress)
+})
 
 registerAIConversationIpc(
   { handle: (channel, handler) => ipcMain.handle(channel, handler) },
