@@ -4,8 +4,10 @@ import { useTranslation } from 'react-i18next'
 import { Lock, Eye, EyeOff, Copy, Trash2 } from 'lucide-react'
 import { copySecretWithAutoClear } from './toolboxVaultUtils'
 import { useConfirmation } from '../components/ConfirmationProvider'
+import { Dropdown } from '../components/Dropdown'
 import { PasswordInput } from '../components/PasswordInput'
 import { SystemCleaner } from './SystemCleaner'
+import { ScreenshotTool } from './ScreenshotTool'
 
 type VaultStatus =
   | 'not_configured'
@@ -43,7 +45,7 @@ export const Toolbox: React.FC = () => {
   const userId = useAppStore((state) => state.userId)
 
   // Active Tool Tab
-  const [toolTab, setToolTab] = useState<'pomodoro' | 'converter' | 'vault' | 'cleaner'>('pomodoro')
+  const [toolTab, setToolTab] = useState<'pomodoro' | 'converter' | 'vault' | 'screenshot' | 'cleaner'>('pomodoro')
 
   // DB States (Tasks lookup for Pomodoro)
   const [activeTasks, setActiveTasks] = useState<any[]>([])
@@ -430,6 +432,12 @@ export const Toolbox: React.FC = () => {
           {t('toolbox.tab_vault')}
         </button>
         <button
+          className={`tab ${toolTab === 'screenshot' ? 'active' : ''}`}
+          onClick={() => setToolTab('screenshot')}
+        >
+          {t('toolbox.tab_screenshot')}
+        </button>
+        <button
           className={`tab ${toolTab === 'cleaner' ? 'active' : ''}`}
           onClick={() => setToolTab('cleaner')}
         >
@@ -438,6 +446,8 @@ export const Toolbox: React.FC = () => {
       </div>
 
       <div className="toolbox-view__body" style={{ flexGrow: toolTab === 'cleaner' ? 0 : 1, minHeight: 0, overflowY: toolTab === 'cleaner' ? 'visible' : 'auto' }}>
+        {toolTab === 'screenshot' && <ScreenshotTool />}
+
         {/* SUB-VIEW: POMODORO TIMER */}
         {toolTab === 'pomodoro' && (
           <div
@@ -521,7 +531,7 @@ export const Toolbox: React.FC = () => {
                 >
                   {t('toolbox.label_select_task')}
                 </label>
-                <select
+                <Dropdown
                   className="form-field"
                   value={boundTaskId || ''}
                   onChange={(e) => setBoundTaskId(e.target.value ? parseInt(e.target.value) : null)}
@@ -532,7 +542,7 @@ export const Toolbox: React.FC = () => {
                       {t.title} ({t.priority})
                     </option>
                   ))}
-                </select>
+                </Dropdown>
               </div>
               <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
                 <button
@@ -652,7 +662,7 @@ export const Toolbox: React.FC = () => {
                 >
                   {t('toolbox.converter_label_target')}
                 </label>
-                <select
+                <Dropdown
                   className="form-field"
                   value={targetUnit}
                   onChange={(e) => setTargetUnit(e.target.value)}
@@ -680,7 +690,7 @@ export const Toolbox: React.FC = () => {
                       <option value="oz">{t('toolbox.unit_oz')}</option>
                     </>
                   )}
-                </select>
+                </Dropdown>
               </div>
             </div>
 

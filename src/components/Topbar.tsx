@@ -58,6 +58,11 @@ export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch })
   }
 
   const handleScreenCapture = () => {
+    const api = (window as any).electronAPI
+    if (api?.startScreenCapture) {
+      void api.startScreenCapture()
+      return
+    }
     window.dispatchEvent(new Event('screen-capture:open'))
   }
 

@@ -24,12 +24,48 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listScreenDisplays: () => ipcRenderer.invoke('screen-capture:displays'),
   captureScreen: (input?: { displayId?: number }) =>
     ipcRenderer.invoke('screen-capture:capture', input),
+  startScreenCapture: (input?: {
+    selectionMode?: 'full' | 'rectangle' | 'freeform'
+    delayMs?: number
+  }) => ipcRenderer.invoke('screen-capture:start', input),
+  captureScreenBurst: (input?: {
+    count?: number
+    interval?: number
+    displayId?: number
+    controls?: boolean
+  }) => ipcRenderer.invoke('screen-capture:burst', input),
+  controlScreenCaptureBurst: (action: 'toggle-pause' | 'stop') =>
+    ipcRenderer.send('screen-capture:burst-control', action),
+  getScreenRecordingSource: () => ipcRenderer.invoke('screen-capture:recording-source'),
+  completeScreenRecording: () => ipcRenderer.invoke('screen-capture:recording-complete'),
+  saveScreenCaptureMedia: (bytes: Uint8Array, extension: 'gif' | 'webm') =>
+    ipcRenderer.invoke('screen-capture:save-media', { bytes, extension }),
   copyScreenshot: (imageDataUrl: string) => ipcRenderer.invoke('screen-capture:copy', imageDataUrl),
   saveScreenshot: (imageDataUrl: string) => ipcRenderer.invoke('screen-capture:save', imageDataUrl),
   onScreenshotRequested: (callback: (data: { imageDataUrl: string }) => void) => {
     const subscription = (_event: unknown, data: { imageDataUrl: string }) => callback(data)
     ipcRenderer.on('screen-capture:open', subscription)
     return () => ipcRenderer.removeListener('screen-capture:open', subscription)
+  },
+  onScreenRecordingStopRequested: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on('screen-capture:stop-recording', subscription)
+    return () => ipcRenderer.removeListener('screen-capture:stop-recording', subscription)
+  },
+  onScreenCaptureBurstProgress: (
+    callback: (state: {
+      total: number
+      captured: number
+      paused: boolean
+      stopped: boolean
+    }) => void,
+  ) => {
+    const subscription = (
+      _event: unknown,
+      state: { total: number; captured: number; paused: boolean; stopped: boolean },
+    ) => callback(state)
+    ipcRenderer.on('screen-capture:burst-progress', subscription)
+    return () => ipcRenderer.removeListener('screen-capture:burst-progress', subscription)
   },
   translateReaderText: (input: { text: string; targetLanguage?: string }) =>
     ipcRenderer.invoke('reader:translate', input),
@@ -198,10 +234,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // System cleaner only accepts server-issued scan IDs, category IDs, and preview hashes.
   startSystemCleanerScan: () => ipcRenderer.invoke('systemCleaner:startScan'),
   getSystemCleanerScan: (taskId: string) => ipcRenderer.invoke('systemCleaner:getScan', { taskId }),
-  cancelSystemCleanerScan: (taskId: string) => ipcRenderer.invoke('systemCleaner:cancelScan', { taskId }),
+  cancelSystemCleanerScan: (taskId: string) =>
+    ipcRenderer.invoke('systemCleaner:cancelScan', { taskId }),
   previewSystemCleaner: (input: { taskId: string; categoryIds: string[] }) =>
     ipcRenderer.invoke('systemCleaner:previewCleanup', input),
-  executeSystemCleaner: (planHash: string) => ipcRenderer.invoke('systemCleaner:executeCleanup', { planHash }),
+  executeSystemCleaner: (planHash: string) =>
+    ipcRenderer.invoke('systemCleaner:executeCleanup', { planHash }),
   onSystemCleanerProgress: (callback: (event: unknown) => void) => {
     const listener = (_event: unknown, event: unknown) => callback(event)
     ipcRenderer.on('systemCleaner:progress', listener)

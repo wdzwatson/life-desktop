@@ -178,6 +178,14 @@ const aiVideoControllers = new Set<AbortController>()
 let aiRecoveryController: AbortController | null = null
 const bookBatchImportSessions = new Map<string, { userId: string; items: BatchImportItem[] }>()
 let registeredScreenshotShortcut: string | null = null
+let registeredRecordingStopShortcut: string | null = null
+let captureControlWindow: BrowserWindow | null = null
+let activeBurstSession: {
+  total: number
+  captured: number
+  paused: boolean
+  stopped: boolean
+} | null = null
 
 const DEFAULT_SHORTCUTS = {
   screenshot: 'CommandOrControl+Shift+S',
@@ -192,7 +200,56 @@ function getShortcuts(settings = getSettings()) {
   return { ...DEFAULT_SHORTCUTS, ...configured }
 }
 
-async function captureScreen(displayId?: number) {
+const CAPTURE_RECORDING_STOP_SHORTCUT = 'CommandOrControl+Shift+R'
+
+const wait = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
+
+function sendBurstControlProgress() {
+  if (!captureControlWindow || captureControlWindow.isDestroyed() || !activeBurstSession) return
+  captureControlWindow.webContents.send('screen-capture:burst-progress', activeBurstSession)
+}
+
+function closeBurstControlWindow() {
+  const controlWindow = captureControlWindow
+  captureControlWindow = null
+  if (controlWindow && !controlWindow.isDestroyed()) controlWindow.close()
+}
+
+function showBurstControlWindow() {
+  if (captureControlWindow && !captureControlWindow.isDestroyed()) return
+  const workArea = screen.getPrimaryDisplay().workArea
+  captureControlWindow = new BrowserWindow({
+    width: 360,
+    height: 68,
+    x: Math.round(workArea.x + (workArea.width - 360) / 2),
+    y: workArea.y + 24,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    title: 'LifeOS Capture Controls',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  })
+  captureControlWindow.setContentProtection(true)
+  captureControlWindow.setAlwaysOnTop(true, 'screen-saver')
+  captureControlWindow.on('closed', () => {
+    captureControlWindow = null
+    if (activeBurstSession) activeBurstSession.stopped = true
+  })
+  captureControlWindow.webContents.once('did-finish-load', sendBurstControlProgress)
+  void captureControlWindow.loadURL(
+    `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:transparent;font-family:system-ui,"Microsoft YaHei",sans-serif;color:#f8fafc}main{height:68px;box-sizing:border-box;display:flex;align-items:center;gap:14px;padding:12px 14px;background:rgba(15,23,42,.94);border:1px solid rgba(148,163,184,.35);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.32)}#count{font-size:13px;font-weight:700;white-space:nowrap;flex:1}button{border:1px solid rgba(148,163,184,.35);border-radius:5px;background:#1e293b;color:#f8fafc;padding:6px 10px;font:inherit;font-size:12px;cursor:pointer}button:hover{background:#334155}button:last-child{color:#fecaca;border-color:rgba(248,113,113,.55)}</style></head><body><main><span id="count">正在准备...</span><button id="pause">暂停</button><button id="stop">停止</button></main><script>const count=document.getElementById('count'),pause=document.getElementById('pause'),stop=document.getElementById('stop');window.electronAPI.onScreenCaptureBurstProgress((state)=>{count.textContent=\`已截取 \${state.captured} / \${state.total} 帧\`;pause.textContent=state.paused?'继续':'暂停'});pause.addEventListener('click',()=>window.electronAPI.controlScreenCaptureBurst('toggle-pause'));stop.addEventListener('click',()=>window.electronAPI.controlScreenCaptureBurst('stop'));</script></body></html>`)}`,
+  )
+}
+
+async function getScreenSource(displayId?: number) {
   const displays = screen.getAllDisplays()
   const primaryDisplay = screen.getPrimaryDisplay()
   const requestedDisplay = displays.find((display) => display.id === displayId)
@@ -206,7 +263,64 @@ async function captureScreen(displayId?: number) {
     sources.find((candidate) => candidate.display_id === String(targetDisplay.id)) ?? sources[0]
   if (!source || source.thumbnail.isEmpty())
     throw new Error('Unable to capture the current display.')
+  return source
+}
+
+async function captureScreen(displayId?: number) {
+  const source = await getScreenSource(displayId)
   return source.thumbnail.toDataURL()
+}
+
+async function captureScreenFrames(
+  count: number,
+  interval: number,
+  displayId?: number,
+  showControls = false,
+) {
+  mainWindow?.hide()
+  await wait(180)
+  const session = showControls ? { total: count, captured: 0, paused: false, stopped: false } : null
+  activeBurstSession = session
+  if (session) showBurstControlWindow()
+  try {
+    const frames: string[] = []
+    for (let index = 0; index < count; index += 1) {
+      while (session?.paused && !session.stopped) await wait(100)
+      if (session?.stopped) break
+      frames.push(await captureScreen(displayId))
+      if (session) {
+        session.captured = frames.length
+        sendBurstControlProgress()
+      }
+      if (index < count - 1) await wait(interval)
+    }
+    return frames
+  } finally {
+    activeBurstSession = null
+    closeBurstControlWindow()
+    showMainWindow()
+  }
+}
+
+async function openScreenCaptureEditor(input?: {
+  displayId?: number
+  selectionMode?: 'full' | 'rectangle' | 'freeform'
+  delayMs?: number
+}) {
+  // Hide the application briefly so a capture started from its own UI does not include it.
+  mainWindow?.hide()
+  await wait(Math.max(180, input?.delayMs ?? 0))
+  try {
+    const imageDataUrl = await captureScreen(input?.displayId)
+    showMainWindow()
+    mainWindow?.webContents.send('screen-capture:open', {
+      imageDataUrl,
+      selectionMode: input?.selectionMode,
+    })
+  } catch (error) {
+    showMainWindow()
+    throw error
+  }
 }
 
 function registerScreenshotShortcut(settings = getSettings()) {
@@ -215,12 +329,7 @@ function registerScreenshotShortcut(settings = getSettings()) {
   registeredScreenshotShortcut = null
   const accelerator = getShortcuts(settings).screenshot
   const triggerScreenshot = () => {
-    void captureScreen()
-      .then((imageDataUrl) => {
-        showMainWindow()
-        mainWindow?.webContents.send('screen-capture:open', { imageDataUrl })
-      })
-      .catch((error) => console.warn('[ScreenCapture] failed:', error))
+    void openScreenCaptureEditor().catch((error) => console.warn('[ScreenCapture] failed:', error))
   }
   const restorePrevious = () => {
     if (previousAccelerator && globalShortcut.register(previousAccelerator, triggerScreenshot)) {
@@ -320,7 +429,11 @@ const systemCleanerService = new SystemCleanerService({
   audit: async (record) => {
     const auditDir = path.join(BASE_DIR, 'system-cleaner')
     await fs.promises.mkdir(auditDir, { recursive: true })
-    await fs.promises.appendFile(path.join(auditDir, 'cleanup-audit.ndjson'), `${JSON.stringify(record)}\n`, 'utf8')
+    await fs.promises.appendFile(
+      path.join(auditDir, 'cleanup-audit.ndjson'),
+      `${JSON.stringify(record)}\n`,
+      'utf8',
+    )
   },
 })
 
@@ -1823,6 +1936,14 @@ function createAppTray() {
 }
 
 app.whenReady().then(() => {
+  session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
+    try {
+      const source = await getScreenSource()
+      callback({ video: source, audio: false })
+    } catch {
+      callback({})
+    }
+  })
   applyOpenAtLoginSetting(getSettings().openAtLogin !== false)
   setupVideoProtocol()
   setupAIMediaProtocol()
@@ -2300,7 +2421,10 @@ ipcMain.handle('launchpad:selectPoster', async () => {
       )
       .map((entry) => fs.promises.rm(path.join(assetDir, entry.name), { force: true })),
   )
-  await fs.promises.copyFile(sourcePath, path.join(assetDir, `${LANDING_POSTER_FILE_STEM}${extension}`))
+  await fs.promises.copyFile(
+    sourcePath,
+    path.join(assetDir, `${LANDING_POSTER_FILE_STEM}${extension}`),
+  )
   return { success: true, posterVersion: crypto.randomUUID() }
 })
 
@@ -2342,6 +2466,118 @@ ipcMain.handle('screen-capture:capture', async (_, input?: { displayId?: unknown
     return { success: false, error: error?.message || 'Unable to capture the current display.' }
   }
 })
+
+ipcMain.handle(
+  'screen-capture:start',
+  async (_, input?: { selectionMode?: unknown; delayMs?: unknown }) => {
+    try {
+      const selectionMode =
+        input?.selectionMode === 'full' ||
+        input?.selectionMode === 'rectangle' ||
+        input?.selectionMode === 'freeform'
+          ? input.selectionMode
+          : 'rectangle'
+      const delayMs =
+        typeof input?.delayMs === 'number'
+          ? Math.max(0, Math.min(Math.round(input.delayMs), 15_000))
+          : 0
+      await openScreenCaptureEditor({ selectionMode, delayMs })
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Unable to capture the current display.' }
+    }
+  },
+)
+
+ipcMain.handle(
+  'screen-capture:burst',
+  async (
+    _,
+    input?: { count?: unknown; interval?: unknown; displayId?: unknown; controls?: unknown },
+  ) => {
+    try {
+      const count =
+        typeof input?.count === 'number' ? Math.max(2, Math.min(Math.round(input.count), 20)) : 5
+      const interval =
+        typeof input?.interval === 'number'
+          ? Math.max(150, Math.min(Math.round(input.interval), 3_000))
+          : 700
+      const displayId = typeof input?.displayId === 'number' ? input.displayId : undefined
+      const controls = input?.controls === true
+      return {
+        success: true,
+        frames: await captureScreenFrames(count, interval, displayId, controls),
+      }
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Unable to capture screen frames.' }
+    }
+  },
+)
+
+ipcMain.on('screen-capture:burst-control', (_, action: unknown) => {
+  if (!activeBurstSession) return
+  if (action === 'toggle-pause') activeBurstSession.paused = !activeBurstSession.paused
+  if (action === 'stop') activeBurstSession.stopped = true
+  sendBurstControlProgress()
+})
+
+ipcMain.handle('screen-capture:recording-source', async () => {
+  try {
+    if (registeredRecordingStopShortcut) {
+      return { success: false, error: 'Screen recording is already in progress.' }
+    }
+    mainWindow?.hide()
+    await wait(180)
+    if (
+      !globalShortcut.register(CAPTURE_RECORDING_STOP_SHORTCUT, () => {
+        mainWindow?.webContents.send('screen-capture:stop-recording')
+      })
+    ) {
+      showMainWindow()
+      return { success: false, error: 'The recording stop shortcut is unavailable.' }
+    }
+    registeredRecordingStopShortcut = CAPTURE_RECORDING_STOP_SHORTCUT
+    return { success: true, stopShortcut: CAPTURE_RECORDING_STOP_SHORTCUT }
+  } catch (error: any) {
+    showMainWindow()
+    return { success: false, error: error?.message || 'Unable to start screen recording.' }
+  }
+})
+
+ipcMain.handle('screen-capture:recording-complete', async () => {
+  if (registeredRecordingStopShortcut) {
+    globalShortcut.unregister(registeredRecordingStopShortcut)
+    registeredRecordingStopShortcut = null
+  }
+  showMainWindow()
+  return { success: true }
+})
+
+ipcMain.handle(
+  'screen-capture:save-media',
+  async (_, input?: { bytes?: unknown; extension?: unknown }) => {
+    const extension =
+      input?.extension === 'gif' || input?.extension === 'webm' ? input.extension : null
+    const bytes = input?.bytes
+    if (!extension || !(bytes instanceof Uint8Array) || bytes.byteLength === 0) {
+      return { success: false, error: 'Invalid capture media.' }
+    }
+    const label = extension === 'gif' ? 'GIF image' : 'WebM video'
+    const result = mainWindow
+      ? await dialog.showSaveDialog(mainWindow, {
+          defaultPath: `LifeOS Capture ${new Date().toISOString().replace(/[:.]/g, '-')}.${extension}`,
+          filters: [{ name: label, extensions: [extension] }],
+        })
+      : await dialog.showSaveDialog({ filters: [{ name: label, extensions: [extension] }] })
+    if (result.canceled || !result.filePath) return { success: true, saved: false }
+    try {
+      fs.writeFileSync(result.filePath, Buffer.from(bytes))
+      return { success: true, saved: true, filePath: result.filePath }
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Unable to save capture media.' }
+    }
+  },
+)
 
 ipcMain.handle('screen-capture:copy', async (_, imageDataUrl: unknown) => {
   if (typeof imageDataUrl !== 'string' || !imageDataUrl.startsWith('data:image/png;base64,')) {
@@ -3514,14 +3750,14 @@ registerSystemCleanerIpc(
   { handle: (channel, handler) => ipcMain.handle(channel, handler) },
   {
     service: systemCleanerService,
-    confirm: (options) => mainWindow
-      ? dialog.showMessageBox(mainWindow, options)
-      : dialog.showMessageBox(options),
+    confirm: (options) =>
+      mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options),
   },
 )
 
 systemCleanerService.onProgress((progress) => {
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('systemCleaner:progress', progress)
+  if (mainWindow && !mainWindow.isDestroyed())
+    mainWindow.webContents.send('systemCleaner:progress', progress)
 })
 
 registerAIConversationIpc(

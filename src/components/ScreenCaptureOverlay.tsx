@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 type Point = { x: number; y: number }
 type Rect = Point & { width: number; height: number }
 type ScreenDisplay = { id: number; label: string; primary: boolean }
+export type ScreenCaptureSelectionMode = 'full' | 'rectangle' | 'freeform'
 
 const minimumSelection = 8
 
@@ -19,15 +20,18 @@ function normalizeRect(start: Point, end: Point): Rect {
 
 export function ScreenCaptureOverlay({
   initialImageDataUrl,
+  selectionMode = 'rectangle',
   onClose,
 }: {
   initialImageDataUrl?: string | null
+  selectionMode?: ScreenCaptureSelectionMode
   onClose: () => void
 }) {
   const { t } = useTranslation()
   const api = (window as any).electronAPI
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(initialImageDataUrl ?? null)
   const [selection, setSelection] = useState<Rect | null>(null)
+  const [freeformPoints, setFreeformPoints] = useState<Point[]>([])
   const [dragStart, setDragStart] = useState<Point | null>(null)
   const [isLoading, setIsLoading] = useState(!initialImageDataUrl)
   const [isEditing, setIsEditing] = useState(false)
@@ -55,7 +59,9 @@ export function ScreenCaptureOverlay({
     api?.listScreenDisplays?.().then((items: ScreenDisplay[]) => {
       if (!Array.isArray(items)) return
       setDisplays(items)
-      setSelectedDisplayId((current) => current ?? items.find((item) => item.primary)?.id ?? items[0]?.id)
+      setSelectedDisplayId(
+        (current) => current ?? items.find((item) => item.primary)?.id ?? items[0]?.id,
+      )
     })
   }, [api])
 
@@ -67,16 +73,22 @@ export function ScreenCaptureOverlay({
     if (!capture) {
       setMessage(t('screen_capture.capture_failed'))
       setIsLoading(false)
-      return () => { isCurrent = false }
+      return () => {
+        isCurrent = false
+      }
     }
-    capture.then((result: any) => {
-      if (!isCurrent) return
-      if (result?.success) setImageDataUrl(result.imageDataUrl)
-      else setMessage(result?.error || t('screen_capture.capture_failed'))
-    }).finally(() => {
-      if (isCurrent) setIsLoading(false)
-    })
-    return () => { isCurrent = false }
+    capture
+      .then((result: any) => {
+        if (!isCurrent) return
+        if (result?.success) setImageDataUrl(result.imageDataUrl)
+        else setMessage(result?.error || t('screen_capture.capture_failed'))
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoading(false)
+      })
+    return () => {
+      isCurrent = false
+    }
   }, [api, initialImageDataUrl, selectedDisplayId])
 
   useEffect(() => {
@@ -101,20 +113,56 @@ export function ScreenCaptureOverlay({
     const image = imageRef.current
     if (!image) return null
     const box = image.getBoundingClientRect()
-    const selected = selection && selection.width >= minimumSelection && selection.height >= minimumSelection
-      ? selection
-      : { x: 0, y: 0, width: box.width, height: box.height }
+    const selected =
+      selectionMode !== 'full' &&
+      selection &&
+      selection.width >= minimumSelection &&
+      selection.height >= minimumSelection
+        ? selection
+        : { x: 0, y: 0, width: box.width, height: box.height }
     const scaleX = image.naturalWidth / box.width
     const scaleY = image.naturalHeight / box.height
+    const freeformBounds =
+      selectionMode === 'freeform' && freeformPoints.length >= 3
+        ? {
+            x: Math.min(...freeformPoints.map((point) => point.x)),
+            y: Math.min(...freeformPoints.map((point) => point.y)),
+            width:
+              Math.max(...freeformPoints.map((point) => point.x)) -
+              Math.min(...freeformPoints.map((point) => point.x)),
+            height:
+              Math.max(...freeformPoints.map((point) => point.y)) -
+              Math.min(...freeformPoints.map((point) => point.y)),
+          }
+        : null
+    const output =
+      freeformBounds &&
+      freeformBounds.width >= minimumSelection &&
+      freeformBounds.height >= minimumSelection
+        ? freeformBounds
+        : selected
     const canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, Math.round(selected.width * scaleX))
-    canvas.height = Math.max(1, Math.round(selected.height * scaleY))
-    canvas.getContext('2d')?.drawImage(
+    canvas.width = Math.max(1, Math.round(output.width * scaleX))
+    canvas.height = Math.max(1, Math.round(output.height * scaleY))
+    const context = canvas.getContext('2d')
+    if (!context) return null
+    if (freeformBounds && output === freeformBounds) {
+      context.beginPath()
+      freeformPoints.forEach((point, index) => {
+        const x = (point.x - output.x) * scaleX
+        const y = (point.y - output.y) * scaleY
+        if (index === 0) context.moveTo(x, y)
+        else context.lineTo(x, y)
+      })
+      context.closePath()
+      context.clip()
+    }
+    context.drawImage(
       image,
-      Math.round(selected.x * scaleX),
-      Math.round(selected.y * scaleY),
-      canvas.width,
-      canvas.height,
+      Math.round(output.x * scaleX),
+      Math.round(output.y * scaleY),
+      Math.round(output.width * scaleX),
+      Math.round(output.height * scaleY),
       0,
       0,
       canvas.width,
@@ -132,7 +180,11 @@ export function ScreenCaptureOverlay({
     setOutputBusy(true)
     try {
       const result = await api?.copyScreenshot?.(image)
-      setMessage(result?.success ? t('screen_capture.copied') : result?.error || t('screen_capture.copy_failed'))
+      setMessage(
+        result?.success
+          ? t('screen_capture.copied')
+          : result?.error || t('screen_capture.copy_failed'),
+      )
     } finally {
       setOutputBusy(false)
     }
@@ -145,7 +197,13 @@ export function ScreenCaptureOverlay({
     setOutputBusy(true)
     try {
       const result = await api?.saveScreenshot?.(image)
-      setMessage(result?.success ? (result.saved ? t('screen_capture.saved') : t('screen_capture.save_cancelled')) : result?.error || t('screen_capture.save_failed'))
+      setMessage(
+        result?.success
+          ? result.saved
+            ? t('screen_capture.saved')
+            : t('screen_capture.save_cancelled')
+          : result?.error || t('screen_capture.save_failed'),
+      )
     } finally {
       setOutputBusy(false)
     }
@@ -156,6 +214,7 @@ export function ScreenCaptureOverlay({
     if (!image) return
     setImageDataUrl(image)
     setSelection(null)
+    setFreeformPoints([])
     setIsEditing(true)
     setMessage(t('screen_capture.editor_hint'))
   }
@@ -185,8 +244,14 @@ export function ScreenCaptureOverlay({
     if (!canvas) return null
     const rect = canvas.getBoundingClientRect()
     return {
-      x: Math.max(0, Math.min(canvas.width, (event.clientX - rect.left) * (canvas.width / rect.width))),
-      y: Math.max(0, Math.min(canvas.height, (event.clientY - rect.top) * (canvas.height / rect.height))),
+      x: Math.max(
+        0,
+        Math.min(canvas.width, (event.clientX - rect.left) * (canvas.width / rect.width)),
+      ),
+      y: Math.max(
+        0,
+        Math.min(canvas.height, (event.clientY - rect.top) * (canvas.height / rect.height)),
+      ),
     }
   }
 
@@ -210,7 +275,10 @@ export function ScreenCaptureOverlay({
     const canvas = canvasRef.current
     const context = canvas?.getContext('2d')
     if (!canvas || !context) return
-    editorHistoryRef.current = [...editorHistoryRef.current.slice(-19), context.getImageData(0, 0, canvas.width, canvas.height)]
+    editorHistoryRef.current = [
+      ...editorHistoryRef.current.slice(-19),
+      context.getImageData(0, 0, canvas.width, canvas.height),
+    ]
     setCanUndo(true)
   }
 
@@ -225,12 +293,14 @@ export function ScreenCaptureOverlay({
 
   const handleSelectionPointerDown = (event: React.PointerEvent<HTMLImageElement>) => {
     if (event.button !== 0) return
+    if (selectionMode === 'full') return
     const point = toLocalPoint(event)
     if (!point) return
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     setDragStart(point)
-    setSelection(null)
+    if (selectionMode === 'freeform') setFreeformPoints([point])
+    else setSelection(null)
   }
 
   const handleSelectionPointerMove = (event: React.PointerEvent<HTMLImageElement>) => {
@@ -240,12 +310,23 @@ export function ScreenCaptureOverlay({
       return
     }
     const point = toLocalPoint(event)
-    if (point) setSelection(normalizeRect(dragStart, point))
+    if (!point) return
+    if (selectionMode === 'freeform') {
+      setFreeformPoints((points) => {
+        const previous = points.at(-1)
+        return previous && Math.hypot(previous.x - point.x, previous.y - point.y) < 3
+          ? points
+          : [...points, point]
+      })
+    } else {
+      setSelection(normalizeRect(dragStart, point))
+    }
   }
 
   const handleSelectionPointerUp = (event: React.PointerEvent<HTMLImageElement>) => {
     const point = toLocalPoint(event)
-    if (dragStart && point) setSelection(normalizeRect(dragStart, point))
+    if (dragStart && point && selectionMode !== 'freeform')
+      setSelection(normalizeRect(dragStart, point))
     setDragStart(null)
   }
 
@@ -282,15 +363,47 @@ export function ScreenCaptureOverlay({
       role="dialog"
       aria-modal="true"
       aria-label={t('screen_capture.title')}
-      style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(7, 12, 22, .88)', display: 'grid', placeItems: 'center', padding: 24 }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 10000,
+        background: 'rgba(7, 12, 22, .88)',
+        display: 'grid',
+        placeItems: 'center',
+        padding: 24,
+      }}
     >
-      <div style={{ width: 'min(1120px, 100%)', maxHeight: '100%', display: 'flex', flexDirection: 'column', gap: 12, color: '#f8fafc' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-          <div><strong>{t('screen_capture.title')}</strong><span style={{ marginLeft: 10, color: '#cbd5e1', fontSize: 12 }}>{message}</span></div>
-          <button className="btn sm" onClick={onClose} aria-label={t('screen_capture.close')}><X size={16} /> Esc</button>
+      <div
+        style={{
+          width: 'min(1120px, 100%)',
+          maxHeight: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          color: '#f8fafc',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 12,
+            alignItems: 'center',
+          }}
+        >
+          <div>
+            <strong>{t('screen_capture.title')}</strong>
+            <span style={{ marginLeft: 10, color: '#cbd5e1', fontSize: 12 }}>{message}</span>
+          </div>
+          <button className="btn sm" onClick={onClose} aria-label={t('screen_capture.close')}>
+            <X size={16} /> Esc
+          </button>
         </div>
         {displays.length > 1 && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }} aria-label={t('screen_capture.select_display')}>
+          <div
+            style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
+            aria-label={t('screen_capture.select_display')}
+          >
             {displays.map((display) => (
               <button
                 key={display.id}
@@ -301,15 +414,27 @@ export function ScreenCaptureOverlay({
                   initialCaptureRef.current = false
                   setImageDataUrl(null)
                   setSelection(null)
+                  setFreeformPoints([])
                   setIsEditing(false)
                 }}
               >
-                {display.label}{display.primary ? ` (${t('screen_capture.primary_display')})` : ''}
+                {display.label}
+                {display.primary ? ` (${t('screen_capture.primary_display')})` : ''}
               </button>
             ))}
           </div>
         )}
-        <div style={{ minHeight: 220, overflow: 'auto', display: 'grid', placeItems: 'center', background: '#020617', borderRadius: 10, padding: 12 }}>
+        <div
+          style={{
+            minHeight: 220,
+            overflow: 'auto',
+            display: 'grid',
+            placeItems: 'center',
+            background: '#020617',
+            borderRadius: 10,
+            padding: 12,
+          }}
+        >
           {isLoading && <span>{t('screen_capture.loading')}</span>}
           {!isLoading && !imageDataUrl && <span>{message}</span>}
           {imageDataUrl && !isEditing && (
@@ -319,15 +444,63 @@ export function ScreenCaptureOverlay({
                 src={imageDataUrl}
                 alt={t('screen_capture.image_alt')}
                 draggable={false}
-                onLoad={() => setMessage(t('screen_capture.select_hint'))}
+                onLoad={() =>
+                  setMessage(
+                    t(
+                      selectionMode === 'full'
+                        ? 'screen_capture.full_hint'
+                        : selectionMode === 'freeform'
+                          ? 'screen_capture.freeform_hint'
+                          : 'screen_capture.select_hint',
+                    ),
+                  )
+                }
                 onPointerDown={handleSelectionPointerDown}
                 onPointerMove={handleSelectionPointerMove}
                 onPointerUp={handleSelectionPointerUp}
                 onPointerCancel={resetSelectionDrag}
                 onLostPointerCapture={resetSelectionDrag}
-                style={{ maxWidth: 'min(100%, 1000px)', maxHeight: '68vh', userSelect: 'none', touchAction: 'none', cursor: 'crosshair' }}
+                style={{
+                  maxWidth: 'min(100%, 1000px)',
+                  maxHeight: '68vh',
+                  userSelect: 'none',
+                  touchAction: 'none',
+                  cursor: selectionMode === 'full' ? 'default' : 'crosshair',
+                }}
               />
-              {selection && <div style={{ position: 'absolute', left: selection.x, top: selection.y, width: selection.width, height: selection.height, border: '2px solid #60a5fa', background: 'rgba(96,165,250,.12)', pointerEvents: 'none' }} />}
+              {selection && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: selection.x,
+                    top: selection.y,
+                    width: selection.width,
+                    height: selection.height,
+                    border: '2px solid #60a5fa',
+                    background: 'rgba(96,165,250,.12)',
+                    pointerEvents: 'none',
+                  }}
+                />
+              )}
+              {freeformPoints.length > 1 && (
+                <svg
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <polyline
+                    points={freeformPoints.map((point) => `${point.x},${point.y}`).join(' ')}
+                    fill="rgba(96,165,250,.12)"
+                    stroke="#60a5fa"
+                    strokeWidth="2"
+                  />
+                </svg>
+              )}
             </div>
           )}
           {imageDataUrl && isEditing && (
@@ -338,22 +511,61 @@ export function ScreenCaptureOverlay({
               onPointerUp={stopEditorDrawing}
               onPointerCancel={stopEditorDrawing}
               onLostPointerCapture={stopEditorDrawing}
-              style={{ maxWidth: 'min(100%, 1000px)', maxHeight: '68vh', cursor: 'crosshair', touchAction: 'none', background: '#fff' }}
+              style={{
+                maxWidth: 'min(100%, 1000px)',
+                maxHeight: '68vh',
+                cursor: 'crosshair',
+                touchAction: 'none',
+                background: '#fff',
+              }}
             />
           )}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
           {isEditing && (
             <>
-              <input aria-label={t('screen_capture.brush_color')} type="color" value={brushColor} onChange={(event) => setBrushColor(event.target.value)} style={{ width: 34, padding: 2 }} />
-              <input aria-label={t('screen_capture.brush_size')} type="range" min="2" max="16" value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} />
-              <button className="btn sm" disabled={!canUndo} onClick={undoEditor}><Undo2 size={14} /> {t('screen_capture.undo')}</button>
-              <button className="btn sm" onClick={() => renderEditor()}><RotateCcw size={14} /> {t('screen_capture.clear')}</button>
+              <input
+                aria-label={t('screen_capture.brush_color')}
+                type="color"
+                value={brushColor}
+                onChange={(event) => setBrushColor(event.target.value)}
+                style={{ width: 34, padding: 2 }}
+              />
+              <input
+                aria-label={t('screen_capture.brush_size')}
+                type="range"
+                min="2"
+                max="16"
+                value={brushSize}
+                onChange={(event) => setBrushSize(Number(event.target.value))}
+              />
+              <button className="btn sm" disabled={!canUndo} onClick={undoEditor}>
+                <Undo2 size={14} /> {t('screen_capture.undo')}
+              </button>
+              <button className="btn sm" onClick={() => renderEditor()}>
+                <RotateCcw size={14} /> {t('screen_capture.clear')}
+              </button>
             </>
           )}
-          {!isEditing && <button className="btn sm" disabled={!imageDataUrl} onClick={startEditing}><Pencil size={14} /> {t('screen_capture.edit')}</button>}
-          <button className="btn sm" disabled={!imageDataUrl || isSavingOutput} onClick={copyScreenshot}><Copy size={14} /> {t('screen_capture.copy')}</button>
-          <button className="btn sm primary" disabled={!imageDataUrl || isSavingOutput} onClick={saveScreenshot}><Download size={14} /> {t('screen_capture.save')}</button>
+          {!isEditing && (
+            <button className="btn sm" disabled={!imageDataUrl} onClick={startEditing}>
+              <Pencil size={14} /> {t('screen_capture.edit')}
+            </button>
+          )}
+          <button
+            className="btn sm"
+            disabled={!imageDataUrl || isSavingOutput}
+            onClick={copyScreenshot}
+          >
+            <Copy size={14} /> {t('screen_capture.copy')}
+          </button>
+          <button
+            className="btn sm primary"
+            disabled={!imageDataUrl || isSavingOutput}
+            onClick={saveScreenshot}
+          >
+            <Download size={14} /> {t('screen_capture.save')}
+          </button>
         </div>
       </div>
     </div>

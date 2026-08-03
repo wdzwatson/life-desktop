@@ -64,7 +64,10 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [screenProgressVisible, setScreenProgressVisible] = useState(false)
-  const [screenCaptureRequest, setScreenCaptureRequest] = useState<{ imageDataUrl?: string } | null>(null)
+  const [screenCaptureRequest, setScreenCaptureRequest] = useState<{
+    imageDataUrl?: string
+    selectionMode?: 'full' | 'rectangle' | 'freeform'
+  } | null>(null)
   const hasMountedScreen = useRef(false)
 
   const api = (window as any).electronAPI
@@ -110,7 +113,18 @@ function App() {
 
     // 3. Register scheduler notifications from IPC
     let unsubUpdate: (() => void) | undefined
-    const openScreenCapture = () => setScreenCaptureRequest({})
+    const openScreenCapture = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          imageDataUrl?: string
+          selectionMode?: 'full' | 'rectangle' | 'freeform'
+        }>
+      ).detail
+      setScreenCaptureRequest({
+        imageDataUrl: detail?.imageDataUrl,
+        selectionMode: detail?.selectionMode,
+      })
+    }
     window.addEventListener('screen-capture:open', openScreenCapture)
     let unsubscribeScreenshot: (() => void) | undefined
 
@@ -118,9 +132,14 @@ function App() {
       api.onDownloadFinished?.((data: any) => {
         showToast(t('app.download_finished', { title: data.title }))
       })
-      unsubscribeScreenshot = api.onScreenshotRequested?.((data: { imageDataUrl: string }) => {
-        setScreenCaptureRequest({ imageDataUrl: data.imageDataUrl })
-      })
+      unsubscribeScreenshot = api.onScreenshotRequested?.(
+        (data: { imageDataUrl: string; selectionMode?: 'full' | 'rectangle' | 'freeform' }) => {
+          setScreenCaptureRequest({
+            imageDataUrl: data.imageDataUrl,
+            selectionMode: data.selectionMode,
+          })
+        },
+      )
 
       // Auto check updates if enabled
       api.getSettings().then((settings: unknown) => {
@@ -343,7 +362,11 @@ function App() {
   }
 
   if (!isInitialConfigLoaded) {
-    return <div className="app-boot-loading"><ScreenLoading screen="landing" /></div>
+    return (
+      <div className="app-boot-loading">
+        <ScreenLoading screen="landing" />
+      </div>
+    )
   }
 
   if (!isAuthenticated) {
@@ -354,7 +377,13 @@ function App() {
   // moment, so navigation, topbar, and status information appear only after an action.
   if (activeScreen === 'landing') {
     return (
-      <Suspense fallback={<div className="app-boot-loading"><ScreenLoading screen="landing" /></div>}>
+      <Suspense
+        fallback={
+          <div className="app-boot-loading">
+            <ScreenLoading screen="landing" />
+          </div>
+        }
+      >
         <Launchpad />
       </Suspense>
     )
@@ -513,6 +542,7 @@ function App() {
       {screenCaptureRequest && (
         <ScreenCaptureOverlay
           initialImageDataUrl={screenCaptureRequest.imageDataUrl}
+          selectionMode={screenCaptureRequest.selectionMode}
           onClose={() => setScreenCaptureRequest(null)}
         />
       )}
