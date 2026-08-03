@@ -3,6 +3,7 @@ import { Activity, Bot, Copy, Pencil, Plug, Plus, Power, Search, ShieldAlert, Sh
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
 import { useConfirmation } from '../../components/ConfirmationProvider'
+import { Dropdown } from '../../components/Dropdown'
 import { useAppStore } from '../../store/useAppStore'
 import { agentToDraft, buildAgentPayload, type AgentSummary } from './agentUtils'
 import {
@@ -258,17 +259,17 @@ export function McpManager({ onChanged }: Props) {
           <Search size={15} aria-hidden="true" />
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('aiChat.mcp.search_placeholder')} aria-label={t('aiChat.mcp.search_label')} />
         </label>
-        <select className="form-field" value={transport} onChange={(event) => setTransport(event.target.value)} aria-label={t('aiChat.mcp.transport_filter')}>
+        <Dropdown className="form-field" value={transport} onChange={(event) => setTransport(event.target.value)} aria-label={t('aiChat.mcp.transport_filter')}>
           <option value="">{t('aiChat.mcp.all_transports')}</option>
           <option value="streamable_http">Streamable HTTP</option>
           <option value="sse">SSE</option>
           <option value="stdio">stdio</option>
-        </select>
-        <select className="form-field" value={enabled} onChange={(event) => setEnabled(event.target.value)} aria-label={t('aiChat.mcp.status_filter')}>
+        </Dropdown>
+        <Dropdown className="form-field" value={enabled} onChange={(event) => setEnabled(event.target.value)} aria-label={t('aiChat.mcp.status_filter')}>
           <option value="">{t('aiChat.mcp.all_statuses')}</option>
           <option value="enabled">{t('aiChat.mcp.enabled')}</option>
           <option value="disabled">{t('aiChat.mcp.disabled')}</option>
-        </select>
+        </Dropdown>
         <button className="btn primary ai-provider-add" onClick={(event) => openCreate(event.currentTarget)}><Plus size={15} />{t('aiChat.mcp.add')}</button>
       </div>
 
@@ -368,7 +369,7 @@ export function McpManager({ onChanged }: Props) {
           <div className="ai-mcp-form">
             <div className="ai-provider-form__grid">
               <label><span>{t('aiChat.mcp.name')}</span><input ref={nameRef} className="form-field" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
-              <label><span>{t('aiChat.mcp.transport')}</span><select className="form-field" value={draft.transport} onChange={(event) => changeTransport(event.target.value as McpDraft['transport'])}><option value="streamable_http">Streamable HTTP</option><option value="sse">SSE</option><option value="stdio">stdio</option></select></label>
+              <label><span>{t('aiChat.mcp.transport')}</span><Dropdown className="form-field" value={draft.transport} onChange={(event) => changeTransport(event.target.value as McpDraft['transport'])}><option value="streamable_http">Streamable HTTP</option><option value="sse">SSE</option><option value="stdio">stdio</option></Dropdown></label>
               <label className="is-wide"><span>{t('aiChat.mcp.description')}</span><input className="form-field" value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
             </div>
 
@@ -424,7 +425,7 @@ export function McpManager({ onChanged }: Props) {
                 <legend>{t('aiChat.mcp.risk_overrides')}</legend>
                 <div className="ai-mcp-risk-editor">
                   <input className="form-field" value={riskToolName} onChange={(event) => setRiskToolName(event.target.value)} placeholder={t('aiChat.mcp.tool_name')} />
-                  <select className="form-field" value={riskLevel} onChange={(event) => setRiskLevel(event.target.value as McpToolRisk)}>{(['read', 'write', 'command', 'external_side_effect'] as const).map((risk) => <option value={risk} key={risk}>{t(`aiChat.mcp.risk_${risk}`)}</option>)}</select>
+                  <Dropdown className="form-field" value={riskLevel} onChange={(event) => setRiskLevel(event.target.value as McpToolRisk)}>{(['read', 'write', 'command', 'external_side_effect'] as const).map((risk) => <option value={risk} key={risk}>{t(`aiChat.mcp.risk_${risk}`)}</option>)}</Dropdown>
                   <button className="btn sm" disabled={!riskToolName.trim() || busy} onClick={() => void setRiskOverride(riskToolName, riskLevel)}>{t('aiChat.mcp.save_risk')}</button>
                 </div>
                 <div className="ai-mcp-risk-list">

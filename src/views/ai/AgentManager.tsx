@@ -3,6 +3,7 @@ import { Bot, Check, Copy, Pencil, Plus, Power, Search, ShieldAlert, Trash2, X }
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
 import { useConfirmation } from '../../components/ConfirmationProvider'
+import { Dropdown } from '../../components/Dropdown'
 import { useAppStore } from '../../store/useAppStore'
 import type { ProviderSummary } from './providerUtils'
 import {
@@ -277,7 +278,7 @@ export function AgentManager({ onChanged }: Props) {
               <div className="ai-agent-provider-grid">
                 <label>
                   <span>{t('aiChat.agents.text_provider')}</span>
-                  <select className="form-field" value={draft.textProviderId} onChange={(event) => {
+                  <Dropdown className="form-field" value={draft.textProviderId} onChange={(event) => {
                     const provider = textProviders.find((item) => String(item.id) === event.target.value)
                     setDraft({
                       ...draft,
@@ -287,28 +288,28 @@ export function AgentManager({ onChanged }: Props) {
                   }}>
                     <option value="">{t('aiChat.agents.select_provider')}</option>
                     {textProviders.map((provider) => <option key={provider.id} value={provider.id} disabled={!provider.enabled}>{provider.name} · {provider.models.text}</option>)}
-                  </select>
+                  </Dropdown>
                 </label>
                 <label>
                   <span>{t('aiChat.agents.text_model')}</span>
-                  <select className="form-field" value={draft.textModel} disabled={!draft.textProviderId || selectedTextModels.length === 0} onChange={(event) => setDraft({ ...draft, textModel: event.target.value })}>
+                  <Dropdown className="form-field" value={draft.textModel} disabled={!draft.textProviderId || selectedTextModels.length === 0} onChange={(event) => setDraft({ ...draft, textModel: event.target.value })}>
                     <option value="">{t('aiChat.agents.select_text_model')}</option>
                     {selectedTextModels.map((model) => <option key={model} value={model}>{model}</option>)}
-                  </select>
+                  </Dropdown>
                 </label>
                 <label>
                   <span>{t('aiChat.agents.image_provider')}</span>
-                  <select className="form-field" value={draft.imageProviderId} onChange={(event) => setDraft({ ...draft, imageProviderId: event.target.value })}>
+                  <Dropdown className="form-field" value={draft.imageProviderId} onChange={(event) => setDraft({ ...draft, imageProviderId: event.target.value })}>
                     <option value="">{t('aiChat.agents.no_provider')}</option>
                     {imageProviders.map((provider) => <option key={provider.id} value={provider.id} disabled={!provider.enabled}>{provider.name} · {provider.models.image}</option>)}
-                  </select>
+                  </Dropdown>
                 </label>
                 <label>
                   <span>{t('aiChat.agents.video_provider')}</span>
-                  <select className="form-field" value={draft.videoProviderId} onChange={(event) => setDraft({ ...draft, videoProviderId: event.target.value })}>
+                  <Dropdown className="form-field" value={draft.videoProviderId} onChange={(event) => setDraft({ ...draft, videoProviderId: event.target.value })}>
                     <option value="">{t('aiChat.agents.no_provider')}</option>
                     {videoProviders.map((provider) => <option key={provider.id} value={provider.id} disabled={!provider.enabled}>{provider.name} · {provider.models.video}</option>)}
-                  </select>
+                  </Dropdown>
                 </label>
               </div>
             </fieldset>

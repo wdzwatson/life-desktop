@@ -191,7 +191,7 @@
   font-size: 12px;
 }
 
-.book-batch-import__category select {
+.book-batch-import__category .dropdown {
   min-width: 0;
   flex: 1;
 }

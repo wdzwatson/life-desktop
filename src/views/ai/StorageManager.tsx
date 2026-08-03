@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useConfirmation } from '../../components/ConfirmationProvider'
+import { Dropdown } from '../../components/Dropdown'
 
 type StorageUsage = {
   schemaVersion: number
@@ -275,9 +276,9 @@ export function StorageManager() {
             </div>
           </div>
           <div className="ai-storage-policy-row">
-            <select value={capacityGb} onChange={(event) => setCapacityGb(Number(event.target.value))} aria-label={t('aiChat.storage.capacity_label')}>
+            <Dropdown value={capacityGb} onChange={(event) => setCapacityGb(Number(event.target.value))} aria-label={t('aiChat.storage.capacity_label')}>
               {[1, 5, 10, 20].map((value) => <option key={value} value={value}>{value} GB</option>)}
-            </select>
+            </Dropdown>
             <label>
               <input type="checkbox" checked={autoCleanup} onChange={(event) => setAutoCleanup(event.target.checked)} />
               {t('aiChat.storage.auto_cleanup')}
@@ -302,9 +303,9 @@ export function StorageManager() {
               ))}
             </div>
             {scope === 'media_type' && (
-              <select value={mediaType} onChange={(event) => setMediaType(event.target.value as typeof mediaType)} aria-label={t('aiChat.storage.media_type_label')}>
+              <Dropdown value={mediaType} onChange={(event) => setMediaType(event.target.value as typeof mediaType)} aria-label={t('aiChat.storage.media_type_label')}>
                 {mediaTypes.map(([type]) => <option key={type} value={type}>{t(`aiChat.storage.type_${type}`)}</option>)}
-              </select>
+              </Dropdown>
             )}
             <button className="btn primary" onClick={() => void preview()} disabled={busy}>{t('aiChat.storage.preview_cleanup')}</button>
           </div>

@@ -126,7 +126,7 @@
   font-weight: 700;
 }
 
-.task-navigation__date-range .react-datepicker-wrapper {
+.task-navigation__date-range .date-time-picker {
   width: 104px;
 }
 
@@ -140,6 +140,8 @@
 
 .task-navigation__date-input {
   height: 30px;
+  min-height: 30px;
+  gap: 4px;
   padding: 0 22px 0 7px;
   border: 1px solid var(--color-border);
   border-radius: calc(var(--radius-card) - 2px);
@@ -190,7 +192,7 @@
 
 .task-navigation__view:focus-visible,
 .task-navigation__tool:focus-visible,
-.task-date-picker__trigger:focus-visible {
+.task-navigation__date-input:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--color-accent) 68%, transparent);
   outline-offset: -2px;
 }
@@ -233,7 +235,7 @@
   min-width: 0;
 }
 
-.task-quick-add > select {
+.task-quick-add > .dropdown {
   width: 92px;
 }
 
@@ -977,7 +979,7 @@
   background-color: var(--bg-app);
 }
 
-.task-quick-add > select {
+.task-quick-add > .dropdown {
   width: 104px;
 }
 
@@ -2303,26 +2305,13 @@
   display: flex;
   min-width: 0;
 }
-.task-due-picker .react-datepicker-wrapper,
-.task-due-picker .react-datepicker__input-container,
-.task-due-picker .form-field {
+.task-due-picker .date-time-picker {
   min-width: 0;
   flex: 1;
 }
 
-.task-date-picker__trigger {
-  width: 100%;
-  min-height: 36px;
-  display: block;
-  overflow: hidden;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
 .form-field.is-invalid,
-.task-date-picker__trigger[aria-invalid='true'] {
+.date-time-picker__trigger[aria-invalid='true'] {
   border-color: var(--color-danger);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-danger) 12%, transparent);
 }
@@ -2448,7 +2437,7 @@
   align-items: center;
   gap: 6px;
 }
-.task-rule-time-row .form-field {
+.task-rule-time-row .date-time-picker {
   width: 126px;
 }
 .task-drawer__footer {
@@ -2821,8 +2810,11 @@
   background: var(--bg-surface);
 }
 
-.task-drawer__time-row .form-field {
+.task-drawer__time-row .date-time-picker {
   width: 100%;
+}
+
+.task-drawer__time-row .date-time-picker__trigger {
   min-height: 28px;
   padding-block: 4px;
 }
@@ -2852,12 +2844,8 @@
   font-size: 10.5px;
 }
 
-.task-rule-range-grid .task-date-picker__trigger,
+.task-rule-range-grid .date-time-picker,
 .task-rule-range-grid .form-field {
-  width: 100%;
-}
-
-.task-rule-range-grid .react-datepicker-wrapper {
   width: 100%;
 }
 

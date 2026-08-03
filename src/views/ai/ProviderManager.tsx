@@ -14,6 +14,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
 import { useConfirmation } from '../../components/ConfirmationProvider'
+import { Dropdown } from '../../components/Dropdown'
 import { PasswordInput } from '../../components/PasswordInput'
 import { useAppStore } from '../../store/useAppStore'
 import {
@@ -182,25 +183,25 @@ export function ProviderManager({ onChanged }: Props) {
             aria-label={t('aiChat.providers.search_label')}
           />
         </label>
-        <select className="form-field" value={protocol} onChange={(event) => setProtocol(event.target.value)}>
+        <Dropdown className="form-field" value={protocol} onChange={(event) => setProtocol(event.target.value)}>
           <option value="">{t('aiChat.providers.all_protocols')}</option>
           <option value="openai_compatible">OpenAI-compatible</option>
           <option value="xai">xAI</option>
           <option value="custom_http">{t('aiChat.providers.custom_http')}</option>
-        </select>
-        <select className="form-field" value={capability} onChange={(event) => setCapability(event.target.value)}>
+        </Dropdown>
+        <Dropdown className="form-field" value={capability} onChange={(event) => setCapability(event.target.value)}>
           <option value="">{t('aiChat.providers.all_capabilities')}</option>
           {PROVIDER_CAPABILITIES.map((item) => (
             <option key={item} value={item}>
               {t(`aiChat.providers.capability_${item}`)}
             </option>
           ))}
-        </select>
-        <select className="form-field" value={enabled} onChange={(event) => setEnabled(event.target.value)}>
+        </Dropdown>
+        <Dropdown className="form-field" value={enabled} onChange={(event) => setEnabled(event.target.value)}>
           <option value="">{t('aiChat.providers.all_statuses')}</option>
           <option value="enabled">{t('aiChat.providers.enabled')}</option>
           <option value="disabled">{t('aiChat.providers.disabled')}</option>
-        </select>
+        </Dropdown>
         <button className="btn primary ai-provider-add" onClick={(event) => openCreate(event.currentTarget)}>
           <Plus size={15} aria-hidden="true" />
           {t('aiChat.providers.add')}
@@ -308,11 +309,11 @@ export function ProviderManager({ onChanged }: Props) {
               </label>
               <label>
                 <span>{t('aiChat.providers.protocol')}</span>
-                <select className="form-field" value={draft.protocol} onChange={(event) => setDraft({ ...draft, protocol: event.target.value as ProviderDraft['protocol'] })}>
+                <Dropdown className="form-field" value={draft.protocol} onChange={(event) => setDraft({ ...draft, protocol: event.target.value as ProviderDraft['protocol'] })}>
                   <option value="openai_compatible">OpenAI-compatible</option>
                   <option value="xai">xAI</option>
                   <option value="custom_http">{t('aiChat.providers.custom_http')}</option>
-                </select>
+                </Dropdown>
               </label>
               <label className="is-wide">
                 <span>{t('aiChat.providers.base_url')}</span>
@@ -370,10 +371,10 @@ export function ProviderManager({ onChanged }: Props) {
                   const defaultKey = `${kind}Model` as 'textModel' | 'imageModel' | 'videoModel'
                   return <label className="ai-provider-model-catalog__default" key={kind}>
                     <span>{t(`aiChat.providers.model_${kind}`)} · {t('aiChat.providers.default_model')}</span>
-                    <select className="form-field" value={draft[defaultKey]} disabled={draft[plural].length === 0} onChange={(event) => setDraft({ ...draft, [defaultKey]: event.target.value })}>
+                    <Dropdown className="form-field" value={draft[defaultKey]} disabled={draft[plural].length === 0} onChange={(event) => setDraft({ ...draft, [defaultKey]: event.target.value })}>
                       <option value="">{t('aiChat.providers.select_default_model')}</option>
                       {draft[plural].map((model) => <option key={model} value={model}>{model}</option>)}
-                    </select>
+                    </Dropdown>
                   </label>
                 })())}
               </div>

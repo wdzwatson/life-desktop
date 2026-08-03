@@ -1,0 +1,122 @@
+.date-time-picker__popper .react-datepicker__input-time-container .react-datepicker-time__caption {
+  display: none !important;
+}
+
+.date-time-picker__popper .w-timepicker-spinner > ul {
+  padding-bottom: 0 !important;
+}
+
+.date-time-picker__popper
+  .react-datepicker__input-time-container
+  .react-datepicker-time__input-container,
+.date-time-picker__popper .react-datepicker__input-time-container .react-datepicker-time__input {
+  width: 100%;
+  min-width: 0;
+  margin: 0 !important;
+}
+
+.date-time-picker__popper .react-datepicker__input-time-container .react-datepicker-time__input {
+  display: block;
+}
+
+.date-time-picker__popper .date-time-picker__time-panel {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.date-time-picker__time-control {
+  position: relative;
+  width: 100%;
+}
+
+.date-time-picker__time-input {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 30px;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  padding: 0 8px;
+  background: var(--bg-app);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.date-time-picker__time-input:hover,
+.date-time-picker__time-input[aria-expanded='true'] {
+  border-color: color-mix(in srgb, var(--color-accent) 48%, var(--color-border));
+}
+
+.date-time-picker__time-input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 34%, transparent);
+  outline-offset: 2px;
+}
+
+.date-time-picker__time-dropdown {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 168px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  box-shadow: 0 10px 22px color-mix(in srgb, #000 15%, transparent);
+}
+
+.date-time-picker__time-dropdown .w-timepicker-spinner {
+  max-height: 168px;
+}
+
+.date-time-picker__popper--date-time .react-datepicker {
+  overflow: visible;
+}
+
+.date-time-picker__popper--time .react-datepicker__input-time-container {
+  padding: 8px !important;
+}
+
+.date-time-picker__trigger-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.date-time-picker__trigger--clearable {
+  padding-right: 32px;
+}
+
+.date-time-picker__clear {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 4px;
+  padding: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.date-time-picker__clear:hover {
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  color: var(--color-danger);
+}
+
+.date-time-picker__clear:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 34%, transparent);
+  outline-offset: 1px;
+}

@@ -3,6 +3,7 @@ import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { ShieldAlert, ArrowLeft, UserPlus } from 'lucide-react'
 import logoImg from '../assets/logo.png'
+import { Dropdown } from './Dropdown'
 import { PasswordInput } from './PasswordInput'
 
 export const AuthScreen: React.FC = () => {
@@ -592,7 +593,7 @@ export const AuthScreen: React.FC = () => {
                   >
                     {t('auth.label_question')}
                   </label>
-                  <select
+                  <Dropdown
                     className="form-field"
                     value={regQuestion}
                     onChange={(e) => setRegQuestion(e.target.value)}
@@ -605,7 +606,7 @@ export const AuthScreen: React.FC = () => {
                       What was the name of your first school?
                     </option>
                     <option value="What is your favorite food?">What is your favorite food?</option>
-                  </select>
+                  </Dropdown>
                 </div>
                 <div>
                   <label

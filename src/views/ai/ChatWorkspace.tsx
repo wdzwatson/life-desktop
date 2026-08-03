@@ -26,6 +26,7 @@ import {
   type KeyboardEvent,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Dropdown } from '../../components/Dropdown'
 import { ConversationList } from './ConversationList'
 import { ConversationDeleteDialog } from './ConversationDeleteDialog'
 import { ConversationRenameDialog } from './ConversationRenameDialog'
@@ -1441,7 +1442,9 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
             <label className="ai-chat-stage__selector ai-chat-stage__selector--provider">
               <Database size={14} aria-hidden="true" />
               <span className="sr-only">{t('aiChat.chat.select_provider')}</span>
-              <select
+              <Dropdown
+                controlHeight={30}
+                menuGap={0}
                 value={imageMode ? selectedImageProvider?.id ?? '' : videoMode ? selectedVideoProvider?.id ?? '' : selectedProviderId ?? ''}
                 disabled={imageMode ? imageProviders.length === 0 : videoMode ? videoProviders.length === 0 : providerOptions.length === 0}
                 onChange={(event) => {
@@ -1451,35 +1454,39 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
                 aria-label={t('aiChat.chat.select_provider')}
               >
                 {imageMode ? imageProviders.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>) : videoMode ? videoProviders.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>) : providerOptions.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
-              </select>
+              </Dropdown>
               <span className="ai-chat-stage__selector-value" aria-hidden="true">{imageMode ? selectedImageProvider?.name : videoMode ? selectedVideoProvider?.name : selectedProvider?.name ?? t('aiChat.chat.no_provider_option')}</span>
               <ChevronDown size={12} aria-hidden="true" />
             </label>
             <label className="ai-chat-stage__selector ai-chat-stage__selector--model">
               <Boxes size={14} aria-hidden="true" />
               <span className="sr-only">{t('aiChat.chat.select_model')}</span>
-              <select
+              <Dropdown
+                controlHeight={30}
+                menuGap={0}
                 value={imageMode ? selectedImageModel : videoMode ? selectedVideoModel : selectedAgentId ?? ''}
                 disabled={imageMode ? imageModels.length === 0 : videoMode ? videoModels.length === 0 : providerModels.length === 0}
                 onChange={(event) => handleStageModelChange(event.target.value)}
                 aria-label={t('aiChat.chat.select_model')}
               >
                 {imageMode ? imageModels.map((model) => <option key={model} value={model}>{model}</option>) : videoMode ? videoModels.map((model) => <option key={model} value={model}>{model}</option>) : providerModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
-              </select>
+              </Dropdown>
               <span className="ai-chat-stage__selector-value" aria-hidden="true">{imageMode ? selectedImageModel : videoMode ? selectedVideoModel : activeModel?.name ?? t('aiChat.chat.no_model_option')}</span>
               <ChevronDown size={12} aria-hidden="true" />
             </label>
             {!imageMode && !videoMode && <label className="ai-chat-stage__selector ai-chat-stage__selector--thinking">
               <Gauge size={14} aria-hidden="true" />
               <span className="sr-only">{t('aiChat.chat.select_thinking')}</span>
-              <select
+              <Dropdown
+                controlHeight={30}
+                menuGap={0}
                 value={thinkingLevel}
                 disabled={!activeModel || thinkingLevels.length < 2}
                 onChange={(event) => handleThinkingChange(event.target.value as AIThinkingLevel)}
                 aria-label={t('aiChat.chat.select_thinking')}
               >
                 {thinkingLevels.map((level) => <option key={level} value={level}>{t(`aiChat.chat.thinking_${level}`)}</option>)}
-              </select>
+              </Dropdown>
               <span className="ai-chat-stage__selector-value" aria-hidden="true">{t(`aiChat.chat.thinking_${thinkingLevel}`)}</span>
               <ChevronDown size={12} aria-hidden="true" />
             </label>}
@@ -1679,7 +1686,7 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
               <label className={`ai-chat-composer__mode-select ${activeSelectionMode !== 'chat' ? 'is-active' : ''}`}>
                 {imageMode ? <ImagePlus size={13} aria-hidden="true" /> : videoMode ? <Video size={13} aria-hidden="true" /> : <Type size={13} aria-hidden="true" />}
                 <span className="sr-only">{t('aiChat.chat.mode_select')}</span>
-                <select
+                <Dropdown
                   value={activeSelectionMode}
                   disabled={submitting || uploadingAttachments || isRunning || isMediaRunning || !chatReady}
                   onChange={(event) => handleComposerModeChange(event.target.value as AIChatSelectionMode)}
@@ -1688,7 +1695,7 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
                   <option value="chat">{t('aiChat.chat.mode_text')}</option>
                   {(canUseImageComposer || imageMode) && <option value="image">{t('aiChat.images.mode')}</option>}
                   {(canUseVideoComposer || videoMode) && <option value="video">{t('aiChat.videos.mode')}</option>}
-                </select>
+                </Dropdown>
                 <span className="ai-chat-composer__mode-value" aria-hidden="true">
                   {t(imageMode ? 'aiChat.images.mode' : videoMode ? 'aiChat.videos.mode' : 'aiChat.chat.mode_text')}
                 </span>

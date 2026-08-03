@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import DatePicker, { registerLocale } from 'react-datepicker'
+import ReactDatePicker, { registerLocale } from 'react-datepicker'
 import { enUS, zhCN } from 'date-fns/locale'
-import 'react-datepicker/dist/react-datepicker.css'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../components/AccessibleDialog'
 import { useConfirmation } from '../components/ConfirmationProvider'
+import { DateTimePicker, TimePicker } from '../components/DateTimePicker'
+import { Dropdown } from '../components/Dropdown'
 import { ViewportPortal } from '../components/ViewportPortal'
 import {
   AlertTriangle,
@@ -85,52 +86,19 @@ const toLocalTimeValue = (date: Date) =>
     date.getSeconds(),
   ).padStart(2, '0')}`
 
-const toLocalDateTime = (dateKey: string, time: string | null | undefined) => {
+const toLocalDateTime = (dateKey: string, time: string | null | undefined): Date | null => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return null
   const [year, month, day] = dateKey.split('-').map(Number)
   const [hour = 0, minute = 0, second = 0] = normalizeTaskDueTime(time).split(':').map(Number)
-  return new Date(year, month - 1, day, hour, minute, second)
+  const result = new Date(year, month - 1, day, hour, minute, second)
+  return result.getFullYear() === year &&
+    result.getMonth() === month - 1 &&
+    result.getDate() === day
+    ? result
+    : null
 }
 
 const toLocalDate = (dateKey: string) => toLocalDateTime(dateKey, '00:00:00')
-
-type DatePickerInputProps = {
-  value?: string
-  onClick?: React.MouseEventHandler<HTMLButtonElement>
-  placeholder?: string
-  className?: string
-  'aria-label'?: string
-  'aria-invalid'?: React.AriaAttributes['aria-invalid']
-  'aria-describedby'?: string
-}
-
-const DatePickerInput = React.forwardRef<HTMLButtonElement, DatePickerInputProps>(
-  (
-    {
-      value,
-      onClick,
-      placeholder,
-      className,
-      'aria-label': ariaLabel,
-      'aria-invalid': ariaInvalid,
-      'aria-describedby': ariaDescribedBy,
-    },
-    ref,
-  ) => (
-    <button
-      ref={ref}
-      type="button"
-      className={`form-field task-date-picker__trigger ${className || ''}`}
-      onClick={onClick}
-      aria-label={ariaLabel}
-      aria-invalid={ariaInvalid}
-      aria-describedby={ariaDescribedBy}
-    >
-      {value || placeholder}
-    </button>
-  ),
-)
-
-DatePickerInput.displayName = 'DatePickerInput'
 
 registerLocale('zh-CN', zhCN)
 registerLocale('en-US', enUS)
@@ -350,9 +318,10 @@ export const Tasks: React.FC = () => {
     hierarchy?: string
   }>({})
   const drawerTitleInputRef = useRef<HTMLInputElement | null>(null)
-  const drawerStartDatePickerRef = useRef<DatePicker | null>(null)
-  const drawerDueDatePickerRef = useRef<DatePicker | null>(null)
-  const drawerRuleStartDatePickerRef = useRef<DatePicker | null>(null)
+  const drawerStartDatePickerRef = useRef<ReactDatePicker | null>(null)
+  const drawerDueDatePickerRef = useRef<ReactDatePicker | null>(null)
+  const drawerRuleStartDatePickerRef = useRef<ReactDatePicker | null>(null)
+  const drawerRuleTimePickerRefs = useRef<Array<ReactDatePicker | null>>([])
   const [taskDraft, setTaskDraft] = useState<TaskDraft>({
     title: '',
     description: '',
@@ -386,6 +355,7 @@ export const Tasks: React.FC = () => {
       drawerStartDatePickerRef.current?.setOpen(false)
       drawerDueDatePickerRef.current?.setOpen(false)
       drawerRuleStartDatePickerRef.current?.setOpen(false)
+      drawerRuleTimePickerRefs.current.forEach((picker) => picker?.setOpen(false))
     }
 
     document.addEventListener('pointerdown', closeDrawerDatePickersOnOutsidePointerDown, true)
@@ -1306,7 +1276,8 @@ export const Tasks: React.FC = () => {
     }
     if (
       taskDraft.repeat === 'none' &&
-      taskDraft.dueDate && `${taskDraft.dueDate}T${normalizeTaskDueTime(taskDraft.time)}` <
+      taskDraft.dueDate &&
+      `${taskDraft.dueDate}T${normalizeTaskDueTime(taskDraft.time)}` <
         `${taskDraft.startDate}T${normalizeTaskDueTime(taskDraft.startTime)}`
     ) {
       nextErrors.timeWindow = t('tasks.invalid_time_window')
@@ -2336,39 +2307,29 @@ export const Tasks: React.FC = () => {
             aria-label={t('tasks.filter_due_date_range')}
           >
             <span className="task-navigation__date-range-label">{t('tasks.filter_due_date')}</span>
-            <DatePicker
-              selected={dueDateFrom ? toLocalDate(dueDateFrom) : null}
+            <DateTimePicker
+              value={dueDateFrom ? toLocalDate(dueDateFrom) : null}
               onChange={(date: Date | null) => setDueDateFrom(date ? toLocalDateKey(date) : '')}
-              dateFormat="yyyy-MM-dd"
               locale={datePickerLocale}
               portalId="task-filter-datepicker-portal"
               popperPlacement="bottom-end"
-              customInput={
-                <DatePickerInput
-                  className="task-navigation__date-input"
-                  placeholder={t('tasks.filter_start_date')}
-                  aria-label={t('tasks.filter_start_date')}
-                />
-              }
+              className="task-navigation__date-input"
+              placeholder={t('tasks.filter_start_date')}
+              ariaLabel={t('tasks.filter_start_date')}
             />
             <span className="task-navigation__date-range-separator" aria-hidden="true">
               {t('tasks.filter_date_range_to')}
             </span>
-            <DatePicker
-              selected={dueDateTo ? toLocalDate(dueDateTo) : null}
+            <DateTimePicker
+              value={dueDateTo ? toLocalDate(dueDateTo) : null}
               onChange={(date: Date | null) => setDueDateTo(date ? toLocalDateKey(date) : '')}
-              dateFormat="yyyy-MM-dd"
-              isClearable
+              clearable
               locale={datePickerLocale}
               portalId="task-filter-datepicker-portal"
               popperPlacement="bottom-end"
-              customInput={
-                <DatePickerInput
-                  className="task-navigation__date-input"
-                  placeholder={t('tasks.filter_end_date')}
-                  aria-label={t('tasks.filter_end_date')}
-                />
-              }
+              className="task-navigation__date-input"
+              placeholder={t('tasks.filter_end_date')}
+              ariaLabel={t('tasks.filter_end_date')}
             />
           </div>
         </div>
@@ -3290,14 +3251,14 @@ export const Tasks: React.FC = () => {
               <div className="task-rule-schedule-grid">
                 <div className="task-form-section">
                   <label>{t('tasks.schedule_mode_label')}</label>
-                  <select
+                  <Dropdown
                     className="form-field"
                     value={ruleScheduleMode}
                     onChange={(e) => setRuleScheduleMode(e.target.value as 'rules' | 'interval')}
                   >
                     <option value="rules">{t('tasks.schedule_mode_rules')}</option>
                     <option value="interval">{t('tasks.schedule_mode_interval')}</option>
-                  </select>
+                  </Dropdown>
                 </div>
                 {ruleScheduleMode === 'interval' && (
                   <div className="task-form-section">
@@ -3313,36 +3274,31 @@ export const Tasks: React.FC = () => {
                 )}
                 <div className="task-form-section">
                   <label>{t('tasks.rule_start_date_label')}</label>
-                  <DatePicker
-                    selected={toLocalDate(ruleStartDate)}
+                  <DateTimePicker
+                    value={toLocalDate(ruleStartDate)}
                     onChange={(date: Date | null) => {
                       if (date) setRuleStartDate(toLocalDateKey(date))
                     }}
-                    dateFormat="yyyy-MM-dd"
                     locale={datePickerLocale}
                     portalId="task-filter-datepicker-portal"
                     popperPlacement="bottom-end"
-                    customInput={
-                      <DatePickerInput
-                        aria-label={t('tasks.rule_start_date_label')}
-                        className="task-navigation__date-input"
-                      />
-                    }
+                    className="task-navigation__date-input"
+                    ariaLabel={t('tasks.rule_start_date_label')}
                   />
                 </div>
                 <div className="task-form-section">
                   <label>{t('tasks.rule_end_date_label')}</label>
-                  <input
-                    className="form-field"
-                    type="date"
-                    value={ruleEndDate}
-                    min={ruleStartDate || undefined}
-                    onChange={(event) => setRuleEndDate(event.target.value)}
+                  <DateTimePicker
+                    value={ruleEndDate ? toLocalDate(ruleEndDate) : null}
+                    clearable
+                    minDate={ruleStartDate ? (toLocalDate(ruleStartDate) ?? undefined) : undefined}
+                    onChange={(date) => setRuleEndDate(date ? toLocalDateKey(date) : '')}
+                    ariaLabel={t('tasks.rule_end_date_label')}
                   />
                 </div>
                 <div className="task-form-section">
                   <label>{t('tasks.template_priority_label')}</label>
-                  <select
+                  <Dropdown
                     className="form-field"
                     value={rulePriority}
                     onChange={(e) => setRulePriority(e.target.value)}
@@ -3350,7 +3306,7 @@ export const Tasks: React.FC = () => {
                     <option value="high">{t('tasks.priority_high')}</option>
                     <option value="mid">{t('tasks.priority_mid')}</option>
                     <option value="low">{t('tasks.priority_low')}</option>
-                  </select>
+                  </Dropdown>
                 </div>
               </div>
 
@@ -3359,16 +3315,16 @@ export const Tasks: React.FC = () => {
                 <div className="task-rule-times">
                   {ruleTimes.map((time, index) => (
                     <div className="task-rule-time-row" key={`${index}-${time}`}>
-                      <input
-                        className="form-field"
-                        type="time"
+                      <TimePicker
                         value={time}
-                        onChange={(event) => {
+                        timeInputLabel={t('tasks.time_picker_time_label')}
+                        onChange={(nextTime) => {
                           const nextTimes = [...ruleTimes]
-                          nextTimes[index] = event.target.value
+                          nextTimes[index] = nextTime
                           setRuleTimes(nextTimes)
-                          if (index === 0) setRuleTime(event.target.value)
+                          if (index === 0) setRuleTime(nextTime)
                         }}
+                        ariaLabel={t('tasks.rule_occurrence_time', { index: index + 1 })}
                       />
                       {ruleTimes.length > 1 && (
                         <button
@@ -3950,15 +3906,19 @@ export const Tasks: React.FC = () => {
                       <div className="task-form-section">
                         <span>{t('tasks.details_start_prefix')}</span>
                         <div className="task-due-picker">
-                          <DatePicker
+                          <DateTimePicker
                             ref={drawerStartDatePickerRef}
-                            selected={toLocalDateTime(taskDraft.startDate, taskDraft.startTime)}
+                            clearable
+                            value={toLocalDateTime(taskDraft.startDate, taskDraft.startTime)}
                             onInputClick={() => {
                               drawerDueDatePickerRef.current?.setOpen(false)
                               drawerRuleStartDatePickerRef.current?.setOpen(false)
                             }}
                             onChange={(date: Date | null) => {
-                              if (!date) return
+                              if (!date) {
+                                setTaskDraft({ ...taskDraft, startDate: '', startTime: '' })
+                                return
+                              }
                               const startDate = toLocalDateKey(date)
                               setTaskDraft({
                                 ...taskDraft,
@@ -3972,21 +3932,15 @@ export const Tasks: React.FC = () => {
                                 }))
                               }
                             }}
-                            showTimeInput
-                            dateFormat="yyyy-MM-dd HH:mm"
                             timeInputLabel={t('tasks.time_picker_time_label')}
+                            mode="date-time"
                             locale={datePickerLocale}
                             portalId="task-drawer-datepicker-portal"
                             popperPlacement="bottom-end"
+                            ariaLabel={t('tasks.details_start_prefix')}
                             ariaInvalid={drawerErrors.timeWindow ? 'true' : undefined}
-                            customInput={
-                              <DatePickerInput
-                                aria-label={t('tasks.details_start_prefix')}
-                                aria-invalid={drawerErrors.timeWindow ? 'true' : undefined}
-                                aria-describedby={
-                                  drawerErrors.timeWindow ? 'task-time-window-error' : undefined
-                                }
-                              />
+                            ariaDescribedBy={
+                              drawerErrors.timeWindow ? 'task-time-window-error' : undefined
                             }
                           />
                         </div>
@@ -3994,15 +3948,19 @@ export const Tasks: React.FC = () => {
                       <div className="task-form-section">
                         <span>{t('tasks.details_due_prefix')}</span>
                         <div className="task-due-picker">
-                          <DatePicker
+                          <DateTimePicker
                             ref={drawerDueDatePickerRef}
-                            selected={toLocalDateTime(taskDraft.dueDate, taskDraft.time)}
+                            clearable
+                            value={toLocalDateTime(taskDraft.dueDate, taskDraft.time)}
                             onInputClick={() => {
                               drawerStartDatePickerRef.current?.setOpen(false)
                               drawerRuleStartDatePickerRef.current?.setOpen(false)
                             }}
                             onChange={(date: Date | null) => {
-                              if (!date) return
+                              if (!date) {
+                                setTaskDraft({ ...taskDraft, dueDate: '', time: '' })
+                                return
+                              }
                               setTaskDraft({
                                 ...taskDraft,
                                 dueDate: toLocalDateKey(date),
@@ -4015,21 +3973,15 @@ export const Tasks: React.FC = () => {
                                 }))
                               }
                             }}
-                            showTimeInput
-                            dateFormat="yyyy-MM-dd HH:mm"
                             timeInputLabel={t('tasks.time_picker_time_label')}
+                            mode="date-time"
                             locale={datePickerLocale}
                             portalId="task-drawer-datepicker-portal"
                             popperPlacement="bottom-end"
+                            ariaLabel={t('tasks.details_due_prefix')}
                             ariaInvalid={drawerErrors.timeWindow ? 'true' : undefined}
-                            customInput={
-                              <DatePickerInput
-                                aria-label={t('tasks.details_due_prefix')}
-                                aria-invalid={drawerErrors.timeWindow ? 'true' : undefined}
-                                aria-describedby={
-                                  drawerErrors.timeWindow ? 'task-time-window-error' : undefined
-                                }
-                              />
+                            ariaDescribedBy={
+                              drawerErrors.timeWindow ? 'task-time-window-error' : undefined
                             }
                           />
                         </div>
@@ -4045,7 +3997,7 @@ export const Tasks: React.FC = () => {
                 <div className="task-drawer__schedule-section">
                   <label className="task-form-section">
                     <span>{t('tasks.quick_add_priority_label')}</span>
-                    <select
+                    <Dropdown
                       className="form-field"
                       value={taskDraft.priority}
                       onChange={(event) =>
@@ -4055,7 +4007,7 @@ export const Tasks: React.FC = () => {
                       <option value="high">{t('tasks.priority_high')}</option>
                       <option value="mid">{t('tasks.priority_mid')}</option>
                       <option value="low">{t('tasks.priority_low')}</option>
-                    </select>
+                    </Dropdown>
                   </label>
                 </div>
                 <label className="task-drawer__recurring-setting">
@@ -4380,15 +4332,27 @@ export const Tasks: React.FC = () => {
                             {ruleTimes.map((time, index) => (
                               <div className="task-drawer__time-row" key={`${time}-${index}`}>
                                 <span className="task-rule-time-index">{index + 1}</span>
-                                <input
-                                  className="form-field"
-                                  type="time"
+                                <TimePicker
+                                  ref={(picker) => {
+                                    drawerRuleTimePickerRefs.current[index] = picker
+                                  }}
                                   value={time}
-                                  aria-label={t('tasks.rule_occurrence_time', { index: index + 1 })}
-                                  onChange={(event) =>
+                                  timeInputLabel={t('tasks.time_picker_time_label')}
+                                  ariaLabel={t('tasks.rule_occurrence_time', { index: index + 1 })}
+                                  onInputClick={() => {
+                                    drawerStartDatePickerRef.current?.setOpen(false)
+                                    drawerDueDatePickerRef.current?.setOpen(false)
+                                    drawerRuleStartDatePickerRef.current?.setOpen(false)
+                                    drawerRuleTimePickerRefs.current.forEach(
+                                      (picker, pickerIndex) => {
+                                        if (pickerIndex !== index) picker?.setOpen(false)
+                                      },
+                                    )
+                                  }}
+                                  onChange={(nextTime) =>
                                     setRuleTimes(
                                       ruleTimes.map((current, currentIndex) =>
-                                        currentIndex === index ? event.target.value : current,
+                                        currentIndex === index ? nextTime : current,
                                       ),
                                     )
                                   }
@@ -4450,9 +4414,9 @@ export const Tasks: React.FC = () => {
                           <div className="task-rule-range-grid">
                             <div className="task-form-section">
                               <span>{t('tasks.rule_start_date_label')}</span>
-                              <DatePicker
+                              <DateTimePicker
                                 ref={drawerRuleStartDatePickerRef}
-                                selected={toLocalDate(ruleStartDate)}
+                                value={toLocalDate(ruleStartDate)}
                                 onInputClick={() => {
                                   drawerStartDatePickerRef.current?.setOpen(false)
                                   drawerDueDatePickerRef.current?.setOpen(false)
@@ -4461,13 +4425,10 @@ export const Tasks: React.FC = () => {
                                 onChange={(date: Date | null) => {
                                   if (date) setRuleStartDate(toLocalDateKey(date))
                                 }}
-                                dateFormat="yyyy-MM-dd"
                                 locale={datePickerLocale}
                                 portalId="task-drawer-datepicker-portal"
                                 popperPlacement="bottom-end"
-                                customInput={
-                                  <DatePickerInput aria-label={t('tasks.rule_start_date_label')} />
-                                }
+                                ariaLabel={t('tasks.rule_start_date_label')}
                               />
                               {drawerErrors.ruleStartDate && (
                                 <small className="task-field-error" role="alert">
@@ -4477,14 +4438,18 @@ export const Tasks: React.FC = () => {
                             </div>
                             <label className="task-form-section">
                               <span>{t('tasks.rule_end_date_label')}</span>
-                              <input
-                                className="form-field"
-                                type="date"
-                                value={ruleEndDate}
-                                min={ruleStartDate || undefined}
-                                aria-invalid={drawerErrors.ruleEndDate ? 'true' : undefined}
-                                onChange={(event) => {
-                                  setRuleEndDate(event.target.value)
+                              <DateTimePicker
+                                value={ruleEndDate ? toLocalDate(ruleEndDate) : null}
+                                clearable
+                                minDate={
+                                  ruleStartDate
+                                    ? (toLocalDate(ruleStartDate) ?? undefined)
+                                    : undefined
+                                }
+                                ariaLabel={t('tasks.rule_end_date_label')}
+                                ariaInvalid={drawerErrors.ruleEndDate ? 'true' : undefined}
+                                onChange={(date) => {
+                                  setRuleEndDate(date ? toLocalDateKey(date) : '')
                                   if (drawerErrors.ruleEndDate) {
                                     setDrawerErrors((current) => ({
                                       ...current,
@@ -4529,7 +4494,9 @@ export const Tasks: React.FC = () => {
                   {t('common.cancel')}
                 </button>
                 <button type="button" className="btn primary" onClick={handleSaveDrawer}>
-                  {drawerMode === 'create' ? t('tasks.btn_create_task') : t('tasks.btn_save_changes')}
+                  {drawerMode === 'create'
+                    ? t('tasks.btn_create_task')
+                    : t('tasks.btn_save_changes')}
                 </button>
               </footer>
             </aside>

@@ -32,7 +32,8 @@
   border-radius: 0;
 }
 
-.ai-chat-shell :is(button, a, input, select, textarea, [tabindex]):focus-visible {
+.ai-chat-shell :is(button, a, input, textarea, [tabindex]):focus-visible,
+.ai-chat-shell .dropdown__control--is-focused {
   outline: 1px solid color-mix(in srgb, var(--text-main) 46%, var(--color-border));
   outline-offset: 1px;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-main) 7%, transparent);
@@ -697,7 +698,7 @@
 .ai-chat-stage__selector--model { width: clamp(126px, 13vw, 184px); }
 .ai-chat-stage__selector--thinking { width: clamp(104px, 10vw, 144px); }
 
-.ai-chat-stage__controls select {
+.ai-chat-stage__controls .dropdown {
   position: absolute;
   z-index: 2;
   inset: 0;
@@ -725,12 +726,12 @@
   pointer-events: none;
 }
 
-.ai-chat-stage__controls label:has(select:focus-visible) {
+.ai-chat-stage__controls label:has(.dropdown__control--is-focused) {
   border-color: color-mix(in srgb, var(--text-main) 34%, var(--color-border));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-main) 6%, transparent);
 }
 
-.ai-chat-shell .ai-chat-stage__controls select:focus-visible {
+.ai-chat-shell .ai-chat-stage__controls .dropdown__control--is-focused {
   outline: 0;
   box-shadow: none;
 }
@@ -2591,7 +2592,7 @@
   gap: 8px;
 }
 
-.ai-model-toolbar > select {
+.ai-model-toolbar > .dropdown {
   width: min(180px, 34vw);
   min-height: 38px;
   font-size: 10.5px;
@@ -3487,8 +3488,8 @@
   margin-top: 14px;
 }
 
-.ai-storage-policy-row select,
-.ai-storage-cleanup-controls select {
+.ai-storage-policy-row .dropdown__control,
+.ai-storage-cleanup-controls .dropdown__control {
   min-height: 36px;
   padding: 0 9px;
   border: 1px solid var(--color-border);
@@ -3543,7 +3544,7 @@
   background: color-mix(in srgb, var(--color-accent) 8%, var(--bg-surface));
 }
 
-.ai-storage-cleanup-controls > select {
+.ai-storage-cleanup-controls > .dropdown {
   width: 118px;
   flex: 0 0 auto;
 }
@@ -3753,7 +3754,7 @@
   pointer-events: none;
 }
 
-.ai-chat-composer__mode-select select {
+.ai-chat-composer__mode-select .dropdown {
   position: absolute;
   z-index: 2;
   inset: 0;
@@ -3766,12 +3767,12 @@
   cursor: pointer;
 }
 
-.ai-chat-composer__mode-select:has(select:disabled) {
+.ai-chat-composer__mode-select:has(.dropdown__control--is-disabled) {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
-.ai-chat-composer__mode-select:has(select:focus-visible) {
+.ai-chat-composer__mode-select:has(.dropdown__control--is-focused) {
   border-color: color-mix(in srgb, var(--text-main) 34%, var(--color-border));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-main) 7%, transparent);
 }
@@ -4377,7 +4378,7 @@
     grid-template-columns: minmax(160px, 1fr) repeat(2, minmax(110px, 140px)) auto;
   }
 
-  .ai-provider-toolbar select:nth-of-type(3) {
+  .ai-provider-toolbar > .dropdown:nth-child(4) {
     display: none;
   }
 
@@ -4413,7 +4414,7 @@
     grid-template-columns: minmax(160px, 1fr) minmax(120px, 150px) auto;
   }
 
-  .ai-mcp-toolbar select:nth-of-type(2) {
+  .ai-mcp-toolbar > .dropdown:nth-child(3) {
     display: none;
   }
 
@@ -4575,7 +4576,7 @@
     flex-direction: column;
   }
 
-  .ai-storage-cleanup-controls > select,
+  .ai-storage-cleanup-controls > .dropdown,
   .ai-storage-cleanup-controls > .btn {
     width: 100%;
   }
@@ -4597,7 +4598,7 @@
     grid-template-columns: 1fr auto;
   }
 
-  .ai-provider-toolbar select {
+  .ai-provider-toolbar .dropdown {
     display: none;
   }
 
@@ -4618,7 +4619,7 @@
     grid-template-columns: 1fr auto;
   }
 
-  .ai-mcp-toolbar select {
+  .ai-mcp-toolbar .dropdown {
     display: none;
   }
 

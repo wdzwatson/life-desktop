@@ -46,6 +46,7 @@ import {
 import { BookCategorySidebar, type BookShelf } from './BookCategorySidebar'
 import { AccessibleDialog } from '../components/AccessibleDialog'
 import { useConfirmation } from '../components/ConfirmationProvider'
+import { Dropdown } from '../components/Dropdown'
 import { ViewportPortal } from '../components/ViewportPortal'
 import { PdfOcrOverlay } from '../components/PdfOcrOverlay'
 import { PdfOcrTextLayer, type PdfOcrSelectionArea } from '../components/PdfOcrTextLayer'
@@ -2671,7 +2672,7 @@ export const Books: React.FC = () => {
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                     {t('books.view_label')}:
                   </span>
-                  <select
+                  <Dropdown
                     value={pdfLayoutMode}
                     onChange={(e) => setPdfLayoutMode(e.target.value as any)}
                     style={{
@@ -2688,7 +2689,7 @@ export const Books: React.FC = () => {
                     <option value="dual">{t('books.view_dual')}</option>
                     <option value="scroll">{t('books.view_scroll')}</option>
                     <option value="simulation">{t('books.view_simulation')}</option>
-                  </select>
+                  </Dropdown>
 
                   <div
                     style={{
@@ -2710,7 +2711,7 @@ export const Books: React.FC = () => {
                   </button>
 
                   {isAutoPlaying && (
-                    <select
+                    <Dropdown
                       value={autoPlaySpeed}
                       onChange={(e) => setAutoPlaySpeed(parseInt(e.target.value, 10))}
                       style={{
@@ -2727,7 +2728,7 @@ export const Books: React.FC = () => {
                       <option value="10">{t('books.auto_play_speed', { sec: 10 })}</option>
                       <option value="15">{t('books.auto_play_speed', { sec: 15 })}</option>
                       <option value="20">{t('books.auto_play_speed', { sec: 20 })}</option>
-                    </select>
+                    </Dropdown>
                   )}
                 </>
               ) : (
@@ -2759,7 +2760,7 @@ export const Books: React.FC = () => {
                       <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                         {t('books.view_label')}:
                       </span>
-                      <select
+                      <Dropdown
                         value={epubLayoutMode}
                         onChange={(e) => {
                           setEpubLayoutMode(e.target.value as any)
@@ -2779,7 +2780,7 @@ export const Books: React.FC = () => {
                         <option value="single">{t('books.view_single')}</option>
                         <option value="dual">{t('books.view_dual')}</option>
                         <option value="scroll">{t('books.view_scroll')}</option>
-                      </select>
+                      </Dropdown>
                     </>
                   )}
                 </>
@@ -3863,7 +3864,7 @@ export const Books: React.FC = () => {
                 </button>
                 <label className="book-batch-import__category">
                   <span>{t('books.batch_target_shelf')}</span>
-                  <select
+                  <Dropdown
                     className="form-field"
                     value={batchImportCategory}
                     disabled={isBatchImporting}
@@ -3875,7 +3876,7 @@ export const Books: React.FC = () => {
                         {'— '.repeat(depth)}{getCategoryDisplayName(category.name, category.id)}
                       </option>
                     ))}
-                  </select>
+                  </Dropdown>
                 </label>
               </div>
 
@@ -4010,7 +4011,7 @@ export const Books: React.FC = () => {
               {/* Category selection */}
               <div>
                 <label style={labelStyle}>{t('books.prompt_import_category')}</label>
-                <select
+                <Dropdown
                   className="form-field"
                   style={{ width: '100%', marginBottom: isCustomCategory ? '10px' : '0' }}
                   value={isCustomCategory ? 'custom' : importCategory}
@@ -4032,7 +4033,7 @@ export const Books: React.FC = () => {
                       </option>
                     ))}
                   <option value="custom">＋ {t('books.prompt_add_category')}</option>
-                </select>
+                </Dropdown>
 
                 {isCustomCategory && (
                   <input
@@ -4258,7 +4259,7 @@ export const Books: React.FC = () => {
               {/* Category selection */}
               <div>
                 <label style={labelStyle}>{t('books.prompt_import_category')}</label>
-                <select
+                <Dropdown
                   className="form-field"
                   style={{ width: '100%', marginBottom: isEditBookCustomCategory ? '10px' : '0' }}
                   value={isEditBookCustomCategory ? 'custom' : editBookCategory}
@@ -4280,7 +4281,7 @@ export const Books: React.FC = () => {
                       </option>
                     ))}
                   <option value="custom">＋ {t('books.prompt_add_category')}</option>
-                </select>
+                </Dropdown>
 
                 {isEditBookCustomCategory && (
                   <input

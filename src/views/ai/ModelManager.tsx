@@ -3,6 +3,7 @@ import { Pencil, Plus, Search, Trash2, Type, Image, Video, X } from 'lucide-reac
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
 import { useConfirmation } from '../../components/ConfirmationProvider'
+import { Dropdown } from '../../components/Dropdown'
 import { useAppStore } from '../../store/useAppStore'
 
 export type AIModelCatalogItem = {
@@ -136,14 +137,14 @@ export function ModelManager({ onChanged }: Props) {
         <label><Search size={14} aria-hidden="true" /><span className="sr-only">{t('aiChat.models.search_label')}</span>
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('aiChat.models.search_placeholder')} />
         </label>
-        <select className="form-field" value={filter} onChange={(event) => setFilter(event.target.value as ModelCapability | '')} aria-label={t('aiChat.models.capability_filter')}>
+        <Dropdown className="form-field" value={filter} onChange={(event) => setFilter(event.target.value as ModelCapability | '')} aria-label={t('aiChat.models.capability_filter')}>
           <option value="">{t('aiChat.models.all_models')}</option>
           {(['text', 'image', 'video'] as const).map((capability) => <option key={capability} value={capability}>{t(`aiChat.models.capability_${capability}`)}</option>)}
-        </select>
-        <select className="form-field" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} aria-label={t('aiChat.models.category_filter')}>
+        </Dropdown>
+        <Dropdown className="form-field" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} aria-label={t('aiChat.models.category_filter')}>
           <option value="">{t('aiChat.models.all_categories')}</option>
           {categories.map((category) => <option key={category} value={category}>{category}</option>)}
-        </select>
+        </Dropdown>
         <button className="btn primary ai-model-toolbar__add" onClick={(event) => openCreate(event.currentTarget)}>
           <Plus size={15} aria-hidden="true" />{t('aiChat.models.add')}
         </button>

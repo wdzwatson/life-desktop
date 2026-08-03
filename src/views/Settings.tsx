@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { getConfiguredLocales } from '../localeRegistry'
 import { clampVideoConcurrentDownloads } from './videoLibraryUtils'
 import { useConfirmation } from '../components/ConfirmationProvider'
+import { Dropdown } from '../components/Dropdown'
 import { PasswordInput } from '../components/PasswordInput'
 import { displayShortcut, isShortcutModifierKey, shortcutFromKeyboardEvent } from '../shortcutUtils'
 import {
@@ -841,7 +842,7 @@ export const Settings: React.FC = () => {
                 </p>
                 <label style={{ display: 'grid', gap: 6, maxWidth: 300, fontSize: 13 }}>
                   <span>{t('settings.launchpad_startup_mode')}</span>
-                  <select
+                  <Dropdown
                     value={launchpadSettings.startupMode}
                     onChange={(event) =>
                       void setLaunchpadSettings({
@@ -852,7 +853,7 @@ export const Settings: React.FC = () => {
                     <option value="daily">{t('settings.launchpad_mode_daily')}</option>
                     <option value="always">{t('settings.launchpad_mode_always')}</option>
                     <option value="resume">{t('settings.launchpad_mode_resume')}</option>
-                  </select>
+                  </Dropdown>
                 </label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
                   <button className="btn" type="button" onClick={() => void handleLaunchpadPosterSelect()}>
@@ -1118,7 +1119,7 @@ export const Settings: React.FC = () => {
                           >
                             {t('settings.recovery_question_label')}
                           </label>
-                          <select
+                          <Dropdown
                             className="form-field"
                             value={editQuestion}
                             onChange={(e) => setEditQuestion(e.target.value)}
@@ -1135,7 +1136,7 @@ export const Settings: React.FC = () => {
                             <option value="What is your favorite food?">
                               What is your favorite food?
                             </option>
-                          </select>
+                          </Dropdown>
                         </div>
                         <div>
                           <label
@@ -1555,7 +1556,7 @@ export const Settings: React.FC = () => {
                   style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}
                 >
                   {t('settings.video_cookie_mode')}
-                  <select
+                  <Dropdown
                     className="form-field"
                     value={videoSettings.cookieMode}
                     onChange={(e) =>
@@ -1566,13 +1567,13 @@ export const Settings: React.FC = () => {
                     <option value="bilibili">{t('settings.video_cookie_bilibili')}</option>
                     <option value="browser">{t('settings.video_cookie_browser')}</option>
                     <option value="file">{t('settings.video_cookie_file')}</option>
-                  </select>
+                  </Dropdown>
                 </label>
                 <label
                   style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}
                 >
                   {t('settings.video_quality_preference')}
-                  <select
+                  <Dropdown
                     className="form-field"
                     value={videoSettings.qualityPreference}
                     onChange={(e) =>
@@ -1583,7 +1584,7 @@ export const Settings: React.FC = () => {
                     <option value="1080p">1080P</option>
                     <option value="720p">720P</option>
                     <option value="audio">{t('settings.video_quality_audio')}</option>
-                  </select>
+                  </Dropdown>
                 </label>
               </div>
 
@@ -1592,7 +1593,7 @@ export const Settings: React.FC = () => {
                   style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}
                 >
                   {t('settings.video_cookie_browser_label')}
-                  <select
+                  <Dropdown
                     className="form-field"
                     value={videoSettings.cookieBrowser}
                     onChange={(e) =>
@@ -1605,7 +1606,7 @@ export const Settings: React.FC = () => {
                     <option value="edge">Edge</option>
                     <option value="brave">Brave</option>
                     <option value="chromium">Chromium</option>
-                  </select>
+                  </Dropdown>
                 </label>
               )}
 

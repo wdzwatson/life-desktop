@@ -77,6 +77,7 @@ import { VideoGroupSidebar } from './VideoGroupSidebar'
 import { DouyinFavoritesPanel } from './DouyinFavoritesPanel'
 import type { VideoGroupMutationResult } from './VideoGroupSidebar'
 import { useConfirmation } from '../components/ConfirmationProvider'
+import { Dropdown } from '../components/Dropdown'
 import { getConfiguredLocales } from '../localeRegistry'
 import { ViewportPortal } from '../components/ViewportPortal'
 import {
@@ -1804,7 +1805,7 @@ export const Videos: React.FC = () => {
                     : bulkActionLabels.selectVisible,
                 )}
               </button>
-              <select
+              <Dropdown
                 className="form-field"
                 value={videoSort.key}
                 onChange={(event) =>
@@ -1820,7 +1821,7 @@ export const Videos: React.FC = () => {
                 <option value="duration">{t('videos.sort_duration')}</option>
                 <option value="status">{t('videos.sort_status')}</option>
                 <option value="group">{t('videos.sort_group')}</option>
-              </select>
+              </Dropdown>
               {videoSort.key !== 'default' && (
                 <button
                   type="button"
@@ -1893,7 +1894,7 @@ export const Videos: React.FC = () => {
                     {t(bulkActionLabels.tags)}
                   </button>
                   {bulkMetadataMode === 'group' && (
-                    <select
+                    <Dropdown
                       className="form-field"
                       autoFocus
                       onChange={(event) => {
@@ -1912,7 +1913,7 @@ export const Videos: React.FC = () => {
                           {group.path}
                         </option>
                       ))}
-                    </select>
+                    </Dropdown>
                   )}
                   {bulkMetadataMode === 'tags' && (
                     <div
@@ -2850,7 +2851,7 @@ export const Videos: React.FC = () => {
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                     {t('videos.parse_import_group_label')}
                   </span>
-                  <select
+                  <Dropdown
                     className="form-field"
                     value={parseImportGroupId ?? ''}
                     onChange={(event) =>
@@ -2863,7 +2864,7 @@ export const Videos: React.FC = () => {
                         {group.path}
                       </option>
                     ))}
-                  </select>
+                  </Dropdown>
                 </label>
                 <label style={{ display: 'grid', gap: '4px' }}>
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -3010,7 +3011,7 @@ export const Videos: React.FC = () => {
               >
                 {playingVideo.title}
               </span>
-              <select
+              <Dropdown
                 className="form-field"
                 value={playbackSpeed}
                 onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
@@ -3028,7 +3029,7 @@ export const Videos: React.FC = () => {
                 <option value="1.5">1.5x</option>
                 <option value="2">2.0x</option>
                 <option value="3">3.0x</option>
-              </select>
+              </Dropdown>
             </header>
             <video
               ref={videoRef}
