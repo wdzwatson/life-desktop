@@ -6,6 +6,10 @@ import path from 'node:path'
 import test from 'node:test'
 import { verifyWindowsPackage } from '../scripts/verify-windows-package.mjs'
 
+const packageMetadata = JSON.parse(
+  fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'),
+)
+
 function createPe(machine = 0x8664) {
   const buffer = Buffer.alloc(72)
   buffer.write('MZ', 0)
@@ -85,6 +89,10 @@ test('verifyWindowsPackage accepts complete PE/x64 build artifacts', () => {
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('Windows package includes the runtime tray icon asset', () => {
+  assert.ok(packageMetadata.build.files.includes('build/icon.png'))
 })
 
 test('verifyWindowsPackage rejects a package containing a macOS native module', () => {
