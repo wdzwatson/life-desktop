@@ -299,11 +299,7 @@ export const Tasks: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [showClosedTasks, setShowClosedTasks] = useState(false)
   const [taskQuery, setTaskQuery] = useState('')
-  const [dueDateFrom, setDueDateFrom] = useState(() => {
-    const date = new Date()
-    date.setDate(date.getDate() - 7)
-    return toLocalDateKey(date)
-  })
+  const [dueDateFrom, setDueDateFrom] = useState('')
   const [dueDateTo, setDueDateTo] = useState('')
   const deletionTriggerRef = useRef<HTMLButtonElement | null>(null)
   const deletionCancelButtonRef = useRef<HTMLButtonElement | null>(null)
@@ -544,7 +540,7 @@ export const Tasks: React.FC = () => {
     (task: any) => {
       if (taskQuery.trim() && taskMatchesQuery(task)) return true
       if (!showClosedTasks && task.status === TASK_STATUS.closed) return false
-      if (!task.due_date) return false
+      if (!task.due_date) return !dueDateFrom && !dueDateTo
       if (dueDateFrom && task.due_date < dueDateFrom) return false
       if (dueDateTo && task.due_date > dueDateTo) return false
       return taskMatchesQuery(task)
@@ -2310,6 +2306,7 @@ export const Tasks: React.FC = () => {
             <DateTimePicker
               value={dueDateFrom ? toLocalDate(dueDateFrom) : null}
               onChange={(date: Date | null) => setDueDateFrom(date ? toLocalDateKey(date) : '')}
+              clearable
               locale={datePickerLocale}
               portalId="task-filter-datepicker-portal"
               popperPlacement="bottom-end"
