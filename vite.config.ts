@@ -76,8 +76,29 @@ const copyPdfWorker = () => {
   }
 }
 
+const getRendererManualChunk = (id: string) => {
+  if (!id.includes('node_modules')) return undefined
+  if (id.includes('react-pdf') || id.includes('pdfjs-dist')) return 'vendor-pdf'
+  if (id.includes('react-datepicker') || id.includes('react-select') || id.includes('@uiw/react-time-picker')) {
+    return 'vendor-inputs'
+  }
+  if (id.includes('marked') || id.includes('dompurify')) return 'vendor-markdown'
+  if (id.includes('lucide-react')) return 'vendor-icons'
+  if (id.includes('react') || id.includes('scheduler')) return 'vendor-react'
+  if (id.includes('i18next')) return 'vendor-i18n'
+  if (id.includes('zustand') || id.includes('gsap') || id.includes('clsx')) return 'vendor-ui'
+  return 'vendor-misc'
+}
+
 // https://vite.dev/config/
 export default defineConfig({
+  build: {
+    rolldownOptions: {
+      output: {
+        manualChunks: getRendererManualChunk,
+      },
+    },
+  },
   plugins: [
     react(),
     copyPdfWorker(),
@@ -87,6 +108,7 @@ export default defineConfig({
         entry: 'electron/main.ts',
         vite: {
           build: {
+            chunkSizeWarningLimit: 1900,
             rolldownOptions: {
               external: ['better-sqlite3'],
             },
