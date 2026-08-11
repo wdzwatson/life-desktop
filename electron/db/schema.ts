@@ -434,6 +434,12 @@ export function initializeUserDatabase(userDbDir: string) {
       content TEXT DEFAULT '',
       notebook TEXT DEFAULT '未分类',
       note_type TEXT DEFAULT 'markdown', -- 'markdown', 'richtext', 'canvas', 'code', 'table'
+      is_private INTEGER NOT NULL DEFAULT 0,
+      private_salt TEXT,
+      private_iv TEXT,
+      private_tag TEXT,
+      private_kdf TEXT,
+      private_cipher_version INTEGER,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
@@ -478,15 +484,33 @@ export function initializeUserDatabase(userDbDir: string) {
     END;
   `)
 
-  // Migrate existing notes table if notebook column is missing
+  // Migrate existing notes table if newer columns are missing
   try {
     const pragma = notesDb.prepare('PRAGMA table_info(notes)').all() as { name: string }[]
-    const hasNotebook = pragma.some((col) => col.name === 'notebook')
-    if (!hasNotebook) {
+    const noteColumnNames = new Set(pragma.map((col) => col.name))
+    if (!noteColumnNames.has('notebook')) {
       notesDb.exec("ALTER TABLE notes ADD COLUMN notebook TEXT DEFAULT '未分类'")
     }
+    if (!noteColumnNames.has('is_private')) {
+      notesDb.exec('ALTER TABLE notes ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0')
+    }
+    if (!noteColumnNames.has('private_salt')) {
+      notesDb.exec('ALTER TABLE notes ADD COLUMN private_salt TEXT')
+    }
+    if (!noteColumnNames.has('private_iv')) {
+      notesDb.exec('ALTER TABLE notes ADD COLUMN private_iv TEXT')
+    }
+    if (!noteColumnNames.has('private_tag')) {
+      notesDb.exec('ALTER TABLE notes ADD COLUMN private_tag TEXT')
+    }
+    if (!noteColumnNames.has('private_kdf')) {
+      notesDb.exec('ALTER TABLE notes ADD COLUMN private_kdf TEXT')
+    }
+    if (!noteColumnNames.has('private_cipher_version')) {
+      notesDb.exec('ALTER TABLE notes ADD COLUMN private_cipher_version INTEGER')
+    }
   } catch (err) {
-    console.error('Failed to migrate notes table (notebook column):', err)
+    console.error('Failed to migrate notes table:', err)
   }
 
   // Migrate notebooks table if category column is missing

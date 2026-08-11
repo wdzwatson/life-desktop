@@ -271,6 +271,44 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveNotePastedImage: (data: { dataUrl: string; fileName?: string }) =>
     ipcRenderer.invoke('note:attachments:pasteImage', data),
   openNoteAttachment: (url: string) => ipcRenderer.invoke('note:attachments:open', { url }),
+  copyNoteImage: (url: string) => ipcRenderer.invoke('note:attachments:copyImage', { url }),
+  saveNoteImage: (url: string) => ipcRenderer.invoke('note:attachments:saveImage', { url }),
+  createPrivateNote: (input: {
+    title: string
+    content: string
+    notebook: string
+    password: string
+  }) => ipcRenderer.invoke('note:createPrivate', input),
+  unlockPrivateNote: (noteId: number, password: string) =>
+    ipcRenderer.invoke('note:unlockPrivate', { noteId, password }),
+  savePrivateNote: (noteId: number, title: string, content: string) =>
+    ipcRenderer.invoke('note:savePrivate', { noteId, title, content }),
+  lockPrivateNote: (noteId: number) => ipcRenderer.invoke('note:lockPrivate', { noteId }),
+  openNoteEditorWindow: (input: unknown) => ipcRenderer.invoke('note:openEditorWindow', input),
+  closeNoteEditorWindow: () => ipcRenderer.invoke('note:closeEditorWindow'),
+  confirmNoteEditorClose: () => ipcRenderer.invoke('note:confirmEditorClose'),
+  sendNoteEditorDraft: (input: unknown) => ipcRenderer.send('note:editorDraftChanged', input),
+  notifyNoteEditorReady: () => ipcRenderer.send('note:editorWindowReady'),
+  onNoteEditorDraft: (callback: (data: unknown) => void) => {
+    const subscription = (_event: unknown, data: unknown) => callback(data)
+    ipcRenderer.on('note:editorDraft', subscription)
+    return () => ipcRenderer.removeListener('note:editorDraft', subscription)
+  },
+  onNoteEditorClosed: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on('note:editorClosed', subscription)
+    return () => ipcRenderer.removeListener('note:editorClosed', subscription)
+  },
+  onNoteEditorCloseRequest: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on('note:editorCloseRequested', subscription)
+    return () => ipcRenderer.removeListener('note:editorCloseRequested', subscription)
+  },
+  onNotesChanged: (callback: (data: unknown) => void) => {
+    const subscription = (_event: unknown, data: unknown) => callback(data)
+    ipcRenderer.on('notes:changed', subscription)
+    return () => ipcRenderer.removeListener('notes:changed', subscription)
+  },
 
   selectBookFile: () => ipcRenderer.invoke('book:select-file'),
   selectBookBatchFiles: () => ipcRenderer.invoke('book:batch-select-books'),

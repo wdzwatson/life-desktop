@@ -218,7 +218,7 @@ function App() {
         // Query notes.db (FTS5)
         const notesRes = await api.dbQuery(
           'notes',
-          'SELECT * FROM notes WHERE title LIKE ? OR content LIKE ? LIMIT 3',
+          'SELECT * FROM notes WHERE title LIKE ? OR (COALESCE(is_private, 0) = 0 AND content LIKE ?) LIMIT 3',
           [`%${searchQuery}%`, `%${searchQuery}%`],
         )
         if (notesRes?.success) {

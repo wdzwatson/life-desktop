@@ -1,8 +1,18 @@
-import React, { useEffect, useState, useCallback, useId, useMemo, useRef } from 'react'
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useDeferredValue,
+  useId,
+  useMemo,
+  useRef,
+} from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import {
+  Bold,
   ChevronDown,
+  Code,
   Plus,
   NotebookPen,
   Eye,
@@ -12,6 +22,18 @@ import {
   Download,
   Languages,
   Paperclip,
+  Heading1,
+  Italic,
+  KeyRound,
+  Link as LinkIcon,
+  List,
+  ListOrdered,
+  Loader2,
+  Lock,
+  Maximize2,
+  Quote,
+  Save,
+  X,
 } from 'lucide-react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -20,6 +42,7 @@ import { ViewportPortal } from '../components/ViewportPortal'
 import { NotebookSidebar } from './NotebookSidebar'
 import {
   clampNoteImageDimension,
+  getNoteImageResizeDragDimensions,
   renderSizedNoteImages,
   updateNoteImageDimensions as updateNoteImageDimensionsInContent,
   type NoteImageDimensions,
@@ -48,6 +71,7 @@ interface Note {
   content: string
   note_type: string
   notebook: string
+  is_private?: number
   created_at: string
   updated_at: string
 }
@@ -101,9 +125,51 @@ interface ElectronAPI {
     fileName?: string
   }) => Promise<NoteAttachmentResponse<NoteAttachment>>
   openNoteAttachment?: (url: string) => Promise<{ success: boolean; error?: string }>
+  copyNoteImage?: (url: string) => Promise<{ success: boolean; error?: string }>
+  saveNoteImage?: (url: string) => Promise<{ success: boolean; saved?: boolean; error?: string }>
+  createPrivateNote?: (data: {
+    title: string
+    content: string
+    notebook: string
+    password: string
+  }) => Promise<{ success: boolean; data?: { id: number; title: string; content: string }; error?: string }>
+  unlockPrivateNote?: (
+    noteId: number,
+    password: string,
+  ) => Promise<{ success: boolean; data?: { id: number; content: string }; error?: string }>
+  savePrivateNote?: (
+    noteId: number,
+    title: string,
+    content: string,
+  ) => Promise<{ success: boolean; error?: string }>
+  lockPrivateNote?: (noteId: number) => Promise<{ success: boolean; error?: string }>
+  openNoteEditorWindow?: (data: unknown) => Promise<{ success: boolean; error?: string }>
+  closeNoteEditorWindow?: () => Promise<{ success: boolean; error?: string }>
+  confirmNoteEditorClose?: () => Promise<{ success: boolean; error?: string }>
+  sendNoteEditorDraft?: (data: unknown) => void
+  notifyNoteEditorReady?: () => void
+  onNoteEditorDraft?: (callback: (data: unknown) => void) => () => void
+  onNoteEditorClosed?: (callback: () => void) => () => void
+  onNoteEditorCloseRequest?: (callback: () => void) => () => void
+  onNotesChanged?: (callback: (data: unknown) => void) => () => void
 }
 
-export const Notes: React.FC = () => {
+type NoteImageMenuState = {
+  url: string
+  left: number
+  top: number
+} | null
+
+interface NoteEditorDraft {
+  source?: string
+  noteId?: number
+  title?: string
+  content?: string
+  isPrivate?: boolean
+  privateUnlocked?: boolean
+}
+
+export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
   const { t, i18n } = useTranslation()
   const showToast = useAppStore((state) => state.showToast)
   const userId = useAppStore((state) => state.userId)
@@ -118,13 +184,29 @@ export const Notes: React.FC = () => {
   // Editor States
   const [noteTitle, setNoteTitle] = useState('')
   const [noteContent, setNoteContent] = useState('')
-  const [viewMode, setViewMode] = useState<'edit' | 'split' | 'preview'>('split')
+  const [viewMode, setViewMode] = useState<'edit' | 'typora' | 'split' | 'preview'>('split')
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [isAttaching, setIsAttaching] = useState(false)
   const [selectedNoteImage, setSelectedNoteImage] = useState<NoteImageDimensions | null>(null)
+  const [noteImageMenu, setNoteImageMenu] = useState<NoteImageMenuState>(null)
+  const [unlockPromptNote, setUnlockPromptNote] = useState<Note | null>(null)
+  const [privatePassword, setPrivatePassword] = useState('')
+  const [privateDialogMode, setPrivateDialogMode] = useState<'unlock' | 'create' | null>(null)
+  const [activeDraftIsPrivate, setActiveDraftIsPrivate] = useState(false)
+  const [isPrivateNoteUnlocked, setIsPrivateNoteUnlocked] = useState(false)
+  const [isSavingPrivate, setIsSavingPrivate] = useState(false)
+  const [isEditorWindowOpen, setIsEditorWindowOpen] = useState(false)
+  const [isEditorWindowRestoring, setIsEditorWindowRestoring] = useState(false)
+  const [renderedMarkdownHtml, setRenderedMarkdownHtml] = useState('')
+  const [isMarkdownRendering, setIsMarkdownRendering] = useState(false)
+  const [markdownRenderProgress, setMarkdownRenderProgress] = useState(0)
   const exportDropdownRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<HTMLTextAreaElement | null>(null)
+  const typoraEditorRef = useRef<HTMLDivElement | null>(null)
+  const suppressEditorBroadcastRef = useRef(false)
+  const lastEditorBroadcastRef = useRef('')
+  const pendingExternalEditorDraftRef = useRef<NoteEditorDraft | null>(null)
 
   // Notebook Modal States
   const [isNbModalOpen, setIsNbModalOpen] = useState(false)
@@ -153,12 +235,34 @@ export const Notes: React.FC = () => {
   const notebookTranslationsPanelId = useId()
   const currentLocaleLabel =
     configuredLocales.find((locale) => locale.code === i18n.language)?.label || i18n.language
+  const deferredNoteContent = useDeferredValue(noteContent)
+  const activeNote = useMemo(
+    () => notes.find((note) => note.id === activeNoteId) || null,
+    [activeNoteId, notes],
+  )
+  const activeNoteIsPrivate = Number(activeNote?.is_private || 0) === 1 || activeDraftIsPrivate
+  const isMainNoteRenderSuspended = !popup && isEditorWindowOpen
 
   const selectNote = useCallback((note: Note, scope = note.notebook) => {
     setActiveNoteId(note.id)
     setNoteTitle(note.title)
-    setNoteContent(note.content || '')
     setActiveNotebook(scope)
+    setSelectedNoteImage(null)
+    setNoteImageMenu(null)
+    if (Number(note.is_private || 0) === 1) {
+      setNoteContent('')
+      setActiveDraftIsPrivate(true)
+      setIsPrivateNoteUnlocked(false)
+      setUnlockPromptNote(note)
+      setPrivateDialogMode('unlock')
+      setPrivatePassword('')
+      return
+    }
+    setNoteContent(note.content || '')
+    setActiveDraftIsPrivate(false)
+    setIsPrivateNoteUnlocked(false)
+    setUnlockPromptNote(null)
+    setPrivateDialogMode(null)
   }, [])
 
   const getNotebookDisplayName = (name: string, id: number) => {
@@ -269,7 +373,9 @@ export const Notes: React.FC = () => {
     // Load ALL notes
     const notesRes = await api.dbQuery('notes', 'SELECT * FROM notes ORDER BY updated_at DESC')
     if (notesRes?.success && Array.isArray(notesRes.data)) {
-      const notesList = notesRes.data as Note[]
+      const notesList = (notesRes.data as Note[]).map((note) =>
+        Number(note.is_private || 0) === 1 ? { ...note, content: '' } : note,
+      )
       setNotes(notesList)
       // Auto select first note if none selected or if active note is not in database
       if (notesList.length > 0) {
@@ -305,23 +411,70 @@ export const Notes: React.FC = () => {
   }, [api, activeNotebook, activeNoteId, selectNote])
 
   useEffect(() => {
-    loadNotes()
-  }, [loadNotes, userId])
-
-  const handleSaveNote = async () => {
-    if (!api) {
-      showToast(`⚠️ ${t('notes.error_save_failed')}: ${t('common.error_electron_required')}`)
+    if (popup) {
       return
     }
-    if (!activeNoteId) return
+    loadNotes()
+  }, [loadNotes, popup, userId])
+
+  const handleSaveNote = useCallback(async () => {
+    if (!api) {
+      showToast(`⚠️ ${t('notes.error_save_failed')}: ${t('common.error_electron_required')}`)
+      return false
+    }
+    if (!activeNoteId) return true
+    if (activeNoteIsPrivate) {
+      if (!isPrivateNoteUnlocked || !api.savePrivateNote) return false
+      setIsSavingPrivate(true)
+      const res = await api.savePrivateNote(activeNoteId, noteTitle, noteContent)
+      setIsSavingPrivate(false)
+      if (res?.success) {
+        showToast(t('notes.toast_saved'))
+        api.sendNoteEditorDraft?.({
+          source: popup ? 'popup' : 'main',
+          noteId: activeNoteId,
+          title: noteTitle,
+          content: noteContent,
+          isPrivate: true,
+          privateUnlocked: true,
+        })
+        loadNotes()
+        return true
+      } else {
+        showToast(res?.error || t('notes.error_save_failed'))
+        return false
+      }
+    }
     const query =
       'UPDATE notes SET title = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
     const res = await api.dbQuery('notes', query, [noteTitle, noteContent, activeNoteId])
     if (res?.success) {
       showToast(t('notes.toast_saved'))
+      api.sendNoteEditorDraft?.({
+        source: popup ? 'popup' : 'main',
+        noteId: activeNoteId,
+        title: noteTitle,
+        content: noteContent,
+        isPrivate: false,
+        privateUnlocked: false,
+      })
       loadNotes()
+      return true
     }
-  }
+    showToast(res?.error || t('notes.error_save_failed'))
+    return false
+  }, [
+    activeNoteId,
+    activeNoteIsPrivate,
+    api,
+    isPrivateNoteUnlocked,
+    loadNotes,
+    noteContent,
+    noteTitle,
+    popup,
+    showToast,
+    t,
+  ])
 
   const insertAttachments = useCallback(
     async (attachments: NoteAttachment[]) => {
@@ -345,11 +498,14 @@ export const Notes: React.FC = () => {
       const nextContent = `${before}${prefix}${markdown}${suffix}${after}`
 
       setNoteContent(nextContent)
-      const res = await api.dbQuery(
-        'notes',
-        'UPDATE notes SET title = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [noteTitle, nextContent, activeNoteId],
-      )
+      const res =
+        activeNoteIsPrivate && isPrivateNoteUnlocked && api.savePrivateNote
+          ? await api.savePrivateNote(activeNoteId, noteTitle, nextContent)
+          : await api.dbQuery(
+              'notes',
+              'UPDATE notes SET title = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+              [noteTitle, nextContent, activeNoteId],
+            )
       if (!res?.success) {
         showToast(res?.error || t('notes.error_attachment_failed'))
         return
@@ -364,7 +520,17 @@ export const Notes: React.FC = () => {
         textarea.setSelectionRange(cursorPosition, cursorPosition)
       })
     },
-    [activeNoteId, api, loadNotes, noteContent, noteTitle, showToast, t],
+    [
+      activeNoteId,
+      activeNoteIsPrivate,
+      api,
+      isPrivateNoteUnlocked,
+      loadNotes,
+      noteContent,
+      noteTitle,
+      showToast,
+      t,
+    ],
   )
 
   const handleSelectAttachments = async () => {
@@ -387,7 +553,7 @@ export const Notes: React.FC = () => {
     }
   }
 
-  const handleEditorPaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  const handleEditorPaste = async (event: React.ClipboardEvent<HTMLElement>) => {
     const imageItem = Array.from(event.clipboardData.items).find((item) =>
       item.type.startsWith('image/'),
     )
@@ -462,6 +628,96 @@ export const Notes: React.FC = () => {
       setNoteTitle(defaultTitle)
       setNoteContent(defaultContent)
       loadNotes()
+    }
+  }
+
+  const openCreatePrivateNoteDialog = () => {
+    setPrivateDialogMode('create')
+    setUnlockPromptNote(null)
+    setPrivatePassword('')
+  }
+
+  const getTargetNotebookName = () =>
+    !activeNotebook ||
+    activeNotebook === ALL_NOTES_SCOPE ||
+    activeNotebook === UNCATEGORIZED_NOTEBOOK
+      ? UNCATEGORIZED_NOTEBOOK
+      : activeNotebook
+
+  const handleCreatePrivateNote = async () => {
+    if (!api?.createPrivateNote) {
+      showToast(t('common.error_electron_required'))
+      return
+    }
+    if (!privatePassword) {
+      showToast(t('notes.private_password_required'))
+      return
+    }
+    const defaultTitle = t('notes.private_note_title')
+    const defaultContent = t('notes.private_note_default_content')
+    const res = await api.createPrivateNote({
+      title: defaultTitle,
+      content: defaultContent,
+      notebook: getTargetNotebookName(),
+      password: privatePassword,
+    })
+    if (!res.success || !res.data) {
+      showToast(res.error || t('notes.error_create_failed'))
+      return
+    }
+    setPrivateDialogMode(null)
+    setPrivatePassword('')
+    setActiveNoteId(res.data.id)
+    setNoteTitle(res.data.title)
+    setNoteContent(res.data.content)
+    setActiveDraftIsPrivate(true)
+    setIsPrivateNoteUnlocked(true)
+    showToast(t('notes.toast_private_created'))
+    await loadNotes()
+  }
+
+  const handleUnlockPrivateNote = async () => {
+    if (!api?.unlockPrivateNote || !unlockPromptNote) {
+      showToast(t('common.error_electron_required'))
+      return
+    }
+    if (!privatePassword) {
+      showToast(t('notes.private_password_required'))
+      return
+    }
+    const res = await api.unlockPrivateNote(unlockPromptNote.id, privatePassword)
+    if (!res.success || !res.data) {
+      showToast(res.error || t('notes.error_private_unlock_failed'))
+      return
+    }
+    setActiveNoteId(unlockPromptNote.id)
+    setNoteTitle(unlockPromptNote.title)
+    setNoteContent(res.data.content)
+    setActiveDraftIsPrivate(true)
+    setIsPrivateNoteUnlocked(true)
+    setUnlockPromptNote(null)
+    setPrivateDialogMode(null)
+    setPrivatePassword('')
+    api.sendNoteEditorDraft?.({
+      source: popup ? 'popup' : 'main',
+      noteId: unlockPromptNote.id,
+      title: unlockPromptNote.title,
+      content: res.data.content,
+      isPrivate: true,
+      privateUnlocked: true,
+    })
+  }
+
+  const handleLockPrivateNote = async () => {
+    if (!api?.lockPrivateNote || !activeNoteId) return
+    await handleSaveNote()
+    await api.lockPrivateNote(activeNoteId)
+    setNoteContent('')
+    setActiveDraftIsPrivate(true)
+    setIsPrivateNoteUnlocked(false)
+    if (activeNote) {
+      setUnlockPromptNote(activeNote)
+      setPrivateDialogMode('unlock')
     }
   }
 
@@ -774,18 +1030,97 @@ export const Notes: React.FC = () => {
 
       setNoteContent(nextContent)
       if (!api) return
-      void api
-        .dbQuery(
-          'notes',
-          'UPDATE notes SET title = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-          [noteTitle, nextContent, activeNoteId],
-        )
+      const savePromise =
+        activeNoteIsPrivate && isPrivateNoteUnlocked && api.savePrivateNote
+          ? api.savePrivateNote(activeNoteId, noteTitle, nextContent)
+          : api.dbQuery(
+              'notes',
+              'UPDATE notes SET title = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+              [noteTitle, nextContent, activeNoteId],
+            )
+      void savePromise
         .then((res) => {
           if (!res?.success) showToast(res?.error || t('notes.error_save_failed'))
         })
     },
-    [activeNoteId, api, noteContent, noteTitle, showToast, t],
+    [activeNoteId, activeNoteIsPrivate, api, isPrivateNoteUnlocked, noteContent, noteTitle, showToast, t],
   )
+
+  const replaceEditorSelection = useCallback((format: (selection: string) => string) => {
+    const textarea = editorRef.current
+    const start = textarea?.selectionStart ?? noteContent.length
+    const end = textarea?.selectionEnd ?? noteContent.length
+    const selected = noteContent.slice(start, end)
+    const replacement = format(selected)
+    const nextContent = `${noteContent.slice(0, start)}${replacement}${noteContent.slice(end)}`
+    setNoteContent(nextContent)
+    requestAnimationFrame(() => {
+      textarea?.focus()
+      textarea?.setSelectionRange(start, start + replacement.length)
+      typoraEditorRef.current?.focus()
+    })
+  }, [noteContent])
+
+  const applyMarkdownCommand = useCallback(
+    (command: 'bold' | 'italic' | 'heading' | 'quote' | 'code' | 'bullet' | 'ordered' | 'link') => {
+      const wrapLine = (selection: string, prefix: string) =>
+        (selection || t('notes.typora_placeholder_text'))
+          .split('\n')
+          .map((line) => `${prefix}${line}`)
+          .join('\n')
+
+      replaceEditorSelection((selection) => {
+        switch (command) {
+          case 'bold':
+            return `**${selection || t('notes.typora_placeholder_text')}**`
+          case 'italic':
+            return `*${selection || t('notes.typora_placeholder_text')}*`
+          case 'heading':
+            return wrapLine(selection, '## ')
+          case 'quote':
+            return wrapLine(selection, '> ')
+          case 'code':
+            return selection.includes('\n') ? `\`\`\`\n${selection}\n\`\`\`` : `\`${selection || 'code'}\``
+          case 'bullet':
+            return wrapLine(selection, '- ')
+          case 'ordered':
+            return (selection || t('notes.typora_placeholder_text'))
+              .split('\n')
+              .map((line, index) => `${index + 1}. ${line}`)
+              .join('\n')
+          case 'link':
+            return `[${selection || t('notes.typora_placeholder_text')}](https://)`
+          default:
+            return selection
+        }
+      })
+    },
+    [replaceEditorSelection, t],
+  )
+
+  const handleTyporaInput = (event: React.FormEvent<HTMLDivElement>) => {
+    setNoteContent(event.currentTarget.innerText)
+  }
+
+  const addNoteImageResizeFrames = (html: string) => {
+    const template = document.createElement('template')
+    template.innerHTML = html
+    template.content
+      .querySelectorAll<HTMLImageElement>('img[src^="life-note-asset://attachment/"]')
+      .forEach((image) => {
+        if (image.parentElement?.classList.contains('note-image-frame')) return
+        image.dataset.noteImage = 'true'
+        image.setAttribute('draggable', 'false')
+        const frame = document.createElement('span')
+        frame.className = 'note-image-frame'
+        const handle = document.createElement('span')
+        handle.className = 'note-image-resize-handle'
+        handle.setAttribute('aria-hidden', 'true')
+        image.replaceWith(frame)
+        frame.append(image, handle)
+      })
+    return template.innerHTML
+  }
 
   // Mature Markdown parser using 'marked' and sanitized with 'DOMPurify'
   const parseMarkdown = (md: string) => {
@@ -804,15 +1139,96 @@ export const Notes: React.FC = () => {
     }) as string
 
     // 3. Sanitize HTML using DOMPurify to prevent XSS but allow our custom buttons and style/class attributes.
-    const cleanHtml = DOMPurify.sanitize(rawHtml, {
+    const cleanHtml = DOMPurify.sanitize(addNoteImageResizeFrames(rawHtml), {
       ADD_TAGS: ['button', 'span'],
-      ADD_ATTR: ['data-link', 'data-note-image', 'data-note-width', 'data-note-height', 'style', 'class'],
+      ADD_ATTR: [
+        'aria-hidden',
+        'data-link',
+        'data-note-image',
+        'data-note-width',
+        'data-note-height',
+        'style',
+        'class',
+      ],
       ALLOWED_URI_REGEXP:
         /^(?:(?:https?|mailto|tel|life-note-asset):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
     })
 
     return cleanHtml
   }
+
+  useEffect(() => {
+    const shouldRenderMarkdown =
+      activeNoteId &&
+      (!activeNoteIsPrivate || isPrivateNoteUnlocked) &&
+      !isMainNoteRenderSuspended &&
+      (viewMode === 'typora' || viewMode === 'split' || viewMode === 'preview')
+
+    if (!shouldRenderMarkdown) {
+      setIsMarkdownRendering(false)
+      setMarkdownRenderProgress(0)
+      if (!activeNoteId || isMainNoteRenderSuspended) setRenderedMarkdownHtml('')
+      return
+    }
+
+    const content = deferredNoteContent || ''
+    const imageCount = content.match(/!\[[^\]]*]\(/g)?.length ?? 0
+    const isLargeRender = content.length > 8000 || imageCount > 12
+    let cancelled = false
+    let idleHandle: number | undefined
+    let progressTimer: number | undefined
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number
+      cancelIdleCallback?: (handle: number) => void
+    }
+
+    setIsMarkdownRendering(isLargeRender)
+    setMarkdownRenderProgress(isLargeRender ? 18 : 0)
+
+    const renderTimer = window.setTimeout(
+      () => {
+        if (cancelled) return
+        if (isLargeRender) setMarkdownRenderProgress(55)
+
+        const render = () => {
+          if (cancelled) return
+          const html = parseMarkdown(content)
+          if (cancelled) return
+          setRenderedMarkdownHtml(html)
+          setMarkdownRenderProgress(100)
+          progressTimer = window.setTimeout(() => {
+            if (!cancelled) {
+              setIsMarkdownRendering(false)
+              setMarkdownRenderProgress(0)
+            }
+          }, 120)
+        }
+
+        if (idleWindow.requestIdleCallback) {
+          idleHandle = idleWindow.requestIdleCallback(render, { timeout: 900 })
+        } else {
+          window.requestAnimationFrame(render)
+        }
+      },
+      isLargeRender ? 420 : 180,
+    )
+
+    return () => {
+      cancelled = true
+      if (renderTimer) window.clearTimeout(renderTimer)
+      if (progressTimer) window.clearTimeout(progressTimer)
+      if (idleHandle && idleWindow.cancelIdleCallback) idleWindow.cancelIdleCallback(idleHandle)
+    }
+  }, [
+    activeNoteId,
+    activeNoteIsPrivate,
+    deferredNoteContent,
+    i18n.language,
+    isMainNoteRenderSuspended,
+    isPrivateNoteUnlocked,
+    t,
+    viewMode,
+  ])
 
   // Attach event handlers to dynamic preview content.
   useEffect(() => {
@@ -821,11 +1237,56 @@ export const Notes: React.FC = () => {
 
     const getImageDimensions = (image: HTMLImageElement): NoteImageDimensions => {
       const bounds = image.getBoundingClientRect()
+      const width = Number(image.dataset.noteWidth) || bounds.width || image.naturalWidth
+      const height = bounds.height || Number(image.dataset.noteHeight) || image.naturalHeight
       return {
         url: image.src,
-        width: clampNoteImageDimension(Number(image.dataset.noteWidth) || bounds.width || image.naturalWidth),
-        height: clampNoteImageDimension(Number(image.dataset.noteHeight) || bounds.height || image.naturalHeight),
+        width: clampNoteImageDimension(width),
+        height: clampNoteImageDimension(height),
       }
+    }
+
+    const applyImageDimensions = (image: HTMLImageElement, width: number, height: number) => {
+      const safeWidth = clampNoteImageDimension(width)
+      const safeHeight = clampNoteImageDimension(height)
+      image.style.width = `${safeWidth}px`
+      image.style.height = 'auto'
+      image.style.maxWidth = '100%'
+      image.dataset.noteWidth = String(safeWidth)
+      image.dataset.noteHeight = String(safeHeight)
+      const frame = image.closest<HTMLElement>('.note-image-frame')
+      if (frame) {
+        frame.style.width = `${safeWidth}px`
+        frame.style.maxWidth = '100%'
+      }
+    }
+
+    const createImageResizeGuide = (bounds: DOMRect, width: number, height: number) => {
+      const guide = document.createElement('div')
+      guide.className = 'note-image-resize-guide'
+      guide.setAttribute('aria-hidden', 'true')
+      document.body.append(guide)
+      updateImageResizeGuide(guide, bounds, width, height)
+      return guide
+    }
+
+    const updateImageResizeGuide = (
+      guide: HTMLElement,
+      bounds: DOMRect,
+      width: number,
+      height: number,
+    ) => {
+      const safeWidth = clampNoteImageDimension(width)
+      const safeHeight = clampNoteImageDimension(height)
+      guide.style.left = `${bounds.left}px`
+      guide.style.top = `${bounds.top}px`
+      guide.style.width = `${safeWidth}px`
+      guide.style.height = `${safeHeight}px`
+      guide.textContent = `${safeWidth} x ${safeHeight}`
+    }
+
+    const removeImageResizeGuide = (guide?: HTMLElement) => {
+      guide?.remove()
     }
 
     const selectImage = (image: HTMLImageElement) => {
@@ -833,17 +1294,30 @@ export const Notes: React.FC = () => {
       setSelectedNoteImage(selected)
       previewContainer.querySelectorAll<HTMLImageElement>('img[data-note-image]').forEach((candidate) => {
         candidate.classList.toggle('note-image-selected', candidate.src === selected.url)
+        candidate.closest('.note-image-frame')?.classList.toggle('note-image-frame-selected', candidate.src === selected.url)
       })
     }
 
+    const getEventImage = (target: EventTarget | null) => {
+      if (!(target instanceof Element)) return null
+      const handle = target.closest<HTMLElement>('.note-image-resize-handle')
+      if (handle) {
+        return handle
+          .closest<HTMLElement>('.note-image-frame')
+          ?.querySelector<HTMLImageElement>('img[src^="life-note-asset://attachment/"]') ?? null
+      }
+      return target.closest<HTMLImageElement>('img[src^="life-note-asset://attachment/"]')
+    }
+
     const handlePreviewClick = (event: MouseEvent) => {
-      const target = event.target
-      if (!(target instanceof Element)) return
-      const image = target.closest<HTMLImageElement>('img[src^="life-note-asset://attachment/"]')
+      setNoteImageMenu(null)
+      const image = getEventImage(event.target)
       if (image) {
         selectImage(image)
         return
       }
+      const target = event.target
+      if (!(target instanceof Element)) return
       const deepLinkButton = target.closest<HTMLElement>('.deep-link-btn')
       if (deepLinkButton) {
         const link = deepLinkButton.getAttribute('data-link')
@@ -862,77 +1336,163 @@ export const Notes: React.FC = () => {
       })
     }
 
+    const handlePreviewContextMenu = (event: MouseEvent) => {
+      const image = getEventImage(event.target)
+      if (!image) return
+      event.preventDefault()
+      selectImage(image)
+      setNoteImageMenu({
+        url: image.src,
+        left: Math.min(event.clientX, window.innerWidth - 180),
+        top: Math.min(event.clientY, window.innerHeight - 140),
+      })
+    }
+
     let resizeState:
       | {
           image: HTMLImageElement
+          handle: Element
           startX: number
           startY: number
-          width: number
-          height: number
+          startWidth: number
+          startHeight: number
+          currentWidth: number
+          currentHeight: number
           maxWidth: number
+          pointerId: number
+          guide: HTMLElement
+          guideBounds: DOMRect
         }
       | undefined
+    let resizeAnimationFrame = 0
+
+    const scheduleImageResizeGuidePaint = (width: number, height: number) => {
+      if (!resizeState) return
+      if (resizeAnimationFrame) window.cancelAnimationFrame(resizeAnimationFrame)
+      resizeAnimationFrame = window.requestAnimationFrame(() => {
+        if (resizeState) {
+          updateImageResizeGuide(resizeState.guide, resizeState.guideBounds, width, height)
+        }
+        resizeAnimationFrame = 0
+      })
+    }
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target
-      if (!(target instanceof HTMLImageElement) || !target.src.startsWith('life-note-asset://attachment/')) return
-      const bounds = target.getBoundingClientRect()
-      const isResizeCorner = event.clientX >= bounds.right - 20 && event.clientY >= bounds.bottom - 20
-      if (!isResizeCorner) return
+      const image = getEventImage(target)
+      if (!image) return
+      const handle = target instanceof Element ? target.closest('.note-image-resize-handle') : null
+      if (!handle) return
 
       event.preventDefault()
-      const dimensions = getImageDimensions(target)
+      event.stopPropagation()
+      const bounds = image.getBoundingClientRect()
+      const dimensions = getImageDimensions(image)
+      const width = Math.max(48, bounds.width || dimensions.width)
+      const height = Math.max(48, bounds.height || dimensions.height)
       resizeState = {
-        image: target,
+        image,
+        handle,
         startX: event.clientX,
         startY: event.clientY,
-        width: dimensions.width,
-        height: dimensions.height,
+        startWidth: width,
+        startHeight: height,
+        currentWidth: width,
+        currentHeight: height,
         maxWidth: Math.max(48, previewContainer.clientWidth - 32),
+        pointerId: event.pointerId,
+        guide: createImageResizeGuide(bounds, width, height),
+        guideBounds: bounds,
       }
-      target.setPointerCapture?.(event.pointerId)
-      selectImage(target)
+      handle.setPointerCapture?.(event.pointerId)
+      selectImage(image)
     }
 
     const handlePointerMove = (event: PointerEvent) => {
       if (resizeState) {
-        const width = Math.min(resizeState.maxWidth, clampNoteImageDimension(resizeState.width + event.clientX - resizeState.startX))
-        const height = clampNoteImageDimension(resizeState.height + event.clientY - resizeState.startY)
-        resizeState.image.style.width = `${width}px`
-        resizeState.image.style.height = `${height}px`
-        setSelectedNoteImage({ url: resizeState.image.src, width, height })
+        event.preventDefault()
+        const { width, height } = getNoteImageResizeDragDimensions({
+          startWidth: resizeState.startWidth,
+          startHeight: resizeState.startHeight,
+          deltaX: event.clientX - resizeState.startX,
+          deltaY: event.clientY - resizeState.startY,
+          maxWidth: resizeState.maxWidth,
+        })
+        resizeState.currentWidth = width
+        resizeState.currentHeight = height
+        scheduleImageResizeGuidePaint(width, height)
         return
       }
 
-      const target = event.target
-      if (!(target instanceof HTMLImageElement) || !target.src.startsWith('life-note-asset://attachment/')) return
-      const bounds = target.getBoundingClientRect()
-      target.style.cursor = event.clientX >= bounds.right - 20 && event.clientY >= bounds.bottom - 20 ? 'nwse-resize' : 'pointer'
+      const frame = event.target instanceof Element ? event.target.closest<HTMLElement>('.note-image-frame') : null
+      if (frame) frame.style.cursor = 'pointer'
     }
 
     const handlePointerUp = () => {
       if (!resizeState) return
-      const bounds = resizeState.image.getBoundingClientRect()
+      try {
+        resizeState.handle.releasePointerCapture?.(resizeState.pointerId)
+      } catch {
+        // Pointer capture can already be released by the browser if the drag leaves the window.
+      }
+      if (resizeAnimationFrame) {
+        window.cancelAnimationFrame(resizeAnimationFrame)
+        resizeAnimationFrame = 0
+      }
+      removeImageResizeGuide(resizeState.guide)
       const dimensions = {
         url: resizeState.image.src,
-        width: clampNoteImageDimension(bounds.width),
-        height: clampNoteImageDimension(bounds.height),
+        width: clampNoteImageDimension(resizeState.currentWidth),
+        height: clampNoteImageDimension(resizeState.currentHeight),
       }
+      applyImageDimensions(resizeState.image, dimensions.width, dimensions.height)
+      setSelectedNoteImage(dimensions)
       updateNoteImageDimensions(dimensions.url, dimensions.width, dimensions.height)
       resizeState = undefined
     }
 
+    const preventNativeImageDrag = (event: DragEvent) => {
+      if (getEventImage(event.target)) event.preventDefault()
+    }
+
     previewContainer.addEventListener('click', handlePreviewClick)
+    previewContainer.addEventListener('contextmenu', handlePreviewContextMenu)
     previewContainer.addEventListener('pointerdown', handlePointerDown)
-    previewContainer.addEventListener('pointermove', handlePointerMove)
+    previewContainer.addEventListener('dragstart', preventNativeImageDrag)
+    window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
     return () => {
       previewContainer.removeEventListener('click', handlePreviewClick)
+      previewContainer.removeEventListener('contextmenu', handlePreviewContextMenu)
       previewContainer.removeEventListener('pointerdown', handlePointerDown)
-      previewContainer.removeEventListener('pointermove', handlePointerMove)
+      previewContainer.removeEventListener('dragstart', preventNativeImageDrag)
+      window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
+      if (resizeAnimationFrame) window.cancelAnimationFrame(resizeAnimationFrame)
+      removeImageResizeGuide(resizeState?.guide)
     }
-  }, [api, handleDeepLinkClick, noteContent, selectedNoteImage?.url, showToast, t, updateNoteImageDimensions, viewMode])
+  }, [api, handleDeepLinkClick, noteContent, showToast, t, updateNoteImageDimensions, viewMode])
+
+  useEffect(() => {
+    if (!selectedNoteImage) return
+    document
+      .querySelectorAll<HTMLImageElement>('img[src^="life-note-asset://attachment/"]')
+      .forEach((image) => {
+        if (image.src !== selectedNoteImage.url) return
+        const width = clampNoteImageDimension(selectedNoteImage.width)
+        const height = clampNoteImageDimension(selectedNoteImage.height)
+        image.style.width = `${width}px`
+        image.style.height = 'auto'
+        image.style.maxWidth = '100%'
+        image.dataset.noteWidth = String(width)
+        image.dataset.noteHeight = String(height)
+        const frame = image.closest<HTMLElement>('.note-image-frame')
+        if (frame) {
+          frame.style.width = `${width}px`
+          frame.style.maxWidth = '100%'
+        }
+      })
+  }, [selectedNoteImage])
 
   useEffect(() => {
     if (!isExportDropdownOpen) return
@@ -954,6 +1514,306 @@ export const Notes: React.FC = () => {
     }
   }, [isExportDropdownOpen])
 
+  useEffect(() => {
+    if (!noteImageMenu) return
+    const close = () => setNoteImageMenu(null)
+    document.addEventListener('pointerdown', close)
+    document.addEventListener('keydown', close)
+    return () => {
+      document.removeEventListener('pointerdown', close)
+      document.removeEventListener('keydown', close)
+    }
+  }, [noteImageMenu])
+
+  useEffect(() => {
+    if (!api?.onNoteEditorDraft) return
+    return api.onNoteEditorDraft((raw) => {
+      const data = raw as NoteEditorDraft
+      if (!data?.noteId || data.source === (popup ? 'popup' : 'main')) return
+      if (!popup && isEditorWindowOpen) {
+        pendingExternalEditorDraftRef.current = data
+        return
+      }
+      suppressEditorBroadcastRef.current = true
+      setActiveNoteId(data.noteId)
+      if (typeof data.title === 'string') setNoteTitle(data.title)
+      if (typeof data.content === 'string') setNoteContent(data.content)
+      setActiveDraftIsPrivate(Boolean(data.isPrivate))
+      setIsPrivateNoteUnlocked(Boolean(data.isPrivate && data.privateUnlocked))
+      if (data.isPrivate && !data.privateUnlocked) {
+        setNoteContent('')
+        setUnlockPromptNote({
+          id: data.noteId,
+          title: typeof data.title === 'string' ? data.title : '',
+          content: '',
+          note_type: 'markdown',
+          notebook: activeNotebook || UNCATEGORIZED_NOTEBOOK,
+          is_private: 1,
+          created_at: '',
+          updated_at: '',
+        })
+        setPrivateDialogMode('unlock')
+      } else {
+        setUnlockPromptNote(null)
+        setPrivateDialogMode(null)
+      }
+      requestAnimationFrame(() => {
+        suppressEditorBroadcastRef.current = false
+      })
+    })
+  }, [activeNotebook, api, isEditorWindowOpen, popup])
+
+  useEffect(() => {
+    if (!popup || !api?.notifyNoteEditorReady) return
+    api.notifyNoteEditorReady()
+  }, [api, popup])
+
+  useEffect(() => {
+    if (!api?.onNotesChanged) return
+    return api.onNotesChanged((raw) => {
+      const data = raw as { noteId?: number; title?: string; content?: string; reason?: string }
+      if (!popup && isEditorWindowOpen) {
+        if (data?.noteId === activeNoteId && typeof data.content === 'string') {
+          pendingExternalEditorDraftRef.current = {
+            source: 'popup',
+            noteId: data.noteId,
+            title: data.title,
+            content: data.content,
+            isPrivate: data.reason === 'private-save',
+            privateUnlocked: data.reason === 'private-save',
+          }
+        }
+        return
+      }
+      if (
+        data?.noteId === activeNoteId &&
+        typeof data.content === 'string' &&
+        data.reason === 'private-save'
+      ) {
+        setNoteContent(data.content)
+        if (typeof data.title === 'string') setNoteTitle(data.title)
+      }
+      if (!popup) void loadNotes()
+    })
+  }, [activeNoteId, api, isEditorWindowOpen, loadNotes, popup])
+
+  useEffect(() => {
+    if (!api?.onNoteEditorClosed || popup) return
+    return api.onNoteEditorClosed(() => {
+      void (async () => {
+        setIsEditorWindowRestoring(true)
+        const draft = pendingExternalEditorDraftRef.current
+        const noteId = Number(draft?.noteId || activeNoteId)
+        await loadNotes()
+
+        if (Number.isInteger(noteId) && noteId > 0) {
+          suppressEditorBroadcastRef.current = true
+          const noteRes = await api.dbQuery('notes', 'SELECT * FROM notes WHERE id = ?', [noteId])
+          const row = Array.isArray(noteRes?.data) ? (noteRes.data[0] as Note | undefined) : undefined
+          setActiveNoteId(noteId)
+          if (typeof draft?.title === 'string') setNoteTitle(draft.title)
+          else if (typeof row?.title === 'string') setNoteTitle(row.title)
+
+          const isPrivate = Boolean(draft?.isPrivate) || Number(row?.is_private || 0) === 1
+          setActiveDraftIsPrivate(isPrivate)
+          setIsPrivateNoteUnlocked(Boolean(isPrivate && draft?.privateUnlocked))
+          if (isPrivate) {
+            setNoteContent(typeof draft?.content === 'string' ? draft.content : '')
+          } else if (typeof row?.content === 'string') {
+            setNoteContent(row.content)
+          } else if (typeof draft?.content === 'string') {
+            setNoteContent(draft.content)
+          }
+          setUnlockPromptNote(null)
+          setPrivateDialogMode(null)
+          requestAnimationFrame(() => {
+            suppressEditorBroadcastRef.current = false
+          })
+        }
+
+        pendingExternalEditorDraftRef.current = null
+        setIsEditorWindowOpen(false)
+        setIsEditorWindowRestoring(false)
+      })()
+    })
+  }, [activeNoteId, api, loadNotes, popup])
+
+  useEffect(() => {
+    if (!popup || !api?.onNoteEditorCloseRequest) return
+    return api.onNoteEditorCloseRequest(() => {
+      void (async () => {
+        const saved = await handleSaveNote()
+        if (saved) await api.confirmNoteEditorClose?.()
+      })()
+    })
+  }, [api, handleSaveNote, popup])
+
+  useEffect(() => {
+    if (!activeNoteId || suppressEditorBroadcastRef.current) return
+    if (isMainNoteRenderSuspended) return
+    const signature = JSON.stringify({
+      noteId: activeNoteId,
+      title: noteTitle,
+      content: noteContent,
+      isPrivate: activeNoteIsPrivate,
+      privateUnlocked: activeNoteIsPrivate && isPrivateNoteUnlocked,
+    })
+    if (signature === lastEditorBroadcastRef.current) return
+    const timer = window.setTimeout(() => {
+      lastEditorBroadcastRef.current = signature
+      api?.sendNoteEditorDraft?.({
+        source: popup ? 'popup' : 'main',
+        noteId: activeNoteId,
+        title: noteTitle,
+        content: noteContent,
+        isPrivate: activeNoteIsPrivate,
+        privateUnlocked: activeNoteIsPrivate && isPrivateNoteUnlocked,
+      })
+    }, 420)
+    return () => window.clearTimeout(timer)
+  }, [
+    activeNoteId,
+    activeNoteIsPrivate,
+    api,
+    isMainNoteRenderSuspended,
+    isPrivateNoteUnlocked,
+    noteContent,
+    noteTitle,
+    popup,
+  ])
+
+  const copyPreviewImage = async (url: string) => {
+    const res = await api?.copyNoteImage?.(url)
+    showToast(res?.success ? t('notes.toast_image_copied') : res?.error || t('notes.error_image_copy_failed'))
+    setNoteImageMenu(null)
+  }
+
+  const savePreviewImage = async (url: string) => {
+    const res = await api?.saveNoteImage?.(url)
+    if (res?.success) {
+      if (res.saved !== false) showToast(t('notes.toast_image_saved'))
+    } else {
+      showToast(res?.error || t('notes.error_image_save_failed'))
+    }
+    setNoteImageMenu(null)
+  }
+
+  const openNoteEditorWindow = async () => {
+    if (!activeNoteId || !api?.openNoteEditorWindow) {
+      showToast(t('common.error_electron_required'))
+      return
+    }
+    await handleSaveNote()
+    const res = await api.openNoteEditorWindow({
+      noteId: activeNoteId,
+      title: noteTitle,
+      content: noteContent,
+      isPrivate: activeNoteIsPrivate,
+      privateUnlocked: activeNoteIsPrivate && isPrivateNoteUnlocked,
+    })
+    if (res?.success) {
+      pendingExternalEditorDraftRef.current = null
+      setIsEditorWindowOpen(true)
+      setIsEditorWindowRestoring(false)
+    } else {
+      showToast(res?.error || t('notes.error_open_popup_failed'))
+    }
+  }
+
+  const closeNoteEditorWindow = async () => {
+    const saved = await handleSaveNote()
+    if (saved) await api?.closeNoteEditorWindow?.()
+  }
+
+  const renderImageSizeControls = () =>
+    selectedNoteImage ? (
+      <div className="note-image-size-controls">
+        <span>{t('notes.image_size')}</span>
+        <label>
+          {t('notes.image_width')}
+          <input
+            type="number"
+            min={48}
+            max={4096}
+            value={selectedNoteImage.width}
+            onChange={(event) => {
+              const width = Number(event.target.value)
+              if (Number.isFinite(width)) {
+                setSelectedNoteImage((current) => {
+                  if (!current) return current
+                  const safeWidth = clampNoteImageDimension(width)
+                  const aspectRatio = current.height / Math.max(current.width, 1) || 1
+                  return {
+                    ...current,
+                    width: safeWidth,
+                    height: clampNoteImageDimension(safeWidth * aspectRatio),
+                  }
+                })
+              }
+            }}
+            onBlur={() =>
+              updateNoteImageDimensions(
+                selectedNoteImage.url,
+                selectedNoteImage.width,
+                selectedNoteImage.height,
+              )
+            }
+          />
+        </label>
+        <label>
+          {t('notes.image_height')}
+          <input
+            type="number"
+            min={48}
+            max={4096}
+            value={selectedNoteImage.height}
+            onChange={(event) => {
+              const height = Number(event.target.value)
+              if (Number.isFinite(height)) {
+                setSelectedNoteImage((current) => {
+                  if (!current) return current
+                  const safeHeight = clampNoteImageDimension(height)
+                  const aspectRatio = current.width / Math.max(current.height, 1) || 1
+                  return {
+                    ...current,
+                    width: clampNoteImageDimension(safeHeight * aspectRatio),
+                    height: safeHeight,
+                  }
+                })
+              }
+            }}
+            onBlur={() =>
+              updateNoteImageDimensions(
+                selectedNoteImage.url,
+                selectedNoteImage.width,
+                selectedNoteImage.height,
+              )
+            }
+          />
+        </label>
+        <button
+          type="button"
+          className="btn sm"
+          onClick={() => {
+            updateNoteImageDimensions(selectedNoteImage.url, 0, 0, true)
+            setSelectedNoteImage(null)
+          }}
+        >
+          {t('notes.image_size_reset')}
+        </button>
+        <span className="note-image-size-hint">{t('notes.image_resize_hint')}</span>
+      </div>
+    ) : null
+
+  const renderMarkdownRenderStatus = () =>
+    isMarkdownRendering ? (
+      <div className="note-render-loading" role="status" aria-live="polite">
+        <Loader2 className="note-render-loading__spinner" size={16} aria-hidden="true" />
+        <span>{t('notes.rendering_preview')}</span>
+        <progress value={markdownRenderProgress || undefined} max={100} />
+      </div>
+    ) : null
+
   return (
     <div
       style={{
@@ -963,23 +1823,31 @@ export const Notes: React.FC = () => {
         flexDirection: 'column',
       }}
     >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '16px',
-        }}
-      >
-        <div>
-          <h1 style={{ fontSize: '22px', fontWeight: 800 }}>{t('notes.title')}</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{t('notes.subtitle')}</p>
+      {!popup && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '16px',
+          }}
+        >
+          <div>
+            <h1 style={{ fontSize: '22px', fontWeight: 800 }}>{t('notes.title')}</h1>
+            <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{t('notes.subtitle')}</p>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn" onClick={openCreatePrivateNoteDialog}>
+              <Lock size={16} />
+              {t('notes.new_private_note')}
+            </button>
+            <button className="btn primary" onClick={handleCreateNote}>
+              <Plus size={16} />
+              {t('notes.new_note')}
+            </button>
+          </div>
         </div>
-        <button className="btn primary" onClick={handleCreateNote}>
-          <Plus size={16} />
-          {t('notes.new_note')}
-        </button>
-      </div>
+      )}
 
       {/* Main 2-column layout */}
       <div
@@ -987,33 +1855,56 @@ export const Notes: React.FC = () => {
           flexGrow: 1,
           minHeight: 0,
           display: 'grid',
-          gridTemplateColumns: '280px 1fr',
+          gridTemplateColumns: popup ? '1fr' : '280px 1fr',
           border: '1px solid var(--color-border)',
           borderRadius: '8px',
           backgroundColor: 'var(--bg-surface)',
         }}
       >
-        <NotebookSidebar
-          notebooks={notebooks}
-          notes={notes}
-          activeNotebook={activeNotebook}
-          activeNoteId={activeNoteId}
-          getNotebookDisplayName={(notebook) => getNotebookDisplayName(notebook.name, notebook.id)}
-          getCategoryDisplayName={getNotebookCategoryDisplayName}
-          formatTime={formatTime}
-          onSelectNotebook={handleNotebookScopeSelect}
-          onSelectNote={(sidebarNote, scope) => {
-            const note = notes.find((candidate) => candidate.id === sidebarNote.id)
-            if (note) selectNote(note, scope)
-          }}
-          onCreateNotebook={handleCreateNotebook}
-          onRenameNotebook={(notebook) => handleRenameNotebook(notebook as Notebook)}
-          onEditTranslations={(notebook) => handleRenameNotebook(notebook as Notebook, true)}
-          onDeleteNotebook={(notebook) => handleDeleteNotebook(notebook as Notebook)}
-        />
+        {!popup && (
+          <NotebookSidebar
+            notebooks={notebooks}
+            notes={notes}
+            activeNotebook={activeNotebook}
+            activeNoteId={activeNoteId}
+            getNotebookDisplayName={(notebook) => getNotebookDisplayName(notebook.name, notebook.id)}
+            getCategoryDisplayName={getNotebookCategoryDisplayName}
+            formatTime={formatTime}
+            onSelectNotebook={handleNotebookScopeSelect}
+            onSelectNote={(sidebarNote, scope) => {
+              const note = notes.find((candidate) => candidate.id === sidebarNote.id)
+              if (note) selectNote(note, scope)
+            }}
+            onCreateNotebook={handleCreateNotebook}
+            onRenameNotebook={(notebook) => handleRenameNotebook(notebook as Notebook)}
+            onEditTranslations={(notebook) => handleRenameNotebook(notebook as Notebook, true)}
+            onDeleteNotebook={(notebook) => handleDeleteNotebook(notebook as Notebook)}
+          />
+        )}
 
         {/* Column 3: Rich Markdown editor + preview */}
-        {activeNoteId ? (
+        {isMainNoteRenderSuspended ? (
+          <section className="notes-external-editor-state" aria-labelledby="notes-external-editor-title">
+            <div className="notes-empty-state__icon" aria-hidden="true">
+              {isEditorWindowRestoring ? (
+                <Loader2 className="note-render-loading__spinner" />
+              ) : (
+                <Maximize2 />
+              )}
+            </div>
+            <h2 id="notes-external-editor-title">
+              {isEditorWindowRestoring
+                ? t('notes.popup_editor_restoring_title')
+                : t('notes.popup_editor_active_title')}
+            </h2>
+            <p>
+              {isEditorWindowRestoring
+                ? t('notes.popup_editor_restoring_description')
+                : t('notes.popup_editor_active_description')}
+            </p>
+            {isEditorWindowRestoring && <progress />}
+          </section>
+        ) : activeNoteId && (!activeNoteIsPrivate || isPrivateNoteUnlocked) ? (
           <div
             className="notebook-modal"
             style={{
@@ -1025,8 +1916,9 @@ export const Notes: React.FC = () => {
           >
             {/* Common Header */}
             <div
+              className="notes-editor-header"
               style={{
-                height: '42px',
+                minHeight: '42px',
                 borderBottom: '1px solid var(--color-border)',
                 display: 'flex',
                 alignItems: 'center',
@@ -1037,6 +1929,7 @@ export const Notes: React.FC = () => {
               }}
             >
               <input
+                className="notes-editor-title-input"
                 style={{
                   border: 'none',
                   outline: 'none',
@@ -1051,9 +1944,10 @@ export const Notes: React.FC = () => {
                 onBlur={handleSaveNote}
                 placeholder={t('notes.new_note')}
               />
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <div className="notes-editor-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 {/* Segmented Control for Editor View Mode */}
                 <div
+                  className="notes-editor-view-modes"
                   style={{
                     display: 'flex',
                     backgroundColor: 'var(--bg-app)',
@@ -1065,6 +1959,7 @@ export const Notes: React.FC = () => {
                   }}
                 >
                   <button
+                    className="note-view-mode-button"
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -1082,11 +1977,37 @@ export const Notes: React.FC = () => {
                     }}
                     onClick={() => setViewMode('edit')}
                     title={t('notes.focus_mode')}
+                    aria-label={t('notes.focus_mode')}
                   >
                     <Edit2 size={11} />
-                    <span>{t('notes.focus_mode')}</span>
+                    <span className="note-view-mode-label">{t('notes.focus_mode')}</span>
                   </button>
                   <button
+                    className="note-view-mode-button"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '4px 8px',
+                      border: 'none',
+                      borderRadius: '4px',
+                      backgroundColor: viewMode === 'typora' ? 'var(--bg-surface)' : 'transparent',
+                      color: viewMode === 'typora' ? 'var(--text-main)' : 'var(--text-muted)',
+                      fontSize: '11px',
+                      fontWeight: viewMode === 'typora' ? 'bold' : 'normal',
+                      cursor: 'pointer',
+                      boxShadow: viewMode === 'typora' ? '0 1px 3px rgba(0, 0, 0, 0.08)' : 'none',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onClick={() => setViewMode('typora')}
+                    title={t('notes.typora_mode')}
+                    aria-label={t('notes.typora_mode')}
+                  >
+                    <NotebookPen size={11} />
+                    <span className="note-view-mode-label">{t('notes.typora_mode')}</span>
+                  </button>
+                  <button
+                    className="note-view-mode-button"
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -1104,11 +2025,13 @@ export const Notes: React.FC = () => {
                     }}
                     onClick={() => setViewMode('split')}
                     title={t('notes.split_edit')}
+                    aria-label={t('notes.split_edit')}
                   >
                     <Columns size={11} />
-                    <span>{t('notes.split_edit')}</span>
+                    <span className="note-view-mode-label">{t('notes.split_edit')}</span>
                   </button>
                   <button
+                    className="note-view-mode-button"
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -1126,33 +2049,78 @@ export const Notes: React.FC = () => {
                     }}
                     onClick={() => setViewMode('preview')}
                     title={t('notes.preview_mode')}
+                    aria-label={t('notes.preview_mode')}
                   >
                     <Eye size={11} />
-                    <span>{t('notes.preview_mode')}</span>
+                    <span className="note-view-mode-label">{t('notes.preview_mode')}</span>
                   </button>
                 </div>
 
+                {activeNoteIsPrivate && (
+                  <button
+                    className="btn sm note-editor-action-button"
+                    onClick={() => void handleLockPrivateNote()}
+                    title={t('notes.lock_private_note')}
+                    aria-label={t('notes.lock_private_note')}
+                    disabled={isSavingPrivate}
+                  >
+                    <KeyRound size={12} />
+                    <span className="note-editor-action-label">
+                      {isSavingPrivate ? t('notes.saving_private') : t('notes.lock_private_note')}
+                    </span>
+                  </button>
+                )}
+
+                {popup ? (
+                  <button
+                    className="btn sm note-editor-action-button"
+                    onClick={() => void closeNoteEditorWindow()}
+                    title={t('notes.close_popup_editor')}
+                    aria-label={t('notes.close_popup_editor')}
+                  >
+                    <X size={12} />
+                    <span className="note-editor-action-label">{t('notes.close_popup_editor')}</span>
+                  </button>
+                ) : (
+                  <button
+                    className="btn sm note-editor-action-button"
+                    onClick={() => void openNoteEditorWindow()}
+                    title={t('notes.open_popup_editor')}
+                    aria-label={t('notes.open_popup_editor')}
+                  >
+                    <Maximize2 size={12} />
+                    <span className="note-editor-action-label">{t('notes.open_popup_editor')}</span>
+                  </button>
+                )}
+
                 <button
-                  className="btn sm"
+                  className="btn sm note-editor-action-button"
                   onClick={() => void handleSelectAttachments()}
                   disabled={isAttaching}
                   title={t('notes.attachment_hint')}
+                  aria-label={isAttaching ? t('notes.adding_attachment') : t('notes.add_attachment')}
                 >
                   <Paperclip size={12} />
-                  {isAttaching ? t('notes.adding_attachment') : t('notes.add_attachment')}
+                  <span className="note-editor-action-label">
+                    {isAttaching ? t('notes.adding_attachment') : t('notes.add_attachment')}
+                  </span>
                 </button>
 
                 {/* Export Button & Dropdown */}
                 <div ref={exportDropdownRef} style={{ position: 'relative' }}>
                   <button
-                    className="btn sm"
+                    className="btn sm note-editor-action-button"
                     onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
                     disabled={isExporting}
                     aria-haspopup="menu"
                     aria-expanded={isExportDropdownOpen}
+                    aria-label={isExporting ? t('notes.exporting') : t('notes.export_note')}
+                    title={isExporting ? t('notes.exporting') : t('notes.export_note')}
                   >
                     <Download size={12} />
-                    {isExporting ? t('notes.exporting') : t('notes.export_note')}
+                    <span className="note-editor-action-label">
+                      {isExporting ? t('notes.exporting') : t('notes.export_note')}
+                    </span>
                   </button>
                   {isExportDropdownOpen && (
                     <div
@@ -1341,6 +2309,71 @@ export const Notes: React.FC = () => {
                 </div>
               )}
 
+              {viewMode === 'typora' && (
+                <div className="typora-editor-shell">
+                  <div className="typora-toolbar" role="toolbar" aria-label={t('notes.typora_toolbar')}>
+                    {[
+                      { command: 'heading', icon: Heading1, label: t('notes.toolbar_heading') },
+                      { command: 'bold', icon: Bold, label: t('notes.toolbar_bold') },
+                      { command: 'italic', icon: Italic, label: t('notes.toolbar_italic') },
+                      { command: 'quote', icon: Quote, label: t('notes.toolbar_quote') },
+                      { command: 'code', icon: Code, label: t('notes.toolbar_code') },
+                      { command: 'bullet', icon: List, label: t('notes.toolbar_bullet') },
+                      { command: 'ordered', icon: ListOrdered, label: t('notes.toolbar_ordered') },
+                      { command: 'link', icon: LinkIcon, label: t('notes.toolbar_link') },
+                    ].map((item) => {
+                      const Icon = item.icon
+                      return (
+                        <button
+                          key={item.command}
+                          type="button"
+                          className="typora-toolbar__button"
+                          title={item.label}
+                          aria-label={item.label}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => applyMarkdownCommand(item.command as Parameters<typeof applyMarkdownCommand>[0])}
+                        >
+                          <Icon size={15} />
+                        </button>
+                      )
+                    })}
+                    <span className="typora-toolbar__spacer" />
+                    <button
+                      type="button"
+                      className="typora-toolbar__button"
+                      title={t('notes.add_attachment')}
+                      aria-label={t('notes.add_attachment')}
+                      onClick={() => void handleSelectAttachments()}
+                    >
+                      <Paperclip size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      className="typora-toolbar__button"
+                      title={t('notes.save_now')}
+                      aria-label={t('notes.save_now')}
+                      onClick={() => void handleSaveNote()}
+                    >
+                      <Save size={15} />
+                    </button>
+                  </div>
+                  {renderImageSizeControls()}
+                  {renderMarkdownRenderStatus()}
+                  <div
+                    id="markdown-preview"
+                    ref={typoraEditorRef}
+                    className="preview-md typora-editor"
+                    data-placeholder={t('notes.editor_placeholder')}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onInput={handleTyporaInput}
+                    onPaste={(event) => void handleEditorPaste(event)}
+                    onBlur={handleSaveNote}
+                    dangerouslySetInnerHTML={{ __html: renderedMarkdownHtml }}
+                  />
+                </div>
+              )}
+
               {/* Preview panel (visible in 'preview' and 'split' mode) */}
               {(viewMode === 'preview' || viewMode === 'split') && (
                 <div
@@ -1369,80 +2402,38 @@ export const Notes: React.FC = () => {
                       {t('notes.live_preview')}
                     </div>
                   )}
-                  {selectedNoteImage && (
-                    <div className="note-image-size-controls">
-                      <span>{t('notes.image_size')}</span>
-                      <label>
-                        {t('notes.image_width')}
-                        <input
-                          type="number"
-                          min={48}
-                          max={4096}
-                          value={selectedNoteImage.width}
-                          onChange={(event) => {
-                            const width = Number(event.target.value)
-                            if (Number.isFinite(width)) {
-                              setSelectedNoteImage((current) =>
-                                current ? { ...current, width: clampNoteImageDimension(width) } : current,
-                              )
-                            }
-                          }}
-                          onBlur={() =>
-                            updateNoteImageDimensions(
-                              selectedNoteImage.url,
-                              selectedNoteImage.width,
-                              selectedNoteImage.height,
-                            )
-                          }
-                        />
-                      </label>
-                      <label>
-                        {t('notes.image_height')}
-                        <input
-                          type="number"
-                          min={48}
-                          max={4096}
-                          value={selectedNoteImage.height}
-                          onChange={(event) => {
-                            const height = Number(event.target.value)
-                            if (Number.isFinite(height)) {
-                              setSelectedNoteImage((current) =>
-                                current ? { ...current, height: clampNoteImageDimension(height) } : current,
-                              )
-                            }
-                          }}
-                          onBlur={() =>
-                            updateNoteImageDimensions(
-                              selectedNoteImage.url,
-                              selectedNoteImage.width,
-                              selectedNoteImage.height,
-                            )
-                          }
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        className="btn sm"
-                        onClick={() => {
-                          updateNoteImageDimensions(selectedNoteImage.url, 0, 0, true)
-                          setSelectedNoteImage(null)
-                        }}
-                      >
-                        {t('notes.image_size_reset')}
-                      </button>
-                      <span className="note-image-size-hint">{t('notes.image_resize_hint')}</span>
-                    </div>
-                  )}
+                  {renderImageSizeControls()}
+                  {renderMarkdownRenderStatus()}
                   <div
                     id="markdown-preview"
                     className="preview-md"
                     style={{ flexGrow: 1, overflowY: 'auto', padding: '16px' }}
-                    dangerouslySetInnerHTML={{ __html: parseMarkdown(noteContent) }}
+                    aria-busy={isMarkdownRendering}
+                    dangerouslySetInnerHTML={{ __html: renderedMarkdownHtml }}
                   />
                 </div>
               )}
             </div>
           </div>
+        ) : activeNoteId && activeNoteIsPrivate ? (
+          <section className="notes-empty-state" aria-labelledby="notes-private-locked-title">
+            <div className="notes-empty-state__icon" aria-hidden="true">
+              <Lock />
+            </div>
+            <h2 id="notes-private-locked-title">{t('notes.private_locked_title')}</h2>
+            <p>{t('notes.private_locked_description')}</p>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => {
+                if (activeNote) setUnlockPromptNote(activeNote)
+                setPrivateDialogMode('unlock')
+              }}
+            >
+              <KeyRound size={16} aria-hidden="true" />
+              {t('notes.unlock_private_note')}
+            </button>
+          </section>
         ) : (
           <section className="notes-empty-state" aria-labelledby="notes-empty-state-title">
             <div className="notes-empty-state__icon" aria-hidden="true">
@@ -1457,6 +2448,94 @@ export const Notes: React.FC = () => {
           </section>
         )}
       </div>
+
+      {noteImageMenu && (
+        <ViewportPortal>
+          <div
+            className="note-image-context-menu"
+            role="menu"
+            style={{ left: noteImageMenu.left, top: noteImageMenu.top }}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <button type="button" role="menuitem" onClick={() => void copyPreviewImage(noteImageMenu.url)}>
+              {t('notes.copy_image')}
+            </button>
+            <button type="button" role="menuitem" onClick={() => void savePreviewImage(noteImageMenu.url)}>
+              {t('notes.save_image_as')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                void api?.openNoteAttachment?.(noteImageMenu.url)
+                setNoteImageMenu(null)
+              }}
+            >
+              {t('notes.open_attachment')}
+            </button>
+          </div>
+        </ViewportPortal>
+      )}
+
+      {privateDialogMode && (
+        <ViewportPortal>
+          <div className="dialog-overlay note-private-dialog__overlay">
+            <div className="dialog-surface note-private-dialog" role="dialog" aria-modal="true">
+              <h3>
+                {privateDialogMode === 'create'
+                  ? t('notes.create_private_note')
+                  : t('notes.unlock_private_note')}
+              </h3>
+              <p>
+                {privateDialogMode === 'create'
+                  ? t('notes.create_private_note_description')
+                  : t('notes.unlock_private_note_description')}
+              </p>
+              <input
+                className="form-field"
+                type="password"
+                autoFocus
+                value={privatePassword}
+                placeholder={t('notes.private_password_placeholder')}
+                onChange={(event) => setPrivatePassword(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    void (privateDialogMode === 'create'
+                      ? handleCreatePrivateNote()
+                      : handleUnlockPrivateNote())
+                  }
+                }}
+              />
+              <div className="note-private-dialog__actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setPrivateDialogMode(null)
+                    setPrivatePassword('')
+                  }}
+                >
+                  {t('notes.cancel')}
+                </button>
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() =>
+                    void (privateDialogMode === 'create'
+                      ? handleCreatePrivateNote()
+                      : handleUnlockPrivateNote())
+                  }
+                >
+                  {privateDialogMode === 'create'
+                    ? t('notes.create_private_note')
+                    : t('notes.unlock_private_note')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ViewportPortal>
+      )}
 
       {/* Notebook Creation/Edit Modal */}
       {isNbModalOpen && (

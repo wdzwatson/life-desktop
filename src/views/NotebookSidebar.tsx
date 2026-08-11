@@ -16,6 +16,7 @@ import {
   Inbox,
   Languages,
   Library,
+  Lock,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -41,6 +42,7 @@ export type NotebookSidebarNote = {
   id: number
   title: string
   notebook: string
+  is_private?: number
   created_at: string
 }
 
@@ -246,7 +248,11 @@ export function NotebookSidebar({
             aria-current={activeNoteId === note.id && activeNotebook === scope ? 'page' : undefined}
             onClick={() => onSelectNote(note, scope)}
           >
-            <FileText aria-hidden="true" />
+            {Number(note.is_private || 0) === 1 ? (
+              <Lock aria-hidden="true" />
+            ) : (
+              <FileText aria-hidden="true" />
+            )}
             <span className="notebook-sidebar__note-copy">
               <span className="notebook-sidebar__note-title">
                 {note.title || t('notes.title_placeholder')}

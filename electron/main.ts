@@ -18,6 +18,7 @@ import {
 import path from 'path'
 import fs from 'fs'
 import { tmpdir } from 'node:os'
+import { promisify } from 'node:util'
 import Database from 'better-sqlite3'
 import { initializeUserDatabase } from './db/schema'
 import { runDbTransaction } from './db/transaction'
@@ -155,6 +156,7 @@ function hashPassword(password: string, salt?: string) {
 
 // Keep global references
 let mainWindow: BrowserWindow | null = null
+let noteEditorWindow: BrowserWindow | null = null
 let desktopTaskNoteWindow: BrowserWindow | null = null
 let douyinSyncWindow: BrowserWindow | null = null
 let douyinReaderView: WebContentsView | null = null
@@ -177,6 +179,10 @@ const aiImageControllers = new Set<AbortController>()
 const aiVideoControllers = new Set<AbortController>()
 let aiRecoveryController: AbortController | null = null
 const bookBatchImportSessions = new Map<string, { userId: string; items: BatchImportItem[] }>()
+const unlockedPrivateNoteKeys = new Map<string, Buffer>()
+let pendingNoteEditorDraft: Record<string, unknown> | null = null
+let isNoteEditorCloseConfirmed = false
+let isNoteEditorCloseRequested = false
 let registeredScreenshotShortcut: string | null = null
 let registeredRecordingStopShortcut: string | null = null
 let captureControlWindow: BrowserWindow | null = null
@@ -1450,6 +1456,159 @@ async function storePastedNoteImage(input: { dataUrl: unknown; fileName?: unknow
   return createStoredNoteAttachment(storedName, originalName)
 }
 
+const scryptAsync = promisify(crypto.scrypt)
+const NOTE_PRIVATE_CIPHER_VERSION = 1
+const NOTE_PRIVATE_KDF = Object.freeze({ name: 'scrypt', N: 16384, r: 8, p: 1, keyLength: 32 })
+
+type PrivateNoteRow = {
+  id: number
+  is_private: number
+  content: string | null
+  private_salt: string | null
+  private_iv: string | null
+  private_tag: string | null
+  private_kdf: string | null
+  private_cipher_version: number | null
+}
+
+function getPrivateNoteKeyCacheId(noteId: number) {
+  return `${activeUserId}:${noteId}`
+}
+
+function clearPrivateNoteKey(noteId: number) {
+  const cacheId = getPrivateNoteKeyCacheId(noteId)
+  const key = unlockedPrivateNoteKeys.get(cacheId)
+  if (key) key.fill(0)
+  unlockedPrivateNoteKeys.delete(cacheId)
+}
+
+function clearPrivateNoteKeys() {
+  for (const key of unlockedPrivateNoteKeys.values()) key.fill(0)
+  unlockedPrivateNoteKeys.clear()
+}
+
+async function derivePrivateNoteKey(password: string, salt: Buffer) {
+  if (!password || password.length < 1) throw new Error('Password is required.')
+  if (salt.length < 16) throw new Error('The private note salt is invalid.')
+  return (await scryptAsync(password, salt, NOTE_PRIVATE_KDF.keyLength, {
+    N: NOTE_PRIVATE_KDF.N,
+    r: NOTE_PRIVATE_KDF.r,
+    p: NOTE_PRIVATE_KDF.p,
+  })) as Buffer
+}
+
+function getPrivateNoteAad(noteId: number) {
+  return Buffer.from(`lifeos:note:${activeUserId}:${noteId}:v${NOTE_PRIVATE_CIPHER_VERSION}`)
+}
+
+function encryptPrivateNoteContent(noteId: number, content: string, key: Buffer) {
+  const iv = crypto.randomBytes(12)
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
+  cipher.setAAD(getPrivateNoteAad(noteId))
+  const ciphertext = Buffer.concat([cipher.update(content, 'utf8'), cipher.final()])
+  return {
+    content: ciphertext.toString('base64'),
+    private_iv: iv.toString('base64'),
+    private_tag: cipher.getAuthTag().toString('base64'),
+    private_cipher_version: NOTE_PRIVATE_CIPHER_VERSION,
+    private_kdf: JSON.stringify(NOTE_PRIVATE_KDF),
+  }
+}
+
+function decryptPrivateNoteContent(row: PrivateNoteRow, key: Buffer) {
+  if (
+    row.private_cipher_version !== NOTE_PRIVATE_CIPHER_VERSION ||
+    !row.content ||
+    !row.private_iv ||
+    !row.private_tag
+  ) {
+    throw new Error('This private note cannot be decrypted.')
+  }
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    key,
+    Buffer.from(row.private_iv, 'base64'),
+  )
+  decipher.setAAD(getPrivateNoteAad(row.id))
+  decipher.setAuthTag(Buffer.from(row.private_tag, 'base64'))
+  return Buffer.concat([
+    decipher.update(Buffer.from(row.content, 'base64')),
+    decipher.final(),
+  ]).toString('utf8')
+}
+
+function getPrivateNoteRow(noteId: unknown) {
+  const id = Number(noteId)
+  if (!Number.isInteger(id) || id <= 0) throw new Error('The note id is invalid.')
+  const row = getUserDb('notes')
+    .prepare(
+      `SELECT id, is_private, content, private_salt, private_iv, private_tag, private_kdf, private_cipher_version
+       FROM notes
+       WHERE id = ?`,
+    )
+    .get(id) as PrivateNoteRow | undefined
+  if (!row) throw new Error('The note could not be found.')
+  if (Number(row.is_private) !== 1) throw new Error('This note is not private.')
+  return row
+}
+
+async function unlockPrivateNote(noteId: unknown, password: unknown) {
+  if (typeof password !== 'string' || !password) throw new Error('Password is required.')
+  const row = getPrivateNoteRow(noteId)
+  if (!row.private_salt) throw new Error('This private note cannot be decrypted.')
+  const key = await derivePrivateNoteKey(password, Buffer.from(row.private_salt, 'base64'))
+  try {
+    const content = decryptPrivateNoteContent(row, key)
+    clearPrivateNoteKey(row.id)
+    unlockedPrivateNoteKeys.set(getPrivateNoteKeyCacheId(row.id), key)
+    return { id: row.id, content }
+  } catch (error) {
+    key.fill(0)
+    throw error
+  }
+}
+
+function saveUnlockedPrivateNote(noteId: unknown, title: unknown, content: unknown) {
+  const id = Number(noteId)
+  if (!Number.isInteger(id) || id <= 0) throw new Error('The note id is invalid.')
+  if (typeof title !== 'string' || typeof content !== 'string') {
+    throw new Error('The note payload is invalid.')
+  }
+  const key = unlockedPrivateNoteKeys.get(getPrivateNoteKeyCacheId(id))
+  if (!key) throw new Error('Unlock this private note before saving.')
+  const encrypted = encryptPrivateNoteContent(id, content, key)
+  getUserDb('notes')
+    .prepare(
+      `UPDATE notes
+       SET title = ?, content = ?, private_iv = ?, private_tag = ?,
+           private_cipher_version = ?, private_kdf = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND is_private = 1`,
+    )
+    .run(
+      title,
+      encrypted.content,
+      encrypted.private_iv,
+      encrypted.private_tag,
+      encrypted.private_cipher_version,
+      encrypted.private_kdf,
+      id,
+    )
+  emitNoteDataChanged('private-save', { noteId: id, title, content })
+  return { id }
+}
+
+function emitNoteDataChanged(reason: string, payload: Record<string, unknown> = {}) {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send('notes:changed', { reason, ...payload })
+  }
+}
+
+function emitNoteEditorDraft(payload: Record<string, unknown>) {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send('note:editorDraft', payload)
+  }
+}
+
 function removeDouyinFavoriteFiles(db: Database.Database, itemIds?: number[]) {
   const rows = itemIds
     ? (() => {
@@ -1577,6 +1736,8 @@ function setupLandingPosterProtocol() {
 function switchUserSession(userId: string) {
   closeDouyinReaderView()
   closeUserDbs()
+  clearPrivateNoteKeys()
+  pendingNoteEditorDraft = null
   activeUserId = userId
   bookBatchImportSessions.clear()
 
@@ -1832,6 +1993,54 @@ function createWindow() {
   setupAutoUpdater()
   startScheduler()
   void loadVideoEngine()
+}
+
+function createNoteEditorWindow() {
+  if (noteEditorWindow && !noteEditorWindow.isDestroyed()) {
+    noteEditorWindow.show()
+    noteEditorWindow.focus()
+    return noteEditorWindow
+  }
+
+  isNoteEditorCloseConfirmed = false
+  isNoteEditorCloseRequested = false
+  noteEditorWindow = new BrowserWindow({
+    width: 980,
+    height: 720,
+    minWidth: 640,
+    minHeight: 420,
+    title: 'LifeOS 笔记编辑',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  })
+
+  if (process.env.VITE_DEV_SERVER_URL) {
+    noteEditorWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#notes-popup`)
+  } else {
+    noteEditorWindow.loadFile(path.join(__dirname, '../dist/index.html'), {
+      hash: 'notes-popup',
+    })
+  }
+
+  noteEditorWindow.on('close', (event) => {
+    if (isQuitting || isNoteEditorCloseConfirmed) return
+    event.preventDefault()
+    if (isNoteEditorCloseRequested) return
+    isNoteEditorCloseRequested = true
+    noteEditorWindow?.webContents.send('note:editorCloseRequested')
+  })
+
+  noteEditorWindow.on('closed', () => {
+    noteEditorWindow = null
+    isNoteEditorCloseConfirmed = false
+    isNoteEditorCloseRequested = false
+    mainWindow?.webContents.send('note:editorClosed')
+  })
+
+  return noteEditorWindow
 }
 
 function createDesktopTaskNoteWindow() {
@@ -2117,6 +2326,166 @@ ipcMain.handle('note:attachments:open', async (_event, payload: { url?: unknown 
       success: false,
       error: error instanceof Error ? error.message : 'Unable to open attachment.',
     }
+  }
+})
+
+ipcMain.handle('note:attachments:copyImage', async (_event, payload: { url?: unknown }) => {
+  try {
+    if (typeof payload?.url !== 'string') throw new Error('The image URL is invalid.')
+    const relativePath = getNoteAssetRelativePath(payload.url)
+    if (!relativePath || !isNoteImageFile(relativePath)) throw new Error('The image URL is invalid.')
+    const filePath = await resolveNoteAssetPath(getActiveUserFilesDir(), relativePath)
+    if (!filePath) throw new Error('The image could not be found.')
+    const image = nativeImage.createFromPath(filePath)
+    if (image.isEmpty()) throw new Error('The image could not be copied.')
+    clipboard.writeImage(image)
+    return { success: true }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unable to copy image.',
+    }
+  }
+})
+
+ipcMain.handle('note:attachments:saveImage', async (event, payload: { url?: unknown }) => {
+  try {
+    if (typeof payload?.url !== 'string') throw new Error('The image URL is invalid.')
+    const relativePath = getNoteAssetRelativePath(payload.url)
+    if (!relativePath || !isNoteImageFile(relativePath)) throw new Error('The image URL is invalid.')
+    const filePath = await resolveNoteAssetPath(getActiveUserFilesDir(), relativePath)
+    if (!filePath) throw new Error('The image could not be found.')
+    const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender) || mainWindow!, {
+      defaultPath: path.join(app.getPath('downloads'), path.basename(filePath)),
+    })
+    if (result.canceled || !result.filePath) return { success: true, saved: false }
+    await fs.promises.copyFile(filePath, result.filePath)
+    return { success: true, saved: true, filePath: result.filePath }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unable to save image.',
+    }
+  }
+})
+
+ipcMain.handle(
+  'note:createPrivate',
+  async (
+    _event,
+    input: { title?: unknown; content?: unknown; notebook?: unknown; password?: unknown },
+  ) => {
+    try {
+      const title = typeof input?.title === 'string' && input.title.trim() ? input.title.trim() : 'Private Note'
+      const content = typeof input?.content === 'string' ? input.content : ''
+      const notebook =
+        typeof input?.notebook === 'string' && input.notebook.trim()
+          ? input.notebook.trim()
+          : '未分类'
+      if (typeof input?.password !== 'string' || !input.password) throw new Error('Password is required.')
+      const db = getUserDb('notes')
+      const insert = db
+        .prepare(
+          `INSERT INTO notes (title, content, note_type, notebook, is_private, private_salt, private_kdf, private_cipher_version)
+           VALUES (?, '', 'markdown', ?, 1, ?, ?, ?)`,
+        )
+        .run(
+          title,
+          notebook,
+          crypto.randomBytes(16).toString('base64'),
+          JSON.stringify(NOTE_PRIVATE_KDF),
+          NOTE_PRIVATE_CIPHER_VERSION,
+        )
+      const noteId = Number(insert.lastInsertRowid)
+      const row = getPrivateNoteRow(noteId)
+      const key = await derivePrivateNoteKey(input.password, Buffer.from(row.private_salt || '', 'base64'))
+      const encrypted = encryptPrivateNoteContent(noteId, content, key)
+      db.prepare(
+        `UPDATE notes
+         SET content = ?, private_iv = ?, private_tag = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+      ).run(encrypted.content, encrypted.private_iv, encrypted.private_tag, noteId)
+      clearPrivateNoteKey(noteId)
+      unlockedPrivateNoteKeys.set(getPrivateNoteKeyCacheId(noteId), key)
+      emitNoteDataChanged('private-create', { noteId, title, content })
+      return { success: true, data: { id: noteId, title, content } }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unable to create private note.',
+      }
+    }
+  },
+)
+
+ipcMain.handle('note:unlockPrivate', async (_event, input: { noteId?: unknown; password?: unknown }) => {
+  try {
+    return { success: true, data: await unlockPrivateNote(input?.noteId, input?.password) }
+  } catch {
+    return { success: false, error: 'Incorrect password or corrupted private note.' }
+  }
+})
+
+ipcMain.handle(
+  'note:savePrivate',
+  async (_event, input: { noteId?: unknown; title?: unknown; content?: unknown }) => {
+    try {
+      return {
+        success: true,
+        data: saveUnlockedPrivateNote(input?.noteId, input?.title, input?.content),
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unable to save private note.',
+      }
+    }
+  },
+)
+
+ipcMain.handle('note:lockPrivate', async (_event, input: { noteId?: unknown }) => {
+  const noteId = Number(input?.noteId)
+  if (Number.isInteger(noteId) && noteId > 0) clearPrivateNoteKey(noteId)
+  emitNoteDataChanged('private-lock', { noteId })
+  return { success: true }
+})
+
+ipcMain.handle('note:openEditorWindow', async (_event, input: Record<string, unknown>) => {
+  pendingNoteEditorDraft = {
+    source: 'main',
+    ...(input || {}),
+  }
+  const window = createNoteEditorWindow()
+  if (!window.webContents.isLoading()) {
+    window.webContents.send('note:editorDraft', pendingNoteEditorDraft)
+  }
+  return { success: true }
+})
+
+ipcMain.handle('note:closeEditorWindow', async () => {
+  isNoteEditorCloseConfirmed = true
+  isNoteEditorCloseRequested = false
+  if (noteEditorWindow && !noteEditorWindow.isDestroyed()) noteEditorWindow.close()
+  showMainWindow()
+  return { success: true }
+})
+
+ipcMain.handle('note:confirmEditorClose', async () => {
+  isNoteEditorCloseConfirmed = true
+  isNoteEditorCloseRequested = false
+  if (noteEditorWindow && !noteEditorWindow.isDestroyed()) noteEditorWindow.close()
+  showMainWindow()
+  return { success: true }
+})
+
+ipcMain.on('note:editorDraftChanged', (_event, payload: Record<string, unknown>) => {
+  pendingNoteEditorDraft = payload
+  emitNoteEditorDraft(payload)
+})
+
+ipcMain.on('note:editorWindowReady', (event) => {
+  if (pendingNoteEditorDraft) {
+    event.sender.send('note:editorDraft', pendingNoteEditorDraft)
   }
 })
 
@@ -3618,6 +3987,7 @@ ipcMain.handle('db:query', async (_, { dbName, sql, params = [] }) => {
       const stmt = db.prepare(sql)
       const res = stmt.run(...params)
       if (dbName === 'tasks') emitTaskDataChanged('query')
+      if (dbName === 'notes') emitNoteDataChanged('query')
       return { success: true, data: res }
     }
   } catch (err: any) {
@@ -3638,6 +4008,7 @@ ipcMain.handle('db:transaction', async (_, { dbName, statements }) => {
     const db = getUserDb(dbName)
     const data = runDbTransaction(db, statements)
     if (dbName === 'tasks') emitTaskDataChanged('transaction')
+    if (dbName === 'notes') emitNoteDataChanged('transaction')
     return { success: true, data }
   } catch (err: any) {
     console.error(`DB Transaction Error (${dbName}):`, err)
