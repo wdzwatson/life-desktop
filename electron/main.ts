@@ -14,9 +14,11 @@ import {
   desktopCapturer,
   globalShortcut,
   session,
+  systemPreferences,
 } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import { execFile as execFileCallback } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { promisify } from 'node:util'
 import Database from 'better-sqlite3'
@@ -144,8 +146,14 @@ import { AI_SCHEMA_VERSION } from './ai/schema'
 import { AIStorageService } from './ai/storageService'
 import { SystemCleanerService } from './systemCleaner/service'
 import { registerSystemCleanerIpc } from './systemCleaner/ipc'
+import { selectScreenCaptureArea } from './screenCaptureSelection'
+import {
+  scaleScreenCaptureSelection,
+  type ScreenCaptureRect,
+} from '../src/utils/screenCaptureSelection'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const execFile = promisify(execFileCallback)
 
 // Helper for hashing passwords securely using PBKDF2
 function hashPassword(password: string, salt?: string) {
@@ -185,12 +193,24 @@ let isNoteEditorCloseConfirmed = false
 let isNoteEditorCloseRequested = false
 let registeredScreenshotShortcut: string | null = null
 let registeredRecordingStopShortcut: string | null = null
+let screenCaptureInProgress = false
+let screenCapturePermissionPrompt: Promise<void> | null = null
 let captureControlWindow: BrowserWindow | null = null
+let screenCaptureEditorWindow: BrowserWindow | null = null
+let screenCaptureEditorLoadGeneration = 0
+let pendingScreenCaptureEditorPayload: {
+  imageDataUrl: string | null
+  selectionMode: 'full' | 'rectangle' | 'freeform'
+  status: 'loading' | 'ready'
+} | null = null
 let activeBurstSession: {
   total: number
   captured: number
   paused: boolean
   stopped: boolean
+  startedAt: number
+  pausedAt: number | null
+  pausedDuration: number
 } | null = null
 
 const DEFAULT_SHORTCUTS = {
@@ -211,6 +231,57 @@ const CAPTURE_RECORDING_STOP_SHORTCUT = 'CommandOrControl+Shift+R'
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
 
+const captureControlHtml = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>
+      body { margin: 0; background: transparent; color: #f8fafc; font-family: system-ui, "Microsoft YaHei", sans-serif; }
+      main { height: 68px; box-sizing: border-box; display: grid; grid-template-columns: minmax(110px, 1fr) auto auto auto; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid rgba(148,163,184,.35); border-radius: 8px; background: rgba(15,23,42,.94); box-shadow: 0 10px 28px rgba(0,0,0,.32); }
+      #count { min-width: 0; overflow: hidden; font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+      #elapsed { min-width: 58px; color: #cbd5e1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+      button { min-width: 52px; padding: 6px 10px; border: 1px solid rgba(148,163,184,.35); border-radius: 5px; background: #1e293b; color: #f8fafc; cursor: pointer; font: inherit; font-size: 12px; }
+      button:hover { background: #334155; }
+      button:last-child { border-color: rgba(248,113,113,.55); color: #fecaca; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <span id="count">正在准备...</span>
+      <span id="elapsed">00:00.0</span>
+      <button id="pause">暂停</button>
+      <button id="stop">停止</button>
+    </main>
+    <script>
+      const count = document.getElementById('count')
+      const elapsed = document.getElementById('elapsed')
+      const pause = document.getElementById('pause')
+      const stop = document.getElementById('stop')
+      let state = null
+
+      const renderElapsed = () => {
+        if (!state) return
+        const end = state.paused && state.pausedAt ? state.pausedAt : Date.now()
+        const milliseconds = Math.max(0, end - state.startedAt - state.pausedDuration)
+        const minutes = Math.floor(milliseconds / 60000)
+        const seconds = Math.floor(milliseconds / 1000) % 60
+        const tenths = Math.floor(milliseconds / 100) % 10
+        elapsed.textContent = String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0') + '.' + tenths
+      }
+
+      window.electronAPI.onScreenCaptureBurstProgress((nextState) => {
+        state = nextState
+        count.textContent = '已截取 ' + state.captured + ' / ' + state.total + ' 帧'
+        pause.textContent = state.paused ? '继续' : '暂停'
+        renderElapsed()
+      })
+      window.setInterval(renderElapsed, 100)
+      pause.addEventListener('click', () => window.electronAPI.controlScreenCaptureBurst('toggle-pause'))
+      stop.addEventListener('click', () => window.electronAPI.controlScreenCaptureBurst('stop'))
+    </script>
+  </body>
+</html>`
+
 function sendBurstControlProgress() {
   if (!captureControlWindow || captureControlWindow.isDestroyed() || !activeBurstSession) return
   captureControlWindow.webContents.send('screen-capture:burst-progress', activeBurstSession)
@@ -222,13 +293,16 @@ function closeBurstControlWindow() {
   if (controlWindow && !controlWindow.isDestroyed()) controlWindow.close()
 }
 
-function showBurstControlWindow() {
+function showBurstControlWindow(displayId?: number) {
   if (captureControlWindow && !captureControlWindow.isDestroyed()) return
-  const workArea = screen.getPrimaryDisplay().workArea
+  const targetDisplay =
+    screen.getAllDisplays().find((display) => display.id === displayId) ??
+    screen.getPrimaryDisplay()
+  const workArea = targetDisplay.workArea
   captureControlWindow = new BrowserWindow({
-    width: 360,
+    width: 430,
     height: 68,
-    x: Math.round(workArea.x + (workArea.width - 360) / 2),
+    x: Math.round(workArea.x + (workArea.width - 430) / 2),
     y: workArea.y + 24,
     frame: false,
     transparent: true,
@@ -251,7 +325,353 @@ function showBurstControlWindow() {
   })
   captureControlWindow.webContents.once('did-finish-load', sendBurstControlProgress)
   void captureControlWindow.loadURL(
-    `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:transparent;font-family:system-ui,"Microsoft YaHei",sans-serif;color:#f8fafc}main{height:68px;box-sizing:border-box;display:flex;align-items:center;gap:14px;padding:12px 14px;background:rgba(15,23,42,.94);border:1px solid rgba(148,163,184,.35);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.32)}#count{font-size:13px;font-weight:700;white-space:nowrap;flex:1}button{border:1px solid rgba(148,163,184,.35);border-radius:5px;background:#1e293b;color:#f8fafc;padding:6px 10px;font:inherit;font-size:12px;cursor:pointer}button:hover{background:#334155}button:last-child{color:#fecaca;border-color:rgba(248,113,113,.55)}</style></head><body><main><span id="count">正在准备...</span><button id="pause">暂停</button><button id="stop">停止</button></main><script>const count=document.getElementById('count'),pause=document.getElementById('pause'),stop=document.getElementById('stop');window.electronAPI.onScreenCaptureBurstProgress((state)=>{count.textContent=\`已截取 \${state.captured} / \${state.total} 帧\`;pause.textContent=state.paused?'继续':'暂停'});pause.addEventListener('click',()=>window.electronAPI.controlScreenCaptureBurst('toggle-pause'));stop.addEventListener('click',()=>window.electronAPI.controlScreenCaptureBurst('stop'));</script></body></html>`)}`,
+    `data:text/html;charset=utf-8,${encodeURIComponent(captureControlHtml)}`,
+  )
+}
+
+function closeScreenCaptureEditorWindow() {
+  const editorWindow = screenCaptureEditorWindow
+  screenCaptureEditorWindow = null
+  pendingScreenCaptureEditorPayload = null
+  screenCaptureEditorLoadGeneration += 1
+  try {
+    if (editorWindow && !editorWindow.isDestroyed()) editorWindow.close()
+  } catch {
+    // The window may finish closing while a capture cancellation is being handled.
+  }
+}
+
+function isDestroyedElectronError(error: unknown) {
+  return String(error).toLowerCase().includes('object has been destroyed')
+}
+
+function getScreenCaptureEditorDevUrl() {
+  const loadedMainUrl = mainWindow?.webContents.getURL()
+  const sourceUrl = loadedMainUrl?.startsWith('http')
+    ? loadedMainUrl
+    : process.env.VITE_DEV_SERVER_URL
+  if (!sourceUrl) return null
+  const editorUrl = new URL(sourceUrl)
+  editorUrl.hash = 'screen-capture-editor'
+  return editorUrl.toString()
+}
+
+async function loadScreenCaptureEditorPage(editorWindow: BrowserWindow) {
+  const loadGeneration = screenCaptureEditorLoadGeneration
+  const isAlive = () => {
+    try {
+      return !editorWindow.isDestroyed()
+    } catch {
+      return false
+    }
+  }
+  if (!isAlive() || loadGeneration !== screenCaptureEditorLoadGeneration) return
+  const editorUrl = getScreenCaptureEditorDevUrl()
+  if (!editorUrl) {
+    try {
+      await editorWindow.loadFile(path.join(__dirname, '../dist/index.html'), {
+        hash: 'screen-capture-editor',
+      })
+    } catch (error) {
+      if (!isDestroyedElectronError(error) && isAlive()) throw error
+    }
+    return
+  }
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (!isAlive() || loadGeneration !== screenCaptureEditorLoadGeneration) return
+    try {
+      await editorWindow.loadURL(editorUrl)
+      return
+    } catch (error) {
+      if (!isAlive() || isDestroyedElectronError(error)) return
+      let currentUrl: string
+      try {
+        currentUrl = editorWindow.webContents.getURL()
+      } catch (readError) {
+        if (isDestroyedElectronError(readError)) return
+        throw readError
+      }
+      if (currentUrl && !currentUrl.startsWith('chrome-error://')) {
+        const currentHash = new URL(currentUrl).hash
+        if (currentHash === '#screen-capture-editor') return
+      }
+      if (attempt === 0) {
+        await wait(150)
+        if (loadGeneration !== screenCaptureEditorLoadGeneration) return
+        continue
+      }
+      throw error
+    }
+  }
+}
+
+function createScreenCaptureEditorWindow() {
+  if (screenCaptureEditorWindow && !screenCaptureEditorWindow.isDestroyed()) {
+    screenCaptureEditorWindow.focus()
+    return screenCaptureEditorWindow
+  }
+
+  const workArea = screen.getPrimaryDisplay().workArea
+  screenCaptureEditorWindow = new BrowserWindow({
+    width: Math.max(720, Math.min(1440, Math.round(workArea.width * 0.9))),
+    height: Math.max(540, Math.min(960, Math.round(workArea.height * 0.9))),
+    minWidth: 720,
+    minHeight: 540,
+    show: false,
+    title: 'LifeOS 截图',
+    backgroundColor: '#05070a',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  })
+  screenCaptureEditorLoadGeneration += 1
+  screenCaptureEditorWindow.on('page-title-updated', (event) => event.preventDefault())
+  screenCaptureEditorWindow.on('closed', () => {
+    screenCaptureEditorWindow = null
+    pendingScreenCaptureEditorPayload = null
+  })
+  screenCaptureEditorWindow.webContents.on('did-finish-load', () => {
+    try {
+      if (
+        pendingScreenCaptureEditorPayload &&
+        screenCaptureEditorWindow &&
+        !screenCaptureEditorWindow.isDestroyed()
+      ) {
+        screenCaptureEditorWindow.webContents.send(
+          'screen-capture:editor-payload',
+          pendingScreenCaptureEditorPayload,
+        )
+      }
+    } catch (error) {
+      if (!isDestroyedElectronError(error)) throw error
+    }
+  })
+  void loadScreenCaptureEditorPage(screenCaptureEditorWindow).catch((error) => {
+    if (!isDestroyedElectronError(error))
+      console.warn('[ScreenCapture] editor window failed after retry:', error)
+  })
+  return screenCaptureEditorWindow
+}
+
+function showScreenCaptureEditorWindow(payload: {
+  imageDataUrl: string
+  selectionMode: 'full' | 'rectangle' | 'freeform'
+}) {
+  const editorWindow = createScreenCaptureEditorWindow()
+  pendingScreenCaptureEditorPayload = { ...payload, status: 'ready' }
+  if (!editorWindow.isDestroyed()) {
+    editorWindow.show()
+    editorWindow.focus()
+    if (!editorWindow.webContents.isLoading()) {
+      editorWindow.webContents.send(
+        'screen-capture:editor-payload',
+        pendingScreenCaptureEditorPayload,
+      )
+    }
+  }
+}
+
+async function openCapturedImageInEditor(imageDataUrl: string) {
+  if (screenCaptureEditorWindow && !screenCaptureEditorWindow.isDestroyed()) {
+    screenCaptureEditorWindow.show()
+    screenCaptureEditorWindow.focus()
+    return
+  }
+  const editorWindow = createScreenCaptureEditorWindow()
+  pendingScreenCaptureEditorPayload = {
+    imageDataUrl: null,
+    selectionMode: 'full',
+    status: 'loading',
+  }
+  editorWindow.show()
+  editorWindow.focus()
+  await wait(80)
+  showScreenCaptureEditorWindow({ imageDataUrl, selectionMode: 'full' })
+}
+
+type ScreenCaptureFailureCode =
+  'no-displays' | 'no-sources' | 'empty-thumbnail' | 'permission-denied' | 'capture-failed'
+
+class ScreenCaptureError extends Error {
+  readonly code: ScreenCaptureFailureCode
+
+  constructor(code: ScreenCaptureFailureCode, message: string, options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = 'ScreenCaptureError'
+    this.code = code
+  }
+}
+
+function getScreenCapturePermissionStatus() {
+  if (process.platform !== 'darwin') return 'granted'
+  try {
+    return systemPreferences.getMediaAccessStatus('screen')
+  } catch {
+    return 'unknown'
+  }
+}
+
+function getScreenCapturePermissionMessage(status: string) {
+  if (status === 'denied' || status === 'restricted') {
+    return 'Screen recording permission is denied for Electron. Enable Electron in macOS System Settings > Privacy & Security > Screen Recording, then restart LifeOS.'
+  }
+  if (status === 'not-determined') {
+    return 'Screen recording permission is required. Enable Electron in macOS System Settings > Privacy & Security > Screen Recording, then restart LifeOS.'
+  }
+  return 'macOS did not provide screen pixels. Check Screen Recording permission for Electron and restart LifeOS.'
+}
+
+function promptForScreenCapturePermission(error: unknown) {
+  if (!(error instanceof ScreenCaptureError) || error.code !== 'permission-denied') return
+  if (screenCapturePermissionPrompt) return
+  const ownerWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+  screenCapturePermissionPrompt = dialog
+    .showMessageBox(ownerWindow, {
+      type: 'warning',
+      title: '需要屏幕录制权限',
+      message: 'LifeOS 无法读取当前屏幕。',
+      detail: error.message,
+      buttons: ['打开系统设置', '取消'],
+      defaultId: 0,
+      cancelId: 1,
+    })
+    .then((result) => {
+      if (result.response === 0) {
+        return shell.openExternal(
+          'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
+        )
+      }
+      return undefined
+    })
+    .catch((dialogError) => {
+      console.warn('[ScreenCapture] permission prompt failed', dialogError)
+    })
+    .finally(() => {
+      screenCapturePermissionPrompt = null
+    })
+}
+
+function getCaptureThumbnailSizes(display: Electron.Display) {
+  const physical = {
+    width: Math.max(1, Math.round(display.size.width * display.scaleFactor)),
+    height: Math.max(1, Math.round(display.size.height * display.scaleFactor)),
+  }
+  const logical = {
+    width: Math.max(1, Math.round(display.size.width)),
+    height: Math.max(1, Math.round(display.size.height)),
+  }
+  return [physical, logical, { width: 1280, height: 720 }].filter(
+    (size, index, all) =>
+      all.findIndex(
+        (candidate) => candidate.width === size.width && candidate.height === size.height,
+      ) === index,
+  )
+}
+
+async function captureDisplayWithMacOSCommand(display: Electron.Display) {
+  if (process.platform !== 'darwin') return null
+  const displays = screen.getAllDisplays()
+  const displayIndex = displays.findIndex((candidate) => candidate.id === display.id)
+  if (displayIndex < 0) return null
+  const outputPath = path.join(tmpdir(), `lifeos-screen-${process.pid}-${Date.now()}.png`)
+  try {
+    await execFile(
+      '/usr/sbin/screencapture',
+      ['-x', '-t', 'png', '-D', String(displayIndex + 1), outputPath],
+      { timeout: 12_000 },
+    )
+    const image = nativeImage.createFromPath(outputPath)
+    if (!image.isEmpty()) return image
+  } catch (error) {
+    console.warn('[ScreenCapture] macOS screencapture fallback failed', {
+      displayId: display.id,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  } finally {
+    await fs.promises.rm(outputPath, { force: true }).catch(() => undefined)
+  }
+  return null
+}
+
+async function getScreenSourceForDisplay(display: Electron.Display) {
+  const displays = screen.getAllDisplays()
+  if (!displays.length) {
+    throw new ScreenCaptureError('no-displays', 'No displays are available for screen capture.')
+  }
+  const displayIndex = displays.findIndex((candidate) => candidate.id === display.id)
+  let lastFailure: unknown = null
+  for (const thumbnailSize of getCaptureThumbnailSizes(display)) {
+    let sources: Electron.DesktopCapturerSource[]
+    try {
+      sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize,
+      })
+    } catch (error) {
+      lastFailure = error
+      console.warn('[ScreenCapture] getSources failed', {
+        displayId: display.id,
+        thumbnailSize,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      continue
+    }
+    if (!sources.length) {
+      lastFailure = new ScreenCaptureError('no-sources', 'Electron returned no screen sources.')
+      continue
+    }
+    const source =
+      sources.find((candidate) => candidate.display_id === String(display.id)) ??
+      (displayIndex >= 0 ? sources[displayIndex] : undefined) ??
+      sources[0]
+    if (!source) {
+      lastFailure = new ScreenCaptureError(
+        'no-sources',
+        `Electron returned no source for display ${display.id}.`,
+      )
+      continue
+    }
+    try {
+      const sourceSize = source.thumbnail.getSize()
+      if (!source.thumbnail.isEmpty() && sourceSize.width > 0 && sourceSize.height > 0) {
+        return source
+      }
+      lastFailure = new ScreenCaptureError(
+        'empty-thumbnail',
+        `The screen source for display ${display.id} returned an empty thumbnail (${sourceSize.width}x${sourceSize.height}).`,
+      )
+    } catch (error) {
+      lastFailure = error
+    }
+  }
+
+  const fallbackImage = await captureDisplayWithMacOSCommand(display)
+  if (fallbackImage) {
+    return {
+      id: `screen:${display.id}:fallback`,
+      name: 'Entire Screen',
+      display_id: String(display.id),
+      thumbnail: fallbackImage,
+    } as Electron.DesktopCapturerSource
+  }
+  const permissionStatus = getScreenCapturePermissionStatus()
+  if (permissionStatus !== 'granted') {
+    throw new ScreenCaptureError(
+      'permission-denied',
+      getScreenCapturePermissionMessage(permissionStatus),
+      {
+        cause: lastFailure,
+      },
+    )
+  }
+  throw new ScreenCaptureError(
+    'capture-failed',
+    `Unable to capture display ${display.id}. ${lastFailure instanceof Error ? lastFailure.message : 'Electron returned an empty screen image.'}`,
+    { cause: lastFailure },
   )
 }
 
@@ -259,17 +679,7 @@ async function getScreenSource(displayId?: number) {
   const displays = screen.getAllDisplays()
   const primaryDisplay = screen.getPrimaryDisplay()
   const requestedDisplay = displays.find((display) => display.id === displayId)
-  const targetDisplay = requestedDisplay ?? primaryDisplay
-  const size = targetDisplay.size
-  const sources = await desktopCapturer.getSources({
-    types: ['screen'],
-    thumbnailSize: { width: size.width, height: size.height },
-  })
-  const source =
-    sources.find((candidate) => candidate.display_id === String(targetDisplay.id)) ?? sources[0]
-  if (!source || source.thumbnail.isEmpty())
-    throw new Error('Unable to capture the current display.')
-  return source
+  return getScreenSourceForDisplay(requestedDisplay ?? primaryDisplay)
 }
 
 async function captureScreen(displayId?: number) {
@@ -277,34 +687,89 @@ async function captureScreen(displayId?: number) {
   return source.thumbnail.toDataURL()
 }
 
+async function captureDisplayImage(display: Electron.Display) {
+  const source = await getScreenSourceForDisplay(display)
+  return source.thumbnail
+}
+
+function getCaptureDisplay(displayId?: number) {
+  const displays = screen.getAllDisplays()
+  return (
+    displays.find((display) => display.id === displayId) ??
+    screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+  )
+}
+
+async function captureSelectedDisplayArea(display: Electron.Display, selection: ScreenCaptureRect) {
+  const image = await captureDisplayImage(display)
+  const displaySize = { width: display.bounds.width, height: display.bounds.height }
+  return image
+    .crop(scaleScreenCaptureSelection(selection, displaySize, image.getSize()))
+    .toDataURL()
+}
+
 async function captureScreenFrames(
   count: number,
   interval: number,
   displayId?: number,
   showControls = false,
+  selectionMode?: 'rectangle',
 ) {
-  mainWindow?.hide()
-  await wait(180)
-  const session = showControls ? { total: count, captured: 0, paused: false, stopped: false } : null
-  activeBurstSession = session
-  if (session) showBurstControlWindow()
+  if (screenCaptureInProgress) return null
+  screenCaptureInProgress = true
+  let session: typeof activeBurstSession
+  let restoreMainWindow = true
   try {
+    minimizeMainWindowForCapture()
+    await wait(180)
+    const targetDisplay = selectionMode ? getCaptureDisplay(displayId) : null
+    const selectedArea = targetDisplay
+      ? await selectScreenCaptureArea({
+          display: targetDisplay,
+          image: await captureDisplayImage(targetDisplay),
+          preloadPath: path.join(__dirname, 'preload.cjs'),
+          mode: selectionMode,
+        })
+      : null
+    if (selectionMode && (!targetDisplay || !selectedArea)) return null
+
+    session = showControls
+      ? {
+          total: count,
+          captured: 0,
+          paused: false,
+          stopped: false,
+          startedAt: Date.now(),
+          pausedAt: null,
+          pausedDuration: 0,
+        }
+      : null
+    activeBurstSession = session
+    if (session) showBurstControlWindow(targetDisplay?.id ?? displayId)
+    if (selectedArea) await wait(100)
+
     const frames: string[] = []
     for (let index = 0; index < count; index += 1) {
       while (session?.paused && !session.stopped) await wait(100)
       if (session?.stopped) break
-      frames.push(await captureScreen(displayId))
+      frames.push(
+        targetDisplay && selectedArea
+          ? await captureSelectedDisplayArea(targetDisplay, selectedArea.selection)
+          : await captureScreen(displayId),
+      )
       if (session) {
         session.captured = frames.length
         sendBurstControlProgress()
       }
       if (index < count - 1) await wait(interval)
     }
+    restoreMainWindow = frames.length === 0
     return frames
   } finally {
     activeBurstSession = null
     closeBurstControlWindow()
-    showMainWindow()
+    if (restoreMainWindow) showMainWindow()
+    screenCaptureInProgress = false
   }
 }
 
@@ -313,19 +778,60 @@ async function openScreenCaptureEditor(input?: {
   selectionMode?: 'full' | 'rectangle' | 'freeform'
   delayMs?: number
 }) {
-  // Hide the application briefly so a capture started from its own UI does not include it.
-  mainWindow?.hide()
-  await wait(Math.max(180, input?.delayMs ?? 0))
+  if (screenCaptureInProgress) return
+  if (screenCaptureEditorWindow && !screenCaptureEditorWindow.isDestroyed()) {
+    screenCaptureEditorWindow.show()
+    screenCaptureEditorWindow.focus()
+    return
+  }
+  screenCaptureInProgress = true
+  let restoreMainWindow = true
+  const editorWindow = createScreenCaptureEditorWindow()
+  pendingScreenCaptureEditorPayload = {
+    imageDataUrl: null,
+    selectionMode: input?.selectionMode ?? 'full',
+    status: 'loading',
+  }
   try {
-    const imageDataUrl = await captureScreen(input?.displayId)
-    showMainWindow()
-    mainWindow?.webContents.send('screen-capture:open', {
-      imageDataUrl,
-      selectionMode: input?.selectionMode,
-    })
+    // Minimize the main window so it stays out of the capture without removing the app entry.
+    minimizeMainWindowForCapture()
+    await wait(Math.max(180, input?.delayMs ?? 0))
+    const selectionMode = input?.selectionMode ?? 'rectangle'
+    let imageDataUrl: string
+    let editorSelectionMode = selectionMode
+
+    if (selectionMode === 'rectangle' || selectionMode === 'freeform') {
+      const targetDisplay = getCaptureDisplay(input?.displayId)
+      const displayImage = await captureDisplayImage(targetDisplay)
+      const selectedArea = await selectScreenCaptureArea({
+        display: targetDisplay,
+        image: displayImage,
+        preloadPath: path.join(__dirname, 'preload.cjs'),
+        mode: selectionMode,
+      })
+      if (!selectedArea) {
+        closeScreenCaptureEditorWindow()
+        return
+      }
+      editorWindow.show()
+      editorWindow.focus()
+      await wait(80)
+      imageDataUrl = selectedArea.image.toDataURL()
+      editorSelectionMode = 'full'
+    } else {
+      imageDataUrl = await captureScreen(input?.displayId)
+      editorWindow.show()
+      editorWindow.focus()
+      await wait(80)
+    }
+    showScreenCaptureEditorWindow({ imageDataUrl, selectionMode: editorSelectionMode })
+    restoreMainWindow = false
   } catch (error) {
-    showMainWindow()
+    closeScreenCaptureEditorWindow()
     throw error
+  } finally {
+    if (restoreMainWindow) showMainWindow()
+    screenCaptureInProgress = false
   }
 }
 
@@ -335,7 +841,10 @@ function registerScreenshotShortcut(settings = getSettings()) {
   registeredScreenshotShortcut = null
   const accelerator = getShortcuts(settings).screenshot
   const triggerScreenshot = () => {
-    void openScreenCaptureEditor().catch((error) => console.warn('[ScreenCapture] failed:', error))
+    void openScreenCaptureEditor().catch((error) => {
+      promptForScreenCapturePermission(error)
+      console.warn('[ScreenCapture] failed:', error)
+    })
   }
   const restorePrevious = () => {
     if (previousAccelerator && globalShortcut.register(previousAccelerator, triggerScreenshot)) {
@@ -2112,17 +2621,34 @@ function createDesktopTaskNoteWindow() {
   return desktopTaskNoteWindow
 }
 
+function ensureApplicationEntryPoints() {
+  if (process.platform === 'darwin') void app.dock.show()
+  if (!appTray || appTray.isDestroyed()) {
+    appTray = null
+    createAppTray()
+  }
+}
+
 function showMainWindow() {
+  ensureApplicationEntryPoints()
   if (!mainWindow || mainWindow.isDestroyed()) {
     createWindow()
     return
   }
+  if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
 }
 
+function minimizeMainWindowForCapture() {
+  ensureApplicationEntryPoints()
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) return
+  mainWindow.minimize()
+}
+
 function createAppTray() {
-  if (appTray) return
+  if (appTray && !appTray.isDestroyed()) return
+  appTray = null
   const iconPath = path.join(__dirname, '../build/icon.png')
   const sourceIcon = fs.existsSync(iconPath)
     ? nativeImage.createFromPath(iconPath)
@@ -2827,11 +3353,38 @@ ipcMain.handle('screen-capture:displays', async () => {
   }))
 })
 
+ipcMain.handle('screen-capture:editor-payload', (event) => {
+  if (!screenCaptureEditorWindow || event.sender.id !== screenCaptureEditorWindow.webContents.id) {
+    return null
+  }
+  return pendingScreenCaptureEditorPayload
+})
+
+ipcMain.handle(
+  'screen-capture:open-editor-image',
+  async (_, input?: { imageDataUrl?: unknown }) => {
+    const imageDataUrl = typeof input?.imageDataUrl === 'string' ? input.imageDataUrl : ''
+    if (!/^data:image\/png;base64,[a-z\d+/=]+$/i.test(imageDataUrl)) {
+      return { success: false, error: 'The screenshot image is invalid.' }
+    }
+    await openCapturedImageInEditor(imageDataUrl)
+    return { success: true }
+  },
+)
+
+ipcMain.on('screen-capture:editor-close', (event) => {
+  if (!screenCaptureEditorWindow || event.sender.id !== screenCaptureEditorWindow.webContents.id) {
+    return
+  }
+  closeScreenCaptureEditorWindow()
+})
+
 ipcMain.handle('screen-capture:capture', async (_, input?: { displayId?: unknown }) => {
   try {
     const displayId = typeof input?.displayId === 'number' ? input.displayId : undefined
     return { success: true, imageDataUrl: await captureScreen(displayId) }
   } catch (error: any) {
+    promptForScreenCapturePermission(error)
     return { success: false, error: error?.message || 'Unable to capture the current display.' }
   }
 })
@@ -2853,6 +3406,7 @@ ipcMain.handle(
       await openScreenCaptureEditor({ selectionMode, delayMs })
       return { success: true }
     } catch (error: any) {
+      promptForScreenCapturePermission(error)
       return { success: false, error: error?.message || 'Unable to capture the current display.' }
     }
   },
@@ -2862,7 +3416,13 @@ ipcMain.handle(
   'screen-capture:burst',
   async (
     _,
-    input?: { count?: unknown; interval?: unknown; displayId?: unknown; controls?: unknown },
+    input?: {
+      count?: unknown
+      interval?: unknown
+      displayId?: unknown
+      controls?: unknown
+      selectionMode?: unknown
+    },
   ) => {
     try {
       const count =
@@ -2873,11 +3433,15 @@ ipcMain.handle(
           : 700
       const displayId = typeof input?.displayId === 'number' ? input.displayId : undefined
       const controls = input?.controls === true
+      const selectionMode = input?.selectionMode === 'rectangle' ? 'rectangle' : undefined
+      const frames = await captureScreenFrames(count, interval, displayId, controls, selectionMode)
+      if (!frames) return { success: true, cancelled: true, frames: [] }
       return {
         success: true,
-        frames: await captureScreenFrames(count, interval, displayId, controls),
+        frames,
       }
     } catch (error: any) {
+      promptForScreenCapturePermission(error)
       return { success: false, error: error?.message || 'Unable to capture screen frames.' }
     }
   },
@@ -2885,7 +3449,19 @@ ipcMain.handle(
 
 ipcMain.on('screen-capture:burst-control', (_, action: unknown) => {
   if (!activeBurstSession) return
-  if (action === 'toggle-pause') activeBurstSession.paused = !activeBurstSession.paused
+  if (action === 'toggle-pause') {
+    const now = Date.now()
+    if (activeBurstSession.paused) {
+      if (activeBurstSession.pausedAt) {
+        activeBurstSession.pausedDuration += now - activeBurstSession.pausedAt
+      }
+      activeBurstSession.paused = false
+      activeBurstSession.pausedAt = null
+    } else {
+      activeBurstSession.paused = true
+      activeBurstSession.pausedAt = now
+    }
+  }
   if (action === 'stop') activeBurstSession.stopped = true
   sendBurstControlProgress()
 })
@@ -2895,7 +3471,7 @@ ipcMain.handle('screen-capture:recording-source', async () => {
     if (registeredRecordingStopShortcut) {
       return { success: false, error: 'Screen recording is already in progress.' }
     }
-    mainWindow?.hide()
+    minimizeMainWindowForCapture()
     await wait(180)
     if (
       !globalShortcut.register(CAPTURE_RECORDING_STOP_SHORTCUT, () => {

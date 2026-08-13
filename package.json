@@ -95,7 +95,10 @@
         "dmg",
         "zip"
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "extendInfo": {
+        "NSScreenCaptureUsageDescription": "LifeOS needs screen recording access to capture screenshots and screen recordings."
+      }
     },
     "win": {
       "target": [

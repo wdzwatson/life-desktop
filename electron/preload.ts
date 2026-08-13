@@ -28,11 +28,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     selectionMode?: 'full' | 'rectangle' | 'freeform'
     delayMs?: number
   }) => ipcRenderer.invoke('screen-capture:start', input),
+  completeScreenAreaSelection: (
+    selection: {
+      mode: 'rectangle' | 'freeform'
+      rect: { x: number; y: number; width: number; height: number }
+      imageDataUrl?: string
+    } | null,
+  ) => ipcRenderer.send('screen-capture:area-selected', selection),
   captureScreenBurst: (input?: {
     count?: number
     interval?: number
     displayId?: number
     controls?: boolean
+    selectionMode?: 'rectangle'
   }) => ipcRenderer.invoke('screen-capture:burst', input),
   controlScreenCaptureBurst: (action: 'toggle-pause' | 'stop') =>
     ipcRenderer.send('screen-capture:burst-control', action),
@@ -42,6 +50,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('screen-capture:save-media', { bytes, extension }),
   copyScreenshot: (imageDataUrl: string) => ipcRenderer.invoke('screen-capture:copy', imageDataUrl),
   saveScreenshot: (imageDataUrl: string) => ipcRenderer.invoke('screen-capture:save', imageDataUrl),
+  openScreenCaptureEditorImage: (imageDataUrl: string) =>
+    ipcRenderer.invoke('screen-capture:open-editor-image', { imageDataUrl }),
+  getScreenCaptureEditorPayload: () => ipcRenderer.invoke('screen-capture:editor-payload'),
+  closeScreenCaptureEditor: () => ipcRenderer.send('screen-capture:editor-close'),
+  onScreenCaptureEditorPayload: (
+    callback: (payload: {
+      imageDataUrl: string | null
+      selectionMode: 'full' | 'rectangle' | 'freeform'
+      status: 'loading' | 'ready'
+    }) => void,
+  ) => {
+    const subscription = (
+      _event: unknown,
+      payload: {
+        imageDataUrl: string | null
+        selectionMode: 'full' | 'rectangle' | 'freeform'
+        status: 'loading' | 'ready'
+      },
+    ) => callback(payload)
+    ipcRenderer.on('screen-capture:editor-payload', subscription)
+    return () => ipcRenderer.removeListener('screen-capture:editor-payload', subscription)
+  },
   onScreenshotRequested: (callback: (data: { imageDataUrl: string }) => void) => {
     const subscription = (_event: unknown, data: { imageDataUrl: string }) => callback(data)
     ipcRenderer.on('screen-capture:open', subscription)
@@ -58,11 +88,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       captured: number
       paused: boolean
       stopped: boolean
+      startedAt: number
+      pausedAt: number | null
+      pausedDuration: number
     }) => void,
   ) => {
     const subscription = (
       _event: unknown,
-      state: { total: number; captured: number; paused: boolean; stopped: boolean },
+      state: {
+        total: number
+        captured: number
+        paused: boolean
+        stopped: boolean
+        startedAt: number
+        pausedAt: number | null
+        pausedDuration: number
+      },
     ) => callback(state)
     ipcRenderer.on('screen-capture:burst-progress', subscription)
     return () => ipcRenderer.removeListener('screen-capture:burst-progress', subscription)

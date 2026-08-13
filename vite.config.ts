@@ -18,7 +18,14 @@ const copyPdfWorker = () => {
 
   return {
     name: 'copy-pdf-runtime-files',
-    configureServer(server: { middlewares: { use: (path: string, handler: (request: any, response: any, next: () => void) => void) => void } }) {
+    configureServer(server: {
+      middlewares: {
+        use: (
+          path: string,
+          handler: (request: any, response: any, next: () => void) => void,
+        ) => void
+      }
+    }) {
       server.middlewares.use('/pdfjs/wasm', (request: any, response: any, next: () => void) => {
         const fileName = path.basename((request.url || '').split('?')[0])
         if (!wasmFiles.includes(fileName)) return next()
@@ -98,6 +105,9 @@ export default defineConfig({
         manualChunks: getRendererManualChunk,
       },
     },
+  },
+  server: {
+    host: '127.0.0.1',
   },
   plugins: [
     react(),
