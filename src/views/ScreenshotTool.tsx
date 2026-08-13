@@ -13,13 +13,14 @@ import {
 import { useTranslation } from 'react-i18next'
 import { GIFEncoder, applyPalette, quantize } from 'gifenc'
 import { displayShortcut } from '../shortcutUtils'
+import { getGifCapturePlan } from './screenshotCaptureUtils'
 
 const DEFAULT_SCREENSHOT_SHORTCUT = 'CommandOrControl+Shift+S'
 const DEFAULT_RECORDING_STOP_SHORTCUT = 'CommandOrControl+Shift+R'
 
 type ScreenshotSettings = { shortcuts?: { screenshot?: string } }
 type CaptureStartResponse = { success?: boolean; error?: string }
-type BurstResponse = CaptureStartResponse & { frames?: string[] }
+type BurstResponse = CaptureStartResponse & { frames?: string[]; cancelled?: boolean }
 type RecordingSourceResponse = CaptureStartResponse & { stopShortcut?: string }
 type CaptureMode =
   'screen' | 'rectangle' | 'multi_frame' | 'gif' | 'video' | 'delay' | 'freeform' | 'long'
@@ -100,6 +101,7 @@ export function ScreenshotTool() {
   const [shortcut, setShortcut] = useState(DEFAULT_SCREENSHOT_SHORTCUT)
   const [frameCount, setFrameCount] = useState(5)
   const [frameInterval, setFrameInterval] = useState(700)
+  const [gifDurationSeconds, setGifDurationSeconds] = useState(8)
   const [delaySeconds, setDelaySeconds] = useState(3)
   const [activeMode, setActiveMode] = useState<CaptureMode | null>(null)
   const [pendingMode, setPendingMode] = useState<CaptureMode | null>(null)
@@ -109,11 +111,15 @@ export function ScreenshotTool() {
   const recordingStreamRef = useRef<MediaStream | null>(null)
   const isMac = Boolean(api?.isMac ?? navigator.userAgent.includes('Mac'))
 
-  const openCaptureEditor = useCallback((imageDataUrl: string) => {
-    window.dispatchEvent(
-      new CustomEvent('screen-capture:open', { detail: { imageDataUrl, selectionMode: 'full' } }),
-    )
-  }, [])
+  const openCaptureEditor = useCallback(
+    async (imageDataUrl: string) => {
+      const result = await api?.openScreenCaptureEditorImage?.(imageDataUrl)
+      if (!result?.success) {
+        throw new Error(result?.error || t('toolbox.screenshot_start_failed'))
+      }
+    },
+    [api, t],
+  )
 
   const completeRecording = useCallback(async () => {
     const recorder = recorderRef.current
@@ -144,12 +150,19 @@ export function ScreenshotTool() {
     if (!result?.success) throw new Error(result?.error || t('toolbox.screenshot_start_failed'))
   }
 
-  const captureFrames = async (controls = false) => {
+  const captureFrames = async (
+    controls = false,
+    selectArea = false,
+    count = frameCount,
+    interval = frameInterval,
+  ) => {
     const result = (await api?.captureScreenBurst?.({
-      count: frameCount,
-      interval: frameInterval,
+      count,
+      interval,
       controls,
+      selectionMode: selectArea ? 'rectangle' : undefined,
     })) as BurstResponse
+    if (result?.success && result.cancelled) return null
     if (!result?.success || !result.frames?.length) {
       throw new Error(result?.error || t('toolbox.screenshot_burst_failed'))
     }
@@ -202,11 +215,20 @@ export function ScreenshotTool() {
       else if (mode === 'rectangle') await beginStillCapture('rectangle')
       else if (mode === 'freeform') await beginStillCapture('freeform')
       else if (mode === 'delay') await beginStillCapture('rectangle', delaySeconds * 1_000)
-      else if (mode === 'multi_frame')
-        openCaptureEditor(await createContactSheet(await captureFrames(true)))
-      else if (mode === 'long') openCaptureEditor(await createLongCapture(await captureFrames()))
-      else if (mode === 'gif') {
-        const bytes = await createGif(await captureFrames(), frameInterval)
+      else if (mode === 'multi_frame') {
+        const frames = await captureFrames(true, true)
+        if (frames) await openCaptureEditor(await createContactSheet(frames))
+      } else if (mode === 'long') {
+        const frames = await captureFrames()
+        if (frames) await openCaptureEditor(await createLongCapture(frames))
+      } else if (mode === 'gif') {
+        const gifPlan = getGifCapturePlan(gifDurationSeconds, frameInterval)
+        const frames = await captureFrames(true, true, gifPlan.frameCount, gifPlan.interval)
+        if (!frames) {
+          setActiveMode(null)
+          return
+        }
+        const bytes = await createGif(frames, gifPlan.interval)
         const result = await api?.saveScreenCaptureMedia?.(bytes, 'gif')
         if (!result?.success)
           throw new Error(result?.error || t('toolbox.screenshot_gif_save_failed'))
@@ -326,6 +348,7 @@ export function ScreenshotTool() {
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+          alignItems: 'stretch',
           gap: 10,
           marginTop: 24,
         }}
@@ -337,7 +360,15 @@ export function ScreenshotTool() {
             className="btn"
             onClick={() => setPendingMode(id)}
             disabled={Boolean(activeMode) || recording}
-            style={{ minHeight: 104, display: 'block', textAlign: 'left', padding: 16 }}
+            style={{
+              minWidth: 0,
+              minHeight: 116,
+              height: 'auto',
+              display: 'block',
+              padding: 16,
+              textAlign: 'left',
+              whiteSpace: 'normal',
+            }}
           >
             <Icon
               size={18}
@@ -352,6 +383,8 @@ export function ScreenshotTool() {
                 color: 'var(--text-muted)',
                 fontSize: 11.5,
                 lineHeight: 1.5,
+                whiteSpace: 'normal',
+                overflowWrap: 'anywhere',
               }}
             >
               {description}
@@ -410,6 +443,20 @@ export function ScreenshotTool() {
             value={delaySeconds}
             onChange={(event) =>
               setDelaySeconds(Math.max(1, Math.min(15, Number(event.target.value) || 1)))
+            }
+            style={{ width: 100 }}
+          />
+        </label>
+        <label style={{ display: 'grid', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+          {t('toolbox.screenshot_gif_duration')}
+          <input
+            className="form-field"
+            type="number"
+            min="2"
+            max="15"
+            value={gifDurationSeconds}
+            onChange={(event) =>
+              setGifDurationSeconds(Math.max(2, Math.min(15, Number(event.target.value) || 2)))
             }
             style={{ width: 100 }}
           />
@@ -488,7 +535,7 @@ export function ScreenshotTool() {
                 lineHeight: 1.5,
               }}
             >
-              {pendingMode === 'multi_frame'
+              {pendingMode === 'multi_frame' || pendingMode === 'gif'
                 ? t('toolbox.screenshot_multi_frame_reminder')
                 : pendingMode === 'video'
                   ? t('toolbox.screenshot_video_reminder', {
