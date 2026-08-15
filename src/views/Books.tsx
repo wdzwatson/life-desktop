@@ -178,6 +178,19 @@ export const Books: React.FC = () => {
   const [isLoadingReader, setIsLoadingReader] = useState(false)
   const [pdfLayoutMode, setPdfLayoutMode] = useState<PdfLayoutMode>('single')
   const [isPdfTransitioning, setIsPdfTransitioning] = useState(false)
+
+  // Friendly transition helper for layout mode changes (prevents blank flash)
+  const handlePdfLayoutModeChange = useCallback((mode: PdfLayoutMode) => {
+    setIsPdfTransitioning(true)
+    startTransition(() => {
+      setPdfLayoutMode(mode)
+    })
+    // Double RAF ensures the new pages have painted before we hide the overlay
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => setIsPdfTransitioning(false))
+    })
+  }, [])
+
   // EPUB reflow view mode: paged single-page, dual-column, or continuous scroll.
   const [epubLayoutMode, setEpubLayoutMode] = useState<'single' | 'dual' | 'scroll'>('single')
   const [isAutoPlaying, setIsAutoPlaying] = useState(false)
