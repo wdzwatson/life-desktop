@@ -778,6 +778,7 @@
     "pdf_loading": "Loading PDF...",
     "pdf_load_error": "Failed to load PDF",
     "pdf_rendering_page": "Rendering page {{num}}...",
+    "pdf_reloading": "Switching view...",
     "toast_pdf_read_error": "Unable to read PDF e-book",
     "toast_parse_failed": "Parse failed: {{error}}"
   },

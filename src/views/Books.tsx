@@ -208,6 +208,8 @@ export const Books: React.FC = () => {
   const drawerMeasureGuardRef = useRef(0)
   // Tracks last time we pushed page index to React state during auto-play (to throttle)
   const lastSyncedPageRef = useRef(0)
+  // Separate ref to store the actual page index synced last time (not timestamp)
+  const lastSyncedPageIndexRef = useRef(0)
   const annotationInputRef = useRef<HTMLInputElement | null>(null)
   // Guards the scroll handler from fighting a programmatic scroll (button / progress jump).
   const isProgrammaticScrollRef = useRef(false)
@@ -1978,12 +1980,13 @@ export const Books: React.FC = () => {
           currentPdfPageIndexRef.current = nextPageIndex
           const now = Date.now()
           const timeSinceLastSync = now - lastSyncedPageRef.current
-          const pageDelta = Math.abs(nextPageIndex - lastSyncedPageRef.current)
+          const pageDelta = Math.abs(nextPageIndex - lastSyncedPageIndexRef.current)
 
           // Throttle React state updates during auto-play to prevent stutter at page boundaries.
           // Only push to state if enough time has passed OR the page jump is large.
           if (timeSinceLastSync > 400 || pageDelta >= 2) {
             lastSyncedPageRef.current = now
+            lastSyncedPageIndexRef.current = nextPageIndex
             startTransition(() => {
               setCurrentPageIndex(nextPageIndex)
               setReadingProgress(Math.round((nextPageIndex / (pdfNumPages - 1 || 1)) * 100))
@@ -3570,7 +3573,7 @@ export const Books: React.FC = () => {
                               </div>
                             }
                           >
-                            {/* Friendly overlay during layout mode switch to prevent perceived blank flash */}
+                            {/* Friendly overlay during layout mode switch or reader resize to prevent perceived blank flash */}
                             {isPdfTransitioning && (
                               <div
                                 className="pdf-transition-overlay"
@@ -3578,16 +3581,27 @@ export const Books: React.FC = () => {
                                   position: 'absolute',
                                   inset: 0,
                                   display: 'flex',
+                                  flexDirection: 'column',
                                   alignItems: 'center',
                                   justifyContent: 'center',
-                                  backgroundColor: 'rgba(0,0,0,0.35)',
-                                  color: '#fff',
+                                  gap: '8px',
+                                  backgroundColor: 'rgba(15, 23, 42, 0.72)',
+                                  color: '#e2e8f0',
                                   fontSize: '13px',
                                   zIndex: 100,
                                   pointerEvents: 'none',
                                   borderRadius: '4px',
+                                  backdropFilter: 'blur(4px)',
                                 }}
                               >
+                                <div style={{
+                                  width: '18px',
+                                  height: '18px',
+                                  border: '2px solid rgba(226,232,240,0.3)',
+                                  borderTopColor: '#e2e8f0',
+                                  borderRadius: '50%',
+                                  animation: 'spin 0.8s linear infinite'
+                                }} />
                                 {t('books.pdf_reloading')}
                               </div>
                             )}

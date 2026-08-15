@@ -778,6 +778,7 @@
     "pdf_loading": "PDF 加载中...",
     "pdf_load_error": "加载 PDF 失败",
     "pdf_rendering_page": "正在渲染第 {{num}} 页...",
+    "pdf_reloading": "正在切换视图...",
     "toast_pdf_read_error": "无法读取 PDF 电子书",
     "toast_parse_failed": "解析失败: {{error}}"
   },
