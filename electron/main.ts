@@ -146,6 +146,13 @@ import { AI_SCHEMA_VERSION } from './ai/schema'
 import { AIStorageService } from './ai/storageService'
 import { SystemCleanerService } from './systemCleaner/service'
 import { registerSystemCleanerIpc } from './systemCleaner/ipc'
+import { BrowserControlService } from './browserControl/service'
+import { registerBrowserControlIpc } from './browserControl/ipc'
+import {
+  getBrowserControlRegistrationStatus,
+  installBrowserControlNativeHost,
+  repairBrowserControlNativeHostIfInstalled,
+} from './browserControl/registration'
 import { selectScreenCaptureArea } from './screenCaptureSelection'
 import {
   scaleScreenCaptureSelection,
@@ -186,6 +193,7 @@ let aiMcpManager: AIMcpManager | null = null
 const aiImageControllers = new Set<AbortController>()
 const aiVideoControllers = new Set<AbortController>()
 let aiRecoveryController: AbortController | null = null
+const browserControlService = new BrowserControlService()
 const bookBatchImportSessions = new Map<string, { userId: string; items: BatchImportItem[] }>()
 const unlockedPrivateNoteKeys = new Map<string, Buffer>()
 let pendingNoteEditorDraft: Record<string, unknown> | null = null
@@ -2670,7 +2678,43 @@ function createAppTray() {
   appTray.on('click', () => createDesktopTaskNoteWindow().show())
 }
 
-app.whenReady().then(() => {
+function getBrowserControlExtensionPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'extensions', 'lifeos-chrome')
+    : path.resolve(process.cwd(), 'extensions', 'lifeos-chrome')
+}
+
+function getBrowserControlRegistrationOptions() {
+  return {
+    executablePath: process.execPath,
+    packaged: app.isPackaged,
+  }
+}
+
+registerBrowserControlIpc(
+  { handle: (channel, handler) => ipcMain.handle(channel, handler) },
+  {
+    service: browserControlService,
+    getRegistrationStatus: () =>
+      getBrowserControlRegistrationStatus(getBrowserControlRegistrationOptions()),
+    installIntegration: () =>
+      installBrowserControlNativeHost(getBrowserControlRegistrationOptions()),
+    openExtensionFolder: async () => {
+      const extensionPath = getBrowserControlExtensionPath()
+      const error = await shell.openPath(extensionPath)
+      if (error) throw new Error(error)
+      return extensionPath
+    },
+  },
+)
+
+app.whenReady().then(async () => {
+  try {
+    await browserControlService.start()
+    await repairBrowserControlNativeHostIfInstalled(getBrowserControlRegistrationOptions())
+  } catch (error) {
+    console.error('LifeOS browser control could not start.', error)
+  }
   session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
     try {
       const source = await getScreenSource()
@@ -2702,6 +2746,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  void browserControlService.dispose()
   destroyDouyinSyncWindowForAppQuit()
   closeDouyinReaderView()
   closeUserDbs()

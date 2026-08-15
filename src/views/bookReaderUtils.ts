@@ -14,7 +14,7 @@ export type TocEntry = {
 }
 
 export type EpubLayoutMode = 'single' | 'dual' | 'scroll'
-export type PdfLayoutMode = 'single' | 'dual' | 'scroll' | 'simulation'
+export type PdfLayoutMode = 'single' | 'dual' | 'scroll'
 
 export type ReaderHighlightAnchor = {
   chapter?: string
@@ -122,6 +122,29 @@ export const getPdfPageRenderWidth = (readerWidth: number, pdfLayoutMode: PdfLay
   }
 
   return Math.round(Math.max(420, Math.min(1280, readerWidth - 112)))
+}
+
+export const getPdfPageIndexAtOffset = (
+  pages: ArrayLike<{ offsetTop: number }>,
+  viewportOffset: number,
+) => {
+  if (pages.length === 0) return 0
+
+  let low = 0
+  let high = pages.length - 1
+  let activeIndex = 0
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2)
+    if (pages[middle].offsetTop <= viewportOffset) {
+      activeIndex = middle
+      low = middle + 1
+    } else {
+      high = middle - 1
+    }
+  }
+
+  return activeIndex
 }
 
 export const getAnnotationEditorFocusOptions = () => ({ preventScroll: true })

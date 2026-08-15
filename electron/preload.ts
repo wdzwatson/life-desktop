@@ -21,6 +21,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectLaunchpadPoster: () => ipcRenderer.invoke('launchpad:selectPoster'),
   removeLaunchpadPoster: () => ipcRenderer.invoke('launchpad:removePoster'),
   clearAppData: () => ipcRenderer.invoke('settings:clearAppData'),
+  getBrowserControlStatus: () => ipcRenderer.invoke('browserControl:getStatus'),
+  installBrowserControlIntegration: () =>
+    ipcRenderer.invoke('browserControl:installIntegration'),
+  openBrowserControlExtensionFolder: () =>
+    ipcRenderer.invoke('browserControl:openExtensionFolder'),
+  executeWebLike: (url: string, preferredTabId?: number) =>
+    ipcRenderer.invoke('browserControl:executeWebLike', { url, preferredTabId }),
   listScreenDisplays: () => ipcRenderer.invoke('screen-capture:displays'),
   captureScreen: (input?: { displayId?: number }) =>
     ipcRenderer.invoke('screen-capture:capture', input),

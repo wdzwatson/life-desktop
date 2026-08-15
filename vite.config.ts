@@ -115,12 +115,15 @@ export default defineConfig({
     electronSimple({
       main: {
         // Source file for the main process
-        entry: 'electron/main.ts',
+        entry: 'electron/browserControl/bootstrap.ts',
         vite: {
           build: {
             chunkSizeWarningLimit: 1900,
             rolldownOptions: {
               external: ['better-sqlite3'],
+              output: {
+                entryFileNames: 'main.js',
+              },
             },
           },
         },

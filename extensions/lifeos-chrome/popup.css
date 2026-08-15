@@ -1,0 +1,36 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  min-width: 220px;
+  margin: 0;
+  background: Canvas;
+  color: CanvasText;
+}
+
+main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+}
+
+strong {
+  font-size: 13px;
+}
+
+span {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+span[data-state='connected'] {
+  color: #15803d;
+}
+
+span[data-state='disconnected'] {
+  color: #b91c1c;
+}

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { Lock, Eye, EyeOff, Copy, Trash2 } from 'lucide-react'
@@ -8,6 +8,7 @@ import { Dropdown } from '../components/Dropdown'
 import { PasswordInput } from '../components/PasswordInput'
 import { SystemCleaner } from './SystemCleaner'
 import { ScreenshotTool } from './ScreenshotTool'
+import { WebLike } from './WebLike'
 
 type VaultStatus =
   | 'not_configured'
@@ -45,7 +46,13 @@ export const Toolbox: React.FC = () => {
   const userId = useAppStore((state) => state.userId)
 
   // Active Tool Tab
-  const [toolTab, setToolTab] = useState<'pomodoro' | 'converter' | 'vault' | 'screenshot' | 'cleaner'>('pomodoro')
+  const [toolTab, setToolTab] = useState<'pomodoro' | 'converter' | 'vault' | 'screenshot' | 'web-like' | 'cleaner'>('pomodoro')
+  const tabsRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const activeTab = tabsRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+    activeTab?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [toolTab])
 
   // DB States (Tasks lookup for Pomodoro)
   const [activeTasks, setActiveTasks] = useState<any[]>([])
@@ -405,6 +412,7 @@ export const Toolbox: React.FC = () => {
 
       {/* Tabs */}
       <div
+        ref={tabsRef}
         className="tabs toolbox-view__tabs"
         role="tablist"
         style={{
@@ -448,6 +456,14 @@ export const Toolbox: React.FC = () => {
         </button>
         <button
           role="tab"
+          aria-selected={toolTab === 'web-like'}
+          className={`tab ${toolTab === 'web-like' ? 'active' : ''}`}
+          onClick={() => setToolTab('web-like')}
+        >
+          {t('toolbox.tab_web_like')}
+        </button>
+        <button
+          role="tab"
           aria-selected={toolTab === 'cleaner'}
           className={`tab ${toolTab === 'cleaner' ? 'active' : ''}`}
           onClick={() => setToolTab('cleaner')}
@@ -458,6 +474,7 @@ export const Toolbox: React.FC = () => {
 
       <div key={toolTab} className="toolbox-view__body tab-panel-transition" role="tabpanel" style={{ flexGrow: toolTab === 'cleaner' ? 0 : 1, minHeight: 0, overflowY: toolTab === 'cleaner' ? 'visible' : 'auto' }}>
         {toolTab === 'screenshot' && <ScreenshotTool />}
+        {toolTab === 'web-like' && <WebLike />}
 
         {/* SUB-VIEW: POMODORO TIMER */}
         {toolTab === 'pomodoro' && (

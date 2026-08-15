@@ -38,6 +38,34 @@ test('reader header stays hidden until the pointer reaches its top sensor', () =
   assert.match(booksSource, /setIsReaderHeaderVisible\(true\)/)
   assert.match(booksStyles, /\.book-reader__header\s*\{[\s\S]*?opacity:\s*0[\s\S]*?transform:\s*translateY/)
   assert.match(booksStyles, /\.book-reader__header\.is-visible/)
+  assert.doesNotMatch(booksStyles, /\.book-reader__header:focus-within/)
+})
+
+test('PDF continuous mode owns its scroll viewport and excludes page-flip mode', () => {
+  assert.match(booksSource, /overflowY:\s*isPdf && pdfLayoutMode === 'scroll' \? 'hidden' : 'auto'/)
+  assert.match(booksStyles, /\.book-reader__reading-surface\.is-pdf\.is-scroll\s*\{[^}]*height:\s*100%/)
+  assert.match(booksSource, /onScroll=\{pdfLayoutMode === 'scroll' \? handlePdfScroll : undefined\}/)
+  assert.match(booksSource, /data-pdf-toc-page=\{pageIndex \+ 1\}/)
+  assert.match(booksSource, /drawer\.scrollTo\(\{ top: buttonBottom - drawer\.clientHeight \}\)/)
+  assert.doesNotMatch(booksSource, /value="simulation"/)
+  assert.doesNotMatch(booksSource, /pdf-flip-page/)
+})
+
+test('PDF continuous scrolling avoids full-document layout scans and unstable loading slots', () => {
+  assert.match(booksSource, /pdfPageElementsRef/)
+  assert.match(booksSource, /pdfScrollFrameRef\.current = requestAnimationFrame/)
+  assert.match(booksSource, /getPdfPageIndexAtOffset\(pageElements, viewportAnchor\)/)
+  assert.doesNotMatch(booksSource, /children\.forEach\(\(child\)/)
+  assert.match(booksSource, /minHeight: `\$\{pdfEstimatedPageHeight\}px`/)
+  assert.match(booksSource, /devicePixelRatio=\{PDF_RENDER_DEVICE_PIXEL_RATIO\}/)
+  assert.match(booksStyles, /\.book-reader__pdf-page-slot[\s\S]*?contain:\s*layout paint style/)
+})
+
+test('PDF OCR runs on demand instead of starting after every page render', () => {
+  assert.match(booksSource, /requestPdfOcrForCurrentPage/)
+  assert.match(booksSource, /void ensurePdfOcrPage\(pageNumber\)/)
+  assert.doesNotMatch(booksSource, /handlePdfPageRendered/)
+  assert.doesNotMatch(booksSource, /onRenderSuccess=\{\(\) => handlePdfPageRendered/)
 })
 
 test('reader annotations use a right-side icon control with a count badge', () => {

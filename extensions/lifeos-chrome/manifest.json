@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "LifeOS Browser Bridge",
+  "version": "1.0.0",
+  "description": "Connects LifeOS to the user's open Google Chrome tabs.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAq1dfmM5inschtv049+59RKc6EdXSW448t4RMcCQFMCF337VdKiaO1ll0ceMK+XWqfsaDy0ObqNPs2Id3pg/fISycp4Lr8RFqds2MzzjI2JcpsngdhQlUpGa8uEumD7rTVLpnyArId9lW/uyqZPkFZMDe1iIn99L/7PsRTxeH8jrqLsXQLssNLvuA75QJ8ShUmujP4nTOR6CXLcjzZ7E25PJHt72HDVLUuXvyGvbkmzFEugFqXgQFXC4G4kH0UIbF3T4BV0kPOe581C89oOgopem+Jh1Hg6K4KqiKhgkQ4/pWhHsSNY8jtga9ZB+d1WswpnQOFeb5t7w1br2sivV+LwIDAQAB",
+  "minimum_chrome_version": "120",
+  "permissions": ["debugger", "nativeMessaging", "storage", "tabs"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "LifeOS Browser Bridge",
+    "default_popup": "popup.html"
+  }
+}

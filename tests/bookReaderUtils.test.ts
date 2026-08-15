@@ -7,6 +7,7 @@ import {
   getParagraphOffsetOfPage,
   getAnnotationEditorFocusOptions,
   getPagesForReadingBlocks,
+  getPdfPageIndexAtOffset,
   getPdfPageRenderWidth,
   getReadingProgressForLocation,
   getReaderContentGridColumns,
@@ -73,9 +74,35 @@ test('reader content grid can enforce a minimum reading column width', () => {
 test('PDF page render width uses more of the reader column', () => {
   assert.equal(getPdfPageRenderWidth(1600, 'single'), 1280)
   assert.equal(getPdfPageRenderWidth(1600, 'scroll'), 1280)
-  assert.equal(getPdfPageRenderWidth(1600, 'simulation'), 1280)
   assert.equal(getPdfPageRenderWidth(1600, 'dual'), 620)
   assert.equal(getPdfPageRenderWidth(640, 'single'), 528)
+})
+
+test('PDF continuous scroll locates the active page with ordered page offsets', () => {
+  const pages = [0, 920, 1840, 2760, 3680].map((offsetTop) => ({ offsetTop }))
+
+  assert.equal(getPdfPageIndexAtOffset(pages, -20), 0)
+  assert.equal(getPdfPageIndexAtOffset(pages, 0), 0)
+  assert.equal(getPdfPageIndexAtOffset(pages, 1839), 1)
+  assert.equal(getPdfPageIndexAtOffset(pages, 1840), 2)
+  assert.equal(getPdfPageIndexAtOffset(pages, 9999), 4)
+  assert.equal(getPdfPageIndexAtOffset([], 100), 0)
+
+  let offsetReads = 0
+  const largeDocument = new Proxy(
+    { length: 100_000 } as ArrayLike<{ offsetTop: number }>,
+    {
+      get(target, property) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          offsetReads += 1
+          return { offsetTop: Number(property) * 100 }
+        }
+        return Reflect.get(target, property)
+      },
+    },
+  )
+  assert.equal(getPdfPageIndexAtOffset(largeDocument, 5_432_150), 54_321)
+  assert.ok(offsetReads <= 18)
 })
 
 test('annotation editor focus does not scroll the reader', () => {

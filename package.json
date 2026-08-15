@@ -89,6 +89,12 @@
       "build/icon.png",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "extensions/lifeos-chrome",
+        "to": "extensions/lifeos-chrome"
+      }
+    ],
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
@@ -105,6 +111,14 @@
         "nsis",
         "zip"
       ],
+      "icon": "build/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
       "icon": "build/icon.png"
     },
     "nsis": {
