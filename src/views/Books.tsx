@@ -211,6 +211,11 @@ export const Books: React.FC = () => {
   const lastSyncedPageRef = useRef(0)
   // Separate ref to store the actual page index synced last time (not timestamp)
   const lastSyncedPageIndexRef = useRef(0)
+
+  // Independent render window center for virtual window (updates frequently during auto-play)
+  // This drives the PDF virtual window so it can advance without waiting for throttled currentPageIndex
+  const renderWindowCenterRef = useRef(0)
+  const [renderWindowCenter, setRenderWindowCenter] = useState(0)
   const annotationInputRef = useRef<HTMLInputElement | null>(null)
   // Guards the scroll handler from fighting a programmatic scroll (button / progress jump).
   const isProgrammaticScrollRef = useRef(false)
@@ -1971,12 +1976,19 @@ export const Books: React.FC = () => {
 
         if (nextPageIndex !== currentPdfPageIndexRef.current) {
           currentPdfPageIndexRef.current = nextPageIndex
+
+          // Update renderWindowCenter frequently (every page change) to keep virtual window advancing
+          // This ensures subsequent pages are pre-rendered even if currentPageIndex is throttled
+          renderWindowCenterRef.current = nextPageIndex
+          if (Math.abs(nextPageIndex - renderWindowCenter) >= 1) {
+            setRenderWindowCenter(nextPageIndex)
+          }
+
+          // Still throttle currentPageIndex (for TOC + header only)
           const now = Date.now()
           const timeSinceLastSync = now - lastSyncedPageRef.current
           const pageDelta = Math.abs(nextPageIndex - lastSyncedPageIndexRef.current)
 
-          // Throttle React state updates during auto-play to prevent stutter at page boundaries.
-          // Only push to state if enough time has passed OR the page jump is large.
           if (timeSinceLastSync > 400 || pageDelta >= 2) {
             lastSyncedPageRef.current = now
             lastSyncedPageIndexRef.current = nextPageIndex
@@ -3615,13 +3627,11 @@ export const Books: React.FC = () => {
                                 }}
                               >
                                 {pdfPageIndexes.map((idx) => {
-                                  // During auto-play, disable virtual window entirely so that
-                                  // setCurrentPageIndex updates only affect TOC/header, not the
-                                  // reading area (no <Page> mount/unmount = no stutter).
-                                  const effectiveOverscan = isAutoPlaying
-                                    ? 9999
-                                    : PDF_CONTINUOUS_OVERSCAN
-                                  const isNearViewport = Math.abs(idx - currentPageIndex) <= effectiveOverscan
+                                  // Use renderWindowCenter for virtual window during auto-play.
+                                  // This advances frequently (per page) so subsequent pages are pre-rendered,
+                                  // while currentPageIndex (throttled) only drives TOC/header.
+                                  const windowCenter = isAutoPlaying ? renderWindowCenter : currentPageIndex
+                                  const isNearViewport = Math.abs(idx - windowCenter) <= PDF_CONTINUOUS_OVERSCAN
                                   if (!isNearViewport) {
                                     return (
                                       <div
