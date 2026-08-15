@@ -206,6 +206,8 @@ export const Books: React.FC = () => {
   const pdfAutoScrollRafRef = useRef<number | null>(null)
   // Guard to skip ResizeObserver measurement for a short window after drawer toggle
   const drawerMeasureGuardRef = useRef(0)
+  // Tracks last time we pushed page index to React state during auto-play (to throttle)
+  const lastSyncedPageRef = useRef(0)
   const annotationInputRef = useRef<HTMLInputElement | null>(null)
   // Guards the scroll handler from fighting a programmatic scroll (button / progress jump).
   const isProgrammaticScrollRef = useRef(false)
@@ -1957,8 +1959,19 @@ export const Books: React.FC = () => {
 
         if (nextPageIndex !== currentPdfPageIndexRef.current) {
           currentPdfPageIndexRef.current = nextPageIndex
-          setCurrentPageIndex(nextPageIndex)
-          setReadingProgress(Math.round((nextPageIndex / (pdfNumPages - 1 || 1)) * 100))
+          const now = Date.now()
+          const timeSinceLastSync = now - lastSyncedPageRef.current
+          const pageDelta = Math.abs(nextPageIndex - lastSyncedPageRef.current)
+
+          // Throttle React state updates during auto-play to prevent stutter at page boundaries.
+          // Only push to state if enough time has passed OR the page jump is large.
+          if (timeSinceLastSync > 400 || pageDelta >= 2) {
+            lastSyncedPageRef.current = now
+            startTransition(() => {
+              setCurrentPageIndex(nextPageIndex)
+              setReadingProgress(Math.round((nextPageIndex / (pdfNumPages - 1 || 1)) * 100))
+            })
+          }
         }
 
         pdfAutoScrollRafRef.current = requestAnimationFrame(animate)
