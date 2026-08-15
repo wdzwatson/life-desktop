@@ -3346,7 +3346,9 @@ export const Books: React.FC = () => {
                           fontSize: '12px',
                         }}
                       >
-                        {(() => {
+                        {/* Only render the heavy page list when drawer is actually open.
+                            Avoids mapping 100+ buttons on every render when closed. */}
+                        {isTocDrawerOpen && (() => {
                           if (isPdf) {
                             return pdfPageIndexes.map((idx) => {
                               const pageIndex = idx
