@@ -178,6 +178,7 @@ export const Books: React.FC = () => {
   const [isLoadingReader, setIsLoadingReader] = useState(false)
   const [pdfLayoutMode, setPdfLayoutMode] = useState<PdfLayoutMode>('single')
   const [isPdfTransitioning, setIsPdfTransitioning] = useState(false)
+  const lastMeasuredWidthRef = useRef(0)
 
   // Friendly transition helper for layout mode changes (prevents blank flash)
   const handlePdfLayoutModeChange = useCallback((mode: PdfLayoutMode) => {
@@ -2077,6 +2078,16 @@ export const Books: React.FC = () => {
       if (!el) return
       const rect = el.getBoundingClientRect()
       const roundedReaderWidth = Math.round(rect.width)
+      const prevWidth = lastMeasuredWidthRef.current
+      const widthDelta = Math.abs(roundedReaderWidth - prevWidth)
+      if (prevWidth > 0 && widthDelta > 40) {
+        // Significant resize (e.g. drawer open/close or window drag) — show friendly overlay
+        setIsPdfTransitioning(true)
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => setIsPdfTransitioning(false))
+        })
+      }
+      lastMeasuredWidthRef.current = roundedReaderWidth
       setReaderMainWidth((prev) => (prev === roundedReaderWidth ? prev : roundedReaderWidth))
       const vw = window.innerWidth
       const pdfContentWidth =
