@@ -3615,8 +3615,12 @@ export const Books: React.FC = () => {
                                 }}
                               >
                                 {pdfPageIndexes.map((idx) => {
-                                  // Reduce virtual window during auto-play to lower per-frame work
-                                  const effectiveOverscan = isAutoPlaying ? 2 : PDF_CONTINUOUS_OVERSCAN
+                                  // During auto-play, disable virtual window entirely so that
+                                  // setCurrentPageIndex updates only affect TOC/header, not the
+                                  // reading area (no <Page> mount/unmount = no stutter).
+                                  const effectiveOverscan = isAutoPlaying
+                                    ? 9999
+                                    : PDF_CONTINUOUS_OVERSCAN
                                   const isNearViewport = Math.abs(idx - currentPageIndex) <= effectiveOverscan
                                   if (!isNearViewport) {
                                     return (
