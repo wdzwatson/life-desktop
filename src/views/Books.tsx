@@ -204,6 +204,8 @@ export const Books: React.FC = () => {
   const currentPdfPageIndexRef = useRef(0)
   const pdfScrollEndTimerRef = useRef<number | null>(null)
   const pdfAutoScrollRafRef = useRef<number | null>(null)
+  // Guard to skip ResizeObserver measurement for a short window after drawer toggle
+  const drawerMeasureGuardRef = useRef(0)
   const annotationInputRef = useRef<HTMLInputElement | null>(null)
   // Guards the scroll handler from fighting a programmatic scroll (button / progress jump).
   const isProgrammaticScrollRef = useRef(false)
@@ -2068,6 +2070,8 @@ export const Books: React.FC = () => {
     // Throttle nav position measurement with RAF guard to reduce setState churn during rapid resize/scroll
     let navFrame: number | null = null
     const throttledMeasure = () => {
+      // Skip measurement briefly after drawer toggle to avoid synchronous width thrash
+      if (Date.now() < drawerMeasureGuardRef.current) return
       if (navFrame !== null) return
       navFrame = requestAnimationFrame(() => {
         navFrame = null
@@ -2097,6 +2101,11 @@ export const Books: React.FC = () => {
     isTocDrawerOpen,
     isAnnotationsDrawerOpen,
   ])
+
+  // Bump the guard whenever a drawer opens/closes so the ResizeObserver skips the first measurement
+  useEffect(() => {
+    drawerMeasureGuardRef.current = Date.now() + 120 // ~2 frames
+  }, [isTocDrawerOpen, isAnnotationsDrawerOpen])
 
   // Save new highlight / annotation
   const handleAddHighlight = async (textOverride?: string, annotationOverride?: string) => {
