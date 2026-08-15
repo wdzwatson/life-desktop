@@ -177,6 +177,7 @@ export const Books: React.FC = () => {
   const [pdfPageAspectRatio, setPdfPageAspectRatio] = useState(PDF_DEFAULT_PAGE_ASPECT_RATIO)
   const [isLoadingReader, setIsLoadingReader] = useState(false)
   const [pdfLayoutMode, setPdfLayoutMode] = useState<PdfLayoutMode>('single')
+  const [isPdfTransitioning, setIsPdfTransitioning] = useState(false)
   // EPUB reflow view mode: paged single-page, dual-column, or continuous scroll.
   const [epubLayoutMode, setEpubLayoutMode] = useState<'single' | 'dual' | 'scroll'>('single')
   const [isAutoPlaying, setIsAutoPlaying] = useState(false)
