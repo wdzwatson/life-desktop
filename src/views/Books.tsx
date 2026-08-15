@@ -343,7 +343,24 @@ export const Books: React.FC = () => {
   const [isAnnotationsDrawerOpen, setIsAnnotationsDrawerOpen] = useState(false)
   const tocDrawerPanelRef = useDrawerPanelTransition(isTocDrawerOpen, 'left')
   const annotationsDrawerPanelRef = useDrawerPanelTransition(isAnnotationsDrawerOpen)
+  const [isReaderHeaderVisible, setIsReaderHeaderVisible] = useState(false)
+  const headerLeaveTimerRef = useRef<number | null>(null)
   const [readerMainWidth, setReaderMainWidth] = useState(0)
+
+  const showReaderHeader = useCallback(() => {
+    if (headerLeaveTimerRef.current) {
+      clearTimeout(headerLeaveTimerRef.current)
+      headerLeaveTimerRef.current = null
+    }
+    setIsReaderHeaderVisible(true)
+  }, [])
+
+  const scheduleHideReaderHeader = useCallback(() => {
+    if (headerLeaveTimerRef.current) clearTimeout(headerLeaveTimerRef.current)
+    headerLeaveTimerRef.current = window.setTimeout(() => {
+      setIsReaderHeaderVisible(false)
+    }, 280)
+  }, [])
   const [readerContextMenu, setReaderContextMenu] = useState<ReaderContextMenuState | null>(null)
 
   const api = (window as any).electronAPI
@@ -2954,10 +2971,14 @@ export const Books: React.FC = () => {
             <div
               className="book-reader__header-sensor"
               aria-hidden="true"
+              onMouseEnter={showReaderHeader}
+              onMouseLeave={scheduleHideReaderHeader}
             />
             {/* Reader Header */}
             <header
-              className="book-reader__header"
+              className={`book-reader__header ${isReaderHeaderVisible ? 'is-visible' : ''}`}
+              onMouseEnter={showReaderHeader}
+              onMouseLeave={scheduleHideReaderHeader}
               style={{
                 borderBottom: `1px solid ${readerBorderColor}`,
                 backgroundColor: readerHeaderBg,
