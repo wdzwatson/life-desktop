@@ -95,6 +95,18 @@ const DEFAULT_READER_SHORTCUTS = {
 const PDF_OCR_ENGINE_VERSION = 'tesseract-v3'
 const PDF_DEFAULT_PAGE_ASPECT_RATIO = 1.414
 const PDF_CONTINUOUS_OVERSCAN = 4
+
+// Dynamic overscan for auto-play based on speed (seconds per page)
+// Faster speed → larger overscan to reduce blank pages
+const getEffectiveOverscan = (speed: number, isAutoPlaying: boolean): number => {
+  if (!isAutoPlaying) return PDF_CONTINUOUS_OVERSCAN
+
+  // Map speed (sec/page) to overscan
+  // 15s → ~10, 8s → ~13, 5s → ~15, 3s → ~20
+  const base = 8
+  const speedFactor = Math.max(3, Math.min(18, Math.floor(36 / speed)))
+  return base + speedFactor
+}
 const PDF_RENDER_DEVICE_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 1.5)
 const EMPTY_PDF_HIGHLIGHTS: never[] = []
 
@@ -106,6 +118,7 @@ type PdfContinuousScrollListProps = {
   currentPageIndex: number
   renderWindowCenter: number
   isAutoPlaying: boolean
+  autoPlaySpeed: number
   autoPlayRenderRange: { start: number; end: number } | null
   pdfEstimatedPageHeight: number
   pdfPageRenderWidth: number
@@ -126,6 +139,7 @@ const PdfContinuousScrollList = React.memo(
       currentPageIndex,
       renderWindowCenter,
       isAutoPlaying,
+      autoPlaySpeed,
       autoPlayRenderRange,
       pdfEstimatedPageHeight,
       pdfPageRenderWidth,
@@ -139,16 +153,14 @@ const PdfContinuousScrollList = React.memo(
       t,
     } = props
 
+    // Dynamic overscan for auto-play (Option B)
+    const effectiveOverscan = getEffectiveOverscan(autoPlaySpeed, isAutoPlaying)
+
     return (
       <>
         {pdfPageIndexes.map((idx) => {
-          let isNearViewport: boolean
-          if (isAutoPlaying && autoPlayRenderRange) {
-            isNearViewport = idx >= autoPlayRenderRange.start && idx <= autoPlayRenderRange.end
-          } else {
-            const windowCenter = isAutoPlaying ? renderWindowCenter : currentPageIndex
-            isNearViewport = Math.abs(idx - windowCenter) <= PDF_CONTINUOUS_OVERSCAN
-          }
+          const windowCenter = isAutoPlaying ? renderWindowCenter : currentPageIndex
+          const isNearViewport = Math.abs(idx - windowCenter) <= effectiveOverscan
 
           if (!isNearViewport) {
             return (
@@ -215,19 +227,18 @@ const PdfContinuousScrollList = React.memo(
     )
   },
   (prev, next) => {
-    // Custom areEqual: during auto-play, ignore currentPageIndex and renderWindowCenter
-    // so the reading area does not re-render when these values change.
-    if (prev.isAutoPlaying !== next.isAutoPlaying) return false
-    if (prev.autoPlayRenderRange !== next.autoPlayRenderRange) return false
+    // Custom areEqual for PdfContinuousScrollList
     if (prev.pdfPageRenderWidth !== next.pdfPageRenderWidth) return false
     if (prev.pdfEstimatedPageHeight !== next.pdfEstimatedPageHeight) return false
+    if (prev.autoPlayRenderRange !== next.autoPlayRenderRange) return false
 
+    // During auto-play, ignore currentPageIndex / renderWindowCenter changes
+    // so the reading area stays stable. Only structural changes (range, size) matter.
     if (next.isAutoPlaying) {
-      // In auto-play mode, consider the list equal (skip re-render) unless structural props changed
       return true
     }
 
-    // Normal mode: check values that affect virtual window
+    // Normal mode: react to page changes
     return (
       prev.currentPageIndex === next.currentPageIndex &&
       prev.renderWindowCenter === next.renderWindowCenter
@@ -3773,6 +3784,7 @@ export const Books: React.FC = () => {
                                   currentPageIndex={currentPageIndex}
                                   renderWindowCenter={renderWindowCenter}
                                   isAutoPlaying={isAutoPlaying}
+                                  autoPlaySpeed={autoPlaySpeed}
                                   autoPlayRenderRange={autoPlayRenderRange}
                                   pdfEstimatedPageHeight={pdfEstimatedPageHeight}
                                   pdfPageRenderWidth={pdfPageRenderWidth}
