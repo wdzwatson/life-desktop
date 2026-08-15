@@ -128,6 +128,7 @@ type PdfContinuousScrollListProps = {
   ensurePdfOcrPage: (page: number) => void
   handleOpenPdfOcrFallback: () => void
   openSavedHighlight: (highlight: any) => void
+  onFirstVisiblePageRendered?: () => void
   t: (key: string, options?: any) => string
 }
 
@@ -192,6 +193,9 @@ const PdfContinuousScrollList = React.memo(
                 renderTextLayer={true}
                 renderAnnotationLayer={false}
                 width={pdfPageRenderWidth || undefined}
+                onRenderSuccess={() => {
+                  props.onFirstVisiblePageRendered?.()
+                }}
                 loading={
                   <div
                     className="book-reader__pdf-page-loading"
@@ -363,6 +367,7 @@ export const Books: React.FC = () => {
   const renderWindowCenterRef = useRef(0)
   const [renderWindowCenter, setRenderWindowCenter] = useState(0)
   const prevIsAutoPlayingRef = useRef(false)
+  const hasNotifiedFirstPageRef = useRef(false)
   const annotationInputRef = useRef<HTMLInputElement | null>(null)
   // Guards the scroll handler from fighting a programmatic scroll (button / progress jump).
   const isProgrammaticScrollRef = useRef(false)
@@ -2093,10 +2098,8 @@ export const Books: React.FC = () => {
     if (isPdfScrollMode) {
       // 刚开始自动翻页时给用户一个明确的 loading 提示
       if (!prevIsAutoPlayingRef.current) {
+        hasNotifiedFirstPageRef.current = false
         setIsPdfTransitioning(true)
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => setIsPdfTransitioning(false))
-        })
       }
       prevIsAutoPlayingRef.current = true
 
@@ -3795,6 +3798,12 @@ export const Books: React.FC = () => {
                                   ensurePdfOcrPage={ensurePdfOcrPage}
                                   handleOpenPdfOcrFallback={handleOpenPdfOcrFallback}
                                   openSavedHighlight={openSavedHighlight}
+                                  onFirstVisiblePageRendered={() => {
+                                    if (!hasNotifiedFirstPageRef.current) {
+                                      hasNotifiedFirstPageRef.current = true
+                                      setIsPdfTransitioning(false)
+                                    }
+                                  }}
                                   t={t}
                                 />
                               </div>
