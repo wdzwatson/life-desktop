@@ -27,6 +27,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dropdown } from '../../components/Dropdown'
+import { useDrawerPanelTransition } from '../../components/useDrawerTransition'
 import { ConversationList } from './ConversationList'
 import { ConversationDeleteDialog } from './ConversationDeleteDialog'
 import { ConversationRenameDialog } from './ConversationRenameDialog'
@@ -215,6 +216,7 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
   } | null>(null)
   const [runAnnouncement, setRunAnnouncement] = useState('')
   const [showRunInspector, setShowRunInspector] = useState(false)
+  const runInspectorPanelRef = useDrawerPanelTransition(showRunInspector)
   const [modelSwitchMarkers, setModelSwitchMarkers] = useState<ModelSwitchMarker[]>([])
   const activeConversationRef = useRef<number | null>(null)
   const messagesRef = useRef<AIChatMessage[]>([])
@@ -1723,9 +1725,11 @@ export function ChatWorkspace({ models, mediaProviders, hasProvider, onOpenSetti
       </section>
 
       <aside
+        ref={runInspectorPanelRef}
         id="ai-run-inspector"
         className={`ai-run-inspector ${showRunInspector ? 'is-open' : ''}`}
         aria-label={t('aiChat.chat.run_inspector')}
+        aria-hidden={!showRunInspector}
       >
         <div className="ai-run-inspector__heading">
           <Gauge size={15} aria-hidden="true" />

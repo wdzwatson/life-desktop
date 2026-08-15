@@ -8,6 +8,7 @@ import { useConfirmation } from '../components/ConfirmationProvider'
 import { DateTimePicker, TimePicker } from '../components/DateTimePicker'
 import { Dropdown } from '../components/Dropdown'
 import { ViewportPortal } from '../components/ViewportPortal'
+import { useDrawerTransition } from '../components/useDrawerTransition'
 import {
   AlertTriangle,
   CalendarDays,
@@ -57,7 +58,12 @@ import {
   getTaskDescendantIds,
   parseTaskCode,
 } from './taskHierarchyUtils'
-import { getAutomaticTaskStatus, getReopenedTaskStatus, TASK_STATUS } from '../taskWorkflow'
+import { getAutomaticTaskStatus, TASK_STATUS } from '../taskWorkflow'
+import {
+  buildCompleteTaskTreeMutation,
+  buildReopenTaskTreeMutation,
+  buildResolveTaskTreeMutation,
+} from '../taskTreeMutation'
 import './Tasks.css'
 
 const getCurrentTimeValue = () => {
@@ -306,6 +312,14 @@ export const Tasks: React.FC = () => {
   const expandedSubtaskPanelRef = useRef<HTMLElement | null>(null)
 
   const [drawerMode, setDrawerMode] = useState<'create' | 'edit' | null>(null)
+  const {
+    isDrawerOpen: isTaskDrawerOpen,
+    isDrawerMounted: isTaskDrawerMounted,
+    openDrawer: animateTaskDrawerOpen,
+    closeDrawer: closeTaskDrawer,
+    drawerOverlayRef: taskDrawerOverlayRef,
+    drawerPanelRef: taskDrawerPanelRef,
+  } = useDrawerTransition(() => setDrawerMode(null))
   const [drawerErrors, setDrawerErrors] = useState<{
     title?: string
     timeWindow?: string
@@ -727,6 +741,7 @@ export const Tasks: React.FC = () => {
       parentId: null,
     })
     setDrawerMode('create')
+    animateTaskDrawerOpen()
   }
 
   useEffect(() => {
@@ -795,6 +810,7 @@ export const Tasks: React.FC = () => {
       parentId: task.parent_id ?? null,
     })
     setDrawerMode('edit')
+    animateTaskDrawerOpen()
   }
 
   const getCurrentRuleScheduleSummary = () => {
@@ -1013,37 +1029,11 @@ export const Tasks: React.FC = () => {
   const toggleTaskDone = async (task: any) => {
     if (!api) return
     const nextDone = task.is_completed === 1 ? 0 : 1
-    const nextStatus = nextDone
-      ? task.requires_review
-        ? TASK_STATUS.review
-        : TASK_STATUS.closed
-      : getReopenedTaskStatus(task)
-
-    // Update self
-    await api.dbQuery(
-      'tasks',
-      'UPDATE tasks SET is_completed = ?, status = ?, progress = ? WHERE id = ?',
-      [nextDone, nextStatus, nextDone ? 100 : 0, task.id],
-    )
-
-    // If task is completed and has children, ask or auto-close children
-    if (nextDone) {
-      await api.dbQuery(
-        'tasks',
-        `
-          WITH RECURSIVE descendants(id) AS (
-            SELECT id FROM tasks WHERE parent_id = ?
-            UNION ALL
-            SELECT tasks.id FROM tasks
-            INNER JOIN descendants ON tasks.parent_id = descendants.id
-          )
-          UPDATE tasks SET is_completed = 1, progress = 100,
-            status = CASE WHEN requires_review = 1 THEN '待审核' ELSE '已关闭' END
-          WHERE id IN (SELECT id FROM descendants)
-        `,
-        [task.id],
-      )
-    }
+    const mutation = nextDone
+      ? buildCompleteTaskTreeMutation(task.id)
+      : buildReopenTaskTreeMutation(task.id)
+    const result = await api.dbQuery('tasks', mutation.sql, mutation.params)
+    if (!result?.success) return
 
     await refreshAncestorProgress([task.parent_id])
 
@@ -1053,12 +1043,10 @@ export const Tasks: React.FC = () => {
 
   const reviewTask = async (task: any, approved: boolean) => {
     if (!api || task.status !== TASK_STATUS.review) return
-    const nextStatus = approved ? TASK_STATUS.closed : getReopenedTaskStatus(task)
-    const result = await api.dbQuery(
-      'tasks',
-      'UPDATE tasks SET status = ?, is_completed = ?, progress = ? WHERE id = ?',
-      [nextStatus, approved ? 1 : 0, approved ? 100 : 0, task.id],
-    )
+    const mutation = approved
+      ? buildResolveTaskTreeMutation(task.id, TASK_STATUS.closed)
+      : buildReopenTaskTreeMutation(task.id)
+    const result = await api.dbQuery('tasks', mutation.sql, mutation.params)
     if (result?.success) {
       await refreshAncestorProgress([task.parent_id])
       await loadData()
@@ -1097,21 +1085,8 @@ export const Tasks: React.FC = () => {
 
     setIsCompletionConfirming(true)
     try {
-      await api.dbQuery(
-        'tasks',
-        `
-          WITH RECURSIVE task_tree(id) AS (
-            SELECT id FROM tasks WHERE id = ?
-            UNION ALL
-            SELECT tasks.id FROM tasks
-            INNER JOIN task_tree ON tasks.parent_id = task_tree.id
-          )
-          UPDATE tasks
-          SET status = ?, is_completed = 1, progress = 100
-          WHERE id IN (SELECT id FROM task_tree)
-        `,
-        [task.id, status],
-      )
+      const mutation = buildResolveTaskTreeMutation(task.id, status)
+      await api.dbQuery('tasks', mutation.sql, mutation.params)
       setCompletionConfirmationTask(null)
       await loadData()
     } finally {
@@ -1124,7 +1099,9 @@ export const Tasks: React.FC = () => {
     if (task.is_completed === 1) {
       return {
         title: t('tasks.confirm_reopen_title'),
-        description: t('tasks.confirm_reopen_description', { title: task.title }),
+        description: hasSubtasks
+          ? t('tasks.confirm_reopen_with_subtasks_description', { title: task.title })
+          : t('tasks.confirm_reopen_description', { title: task.title }),
         action: t('tasks.confirm_reopen_action'),
       }
     }
@@ -1510,7 +1487,7 @@ export const Tasks: React.FC = () => {
       showToast(t('tasks.toast_details_updated'))
     }
 
-    setDrawerMode(null)
+    closeTaskDrawer()
     await loadData()
   }
 
@@ -1637,7 +1614,7 @@ export const Tasks: React.FC = () => {
 
       setExpandedTaskGroupId(null)
       setSelectedTaskId(null)
-      setDrawerMode(null)
+      closeTaskDrawer()
       setDeletionConfirmationTask(null)
       await loadData()
     } finally {
@@ -2332,7 +2309,7 @@ export const Tasks: React.FC = () => {
         </div>
       </nav>
 
-      <div className="task-content">
+      <div key={taskTab} className="task-content tab-panel-transition" role="tabpanel">
         {/* TAB: KANBAN BOARD */}
         {taskTab === 'kanban' &&
           (filteredExecutionTasks.length === 0 ? (
@@ -3677,15 +3654,18 @@ export const Tasks: React.FC = () => {
           </div>
         )}
       </div>
-      {drawerMode && (
+      {drawerMode && isTaskDrawerMounted && (
         <ViewportPortal>
           <div
-            className="task-drawer-backdrop"
+            ref={taskDrawerOverlayRef}
+            className={`drawer-motion-overlay task-drawer-backdrop ${isTaskDrawerOpen ? 'is-open' : 'is-closing'}`}
             role="presentation"
-            onMouseDown={() => setDrawerMode(null)}
+            aria-hidden={!isTaskDrawerOpen}
+            onMouseDown={closeTaskDrawer}
           >
             <aside
-              className="task-drawer"
+              ref={taskDrawerPanelRef}
+              className="drawer-motion-panel task-drawer"
               role="dialog"
               aria-modal="true"
               aria-label={
@@ -3704,7 +3684,7 @@ export const Tasks: React.FC = () => {
                 <button
                   type="button"
                   className="btn btn-icon-close task-drawer__close"
-                  onClick={() => setDrawerMode(null)}
+                  onClick={closeTaskDrawer}
                   aria-label={t('tasks.drawer_close')}
                   title={t('tasks.drawer_close')}
                 >
@@ -4487,7 +4467,7 @@ export const Tasks: React.FC = () => {
                     {t('tasks.delete_task')}
                   </button>
                 )}
-                <button type="button" className="btn" onClick={() => setDrawerMode(null)}>
+                <button type="button" className="btn" onClick={closeTaskDrawer}>
                   {t('common.cancel')}
                 </button>
                 <button type="button" className="btn primary" onClick={handleSaveDrawer}>

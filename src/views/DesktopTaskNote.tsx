@@ -9,7 +9,11 @@ import {
 } from './taskDesktopUtils'
 import { getTaskDuePresentation } from './taskDuePresentationUtils'
 import './DesktopTaskNote.css'
-import { getReopenedTaskStatus, TASK_STATUS } from '../taskWorkflow'
+import {
+  buildCloseTaskTreeMutation,
+  buildCompleteTaskTreeMutation,
+  buildReopenTaskTreeMutation,
+} from '../taskTreeMutation'
 
 type DesktopTaskRecord = {
   id: number
@@ -132,29 +136,12 @@ export const DesktopTaskNote: React.FC = () => {
 
   const toggleTask = async (task: DesktopTaskRecord) => {
     const nextDone = task.is_completed === 1 ? 0 : 1
-    const nextStatus = nextDone
-      ? task.requires_review
-        ? TASK_STATUS.review
-        : TASK_STATUS.closed
-      : getReopenedTaskStatus(task)
-    const result = await api?.dbQuery(
-      'tasks',
-      'UPDATE tasks SET is_completed = ?, status = ?, progress = ? WHERE id = ?',
-      [nextDone, nextStatus, nextDone ? 100 : 0, task.id],
-    )
+    const mutation = nextDone
+      ? buildCompleteTaskTreeMutation(task.id)
+      : buildReopenTaskTreeMutation(task.id)
+    const result = await api?.dbQuery('tasks', mutation.sql, mutation.params)
     if (result?.success) {
-      setTasks((current) =>
-        current.map((candidate) =>
-          candidate.id === task.id
-            ? {
-                ...candidate,
-                is_completed: nextDone,
-                status: nextStatus,
-                progress: nextDone ? 100 : 0,
-              }
-            : candidate,
-        ),
-      )
+      await loadTasks()
     } else {
       setError('任务状态更新失败，请稍后重试。')
     }
@@ -162,13 +149,10 @@ export const DesktopTaskNote: React.FC = () => {
 
   const closeTask = async () => {
     if (!taskToClose) return
-    const result = await api?.dbQuery(
-      'tasks',
-      "UPDATE tasks SET closed_from_status = status, status = '已关闭', is_completed = 1, progress = 100 WHERE id = ?",
-      [taskToClose.id],
-    )
+    const mutation = buildCloseTaskTreeMutation(taskToClose.id)
+    const result = await api?.dbQuery('tasks', mutation.sql, mutation.params)
     if (result?.success) {
-      setTasks((current) => current.filter((task) => task.id !== taskToClose.id))
+      await loadTasks()
       setTaskToClose(null)
     } else {
       setError('关闭任务失败，请稍后重试。')

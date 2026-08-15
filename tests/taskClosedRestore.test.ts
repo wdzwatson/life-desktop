@@ -7,7 +7,7 @@ test('closed tasks remain closed in the task list', () => {
   const noteView = readFileSync(join(process.cwd(), 'src', 'views', 'DesktopTaskNote.tsx'), 'utf8')
   const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
 
-  assert.match(noteView, /closed_from_status = status, status = '已关闭'/)
+  assert.match(noteView, /buildCloseTaskTreeMutation\(taskToClose\.id\)/)
   assert.doesNotMatch(tasksView, /const restoreClosedTask = async/)
   assert.doesNotMatch(tasksView, /tasks\.restore_closed_action/)
 })

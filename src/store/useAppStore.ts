@@ -21,6 +21,7 @@ interface AppState {
   userNickname: string
   userAvatar: string
   toastMessage: string | null
+  toastId: number
   isAuthenticated: boolean
   registeredUsers: any[]
   launchpadSettings: LaunchpadSettings
@@ -109,6 +110,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   userNickname: '访客模式',
   userAvatar: 'G',
   toastMessage: null,
+  toastId: 0,
   isAuthenticated: true, // Defaults to true initially; loadInitialConfig will correct it if a password exists
   registeredUsers: [],
   launchpadSettings: normalizeLaunchpadSettings(undefined),
@@ -200,9 +202,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   showToast: (msg) => {
-    set({ toastMessage: msg })
+    const toastId = get().toastId + 1
+    set({ toastMessage: msg, toastId })
     setTimeout(() => {
-      if (get().toastMessage === msg) {
+      if (get().toastId === toastId) {
         set({ toastMessage: null })
       }
     }, 1800)

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
+import { useDrawerTransition } from '../../components/useDrawerTransition'
 import { useConfirmation } from '../../components/ConfirmationProvider'
 import { Dropdown } from '../../components/Dropdown'
 import { PasswordInput } from '../../components/PasswordInput'
@@ -50,6 +51,10 @@ export function ProviderManager({ onChanged }: Props) {
   const [draft, setDraft] = useState<ProviderDraft | null>(null)
   const nameRef = useRef<HTMLInputElement | null>(null)
   const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const { isDrawerOpen, openDrawer, closeDrawer, drawerOverlayRef, drawerPanelRef } = useDrawerTransition(() => {
+    setDraft(null)
+    setEditing(null)
+  })
   const api = (window as any).electronAPI
 
   const loadProviders = async () => {
@@ -84,10 +89,7 @@ export function ProviderManager({ onChanged }: Props) {
     await onChanged()
   }
 
-  const closeEditor = () => {
-    setDraft(null)
-    setEditing(null)
-  }
+  const closeEditor = closeDrawer
 
   const handleDrawerClose = () => closeEditor()
 
@@ -95,6 +97,7 @@ export function ProviderManager({ onChanged }: Props) {
     drawerTriggerRef.current = trigger
     setEditing(null)
     setDraft(createProviderDraft())
+    openDrawer()
     setError('')
   }
 
@@ -102,6 +105,7 @@ export function ProviderManager({ onChanged }: Props) {
     drawerTriggerRef.current = trigger
     setEditing(provider)
     setDraft(providerToDraft(provider))
+    openDrawer()
     setError('')
   }
 
@@ -140,8 +144,7 @@ export function ProviderManager({ onChanged }: Props) {
       if (!response?.success) throw new Error(response?.error?.message || t('aiChat.providers.save_failed'))
       const wasEditing = Boolean(editing)
       await api.syncAIModels?.()
-      setDraft(null)
-      setEditing(null)
+      closeDrawer()
       showToast(t(wasEditing ? 'aiChat.providers.updated' : 'aiChat.providers.created'))
       await refresh()
     } catch (saveError) {
@@ -223,14 +226,31 @@ export function ProviderManager({ onChanged }: Props) {
         {providers.map((provider) => (
           <article className={`ai-provider-card ${provider.enabled ? '' : 'is-disabled'}`} key={provider.id}>
             <div className="ai-provider-card__main">
-              <div className="ai-provider-card__title-row">
-                <h2>{provider.name}</h2>
-                <span className={`ai-provider-status is-${provider.connectionStatus}`}>
-                  {t(`aiChat.providers.connection_${provider.connectionStatus}`)}
-                </span>
-                {!provider.enabled && <span className="ai-provider-status">{t('aiChat.providers.disabled')}</span>}
+              <div className="ai-provider-card__header">
+                <div className="ai-provider-card__title-row">
+                  <h2 title={provider.name}>{provider.name}</h2>
+                  <span className={`ai-provider-status is-${provider.connectionStatus}`}>
+                    {t(`aiChat.providers.connection_${provider.connectionStatus}`)}
+                  </span>
+                  {!provider.enabled && <span className="ai-provider-status">{t('aiChat.providers.disabled')}</span>}
+                </div>
+
+                <div className="ai-provider-card__actions" role="group">
+                  <button type="button" className="ai-chat-icon-button" onClick={(event) => openEdit(provider, event.currentTarget)} aria-label={t('aiChat.providers.edit_name', { name: provider.name })} title={t('aiChat.providers.edit_name', { name: provider.name })}>
+                    <Pencil size={15} aria-hidden="true" />
+                  </button>
+                  <button type="button" className="ai-chat-icon-button" onClick={() => void runAction(() => api.copyAIProvider(provider.id), 'aiChat.providers.copied')} aria-label={t('aiChat.providers.copy_name', { name: provider.name })} title={t('aiChat.providers.copy_name', { name: provider.name })}>
+                    <Copy size={15} aria-hidden="true" />
+                  </button>
+                  <button type="button" className="ai-chat-icon-button" onClick={() => void runAction(() => api.setAIProviderEnabled(provider.id, !provider.enabled), provider.enabled ? 'aiChat.providers.disabled_toast' : 'aiChat.providers.enabled_toast')} aria-label={t(provider.enabled ? 'aiChat.providers.disable_name' : 'aiChat.providers.enable_name', { name: provider.name })} title={t(provider.enabled ? 'aiChat.providers.disable_name' : 'aiChat.providers.enable_name', { name: provider.name })}>
+                    <Power size={15} aria-hidden="true" />
+                  </button>
+                  <button type="button" className="ai-chat-icon-button is-danger" onClick={() => void deleteProvider(provider)} aria-label={t('aiChat.providers.delete_name', { name: provider.name })} title={t('aiChat.providers.delete_name', { name: provider.name })}>
+                    <Trash2 size={15} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
-              <p className="ai-provider-url">{provider.baseUrl}</p>
+              <p className="ai-provider-url" title={provider.baseUrl}>{provider.baseUrl}</p>
               {formatProviderLastTestedAt(provider.lastTestedAt, i18n.language) && (
                 <p className="ai-provider-tested-at">
                   {t('aiChat.providers.last_tested', {
@@ -251,7 +271,7 @@ export function ProviderManager({ onChanged }: Props) {
                 {(['text', 'image', 'video'] as const).map((kind) => provider.models[kind] && (
                   <div key={kind}>
                     <span>{t(`aiChat.providers.model_${kind}`)}</span>
-                    <strong>{provider.models[kind]}{((kind === 'text' ? provider.models.textOptions : kind === 'image' ? provider.models.imageOptions : provider.models.videoOptions)?.length ?? 0) > 1
+                    <strong title={provider.models[kind]}>{provider.models[kind]}{((kind === 'text' ? provider.models.textOptions : kind === 'image' ? provider.models.imageOptions : provider.models.videoOptions)?.length ?? 0) > 1
                       ? ` ${t('aiChat.providers.more_text_models', { count: ((kind === 'text' ? provider.models.textOptions : kind === 'image' ? provider.models.imageOptions : provider.models.videoOptions)?.length ?? 1) - 1 })}`
                       : ''}</strong>
                     {provider.defaults[kind] && <em><Check size={12} aria-hidden="true" />{t('aiChat.providers.default')}</em>}
@@ -260,20 +280,6 @@ export function ProviderManager({ onChanged }: Props) {
               </div>
             </div>
 
-            <div className="ai-provider-card__actions">
-              <button className="ai-chat-icon-button" onClick={(event) => openEdit(provider, event.currentTarget)} aria-label={t('aiChat.providers.edit_name', { name: provider.name })} title={t('aiChat.providers.edit_name', { name: provider.name })}>
-                <Pencil size={15} />
-              </button>
-              <button className="ai-chat-icon-button" onClick={() => void runAction(() => api.copyAIProvider(provider.id), 'aiChat.providers.copied')} aria-label={t('aiChat.providers.copy_name', { name: provider.name })} title={t('aiChat.providers.copy_name', { name: provider.name })}>
-                <Copy size={15} />
-              </button>
-              <button className="ai-chat-icon-button" onClick={() => void runAction(() => api.setAIProviderEnabled(provider.id, !provider.enabled), provider.enabled ? 'aiChat.providers.disabled_toast' : 'aiChat.providers.enabled_toast')} aria-label={t(provider.enabled ? 'aiChat.providers.disable_name' : 'aiChat.providers.enable_name', { name: provider.name })} title={t(provider.enabled ? 'aiChat.providers.disable_name' : 'aiChat.providers.enable_name', { name: provider.name })}>
-                <Power size={15} />
-              </button>
-              <button className="ai-chat-icon-button is-danger" onClick={() => void deleteProvider(provider)} aria-label={t('aiChat.providers.delete_name', { name: provider.name })} title={t('aiChat.providers.delete_name', { name: provider.name })}>
-                <Trash2 size={15} />
-              </button>
-            </div>
           </article>
         ))}
       </div>
@@ -297,9 +303,12 @@ export function ProviderManager({ onChanged }: Props) {
           onClose={closeEditor}
           returnFocus={() => drawerTriggerRef.current?.focus()}
           initialFocusRef={nameRef}
-          overlayClassName="ai-settings-drawer-overlay"
-          contentClassName="ai-settings-drawer ai-settings-drawer--provider"
+          overlayClassName={`drawer-motion-overlay ai-settings-drawer-overlay ${isDrawerOpen ? 'is-open' : 'is-closing'}`}
+          contentClassName="drawer-motion-panel ai-settings-drawer ai-settings-drawer--provider"
+          motionOverlayRef={drawerOverlayRef}
+          motionPanelRef={drawerPanelRef}
           closeOnOverlay
+          animateExit={false}
         >
           <div className="ai-provider-form">
             <div className="ai-provider-form__grid">

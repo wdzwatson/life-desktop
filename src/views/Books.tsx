@@ -25,6 +25,8 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Languages,
+  Highlighter,
+  MessageSquareText,
 } from 'lucide-react'
 import {
   getActiveTocIndex,
@@ -36,11 +38,13 @@ import {
   getReadingBlockText,
   getReaderContentGridColumns,
   getReadingProgressForLocation,
+  getReaderTextSegments,
   isReadingBlockHeading,
   resolveReaderTocEntry,
   shouldCloseReaderDrawersOnContentClick,
   shouldShowEpubToc,
   type ReadingBlock,
+  type ReaderHighlightAnchor,
   type TocEntry,
 } from './bookReaderUtils'
 import { BookCategorySidebar, type BookShelf } from './BookCategorySidebar'
@@ -50,6 +54,7 @@ import { Dropdown } from '../components/Dropdown'
 import { ViewportPortal } from '../components/ViewportPortal'
 import { PdfOcrOverlay } from '../components/PdfOcrOverlay'
 import { PdfOcrTextLayer, type PdfOcrSelectionArea } from '../components/PdfOcrTextLayer'
+import { useDrawerPanelTransition } from '../components/useDrawerTransition'
 import { matchesShortcut } from '../shortcutUtils'
 import { recognizePdfPage, type PdfOcrPage } from './pdfOcrService'
 import { getConfiguredLocales } from '../localeRegistry'
@@ -91,6 +96,8 @@ type PdfOcrPageState = {
   progressLabel?: string
 }
 
+type ReaderContextMenuState = { left: number; top: number; text: string }
+
 export const Books: React.FC = () => {
   const { t, i18n } = useTranslation()
   const { confirm } = useConfirmation()
@@ -104,8 +111,7 @@ export const Books: React.FC = () => {
   // DB States
   const [categories, setCategories] = useState<any[]>([])
   const [books, setBooks] = useState<any[]>([])
-  // New libraries should open in a view where the first import is visible.
-  const [activeCategory, setActiveCategory] = useState<string>('all')
+  const [activeCategory, setActiveCategory] = useState<string>(TO_READ_BOOK_SHELF_ID)
   const [draggingBookId, setDraggingBookId] = useState<string | null>(null)
   const [toReadDropTarget, setToReadDropTarget] = useState<{
     id: string
@@ -285,6 +291,9 @@ export const Books: React.FC = () => {
   const [highlights, setHighlights] = useState<any[]>([])
   const [newAnnotation, setNewAnnotation] = useState('')
   const [selectedHighlightText, setSelectedHighlightText] = useState('')
+  const [selectedHighlightAnchor, setSelectedHighlightAnchor] = useState<ReaderHighlightAnchor | null>(null)
+  const [activeHighlightId, setActiveHighlightId] = useState<string | null>(null)
+  const [isSelectionEditorOpen, setIsSelectionEditorOpen] = useState(false)
   const [aiTranslation, setAiTranslation] = useState('')
   const [isTranslatingSelection, setIsTranslatingSelection] = useState(false)
   const translationRequestRef = useRef(0)
@@ -303,7 +312,11 @@ export const Books: React.FC = () => {
   }
   const [isTocDrawerOpen, setIsTocDrawerOpen] = useState(false)
   const [isAnnotationsDrawerOpen, setIsAnnotationsDrawerOpen] = useState(false)
+  const tocDrawerPanelRef = useDrawerPanelTransition(isTocDrawerOpen, 'left')
+  const annotationsDrawerPanelRef = useDrawerPanelTransition(isAnnotationsDrawerOpen)
+  const [isReaderHeaderVisible, setIsReaderHeaderVisible] = useState(false)
   const [readerMainWidth, setReaderMainWidth] = useState(0)
+  const [readerContextMenu, setReaderContextMenu] = useState<ReaderContextMenuState | null>(null)
 
   const api = (window as any).electronAPI
   const pdfDocumentOptions = useMemo(() => ({ wasmUrl: pdfWasmUrl }), [])
@@ -1077,6 +1090,7 @@ export const Books: React.FC = () => {
     setCurrentParagraphOffset(0)
     setPdfData(null)
     setPdfNumPages(0)
+    setIsReaderHeaderVisible(false)
     pdfInitializedRef.current = false
 
     // Mark reading status
@@ -1191,9 +1205,11 @@ export const Books: React.FC = () => {
     setPdfNumPages(0)
     setCurrentPageIndex(0)
     setSelectedHighlightText('')
+    setSelectedHighlightAnchor(null)
     setNewAnnotation('')
     setIsTocDrawerOpen(false)
     setIsAnnotationsDrawerOpen(false)
+    setIsReaderHeaderVisible(false)
   }
 
   // Get active paragraphs of current chapter
@@ -1383,9 +1399,56 @@ export const Books: React.FC = () => {
       if (selectedText) {
         setSelectedHighlightText(selectedText)
         setAiTranslation('')
-        setIsAnnotationsDrawerOpen(true)
+        const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null
+        const startElement = range?.startContainer.parentElement
+        const endElement = range?.endContainer.parentElement
+        const startBlock = startElement?.closest<HTMLElement>('[data-epub-block-offset]')
+        const endBlock = endElement?.closest<HTMLElement>('[data-epub-block-offset]')
+        if (range && startBlock && startBlock === endBlock) {
+          const startRange = range.cloneRange()
+          startRange.selectNodeContents(startBlock)
+          startRange.setEnd(range.startContainer, range.startOffset)
+          const endRange = range.cloneRange()
+          endRange.selectNodeContents(startBlock)
+          endRange.setEnd(range.endContainer, range.endOffset)
+          setSelectedHighlightAnchor({
+            chapter: bookChapters?.[Number(startBlock.dataset.epubChapterIndex)]?.title || currentChapter,
+            chapterIndex: Number(startBlock.dataset.epubChapterIndex),
+            blockOffset: Number(startBlock.dataset.epubBlockOffset),
+            startOffset: startRange.toString().length,
+            endOffset: endRange.toString().length,
+          })
+        } else {
+          setSelectedHighlightAnchor(null)
+        }
       }
     }
+  }
+
+  const openReaderContextMenu = (clientX: number, clientY: number, textOverride?: string) => {
+    const text = textOverride || window.getSelection()?.toString().trim() || selectedHighlightText
+    if (!text) return false
+    setSelectedHighlightText(text)
+    setIsSelectionEditorOpen(false)
+    setAiTranslation('')
+    setReaderContextMenu({
+      left: Math.max(8, Math.min(clientX, window.innerWidth - 196)),
+      top: Math.max(8, Math.min(clientY, window.innerHeight - 188)),
+      text,
+    })
+    return true
+  }
+
+  const handleReaderContextMenu = (event: React.MouseEvent<HTMLElement>) => {
+    if (!openReaderContextMenu(event.clientX, event.clientY)) return
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  const handleCopySelectedText = async (text: string) => {
+    await navigator.clipboard.writeText(text)
+    setReaderContextMenu(null)
+    showToast(t('books.toast_text_copied'))
   }
 
   const handleTranslateSelection = async (textOverride?: string) => {
@@ -1410,6 +1473,7 @@ export const Books: React.FC = () => {
     if (requestId !== translationRequestRef.current) return
     setSelectedHighlightText(text)
     setIsAnnotationsDrawerOpen(true)
+    setIsSelectionEditorOpen(true)
     setIsTranslatingSelection(true)
     setAiTranslation('')
     try {
@@ -1435,9 +1499,13 @@ export const Books: React.FC = () => {
 
   const handlePdfOcrRecognized = (text: string) => {
     setSelectedHighlightText(text)
+    setIsSelectionEditorOpen(false)
     setAiTranslation('')
-    setIsAnnotationsDrawerOpen(true)
-    void handleTranslateSelection(text)
+    setReaderContextMenu({
+      left: Math.max(8, window.innerWidth / 2 - 94),
+      top: Math.max(8, window.innerHeight / 2 - 86),
+      text,
+    })
   }
 
   const getPdfPageElement = (pageNumber: number) =>
@@ -1529,8 +1597,8 @@ export const Books: React.FC = () => {
   }
 
   const handlePdfOcrAreasSelected = (
-    _pageNumber: number,
-    _areas: PdfOcrSelectionArea[],
+    pageNumber: number,
+    areas: PdfOcrSelectionArea[],
     selectedText: string,
   ) => {
     const text = selectedText.replace(/\s+/g, ' ').trim()
@@ -1538,6 +1606,7 @@ export const Books: React.FC = () => {
       showToast(t('books.ocr_selection_empty'))
       return
     }
+    setSelectedHighlightAnchor({ pageNumber, areas })
     // The user has selected words from the page-level OCR result already.
     // Re-running OCR on a cropped image adds latency and can alter that text.
     handlePdfOcrRecognized(text)
@@ -1562,6 +1631,7 @@ export const Books: React.FC = () => {
   }
 
   const handleReaderContentClick = () => {
+    setReaderContextMenu(null)
     const selectedText = window.getSelection()?.toString() || ''
     if (!shouldCloseReaderDrawersOnContentClick(selectedText)) return
 
@@ -1690,6 +1760,20 @@ export const Books: React.FC = () => {
   }, [readingBook, api])
 
   useEffect(() => {
+    if (!readerContextMenu) return
+    const dismiss = () => setReaderContextMenu(null)
+    const onKeyDown = (event: KeyboardEvent) => event.key === 'Escape' && dismiss()
+    window.addEventListener('pointerdown', dismiss)
+    window.addEventListener('resize', dismiss)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', dismiss)
+      window.removeEventListener('resize', dismiss)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [readerContextMenu])
+
+  useEffect(() => {
     const handleReaderShortcutsChanged = (event: Event) => {
       const shortcuts = (event as CustomEvent<Partial<typeof DEFAULT_READER_SHORTCUTS>>).detail
       setReaderShortcuts((current) => ({ ...current, ...shortcuts }))
@@ -1724,6 +1808,7 @@ export const Books: React.FC = () => {
         setSelectedHighlightText(text)
         setAiTranslation('')
         setIsAnnotationsDrawerOpen(true)
+        setIsSelectionEditorOpen(true)
       } else if (isPdf && matchesShortcut(e, readerShortcuts.readerOcr)) {
         e.preventDefault()
         requestPdfOcrForCurrentPage()
@@ -1837,7 +1922,7 @@ export const Books: React.FC = () => {
         pdfLayoutMode === 'dual'
           ? getPdfPageRenderWidth(rect.width, pdfLayoutMode) * 2 + 20
           : getPdfPageRenderWidth(rect.width, pdfLayoutMode)
-      const contentWidth = isPdf ? Math.min(rect.width, pdfContentWidth) : Math.min(rect.width, 800)
+      const contentWidth = isPdf ? Math.min(rect.width, pdfContentWidth) : Math.min(rect.width, 1180)
       const contentLeft = rect.left + (rect.width - contentWidth) / 2
       const contentRight = contentLeft + contentWidth
       const BTN = 36
@@ -1875,8 +1960,10 @@ export const Books: React.FC = () => {
   ])
 
   // Save new highlight / annotation
-  const handleAddHighlight = async () => {
-    if (!selectedHighlightText || !readingBook || !api) return
+  const handleAddHighlight = async (textOverride?: string, annotationOverride?: string) => {
+    const highlightText = textOverride || selectedHighlightText
+    if (!highlightText || !readingBook || !api) return
+    const annotation = annotationOverride ?? newAnnotation
 
     const hlId = `hl_${Date.now()}`
     const query = `
@@ -1886,15 +1973,18 @@ export const Books: React.FC = () => {
     const res = await api.dbQuery('books', query, [
       hlId,
       readingBook.id,
-      selectedHighlightText,
-      newAnnotation || t('books.no_annotation'),
-      JSON.stringify({ chapter: currentChapter, offset: 120 }),
+      highlightText,
+      annotation || t('books.no_annotation'),
+      JSON.stringify(selectedHighlightAnchor || { chapter: currentChapter, chapterIndex: currentChapterIndex }),
     ])
 
     if (res?.success) {
       showToast(t('books.toast_highlight_saved'))
       setSelectedHighlightText('')
+      setSelectedHighlightAnchor(null)
+      setIsSelectionEditorOpen(false)
       setNewAnnotation('')
+      setReaderContextMenu(null)
 
       // Reload highlights
       const hlRes = await api.dbQuery('books', 'SELECT * FROM highlights WHERE book_id = ?', [
@@ -1903,6 +1993,28 @@ export const Books: React.FC = () => {
       if (hlRes?.success) setHighlights(hlRes.data)
     }
   }
+
+  const openSavedHighlight = (highlight: any) => {
+    setActiveHighlightId(highlight.id)
+    setIsAnnotationsDrawerOpen(true)
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`[data-reader-annotation-id="${highlight.id}"]`)?.scrollIntoView({
+        block: 'nearest',
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      })
+    })
+  }
+
+  const getPdfHighlightsForPage = (pageNumber: number) => highlights.flatMap((highlight) => {
+    try {
+      const anchor = JSON.parse(highlight.anchor || '{}')
+      return anchor.pageNumber === pageNumber && Array.isArray(anchor.areas)
+        ? [{ ...highlight, areas: anchor.areas }]
+        : []
+    } catch {
+      return []
+    }
+  })
 
   // Copy Deep Link
   const handleCopyLink = (hl: any) => {
@@ -2056,8 +2168,9 @@ export const Books: React.FC = () => {
     const text = getReadingBlockText(block)
     const isHeading = isReadingBlockHeading(block)
     const headingLevel = typeof block === 'object' ? block.level || 2 : 0
-    const hasHighlight = !isHeading && highlights.some((hl) => hl.text === text)
-
+    const textSegments = !isHeading
+      ? getReaderTextSegments(text, highlights, chapterIndex, blockOffset ?? 0, bookChapters?.[chapterIndex]?.title || currentChapter)
+      : []
     if (isHeading) {
       const fontScale = Math.max(1, 1.55 - (headingLevel - 1) * 0.14)
       return (
@@ -2087,26 +2200,32 @@ export const Books: React.FC = () => {
           marginBottom: '16px',
           padding: '8px 12px',
           borderRadius: '6px',
-          backgroundColor: hasHighlight ? 'rgba(245, 158, 11, 0.15)' : 'transparent',
-          borderLeft: hasHighlight ? '3px solid var(--color-accent)' : 'none',
+          backgroundColor: 'transparent',
+          borderLeft: 'none',
           cursor: 'text',
           transition: 'all 0.15s ease',
           userSelect: 'text',
         }}
       >
-        {text}
-        {hasHighlight && (
-          <span
-            style={{
-              fontSize: '11px',
-              color: 'var(--color-accent)',
-              marginLeft: '6px',
-              fontWeight: 'bold',
+        {textSegments.map((segment, index) => segment.highlight ? (
+          <mark
+            key={`${segment.highlight.id}-${index}`}
+            className={`book-reader__saved-highlight ${activeHighlightId === segment.highlight.id ? 'is-active' : ''}`}
+            role="button"
+            tabIndex={0}
+            title={segment.highlight.annotation || t('books.no_annotation')}
+            aria-label={`${segment.text}: ${segment.highlight.annotation || t('books.no_annotation')}`}
+            onClick={(event) => { event.stopPropagation(); openSavedHighlight(segment.highlight) }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                openSavedHighlight(segment.highlight)
+              }
             }}
           >
-            ✓ {t('books.annotation_label')}
-          </span>
-        )}
+            {segment.text}
+          </mark>
+        ) : <React.Fragment key={`text-${index}`}>{segment.text}</React.Fragment>)}
       </p>
     )
   }
@@ -2133,7 +2252,7 @@ export const Books: React.FC = () => {
     tocDrawerWidth,
     isAnnotationsDrawerOpen,
     annotationsDrawerWidth,
-    Boolean(isPdf),
+    false,
     readerMainMinWidth,
   )
   const pdfPageRenderWidth = getPdfPageRenderWidth(readerMainWidth, pdfLayoutMode)
@@ -2146,13 +2265,13 @@ export const Books: React.FC = () => {
   }, [isPdf, bookChapters, currentChapterIndex, currentParagraphOffset, isLoadingReader])
 
   useEffect(() => {
-    if (!selectedHighlightText || !isAnnotationsDrawerOpen) return
+    if (!selectedHighlightText || !isSelectionEditorOpen || !isAnnotationsDrawerOpen) return
 
     const raf = requestAnimationFrame(() => {
       annotationInputRef.current?.focus(getAnnotationEditorFocusOptions())
     })
     return () => cancelAnimationFrame(raf)
-  }, [selectedHighlightText, isAnnotationsDrawerOpen])
+  }, [selectedHighlightText, isSelectionEditorOpen, isAnnotationsDrawerOpen])
 
   // In EPUB scroll mode the whole chapter is shown, so paging is chapter-bound.
   const isEpubScroll = !isPdf && bookChapters && epubLayoutMode === 'scroll'
@@ -2172,6 +2291,11 @@ export const Books: React.FC = () => {
   const isDarkReader = readerBg === '#0F0F0F'
   const readerTextColor = isDarkReader ? '#D4D4D4' : '#2F2E2C'
   const readerBorderColor = isDarkReader ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'
+  const readerHeaderBg = isDarkReader
+    ? 'rgba(15, 15, 15, 0.92)'
+    : readerBg === '#FFFFFF'
+      ? 'rgba(255, 255, 255, 0.92)'
+      : 'rgba(253, 251, 247, 0.92)'
   const readerCardBg = isDarkReader ? '#1F1F1F' : 'var(--bg-surface)'
   const readerCardBorder = isDarkReader ? 'rgba(255, 255, 255, 0.08)' : 'var(--color-border)'
 
@@ -2565,15 +2689,22 @@ export const Books: React.FC = () => {
             color: readerTextColor,
             zIndex: 1000,
             display: 'grid',
-            gridTemplateRows: 'minmax(0, auto) minmax(0, 1fr)',
+            gridTemplateRows: 'minmax(0, 1fr)',
           }}
         >
+          <div
+            className="book-reader__header-sensor"
+            aria-hidden="true"
+            onMouseEnter={() => setIsReaderHeaderVisible(true)}
+          />
           {/* Reader Header */}
           <header
-            className="book-reader__header"
+            className={`book-reader__header ${isReaderHeaderVisible ? 'is-visible' : ''}`}
+            onMouseEnter={() => setIsReaderHeaderVisible(true)}
+            onMouseLeave={() => setIsReaderHeaderVisible(false)}
             style={{
               borderBottom: `1px solid ${readerBorderColor}`,
-              backgroundColor: isDarkReader ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)',
+              backgroundColor: readerHeaderBg,
             }}
           >
             <div className="book-reader__identity">
@@ -2623,15 +2754,6 @@ export const Books: React.FC = () => {
 
             {/* Custom font and bg adjustments */}
             <div className="book-reader__toolbar">
-              <button
-                className="btn sm"
-                onClick={() => void handleTranslateSelection()}
-                title={t('books.ai_translate_shortcut', {
-                  shortcut: readerShortcuts.readerTranslate.replace('CommandOrControl', 'Ctrl'),
-                })}
-              >
-                <Languages size={12} /> {t('books.ai_translate')}
-              </button>
               {isPdf && (
                 <button
                   className="btn sm"
@@ -2643,22 +2765,6 @@ export const Books: React.FC = () => {
               )}
               <button className="btn sm" onClick={() => handleExportHighlights()}>
                 <ExternalLink size={12} /> {t('books.export_notes_btn')}
-              </button>
-              <button
-                className={`btn sm ${isAnnotationsDrawerOpen ? 'primary' : ''}`}
-                onClick={() => setIsAnnotationsDrawerOpen((open) => !open)}
-                title={
-                  isAnnotationsDrawerOpen
-                    ? t('books.hide_annotations') || '收起批注'
-                    : t('books.show_annotations') || '展开批注'
-                }
-              >
-                {isAnnotationsDrawerOpen ? (
-                  <PanelRightClose size={12} />
-                ) : (
-                  <PanelRightOpen size={12} />
-                )}
-                {t('books.highlights_annotations_title')} ({highlights.length})
               </button>
               <div
                 style={{
@@ -2673,17 +2779,11 @@ export const Books: React.FC = () => {
                     {t('books.view_label')}:
                   </span>
                   <Dropdown
+                    className="book-reader__layout-dropdown"
                     value={pdfLayoutMode}
                     onChange={(e) => setPdfLayoutMode(e.target.value as any)}
-                    style={{
-                      fontSize: '12px',
-                      padding: '4px 8px',
-                      borderRadius: '4px',
-                      backgroundColor: isDarkReader ? '#222' : '#fff',
-                      border: '1px solid var(--color-border)',
-                      color: 'inherit',
-                      outline: 'none',
-                    }}
+                    controlHeight={28}
+                    searchable={false}
                   >
                     <option value="single">{t('books.view_single')}</option>
                     <option value="dual">{t('books.view_dual')}</option>
@@ -2712,17 +2812,11 @@ export const Books: React.FC = () => {
 
                   {isAutoPlaying && (
                     <Dropdown
+                      className="book-reader__speed-dropdown"
                       value={autoPlaySpeed}
                       onChange={(e) => setAutoPlaySpeed(parseInt(e.target.value, 10))}
-                      style={{
-                        fontSize: '12px',
-                        padding: '4px 4px',
-                        borderRadius: '4px',
-                        backgroundColor: isDarkReader ? '#222' : '#fff',
-                        border: '1px solid var(--color-border)',
-                        color: 'inherit',
-                        outline: 'none',
-                      }}
+                      controlHeight={28}
+                      searchable={false}
                     >
                       <option value="5">{t('books.auto_play_speed', { sec: 5 })}</option>
                       <option value="10">{t('books.auto_play_speed', { sec: 10 })}</option>
@@ -2761,21 +2855,15 @@ export const Books: React.FC = () => {
                         {t('books.view_label')}:
                       </span>
                       <Dropdown
+                        className="book-reader__layout-dropdown"
                         value={epubLayoutMode}
                         onChange={(e) => {
                           setEpubLayoutMode(e.target.value as any)
                           setCurrentPageIndex(0)
                           setCurrentParagraphOffset(0)
                         }}
-                        style={{
-                          fontSize: '12px',
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          backgroundColor: isDarkReader ? '#222' : '#fff',
-                          border: '1px solid var(--color-border)',
-                          color: 'inherit',
-                          outline: 'none',
-                        }}
+                        controlHeight={28}
+                        searchable={false}
                       >
                         <option value="single">{t('books.view_single')}</option>
                         <option value="dual">{t('books.view_dual')}</option>
@@ -2794,43 +2882,50 @@ export const Books: React.FC = () => {
               />
               {/* Bg toggler */}
               <button
+                type="button"
+                className={`book-reader__theme-swatch ${readerBg === '#FDFBF7' ? 'is-active' : ''}`}
+                aria-label={t('books.reader_theme_sepia')}
+                title={t('books.reader_theme_sepia')}
                 style={{
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '50%',
                   backgroundColor: '#FDFBF7',
-                  border: '1px solid #ddd',
-                  cursor: 'pointer',
                 }}
                 onClick={() => setReaderBg('#FDFBF7')}
               />
               <button
+                type="button"
+                className={`book-reader__theme-swatch ${readerBg === '#FFFFFF' ? 'is-active' : ''}`}
+                aria-label={t('books.reader_theme_light')}
+                title={t('books.reader_theme_light')}
                 style={{
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '50%',
                   backgroundColor: '#FFFFFF',
-                  border: '1px solid #ddd',
-                  cursor: 'pointer',
                 }}
                 onClick={() => setReaderBg('#FFFFFF')}
               />
               <button
+                type="button"
+                className={`book-reader__theme-swatch ${readerBg === '#0F0F0F' ? 'is-active' : ''}`}
+                aria-label={t('books.reader_theme_dark')}
+                title={t('books.reader_theme_dark')}
                 style={{
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '50%',
                   backgroundColor: '#0F0F0F',
-                  border: '1px solid #444',
-                  cursor: 'pointer',
                 }}
                 onClick={() => setReaderBg('#0F0F0F')}
               />
             </div>
           </header>
 
+          {readerContextMenu && (
+            <div className="book-reader__context-menu" role="menu" aria-label={t('books.selection_menu_label')} style={{ left: readerContextMenu.left, top: readerContextMenu.top }} onPointerDown={(event) => event.stopPropagation()}>
+              <button type="button" role="menuitem" onClick={() => void handleCopySelectedText(readerContextMenu.text)}><Copy size={14} /> {t('books.copy_selected_text')}</button>
+              <button type="button" role="menuitem" onClick={() => void handleAddHighlight(readerContextMenu.text, '')}><Highlighter size={14} /> {t('books.mark_highlight')}</button>
+              <button type="button" role="menuitem" onClick={() => { setReaderContextMenu(null); setNewAnnotation(''); setIsAnnotationsDrawerOpen(true); setIsSelectionEditorOpen(true) }}><MessageSquareText size={14} /> {t('books.add_annotation_action')}</button>
+              <button type="button" role="menuitem" onClick={() => { setReaderContextMenu(null); void handleTranslateSelection(readerContextMenu.text) }}><Languages size={14} /> {t('books.translate_selected_text')}</button>
+            </div>
+          )}
+
           <div
             ref={readerContentRef}
+            className={`book-reader__content ${isTocDrawerOpen || isAnnotationsDrawerOpen ? 'has-open-drawer' : ''}`}
             style={{
               display: 'grid',
               gridTemplateColumns: readerContentGridColumns,
@@ -2839,41 +2934,71 @@ export const Books: React.FC = () => {
               position: 'relative',
               overflowX: 'auto',
               overflowY: 'hidden',
-              transition: 'grid-template-columns 0.2s ease',
             }}
           >
             {showReaderToc && !isLoadingReader && (
               <button
+                type="button"
+                className="book-reader__drawer-toggle book-reader__drawer-toggle--toc"
                 onClick={() => setIsTocDrawerOpen((open) => !open)}
+                aria-expanded={isTocDrawerOpen}
+                aria-controls="book-reader-toc"
                 title={
                   isTocDrawerOpen
                     ? t('books.hide_toc') || '收起目录'
                     : t('books.show_toc') || '展开目录'
                 }
                 style={{
-                  position: 'absolute',
                   left: isTocDrawerOpen ? `${tocDrawerWidth + 8}px` : '12px',
-                  top: '16px',
-                  width: '34px',
-                  height: '34px',
-                  borderRadius: '50%',
                   backgroundColor: isDarkReader ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
                   border: `1px solid ${readerBorderColor}`,
-                  color: 'inherit',
-                  cursor: 'pointer',
-                  display: 'grid',
-                  placeItems: 'center',
-                  boxShadow: 'var(--shadow-app)',
-                  transition: 'left 0.2s ease, background-color 0.15s ease',
-                  zIndex: 40,
                 }}
               >
                 {isTocDrawerOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
               </button>
             )}
 
+            {!isLoadingReader && (
+              <button
+                type="button"
+                className="book-reader__drawer-toggle book-reader__drawer-toggle--annotations"
+                onClick={() => setIsAnnotationsDrawerOpen((open) => !open)}
+                aria-expanded={isAnnotationsDrawerOpen}
+                aria-controls="book-reader-annotations"
+                aria-label={
+                  isAnnotationsDrawerOpen
+                    ? t('books.hide_annotations') || '收起批注'
+                    : t('books.show_annotations') || '展开批注'
+                }
+                title={
+                  isAnnotationsDrawerOpen
+                    ? t('books.hide_annotations') || '收起批注'
+                    : t('books.show_annotations') || '展开批注'
+                }
+                style={{
+                  right: isAnnotationsDrawerOpen ? `${annotationsDrawerWidth + 8}px` : '12px',
+                  backgroundColor: isDarkReader
+                    ? 'rgba(255,255,255,0.08)'
+                    : 'rgba(0,0,0,0.05)',
+                  border: `1px solid ${readerBorderColor}`,
+                }}
+              >
+                {isAnnotationsDrawerOpen ? (
+                  <PanelRightClose size={15} />
+                ) : (
+                  <PanelRightOpen size={15} />
+                )}
+                <span className="book-reader__annotation-count" aria-hidden="true">
+                  {highlights.length > 99 ? '99+' : highlights.length}
+                </span>
+              </button>
+            )}
+
             {isLoadingReader ? (
               <div
+                className="book-reader__loading"
+                role="status"
+                aria-live="polite"
                 style={{
                   gridColumn: '1 / -1',
                   height: '100%',
@@ -2886,30 +3011,19 @@ export const Books: React.FC = () => {
                   gap: '16px',
                 }}
               >
-                <div
-                  style={{
-                    width: '36px',
-                    height: '36px',
-                    borderRadius: '50%',
-                    border: '3px solid var(--color-border)',
-                    borderTopColor: 'var(--color-accent)',
-                    animation: 'spin 0.8s linear infinite',
-                  }}
-                />
+                <div className="book-reader__loading-spinner" />
                 <span style={{ fontSize: '13.5px', color: 'var(--text-muted)' }}>
                   {t('books.loading_book')}
                 </span>
-                <style>{`
-                  @keyframes spin {
-                    to { transform: rotate(360deg); }
-                  }
-                `}</style>
               </div>
             ) : (
               <>
                 {/* Docked chapters / TOC drawer */}
                 {showReaderToc && (
                   <aside
+                    ref={tocDrawerPanelRef}
+                    id="book-reader-toc"
+                    className={`book-reader__side-drawer book-reader__side-drawer--toc ${isTocDrawerOpen ? 'is-open' : ''}`}
                     aria-hidden={!isTocDrawerOpen}
                     style={{
                       gridColumn: 1,
@@ -2927,9 +3041,6 @@ export const Books: React.FC = () => {
                       boxShadow: 'none',
                       display: 'flex',
                       flexDirection: 'column',
-                      opacity: isTocDrawerOpen ? 1 : 0,
-                      transition:
-                        'opacity 0.15s ease, padding 0.2s ease, border-right-width 0.2s ease',
                       pointerEvents: isTocDrawerOpen ? 'auto' : 'none',
                       zIndex: 10,
                     }}
@@ -3083,22 +3194,24 @@ export const Books: React.FC = () => {
 
                 {/* Middle Column: Text content */}
                 <main
+                  className="book-reader__main"
                   ref={readerMainRef}
                   onScroll={
                     epubLayoutMode === 'scroll' && !isPdf ? handleEpubContinuousScroll : undefined
                   }
                   onMouseUp={!isPdf ? handleTextSelection : undefined}
+                  onContextMenu={handleReaderContextMenu}
                   onClick={handleReaderContentClick}
                   style={{
                     gridColumn: 2,
-                    padding: '32px 48px',
+                    padding: '32px 56px',
                     overflowY: 'auto',
                     minWidth: 0,
                     userSelect: 'text',
                     fontSize: `${fontSize}px`,
                     lineHeight: '1.8',
-                    maxWidth: isPdf ? 'none' : '800px',
-                    margin: '0 auto',
+                    maxWidth: 'none',
+                    margin: 0,
                     width: '100%',
                     position: 'relative',
                     display: !bookChapters && !pdfData ? 'flex' : 'block',
@@ -3124,6 +3237,7 @@ export const Books: React.FC = () => {
                       transform-origin: left center;
                     }
                   `}</style>
+                  <div className={`book-reader__reading-surface ${isPdf ? 'is-pdf' : ''}`}>
                   {pdfData ? (
                     <div
                       ref={pdfScrollRef}
@@ -3221,8 +3335,11 @@ export const Books: React.FC = () => {
                                     status={pdfOcrPages[idx + 1]?.status || 'idle'}
                                     progressLabel={pdfOcrPages[idx + 1]?.progressLabel}
                                     onSelectAreas={(areas, selectedText) => void handlePdfOcrAreasSelected(idx + 1, areas, selectedText)}
+                                    onOpenContextMenu={({ clientX, clientY, text }) => openReaderContextMenu(clientX, clientY, text)}
                                     onRetry={() => void ensurePdfOcrPage(idx + 1)}
                                     onFallback={handleOpenPdfOcrFallback}
+                                    savedHighlights={getPdfHighlightsForPage(idx + 1)}
+                                    onOpenHighlight={openSavedHighlight}
                                   />
                                 </div>
                               )
@@ -3270,8 +3387,11 @@ export const Books: React.FC = () => {
                                       status={pdfOcrPages[currentPageIndex + 1]?.status || 'idle'}
                                       progressLabel={pdfOcrPages[currentPageIndex + 1]?.progressLabel}
                                       onSelectAreas={(areas, selectedText) => void handlePdfOcrAreasSelected(currentPageIndex + 1, areas, selectedText)}
+                                      onOpenContextMenu={({ clientX, clientY, text }) => openReaderContextMenu(clientX, clientY, text)}
                                       onRetry={() => void ensurePdfOcrPage(currentPageIndex + 1)}
                                       onFallback={handleOpenPdfOcrFallback}
+                                      savedHighlights={getPdfHighlightsForPage(currentPageIndex + 1)}
+                                      onOpenHighlight={openSavedHighlight}
                                     />
                                   </div>
                                   {currentPageIndex + 1 < pdfNumPages && (
@@ -3301,8 +3421,11 @@ export const Books: React.FC = () => {
                                         status={pdfOcrPages[currentPageIndex + 2]?.status || 'idle'}
                                         progressLabel={pdfOcrPages[currentPageIndex + 2]?.progressLabel}
                                         onSelectAreas={(areas, selectedText) => void handlePdfOcrAreasSelected(currentPageIndex + 2, areas, selectedText)}
+                                        onOpenContextMenu={({ clientX, clientY, text }) => openReaderContextMenu(clientX, clientY, text)}
                                         onRetry={() => void ensurePdfOcrPage(currentPageIndex + 2)}
                                         onFallback={handleOpenPdfOcrFallback}
+                                        savedHighlights={getPdfHighlightsForPage(currentPageIndex + 2)}
+                                        onOpenHighlight={openSavedHighlight}
                                       />
                                     </div>
                                   )}
@@ -3332,8 +3455,11 @@ export const Books: React.FC = () => {
                                     status={pdfOcrPages[currentPageIndex + 1]?.status || 'idle'}
                                     progressLabel={pdfOcrPages[currentPageIndex + 1]?.progressLabel}
                                     onSelectAreas={(areas, selectedText) => void handlePdfOcrAreasSelected(currentPageIndex + 1, areas, selectedText)}
+                                    onOpenContextMenu={({ clientX, clientY, text }) => openReaderContextMenu(clientX, clientY, text)}
                                     onRetry={() => void ensurePdfOcrPage(currentPageIndex + 1)}
                                     onFallback={handleOpenPdfOcrFallback}
+                                    savedHighlights={getPdfHighlightsForPage(currentPageIndex + 1)}
+                                    onOpenHighlight={openSavedHighlight}
                                   />
                                 </div>
                               )}
@@ -3528,6 +3654,7 @@ export const Books: React.FC = () => {
                       </button>
                     </div>
                   )}
+                  </div>
 
                   {(bookChapters || pdfData) && hasPrev && (
                     <button
@@ -3589,6 +3716,9 @@ export const Books: React.FC = () => {
 
                 {/* Docked annotations drawer */}
                 <aside
+                  ref={annotationsDrawerPanelRef}
+                  id="book-reader-annotations"
+                  className={`book-reader__side-drawer book-reader__side-drawer--annotations ${isAnnotationsDrawerOpen ? 'is-open' : ''}`}
                   aria-hidden={!isAnnotationsDrawerOpen}
                   style={{
                     gridColumn: 3,
@@ -3606,15 +3736,12 @@ export const Books: React.FC = () => {
                     boxShadow: 'none',
                     display: 'flex',
                     flexDirection: 'column',
-                    opacity: isAnnotationsDrawerOpen ? 1 : 0,
-                    transition:
-                      'opacity 0.15s ease, padding 0.2s ease, border-left-width 0.2s ease',
                     pointerEvents: isAnnotationsDrawerOpen ? 'auto' : 'none',
                     zIndex: 10,
                   }}
                 >
                   {/* Inline editor inside right sidebar instead of overlay popover to prevent shifting */}
-                  {selectedHighlightText && (
+                  {selectedHighlightText && isSelectionEditorOpen && (
                     <div
                       style={{
                         padding: '12px',
@@ -3704,6 +3831,8 @@ export const Books: React.FC = () => {
                           className="btn sm"
                           onClick={() => {
                             setSelectedHighlightText('')
+                            setSelectedHighlightAnchor(null)
+                            setIsSelectionEditorOpen(false)
                             setNewAnnotation('')
                           }}
                           style={{ padding: '4px 8px', fontSize: '11px' }}
@@ -3712,7 +3841,7 @@ export const Books: React.FC = () => {
                         </button>
                         <button
                           className="btn sm primary"
-                          onClick={handleAddHighlight}
+                          onClick={() => void handleAddHighlight()}
                           style={{ padding: '4px 8px', fontSize: '11px' }}
                         >
                           <Save size={10} /> {t('books.save_annotation_btn')}
@@ -3760,6 +3889,8 @@ export const Books: React.FC = () => {
                     {highlights.map((hl) => (
                       <div
                         key={hl.id}
+                        data-reader-annotation-id={hl.id}
+                        className={`book-reader__annotation-card ${activeHighlightId === hl.id ? 'is-active' : ''}`}
                         style={{
                           padding: '10px',
                           backgroundColor: readerCardBg,

@@ -16,6 +16,78 @@ export type TocEntry = {
 export type EpubLayoutMode = 'single' | 'dual' | 'scroll'
 export type PdfLayoutMode = 'single' | 'dual' | 'scroll' | 'simulation'
 
+export type ReaderHighlightAnchor = {
+  chapter?: string
+  chapterIndex?: number
+  blockOffset?: number
+  startOffset?: number
+  endOffset?: number
+  pageNumber?: number
+  areas?: Array<{ x: number; y: number; width: number; height: number }>
+}
+
+export type ReaderHighlight = {
+  id: string
+  text: string
+  annotation?: string
+  anchor?: string | ReaderHighlightAnchor | null
+}
+
+export type ReaderTextSegment = {
+  text: string
+  highlight?: ReaderHighlight
+}
+
+export const parseReaderHighlightAnchor = (anchor: ReaderHighlight['anchor']) => {
+  if (!anchor) return null
+  if (typeof anchor !== 'string') return anchor
+  try {
+    const parsed = JSON.parse(anchor)
+    return parsed && typeof parsed === 'object' ? (parsed as ReaderHighlightAnchor) : null
+  } catch {
+    return null
+  }
+}
+
+export const getReaderTextSegments = (
+  text: string,
+  highlights: ReaderHighlight[],
+  chapterIndex: number,
+  blockOffset: number,
+  chapter: string,
+): ReaderTextSegment[] => {
+  const ranges = highlights.flatMap((highlight) => {
+    const anchor = parseReaderHighlightAnchor(highlight.anchor)
+    const isPreciseAnchor =
+      anchor?.chapterIndex === chapterIndex &&
+      anchor.blockOffset === blockOffset &&
+      Number.isInteger(anchor.startOffset) &&
+      Number.isInteger(anchor.endOffset)
+    if (isPreciseAnchor) {
+      const start = Math.max(0, Math.min(text.length, anchor.startOffset as number))
+      const end = Math.max(start, Math.min(text.length, anchor.endOffset as number))
+      return end > start ? [{ start, end, highlight }] : []
+    }
+    if (anchor?.pageNumber || anchor?.areas?.length) return []
+    if (anchor?.chapter && anchor.chapter !== chapter) return []
+    const start = text.indexOf(highlight.text)
+    return start >= 0 ? [{ start, end: start + highlight.text.length, highlight }] : []
+  })
+    .sort((left, right) => left.start - right.start || right.end - left.end)
+
+  if (ranges.length === 0) return [{ text }]
+  const segments: ReaderTextSegment[] = []
+  let cursor = 0
+  for (const range of ranges) {
+    if (range.start < cursor) continue
+    if (range.start > cursor) segments.push({ text: text.slice(cursor, range.start) })
+    segments.push({ text: text.slice(range.start, range.end), highlight: range.highlight })
+    cursor = range.end
+  }
+  if (cursor < text.length) segments.push({ text: text.slice(cursor) })
+  return segments
+}
+
 export const shouldShowEpubToc = (
   isPdf: boolean,
   hasChapters: boolean,
@@ -46,10 +118,10 @@ export const getPdfPageRenderWidth = (readerWidth: number, pdfLayoutMode: PdfLay
   if (readerWidth <= 0) return 0
 
   if (pdfLayoutMode === 'dual') {
-    return Math.round(Math.max(280, Math.min(560, (readerWidth - 96) / 2)))
+    return Math.round(Math.max(280, Math.min(620, (readerWidth - 164) / 2)))
   }
 
-  return Math.round(Math.max(420, Math.min(1040, readerWidth - 80)))
+  return Math.round(Math.max(420, Math.min(1280, readerWidth - 112)))
 }
 
 export const getAnnotationEditorFocusOptions = () => ({ preventScroll: true })

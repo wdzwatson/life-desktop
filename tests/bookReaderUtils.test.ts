@@ -10,6 +10,7 @@ import {
   getPdfPageRenderWidth,
   getReadingProgressForLocation,
   getReaderContentGridColumns,
+  getReaderTextSegments,
   isReadingBlockHeading,
   decodeHtmlText,
   normalizeTocTitle,
@@ -70,15 +71,50 @@ test('reader content grid can enforce a minimum reading column width', () => {
 })
 
 test('PDF page render width uses more of the reader column', () => {
-  assert.equal(getPdfPageRenderWidth(1200, 'single'), 1040)
-  assert.equal(getPdfPageRenderWidth(1200, 'scroll'), 1040)
-  assert.equal(getPdfPageRenderWidth(1200, 'simulation'), 1040)
-  assert.equal(getPdfPageRenderWidth(1200, 'dual'), 552)
-  assert.equal(getPdfPageRenderWidth(640, 'single'), 560)
+  assert.equal(getPdfPageRenderWidth(1600, 'single'), 1280)
+  assert.equal(getPdfPageRenderWidth(1600, 'scroll'), 1280)
+  assert.equal(getPdfPageRenderWidth(1600, 'simulation'), 1280)
+  assert.equal(getPdfPageRenderWidth(1600, 'dual'), 620)
+  assert.equal(getPdfPageRenderWidth(640, 'single'), 528)
 })
 
 test('annotation editor focus does not scroll the reader', () => {
   assert.deepEqual(getAnnotationEditorFocusOptions(), { preventScroll: true })
+})
+
+test('reader highlights resolve precise character anchors and legacy text matches', () => {
+  const precise = getReaderTextSegments(
+    'Alpha beta gamma',
+    [{ id: 'precise', text: 'beta', annotation: 'note', anchor: JSON.stringify({ chapterIndex: 0, blockOffset: 2, startOffset: 6, endOffset: 10 }) }],
+    0,
+    2,
+    'Chapter',
+  )
+  assert.deepEqual(precise.map((segment) => [segment.text, segment.highlight?.id]), [
+    ['Alpha ', undefined],
+    ['beta', 'precise'],
+    [' gamma', undefined],
+  ])
+
+  const legacy = getReaderTextSegments(
+    'Legacy selection remains visible',
+    [{ id: 'legacy', text: 'selection', anchor: JSON.stringify({ chapter: 'Chapter' }) }],
+    0,
+    0,
+    'Chapter',
+  )
+  assert.equal(legacy.find((segment) => segment.highlight)?.text, 'selection')
+})
+
+test('PDF highlight anchors are not matched into EPUB paragraphs', () => {
+  const segments = getReaderTextSegments(
+    'PDF text',
+    [{ id: 'pdf', text: 'PDF', anchor: JSON.stringify({ pageNumber: 2, areas: [{ x: 0, y: 0, width: 1, height: 1 }] }) }],
+    0,
+    0,
+    'Chapter',
+  )
+  assert.deepEqual(segments, [{ text: 'PDF text' }])
 })
 
 test('content clicks close drawers only when no text is selected', () => {

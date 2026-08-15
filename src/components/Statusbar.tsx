@@ -7,19 +7,22 @@ export const Statusbar: React.FC = () => {
   const { t } = useTranslation()
   const activeScreen = useAppStore((state) => state.activeScreen)
   const toastMessage = useAppStore((state) => state.toastMessage)
+  const toastId = useAppStore((state) => state.toastId)
+  const [renderedToast, setRenderedToast] = useState<string | null>(toastMessage)
+  const [isToastVisible, setIsToastVisible] = useState(Boolean(toastMessage))
 
   // Local counts fetched from SQLite
   const [taskCount, setTaskCount] = useState(0)
   const [recurCount, setRecurCount] = useState(0)
   const userId = useAppStore((state) => state.userId)
 
-  const toastTone = toastMessage
-    ? /失败|错误|无法|失败|failed|error|unable|could not|cannot|not ready/i.test(toastMessage)
+  const toastTone = renderedToast
+    ? /失败|错误|无法|失败|failed|error|unable|could not|cannot|not ready/i.test(renderedToast)
       ? 'error'
-      : /删除|清除|delete|removed|cleared/i.test(toastMessage)
+      : /删除|清除|delete|removed|cleared/i.test(renderedToast)
         ? 'warning'
         : /成功|已保存|保存|完成|解锁|已复制|created|saved|completed|success|unlocked|copied/i.test(
-            toastMessage,
+            renderedToast,
           )
           ? 'success'
           : 'info'
@@ -33,6 +36,30 @@ export const Statusbar: React.FC = () => {
         : toastTone === 'success'
           ? CheckCircle2
           : Info
+
+  useEffect(() => {
+    let exitTimer: number | undefined
+    let enterFrame: number | undefined
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    if (toastMessage) {
+      setRenderedToast(toastMessage)
+      if (reducedMotion) {
+        setIsToastVisible(true)
+      } else {
+        setIsToastVisible(false)
+        enterFrame = window.requestAnimationFrame(() => setIsToastVisible(true))
+      }
+    } else if (renderedToast) {
+      setIsToastVisible(false)
+      exitTimer = window.setTimeout(() => setRenderedToast(null), reducedMotion ? 0 : 220)
+    }
+
+    return () => {
+      if (enterFrame !== undefined) window.cancelAnimationFrame(enterFrame)
+      if (exitTimer !== undefined) window.clearTimeout(exitTimer)
+    }
+  }, [renderedToast, toastId, toastMessage])
 
   // Fetch counts when user database changes or screen switches
   useEffect(() => {
@@ -78,14 +105,14 @@ export const Statusbar: React.FC = () => {
       </div>
 
       {/* Global overlay Toast notifications */}
-      {toastMessage && (
+      {renderedToast && (
         <div
-          className={`toast-notification toast-notification--${toastTone}`}
+          className={`toast-notification toast-notification--${toastTone} ${isToastVisible ? 'is-visible' : 'is-closing'}`}
           role="status"
           aria-live="polite"
         >
           <ToastIcon size={16} strokeWidth={2.2} aria-hidden="true" />
-          {toastMessage}
+          {renderedToast}
         </div>
       )}
     </footer>

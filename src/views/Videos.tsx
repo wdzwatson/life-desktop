@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useGSAP } from '@gsap/react'
-import gsap from 'gsap'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
+import { useDrawerTransition } from '../components/useDrawerTransition'
 import {
   AlertTriangle,
   Database,
@@ -40,14 +39,13 @@ import {
   getVideoGroupOptions,
   getVideoLibraryVideos,
   getVideoSourceUrl,
-  nextVideoDrawerState,
   normalizeVideoGroupName,
   parseTagInput,
   runVideoDownloadTasksWithLimit,
   toggleSelectedTag,
   toggleBulkSelection,
 } from './videoLibraryUtils'
-import type { VideoDrawerAction, VideoDrawerState, VideoEngineStatus } from './videoLibraryUtils'
+import type { VideoDrawerAction, VideoEngineStatus } from './videoLibraryUtils'
 import {
   applyParsedVideoMetadataDefaults,
   canEditVideoDetails,
@@ -101,8 +99,6 @@ import type {
   VideoTagRecord,
 } from './videoTypes'
 import type { VideoSortKey } from './videoTypes'
-
-gsap.registerPlugin(useGSAP)
 
 type FilterId = number | null | 'all'
 
@@ -173,8 +169,14 @@ export const Videos: React.FC = () => {
   const [activeGroupId, setActiveGroupId] = useState<FilterId>('all')
   const [activeTag, setActiveTag] = useState<string | null>(null)
   const [selectedVideo, setSelectedVideo] = useState<any | null>(null)
-  const [drawerState, setDrawerState] = useState<VideoDrawerState>({ open: false })
-  const [isDrawerMounted, setIsDrawerMounted] = useState(false)
+  const {
+    isDrawerOpen,
+    isDrawerMounted,
+    openDrawer,
+    closeDrawer,
+    drawerOverlayRef,
+    drawerPanelRef,
+  } = useDrawerTransition()
   const [isGroupDropdownOpen, setIsGroupDropdownOpen] = useState(false)
   const [groupDropdownFrame, setGroupDropdownFrame] = useState<ReturnType<
     typeof getFloatingDropdownFrame
@@ -189,8 +191,6 @@ export const Videos: React.FC = () => {
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
   const [videoEngineStatus, setVideoEngineStatus] = useState<VideoEngineStatus>({ status: 'idle' })
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const drawerOverlayRef = useRef<HTMLDivElement | null>(null)
-  const drawerPanelRef = useRef<HTMLElement | null>(null)
   const groupDropdownButtonRef = useRef<HTMLButtonElement | null>(null)
   const groupDropdownPanelRef = useRef<HTMLDivElement | null>(null)
   const loadDataRequestIdRef = useRef(0)
@@ -400,47 +400,6 @@ export const Videos: React.FC = () => {
   }, [playbackSpeed, playbackUrl])
 
   useEffect(() => {
-    if (drawerState.open) setIsDrawerMounted(true)
-  }, [drawerState.open])
-
-  useGSAP(
-    () => {
-      if (!isDrawerMounted) return
-      const overlay = drawerOverlayRef.current
-      const panel = drawerPanelRef.current
-      if (!overlay || !panel) return
-
-      gsap.killTweensOf([overlay, panel])
-      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      if (prefersReducedMotion) {
-        gsap.set([overlay, panel], { clearProps: 'opacity,transform' })
-        if (!drawerState.open) setIsDrawerMounted(false)
-        return
-      }
-
-      if (drawerState.open) {
-        const timeline = gsap.timeline()
-        timeline
-          .fromTo(overlay, { opacity: 0 }, { opacity: 1, duration: 0.22, ease: 'power2.out' })
-          .fromTo(
-            panel,
-            { x: 48, opacity: 0.72, scale: 0.985, transformOrigin: 'right center' },
-            { x: 0, opacity: 1, scale: 1, duration: 0.42, ease: 'power3.out' },
-            0,
-          )
-        return () => timeline.kill()
-      }
-
-      const timeline = gsap.timeline({ onComplete: () => setIsDrawerMounted(false) })
-      timeline
-        .to(panel, { x: 48, opacity: 0, scale: 0.985, duration: 0.28, ease: 'power2.in' })
-        .to(overlay, { opacity: 0, duration: 0.2, ease: 'power1.in' }, 0.04)
-      return () => timeline.kill()
-    },
-    { dependencies: [drawerState.open, isDrawerMounted] },
-  )
-
-  useEffect(() => {
     setBulkSelectedVideoIds((current) =>
       current.filter((id) => localVideos.some((video) => video.id === id)),
     )
@@ -536,7 +495,8 @@ export const Videos: React.FC = () => {
   const bulkActionLabels = getBulkMetadataActionLabels()
   const bulkTagButtonLabels = getBulkTagEditButtonLabels()
   const updateDrawer = (action: VideoDrawerAction) => {
-    setDrawerState((current) => nextVideoDrawerState(current, action))
+    if (action === 'open-details') openDrawer()
+    else closeDrawer()
   }
   const toggleGroupDropdown = () => {
     if (isGroupDropdownOpen) {
@@ -1605,6 +1565,9 @@ export const Videos: React.FC = () => {
       </div>
 
       <div
+        key={activeVideoWorkspace}
+        className="tab-panel-transition"
+        role="tabpanel"
         style={{
           display: 'grid',
           gridTemplateColumns: activeVideoWorkspace === 'library' ? '240px minmax(0, 1fr)' : 'minmax(0, 1fr)',
@@ -2337,7 +2300,8 @@ export const Videos: React.FC = () => {
         <ViewportPortal>
           <div
             ref={drawerOverlayRef}
-            aria-hidden={!drawerState.open}
+            className="drawer-motion-overlay"
+            aria-hidden={!isDrawerOpen}
             onClick={() => updateDrawer('outside-click')}
             style={{
               position: 'fixed',
@@ -2346,19 +2310,15 @@ export const Videos: React.FC = () => {
               width: '100vw',
               height: '100vh',
               margin: 0,
-              backgroundColor: 'var(--overlay-drawer-bg)',
-              backdropFilter: 'blur(var(--overlay-drawer-blur))',
-              WebkitBackdropFilter: 'blur(var(--overlay-drawer-blur))',
               display: 'flex',
               justifyContent: 'flex-end',
-              pointerEvents: drawerState.open ? 'auto' : 'none',
-              willChange: 'opacity',
+              pointerEvents: isDrawerOpen ? 'auto' : 'none',
             }}
           >
             <aside
               ref={drawerPanelRef}
               onClick={(event) => event.stopPropagation()}
-              className="card"
+              className="drawer-motion-panel card"
               style={{
                 width: '360px',
                 maxWidth: 'calc(100vw - 24px)',
@@ -2372,7 +2332,6 @@ export const Videos: React.FC = () => {
                 flexDirection: 'column',
                 gap: '12px',
                 boxShadow: 'var(--shadow-lg, 0 18px 45px rgba(15, 23, 42, 0.18))',
-                willChange: 'transform, opacity',
               }}
             >
               <header style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

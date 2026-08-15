@@ -23,7 +23,7 @@ const appCss = readFileSync(path.resolve('src/index.css'), 'utf8')
 test('tool approval and media viewer trap focus, close with Escape, and restore focus', () => {
   assert.match(approval, /<AccessibleDialog[\s\S]*role="alertdialog"[\s\S]*returnFocus=\{returnFocus\}[\s\S]*initialFocusRef=\{rejectRef\}/)
   assert.match(viewer, /<AccessibleDialog[\s\S]*returnFocus=[\s\S]*initialFocusRef=\{closeRef\}/)
-  assert.match(dialog, /event\.key === 'Escape'[\s\S]*latestOnCloseRef\.current\(\)/)
+  assert.match(dialog, /event\.key === 'Escape'[\s\S]*requestClose\(\)/)
   assert.match(dialog, /getTrappedFocusIndex[\s\S]*items\[nextIndex\]\.focus\(\)/)
   assert.match(dialog, /queueMicrotask\(\(\) =>[\s\S]*shouldRestoreDialogFocus\(mountedContent\)[\s\S]*latestReturnFocusRef\.current\?\.\(\)/)
   assert.match(workspace, /returnFocus=\{\(\) => textareaRef\.current\?\.focus\(\)\}/)
@@ -69,9 +69,9 @@ test('generated images and videos always expose localized accessible names', () 
 })
 
 test('AI controls and run states retain visible keyboard focus and theme-derived contrast', () => {
-  assert.match(css, /\.ai-chat-shell :is\(button, a, input, select, textarea, \[tabindex\]\):focus-visible[\s\S]*outline:\s*1px solid/)
+  assert.match(css, /\.ai-chat-shell :is\(button, a, input, textarea, \[tabindex\]\):focus-visible,[\s\S]*\.dropdown__control--is-focused[\s\S]*outline:\s*1px solid/)
   assert.match(css, /\.ai-chat-composer textarea:focus-visible[\s\S]*outline:\s*0/)
-  assert.match(css, /\.ai-chat-stage__controls select:focus-visible[\s\S]*outline:\s*0/)
+  assert.match(css, /\.ai-chat-shell \.ai-chat-stage__controls \.dropdown__control--is-focused[\s\S]*outline:\s*0/)
   assert.match(css, /--ai-status-success:[\s\S]*--ai-status-warning:[\s\S]*--ai-status-danger:/)
   assert.match(css, /dd\.is-completed[\s\S]*var\(--ai-status-success\)/)
   assert.match(css, /dd\.is-cancelled,[\s\S]*dd\.is-interrupted[\s\S]*var\(--ai-status-warning\)/)
@@ -94,8 +94,11 @@ test('screen-reader labels stay visually hidden and the run inspector overlays e
   assert.match(workspace, /id="ai-run-inspector"[\s\S]*showRunInspector \? 'is-open'/)
   assert.match(css, /\.ai-chat-workspace\s*\{[\s\S]*grid-template-columns:\s*minmax\(220px, 250px\) minmax\(0, 1fr\)/)
   assert.match(css, /\.ai-run-inspector-toggle\s*\{[\s\S]*display:\s*inline-flex/)
-  assert.match(css, /\.ai-run-inspector\s*\{[\s\S]*display:\s*none/)
-  assert.match(css, /\.ai-run-inspector\.is-open[\s\S]*position:\s*absolute[\s\S]*display:\s*flex/)
+  assert.match(workspace, /id="ai-run-inspector"[\s\S]*aria-hidden=\{!showRunInspector\}/)
+  assert.match(workspace, /useDrawerPanelTransition\(showRunInspector\)/)
+  assert.match(workspace, /ref=\{runInspectorPanelRef\}[\s\S]*id="ai-run-inspector"/)
+  assert.match(css, /\.ai-run-inspector\s*\{[\s\S]*display:\s*flex[\s\S]*opacity:\s*0[\s\S]*visibility:\s*hidden/)
+  assert.match(css, /\.ai-run-inspector\.is-open[\s\S]*opacity:\s*1[\s\S]*visibility:\s*visible/)
   assert.match(css, /\.ai-run-inspector__close\s*\{[\s\S]*display:\s*grid/)
   assert.match(workspace, /const closeRunInspector = useCallback[\s\S]*runInspectorToggleRef\.current\?\.focus\(\)/)
   assert.match(workspace, /event\.key !== 'Escape'[\s\S]*closeRunInspector\(\)/)
@@ -109,8 +112,8 @@ test('accessible dialogs stay fixed to the viewport and lock document scrolling'
 })
 
 test('provider creation uses a full-height settings drawer with focus restoration', () => {
-  assert.match(providerManager, /overlayClassName="ai-settings-drawer-overlay"/)
-  assert.match(providerManager, /contentClassName="ai-settings-drawer ai-settings-drawer--provider"/)
+  assert.match(providerManager, /overlayClassName=\{`drawer-motion-overlay ai-settings-drawer-overlay/)
+  assert.match(providerManager, /contentClassName="drawer-motion-panel ai-settings-drawer ai-settings-drawer--provider"/)
   assert.match(providerManager, /returnFocus=\{\(\) => drawerTriggerRef\.current\?\.focus\(\)\}/)
   assert.match(providerManager, /closeOnOverlay/)
   assert.match(css, /\.ai-settings-drawer-overlay\s*\{[\s\S]*place-items:\s*stretch end[\s\S]*padding:\s*0/)
@@ -164,7 +167,7 @@ test('provider and model editors separate connection settings from the model cat
   assert.doesNotMatch(modelManager, /providerName|setDefaultAIProvider/)
   assert.doesNotMatch(modelManager, /ai-model-form__intro/)
   assert.match(modelManager, /api\.syncAIModels/)
-  assert.match(css, /\.ai-model-toolbar > select\s*\{[\s\S]*min-height:\s*38px/)
+  assert.match(css, /\.ai-model-toolbar > \.dropdown\s*\{[\s\S]*min-height:\s*38px/)
 })
 
 test('model switching only changes the model used by the next run', () => {
@@ -208,8 +211,8 @@ test('model switch dividers persist as conversation events without entering mess
 })
 
 test('agent creation reuses the settings drawer and returns focus to its trigger', () => {
-  assert.match(agentManager, /overlayClassName="ai-settings-drawer-overlay"/)
-  assert.match(agentManager, /contentClassName="ai-settings-drawer ai-settings-drawer--agent"/)
+  assert.match(agentManager, /overlayClassName=\{`drawer-motion-overlay ai-settings-drawer-overlay/)
+  assert.match(agentManager, /contentClassName="drawer-motion-panel ai-settings-drawer ai-settings-drawer--agent"/)
   assert.match(agentManager, /returnFocus=\{\(\) => drawerTriggerRef\.current\?\.focus\(\)\}/)
   assert.match(agentManager, /closeOnOverlay/)
   assert.match(css, /\.ai-settings-drawer--agent\s*\{[\s\S]*width:\s*min\(700px, 100vw\)/)
@@ -217,8 +220,8 @@ test('agent creation reuses the settings drawer and returns focus to its trigger
 })
 
 test('MCP creation uses the shared drawer without changing transport logic', () => {
-  assert.match(mcpManager, /overlayClassName="ai-settings-drawer-overlay"/)
-  assert.match(mcpManager, /contentClassName="ai-settings-drawer ai-settings-drawer--mcp"/)
+  assert.match(mcpManager, /overlayClassName=\{`drawer-motion-overlay ai-settings-drawer-overlay/)
+  assert.match(mcpManager, /contentClassName="drawer-motion-panel ai-settings-drawer ai-settings-drawer--mcp"/)
   assert.match(mcpManager, /returnFocus=\{\(\) => drawerTriggerRef\.current\?\.focus\(\)\}/)
   assert.match(mcpManager, /changeTransport\(event\.target\.value as McpDraft\['transport'\]\)/)
   assert.match(css, /\.ai-settings-drawer--mcp\s*\{[\s\S]*width:\s*min\(680px, 100vw\)/)
@@ -247,6 +250,6 @@ test('streamed Markdown is rendered as one continuous response and every selecto
   assert.match(messageRenderer, /renderAIMessageMarkdown\(joinConsecutiveMarkdownParts\(message\.parts, index\)\)/)
   assert.match(css, /\.ai-message\s*\{[\s\S]*width:\s*min\(100%, 960px\)/)
   assert.match(css, /\.ai-message__markdown\s*\{[\s\S]*overflow-wrap:\s*break-word[\s\S]*word-break:\s*normal/)
-  assert.match(css, /\.ai-chat-stage__controls select\s*\{[\s\S]*position:\s*absolute[\s\S]*inset:\s*0[\s\S]*width:\s*100% !important[\s\S]*cursor:\s*pointer/)
+  assert.match(css, /\.ai-chat-stage__controls \.dropdown\s*\{[\s\S]*position:\s*absolute[\s\S]*inset:\s*0[\s\S]*width:\s*100% !important[\s\S]*cursor:\s*pointer/)
   assert.match(workspace, /className="ai-chat-stage__selector-value"/)
 })

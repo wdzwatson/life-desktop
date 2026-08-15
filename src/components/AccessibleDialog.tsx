@@ -1,7 +1,10 @@
 import {
+  useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
+  useState,
   type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
@@ -21,6 +24,21 @@ const focusableSelector = [
 let openDialogCount = 0
 let previousBodyOverflow = ''
 let previousBodyOverscrollBehavior = ''
+const DIALOG_EXIT_MS = 220
+
+function prefersReducedMotion() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+function playDetachedExitAnimation(overlay: HTMLDivElement) {
+  if (prefersReducedMotion() || overlay.classList.contains('is-closing')) return
+  const visualClone = overlay.cloneNode(true) as HTMLDivElement
+  visualClone.classList.add('is-closing', 'dialog-overlay--detached')
+  visualClone.setAttribute('aria-hidden', 'true')
+  visualClone.setAttribute('inert', '')
+  document.body.appendChild(visualClone)
+  window.setTimeout(() => visualClone.remove(), DIALOG_EXIT_MS)
+}
 
 function lockDocumentScroll() {
   if (openDialogCount === 0) {
@@ -68,6 +86,9 @@ type AccessibleDialogProps = {
   overlayClassName?: string
   contentClassName?: string
   closeOnOverlay?: boolean
+  animateExit?: boolean
+  motionOverlayRef?: RefObject<HTMLDivElement | null>
+  motionPanelRef?: RefObject<HTMLElement | null>
 }
 
 export function AccessibleDialog({
@@ -83,15 +104,56 @@ export function AccessibleDialog({
   overlayClassName,
   contentClassName,
   closeOnOverlay = false,
+  animateExit = true,
+  motionOverlayRef,
+  motionPanelRef,
 }: AccessibleDialogProps) {
   const titleId = useId()
   const contentRef = useRef<HTMLDivElement | null>(null)
+  const overlayRef = useRef<HTMLDivElement | null>(null)
+  const closeTimerRef = useRef<number | null>(null)
+  const [isClosing, setIsClosing] = useState(false)
   const latestOnCloseRef = useRef(onClose)
   const latestReturnFocusRef = useRef(returnFocus)
   const latestInitialFocusRef = useRef(initialFocusRef)
   latestOnCloseRef.current = onClose
   latestReturnFocusRef.current = returnFocus
   latestInitialFocusRef.current = initialFocusRef
+
+  const setOverlayElement = useCallback(
+    (element: HTMLDivElement | null) => {
+      overlayRef.current = element
+      if (motionOverlayRef) motionOverlayRef.current = element
+    },
+    [motionOverlayRef],
+  )
+  const setContentElement = useCallback(
+    (element: HTMLDivElement | null) => {
+      contentRef.current = element
+      if (motionPanelRef) motionPanelRef.current = element
+    },
+    [motionPanelRef],
+  )
+
+  const requestClose = useCallback(() => {
+    if (isClosing) return
+    if (!animateExit || prefersReducedMotion()) {
+      latestOnCloseRef.current()
+      return
+    }
+    setIsClosing(true)
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null
+      latestOnCloseRef.current()
+    }, DIALOG_EXIT_MS)
+  }, [animateExit, isClosing])
+
+  useLayoutEffect(() => {
+    const mountedOverlay = overlayRef.current
+    return () => {
+      if (animateExit && mountedOverlay) playDetachedExitAnimation(mountedOverlay)
+    }
+  }, [animateExit])
 
   useEffect(() => {
     const unlockDocumentScroll = lockDocumentScroll()
@@ -107,6 +169,7 @@ export function AccessibleDialog({
     focusTarget?.focus()
 
     return () => {
+      if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current)
       unlockDocumentScroll()
       queueMicrotask(() => {
         if (shouldRestoreDialogFocus(mountedContent)) latestReturnFocusRef.current?.()
@@ -117,7 +180,7 @@ export function AccessibleDialog({
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault()
-      latestOnCloseRef.current()
+      requestClose()
       return
     }
     if (event.key !== 'Tab') return
@@ -132,14 +195,16 @@ export function AccessibleDialog({
   return (
     <ViewportPortal>
       <div
-        className={`dialog-overlay${overlayClassName ? ` ${overlayClassName}` : ''}`}
+        ref={setOverlayElement}
+        data-manages-exit={animateExit ? 'true' : undefined}
+        className={`dialog-overlay${isClosing ? ' is-closing' : ''}${overlayClassName ? ` ${overlayClassName}` : ''}`}
         style={overlayStyle}
         onMouseDown={(event) => {
-          if (closeOnOverlay && event.target === event.currentTarget) latestOnCloseRef.current()
+          if (closeOnOverlay && event.target === event.currentTarget) requestClose()
         }}
       >
         <div
-          ref={contentRef}
+          ref={setContentElement}
           className={`dialog-surface${contentClassName ? ` ${contentClassName}` : ''}`}
           role={role}
           aria-modal="true"

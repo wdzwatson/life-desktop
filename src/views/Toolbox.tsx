@@ -406,6 +406,7 @@ export const Toolbox: React.FC = () => {
       {/* Tabs */}
       <div
         className="tabs toolbox-view__tabs"
+        role="tablist"
         style={{
           display: 'flex',
           gap: '4px',
@@ -414,30 +415,40 @@ export const Toolbox: React.FC = () => {
         }}
       >
         <button
+          role="tab"
+          aria-selected={toolTab === 'pomodoro'}
           className={`tab ${toolTab === 'pomodoro' ? 'active' : ''}`}
           onClick={() => setToolTab('pomodoro')}
         >
           {t('toolbox.tab_pomodoro')}
         </button>
         <button
+          role="tab"
+          aria-selected={toolTab === 'converter'}
           className={`tab ${toolTab === 'converter' ? 'active' : ''}`}
           onClick={() => setToolTab('converter')}
         >
           {t('toolbox.tab_converter')}
         </button>
         <button
+          role="tab"
+          aria-selected={toolTab === 'vault'}
           className={`tab ${toolTab === 'vault' ? 'active' : ''}`}
           onClick={() => setToolTab('vault')}
         >
           {t('toolbox.tab_vault')}
         </button>
         <button
+          role="tab"
+          aria-selected={toolTab === 'screenshot'}
           className={`tab ${toolTab === 'screenshot' ? 'active' : ''}`}
           onClick={() => setToolTab('screenshot')}
         >
           {t('toolbox.tab_screenshot')}
         </button>
         <button
+          role="tab"
+          aria-selected={toolTab === 'cleaner'}
           className={`tab ${toolTab === 'cleaner' ? 'active' : ''}`}
           onClick={() => setToolTab('cleaner')}
         >
@@ -445,7 +456,7 @@ export const Toolbox: React.FC = () => {
         </button>
       </div>
 
-      <div className="toolbox-view__body" style={{ flexGrow: toolTab === 'cleaner' ? 0 : 1, minHeight: 0, overflowY: toolTab === 'cleaner' ? 'visible' : 'auto' }}>
+      <div key={toolTab} className="toolbox-view__body tab-panel-transition" role="tabpanel" style={{ flexGrow: toolTab === 'cleaner' ? 0 : 1, minHeight: 0, overflowY: toolTab === 'cleaner' ? 'visible' : 'auto' }}>
         {toolTab === 'screenshot' && <ScreenshotTool />}
 
         {/* SUB-VIEW: POMODORO TIMER */}

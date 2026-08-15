@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Activity, Bot, Copy, Pencil, Plug, Plus, Power, Search, ShieldAlert, ShieldCheck, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
+import { useDrawerTransition } from '../../components/useDrawerTransition'
 import { useConfirmation } from '../../components/ConfirmationProvider'
 import { Dropdown } from '../../components/Dropdown'
 import { useAppStore } from '../../store/useAppStore'
@@ -39,6 +40,12 @@ export function McpManager({ onChanged }: Props) {
   const [selectedAgentIds, setSelectedAgentIds] = useState<number[]>([])
   const nameRef = useRef<HTMLInputElement | null>(null)
   const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const { isDrawerOpen, openDrawer, closeDrawer, drawerOverlayRef, drawerPanelRef } = useDrawerTransition(() => {
+    setDraft(null)
+    setEditing(null)
+    setRiskToolName('')
+    setSelectedAgentIds([])
+  })
   const api = (window as any).electronAPI
 
   const loadServers = async () => {
@@ -78,17 +85,13 @@ export function McpManager({ onChanged }: Props) {
     )
   })
 
-  const closeEditor = () => {
-    setDraft(null)
-    setEditing(null)
-    setRiskToolName('')
-    setSelectedAgentIds([])
-  }
+  const closeEditor = closeDrawer
 
   const openCreate = (trigger: HTMLButtonElement) => {
     drawerTriggerRef.current = trigger
     setEditing(null)
     setDraft(createMcpDraft())
+    openDrawer()
     setRiskToolName('')
     setSelectedAgentIds([])
     setError('')
@@ -98,6 +101,7 @@ export function McpManager({ onChanged }: Props) {
     drawerTriggerRef.current = trigger
     setEditing(server)
     setDraft(mcpToDraft(server))
+    openDrawer()
     setRiskToolName('')
     setSelectedAgentIds(agents.filter((agent) => agent.mcpServerIds.includes(server.id)).map((agent) => agent.id))
     setError('')
@@ -139,12 +143,11 @@ export function McpManager({ onChanged }: Props) {
         : await api.createAIMcpServer(payload)
       if (!response?.success) throw new Error(response?.error?.message || t('aiChat.mcp.save_failed'))
       const linkResult = await syncAgentLinks((response.data as McpServerSummary).id)
-      setDraft(null)
-      setEditing(null)
-      setSelectedAgentIds([])
+      const wasEditing = Boolean(editing)
+      closeDrawer()
       showToast(t(linkResult.changed > 0
         ? 'aiChat.mcp.saved_with_assistants'
-        : editing
+        : wasEditing
           ? 'aiChat.mcp.updated'
           : 'aiChat.mcp.created', { count: linkResult.changed }))
       await refresh()
@@ -362,9 +365,12 @@ export function McpManager({ onChanged }: Props) {
           onClose={closeEditor}
           returnFocus={() => drawerTriggerRef.current?.focus()}
           initialFocusRef={nameRef}
-          overlayClassName="ai-settings-drawer-overlay"
-          contentClassName="ai-settings-drawer ai-settings-drawer--mcp"
+          overlayClassName={`drawer-motion-overlay ai-settings-drawer-overlay ${isDrawerOpen ? 'is-open' : 'is-closing'}`}
+          contentClassName="drawer-motion-panel ai-settings-drawer ai-settings-drawer--mcp"
+          motionOverlayRef={drawerOverlayRef}
+          motionPanelRef={drawerPanelRef}
           closeOnOverlay
+          animateExit={false}
         >
           <div className="ai-mcp-form">
             <div className="ai-provider-form__grid">

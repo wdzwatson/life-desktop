@@ -11,6 +11,12 @@ export type PdfOcrSelectionArea = {
   height: number
 }
 
+type SavedPdfHighlight = {
+  id: string
+  annotation?: string
+  areas: PdfOcrSelectionArea[]
+}
+
 type SelectionPoint = { x: number; y: number }
 
 export function PdfOcrTextLayer({
@@ -18,15 +24,21 @@ export function PdfOcrTextLayer({
   status,
   progressLabel,
   onSelectAreas,
+  onOpenContextMenu,
   onRetry,
   onFallback,
+  savedHighlights = [],
+  onOpenHighlight,
 }: {
   words: PdfOcrWord[]
   status: 'idle' | 'loading' | 'ready' | 'error'
   progressLabel?: string
   onSelectAreas: (areas: PdfOcrSelectionArea[], selectedText: string) => void
+  onOpenContextMenu?: (event: { clientX: number; clientY: number; text: string }) => void
   onRetry?: () => void
   onFallback?: () => void
+  savedHighlights?: SavedPdfHighlight[]
+  onOpenHighlight?: (highlight: SavedPdfHighlight) => void
 }) {
   const { t } = useTranslation()
   const layerRef = useRef<HTMLDivElement | null>(null)
@@ -191,7 +203,10 @@ export function PdfOcrTextLayer({
     if (wordIndex < 0 || !selectedIndexes.has(wordIndex)) {
       dragStartIndexRef.current = null
       setSelectedIndexes(new Set())
+      return
     }
+    const text = getSelectedText(selectedIndexes)
+    if (text) onOpenContextMenu?.({ clientX: event.clientX, clientY: event.clientY, text })
   }
 
   if (status !== 'ready' || words.length === 0) {
@@ -235,6 +250,29 @@ export function PdfOcrTextLayer({
       onContextMenu={handleContextMenu}
       style={{ position: 'absolute', inset: 0, zIndex: 3, cursor: 'text', touchAction: 'none' }}
     >
+      {savedHighlights.flatMap((highlight) =>
+        highlight.areas.map((area, index) => (
+          <button
+            key={`${highlight.id}-${index}`}
+            type="button"
+            className="book-reader__pdf-saved-highlight"
+            aria-label={highlight.annotation || t('books.no_annotation')}
+            title={highlight.annotation || t('books.no_annotation')}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation()
+              onOpenHighlight?.(highlight)
+            }}
+            style={{
+              position: 'absolute',
+              left: `${area.x * 100}%`,
+              top: `${area.y * 100}%`,
+              width: `${area.width * 100}%`,
+              height: `${area.height * 100}%`,
+            }}
+          />
+        )),
+      )}
       {highlightRows.map((row, index) => (
         <div
           key={`${row.x}-${row.y}-${index}`}

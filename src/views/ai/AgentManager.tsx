@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Bot, Check, Copy, Pencil, Plus, Power, Search, ShieldAlert, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
+import { useDrawerTransition } from '../../components/useDrawerTransition'
 import { useConfirmation } from '../../components/ConfirmationProvider'
 import { Dropdown } from '../../components/Dropdown'
 import { useAppStore } from '../../store/useAppStore'
@@ -31,6 +32,10 @@ export function AgentManager({ onChanged }: Props) {
   const [draft, setDraft] = useState<AgentDraft | null>(null)
   const nameRef = useRef<HTMLInputElement | null>(null)
   const drawerTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const { isDrawerOpen, openDrawer, closeDrawer, drawerOverlayRef, drawerPanelRef } = useDrawerTransition(() => {
+    setDraft(null)
+    setEditing(null)
+  })
   const api = (window as any).electronAPI
 
   const loadData = async () => {
@@ -76,16 +81,14 @@ export function AgentManager({ onChanged }: Props) {
     return !query || agent.name.toLowerCase().includes(query) || agent.description.toLowerCase().includes(query)
   })
 
-  const closeEditor = () => {
-    setDraft(null)
-    setEditing(null)
-  }
+  const closeEditor = closeDrawer
 
   const openCreate = (trigger: HTMLButtonElement) => {
     const defaultProvider = textProviders.find((provider) => provider.enabled)
     drawerTriggerRef.current = trigger
     setEditing(null)
     setDraft(createAgentDraft(defaultProvider?.id, agents.length === 0, defaultProvider?.models.text ?? ''))
+    openDrawer()
     setError('')
   }
 
@@ -93,6 +96,7 @@ export function AgentManager({ onChanged }: Props) {
     drawerTriggerRef.current = trigger
     setEditing(agent)
     setDraft(agentToDraft(agent))
+    openDrawer()
     setError('')
   }
 
@@ -106,9 +110,9 @@ export function AgentManager({ onChanged }: Props) {
         ? await api.updateAIAgent(editing.id, payload)
         : await api.createAIAgent(payload)
       if (!response?.success) throw new Error(response?.error?.message || t('aiChat.agents.save_failed'))
-      setDraft(null)
-      setEditing(null)
-      showToast(t(editing ? 'aiChat.agents.updated' : 'aiChat.agents.created'))
+      const wasEditing = Boolean(editing)
+      closeDrawer()
+      showToast(t(wasEditing ? 'aiChat.agents.updated' : 'aiChat.agents.created'))
       await refresh()
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : t('aiChat.agents.save_failed'))
@@ -253,9 +257,12 @@ export function AgentManager({ onChanged }: Props) {
           onClose={closeEditor}
           returnFocus={() => drawerTriggerRef.current?.focus()}
           initialFocusRef={nameRef}
-          overlayClassName="ai-settings-drawer-overlay"
-          contentClassName="ai-settings-drawer ai-settings-drawer--agent"
+          overlayClassName={`drawer-motion-overlay ai-settings-drawer-overlay ${isDrawerOpen ? 'is-open' : 'is-closing'}`}
+          contentClassName="drawer-motion-panel ai-settings-drawer ai-settings-drawer--agent"
+          motionOverlayRef={drawerOverlayRef}
+          motionPanelRef={drawerPanelRef}
           closeOnOverlay
+          animateExit={false}
         >
           <div className="ai-agent-form">
             <div className="ai-provider-form__grid">

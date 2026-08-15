@@ -25,13 +25,16 @@ test('task completion changes require an explicit confirmation', () => {
 
 test('task completion follows the review requirement before closing a task', () => {
   const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
-
-  assert.match(
-    tasksView,
-    /task\.requires_review\s*\?\s*TASK_STATUS\.review\s*:\s*TASK_STATUS\.closed/,
+  const taskTreeMutation = readFileSync(
+    join(process.cwd(), 'src', 'taskTreeMutation.ts'),
+    'utf8',
   )
-  assert.match(tasksView, /status = CASE WHEN requires_review = 1 THEN '待审核' ELSE '已关闭' END/)
+
+  assert.match(tasksView, /buildCompleteTaskTreeMutation\(task\.id\)/)
+  assert.match(taskTreeMutation, /SELECT requires_review FROM tasks WHERE id = \?/)
   assert.match(tasksView, /const reviewTask = async/)
+  assert.match(tasksView, /buildResolveTaskTreeMutation\(task\.id, TASK_STATUS\.closed\)/)
+  assert.match(tasksView, /buildReopenTaskTreeMutation\(task\.id\)/)
   assert.match(tasksView, /reviewTask\(task, false\)/)
   assert.match(tasksView, /reviewTask\(task, true\)/)
 })

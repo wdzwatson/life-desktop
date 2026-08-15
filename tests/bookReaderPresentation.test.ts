@@ -19,11 +19,62 @@ test('book shelf edit action remains distinct from the card surface on hover', (
 })
 
 test('reader header gives long titles a responsive, non-overlapping layout', () => {
-  assert.match(booksSource, /className="book-reader__header"/)
+  assert.match(booksSource, /className=\{`book-reader__header/)
   assert.match(booksSource, /className="book-reader__title"/)
   assert.match(booksSource, /className="book-reader__toolbar"/)
   assert.match(booksStyles, /\.book-reader__title\s*\{[\s\S]*?-webkit-line-clamp:\s*2/)
   assert.match(booksStyles, /@media \(max-width: 1180px\)[\s\S]*?overflow-x:\s*auto/)
+})
+
+test('book library defaults to the to-read shelf', () => {
+  assert.match(
+    booksSource,
+    /useState<string>\(TO_READ_BOOK_SHELF_ID\)/,
+  )
+})
+
+test('reader header stays hidden until the pointer reaches its top sensor', () => {
+  assert.match(booksSource, /className="book-reader__header-sensor"/)
+  assert.match(booksSource, /setIsReaderHeaderVisible\(true\)/)
+  assert.match(booksStyles, /\.book-reader__header\s*\{[\s\S]*?opacity:\s*0[\s\S]*?transform:\s*translateY/)
+  assert.match(booksStyles, /\.book-reader__header\.is-visible/)
+})
+
+test('reader annotations use a right-side icon control with a count badge', () => {
+  assert.match(booksSource, /book-reader__drawer-toggle--annotations/)
+  assert.match(booksSource, /className="book-reader__annotation-count"/)
+  assert.match(booksStyles, /\.book-reader__annotation-count\s*\{/)
+  assert.match(booksSource, /aria-controls="book-reader-annotations"/)
+})
+
+test('reader toolbar uses compact dropdowns and stable theme swatches', () => {
+  assert.match(booksSource, /className="book-reader__layout-dropdown"/)
+  assert.match(booksSource, /className=\{`book-reader__theme-swatch/)
+  assert.match(booksStyles, /\.book-reader__theme-swatch\s*\{[\s\S]*?flex:\s*0 0 20px[\s\S]*?padding:\s*0/)
+})
+
+test('reader selection actions are presented in a contextual menu', () => {
+  assert.match(booksSource, /className="book-reader__context-menu"/)
+  assert.match(booksSource, /copy_selected_text/)
+  assert.match(booksSource, /mark_highlight/)
+  assert.match(booksSource, /add_annotation_action/)
+  assert.match(booksSource, /translate_selected_text/)
+  assert.doesNotMatch(booksSource, /className="btn sm"\s+onClick=\{\(\) => void handleTranslateSelection\(\)\}/)
+})
+
+test('reader content expands while preserving navigation gutters', () => {
+  assert.match(booksSource, /className="book-reader__main"/)
+  assert.match(booksSource, /className=\{`book-reader__reading-surface/)
+  assert.match(booksStyles, /\.book-reader__reading-surface\s*\{[\s\S]*?width:\s*min\(100%, 1180px\)/)
+  assert.match(booksSource, /padding:\s*'32px 56px'/)
+})
+
+test('saved highlights render on the source text and open their annotation', () => {
+  assert.match(booksSource, /className=\{`book-reader__saved-highlight/)
+  assert.match(booksSource, /openSavedHighlight\(segment\.highlight\)/)
+  assert.match(booksSource, /data-reader-annotation-id=\{hl\.id\}/)
+  assert.match(booksStyles, /\.book-reader__saved-highlight:hover/)
+  assert.match(booksStyles, /\.book-reader__pdf-saved-highlight:hover/)
 })
 
 test('PDF reader provides PDF.js with bundled WASM decoder files through a stable option object', () => {

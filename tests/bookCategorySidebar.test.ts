@@ -28,7 +28,7 @@ test('books can be dropped onto a concrete shelf to update their category', () =
   assert.match(booksSource, /application\/x-lifeos-book-id/)
 })
 
-test('new libraries open in the importable all-books shelf', () => {
-  assert.match(booksSource, /useState<string>\('all'\)/)
+test('book libraries open on the to-read shelf', () => {
+  assert.match(booksSource, /useState<string>\(TO_READ_BOOK_SHELF_ID\)/)
   assert.doesNotMatch(booksSource, /disabled=\{isToReadShelfActive\}/)
 })

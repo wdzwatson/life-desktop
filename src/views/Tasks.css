@@ -1862,13 +1862,13 @@
 
 .task-drawer-backdrop {
   position: fixed;
-  z-index: 30;
+  z-index: 900;
   inset: 0;
   height: 100dvh;
   display: flex;
   justify-content: flex-end;
   overflow: hidden;
-  background: color-mix(in srgb, var(--text-main) 24%, transparent);
+  pointer-events: none;
 }
 
 .task-drawer {
@@ -1881,6 +1881,10 @@
   border-left: 1px solid var(--color-border);
   background: var(--bg-surface);
   box-shadow: -12px 0 32px color-mix(in srgb, var(--text-main) 16%, transparent);
+}
+
+.task-drawer-backdrop.is-open {
+  pointer-events: auto;
 }
 
 .task-drawer__header,

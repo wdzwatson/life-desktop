@@ -11,6 +11,10 @@ import {
 } from 'lucide-react'
 import './Dashboard.css'
 import { getBookCoverUrl } from './bookCoverUtils'
+import {
+  buildCompleteTaskTreeMutation,
+  buildReopenTaskTreeMutation,
+} from '../taskTreeMutation'
 
 export const Dashboard: React.FC = () => {
   const { t } = useTranslation()
@@ -117,9 +121,11 @@ export const Dashboard: React.FC = () => {
     const api = (window as any).electronAPI
     if (api) {
       const nextDone = currentDone ? 0 : 1
-      const nextStatus = nextDone ? '已关闭' : '待处理'
-      const query = 'UPDATE tasks SET is_completed = ?, status = ?, progress = ? WHERE id = ?'
-      await api.dbQuery('tasks', query, [nextDone, nextStatus, nextDone ? 100 : 0, id])
+      const mutation = nextDone
+        ? buildCompleteTaskTreeMutation(id)
+        : buildReopenTaskTreeMutation(id)
+      const result = await api.dbQuery('tasks', mutation.sql, mutation.params)
+      if (!result?.success) return
       showToast(nextDone ? t('dashboard.toast_task_completed') : t('dashboard.toast_task_reopened'))
 
       // Refresh list
