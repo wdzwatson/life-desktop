@@ -229,10 +229,11 @@ const PdfContinuousScrollList = React.memo(
     if (prev.pdfPageRenderWidth !== next.pdfPageRenderWidth) return false
     if (prev.pdfEstimatedPageHeight !== next.pdfEstimatedPageHeight) return false
 
-    // During auto-play, ignore currentPageIndex / renderWindowCenter changes
-    // so the reading area stays stable. Only structural changes (range, size) matter.
+    // During auto-play, only care about renderWindowCenter changes
+    // so the virtual window can advance and pre-render subsequent pages.
+    // Ignore currentPageIndex changes (they only affect TOC/header).
     if (next.isAutoPlaying) {
-      return true
+      return prev.renderWindowCenter === next.renderWindowCenter
     }
 
     // Normal mode: react to page changes
@@ -361,6 +362,7 @@ export const Books: React.FC = () => {
   // This drives the PDF virtual window so it can advance without waiting for throttled currentPageIndex
   const renderWindowCenterRef = useRef(0)
   const [renderWindowCenter, setRenderWindowCenter] = useState(0)
+  const prevIsAutoPlayingRef = useRef(false)
   const annotationInputRef = useRef<HTMLInputElement | null>(null)
   // Guards the scroll handler from fighting a programmatic scroll (button / progress jump).
   const isProgrammaticScrollRef = useRef(false)
@@ -2089,6 +2091,15 @@ export const Books: React.FC = () => {
     const isPdfScrollMode = isPdfFile && pdfLayoutMode === 'scroll' && pdfScrollRef.current && pdfNumPages > 0
 
     if (isPdfScrollMode) {
+      // 刚开始自动翻页时给用户一个明确的 loading 提示
+      if (!prevIsAutoPlayingRef.current) {
+        setIsPdfTransitioning(true)
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => setIsPdfTransitioning(false))
+        })
+      }
+      prevIsAutoPlayingRef.current = true
+
       const container = pdfScrollRef.current!
       let lastTime = performance.now()
       let currentScrollTop = container.scrollTop
