@@ -2133,6 +2133,11 @@ export const Books: React.FC = () => {
         if (nextPageIndex !== currentPdfPageIndexRef.current) {
           currentPdfPageIndexRef.current = nextPageIndex
 
+          // Always update renderWindowCenter during auto-play so the virtual window
+          // can advance and pre-render subsequent pages in time.
+          renderWindowCenterRef.current = nextPageIndex
+          setRenderWindowCenter(nextPageIndex)
+
           // Still throttle currentPageIndex (for TOC + header only)
           const now = Date.now()
           const timeSinceLastSync = now - lastSyncedPageRef.current
