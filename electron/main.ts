@@ -158,6 +158,12 @@ import {
   scaleScreenCaptureSelection,
   type ScreenCaptureRect,
 } from '../src/utils/screenCaptureSelection'
+import {
+  ApplicationLogService,
+  findLogSourceInStack,
+  installConsoleFileLogging,
+  normalizeLogSource,
+} from './logging/service'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const execFile = promisify(execFileCallback)
@@ -948,6 +954,43 @@ function reloadDouyinReaderView() {
 const BASE_DIR = path.join(app.getPath('home'), 'LifeOS')
 const CONFIG_DIR = path.join(BASE_DIR, 'config')
 const SETTINGS_FILE = path.join(CONFIG_DIR, 'settings.json')
+const applicationLogService = new ApplicationLogService(BASE_DIR, () => activeUserId)
+installConsoleFileLogging(applicationLogService)
+
+process.on('warning', (warning) => {
+  applicationLogService.write({
+    level: 'warn',
+    source: findLogSourceInStack(warning.stack),
+    details: [warning],
+  })
+})
+process.on('uncaughtExceptionMonitor', (error, origin) => {
+  applicationLogService.write({
+    level: 'error',
+    source: findLogSourceInStack(error.stack),
+    details: [`Uncaught exception (${origin})`, error],
+  })
+})
+process.on('unhandledRejection', (reason) => {
+  applicationLogService.write({
+    level: 'error',
+    source: reason instanceof Error ? findLogSourceInStack(reason.stack) : 'process',
+    details: ['Unhandled promise rejection', reason],
+  })
+})
+
+app.on('web-contents-created', (_event, contents) => {
+  if (contents.getType() === 'remote') return
+  contents.on('console-message', (details) => {
+    if (details.level === 'info') return
+    applicationLogService.write({
+      level: details.level === 'warning' ? 'warn' : details.level,
+      source: normalizeLogSource(details.sourceId, details.lineNumber),
+      details: [details.message],
+    })
+  })
+})
+
 const systemCleanerService = new SystemCleanerService({
   audit: async (record) => {
     const auditDir = path.join(BASE_DIR, 'system-cleaner')
@@ -2709,6 +2752,8 @@ registerBrowserControlIpc(
 )
 
 app.whenReady().then(async () => {
+  activeUserId = getSettings().lastUserId || 'guest'
+  applicationLogService.cleanupExpiredLogs()
   try {
     await browserControlService.start()
     await repairBrowserControlNativeHostIfInstalled(getBrowserControlRegistrationOptions())
@@ -3673,6 +3718,64 @@ ipcMain.handle('backup:selectDirectory', async () => {
   })
   if (canceled || filePaths.length === 0) return { success: false, canceled: true }
   return { success: true, path: filePaths[0] }
+})
+
+ipcMain.handle('logs:getInfo', async () => {
+  try {
+    applicationLogService.cleanupExpiredLogs()
+    return {
+      success: true,
+      directory: applicationLogService.getLogDirectory(),
+      fileCount: applicationLogService.listLogFiles().length,
+    }
+  } catch (error) {
+    console.error('Failed to inspect the application log directory:', error)
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+ipcMain.handle('logs:openDirectory', async () => {
+  try {
+    const logDirectory = applicationLogService.ensureLogDirectory()
+    const error = await shell.openPath(logDirectory)
+    if (error) throw new Error(error)
+    return { success: true, directory: logDirectory }
+  } catch (error) {
+    console.error('Failed to open the application log directory:', error)
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+ipcMain.handle('logs:export', async (event) => {
+  try {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender) || mainWindow
+    const dialogOptions = {
+      title: 'Select log export destination',
+      properties: ['openDirectory', 'createDirectory'] as Array<
+        'openDirectory' | 'createDirectory'
+      >,
+    }
+    const result = ownerWindow
+      ? await dialog.showOpenDialog(ownerWindow, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions)
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, canceled: true }
+    }
+
+    applicationLogService.cleanupExpiredLogs()
+    const logFiles = applicationLogService.listLogFiles()
+    const archive = new AdmZip()
+    for (const filePath of logFiles) archive.addLocalFile(filePath)
+
+    const safeUserId = activeUserId.replace(/[^a-zA-Z0-9_.-]/g, '_') || 'guest'
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const outputPath = path.join(result.filePaths[0], `LifeOS-logs-${safeUserId}-${timestamp}.zip`)
+    archive.writeZip(outputPath)
+    return { success: true, filePath: outputPath, fileCount: logFiles.length }
+  } catch (error) {
+    console.error('Failed to export application logs:', error)
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
 })
 
 ipcMain.handle('backup:selectFile', async (_, eventOptions?: { title?: string }) => {

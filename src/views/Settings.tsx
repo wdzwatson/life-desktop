@@ -54,6 +54,11 @@ interface RestoreInspection {
   fileCount: number
 }
 
+interface ApplicationLogInfo {
+  directory: string
+  fileCount: number
+}
+
 export const Settings: React.FC = () => {
   const { t, i18n } = useTranslation()
   const { confirm } = useConfirmation()
@@ -118,6 +123,8 @@ export const Settings: React.FC = () => {
   const [restoreBusy, setRestoreBusy] = useState(false)
   const [restoreError, setRestoreError] = useState('')
   const [restoreSuccess, setRestoreSuccess] = useState(false)
+  const [applicationLogInfo, setApplicationLogInfo] = useState<ApplicationLogInfo | null>(null)
+  const [logExportBusy, setLogExportBusy] = useState(false)
   // Password management states
   const [hasPassword, setHasPassword] = useState(false)
   const [editPassword, setEditPassword] = useState('')
@@ -159,6 +166,22 @@ export const Settings: React.FC = () => {
   useEffect(() => {
     void refreshDouyinAuth()
   }, [refreshDouyinAuth, userId])
+
+  useEffect(() => {
+    if (activeMenu !== 'security' || !api?.getApplicationLogInfo) return
+    let cancelled = false
+    void api.getApplicationLogInfo().then((result: Record<string, unknown>) => {
+      if (!cancelled && result?.success) {
+        setApplicationLogInfo({
+          directory: String(result.directory || ''),
+          fileCount: Number(result.fileCount || 0),
+        })
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [activeMenu, api, userId])
 
   // System updates listeners & triggers
   useEffect(() => {
@@ -653,6 +676,29 @@ export const Settings: React.FC = () => {
 
   const handleRestartAfterRestore = () => {
     api?.restartApp()
+  }
+
+  const handleOpenApplicationLogs = async () => {
+    if (!api?.openApplicationLogDirectory) return
+    const result = await api.openApplicationLogDirectory()
+    if (!result?.success) {
+      showToast(t('settings.logs_open_failed', { error: result?.error || '' }))
+    }
+  }
+
+  const handleExportApplicationLogs = async () => {
+    if (!api?.exportApplicationLogs || logExportBusy) return
+    setLogExportBusy(true)
+    try {
+      const result = await api.exportApplicationLogs()
+      if (result?.success) {
+        showToast(t('settings.logs_export_success', { count: result.fileCount || 0 }))
+      } else if (!result?.canceled) {
+        showToast(t('settings.logs_export_failed', { error: result?.error || '' }))
+      }
+    } finally {
+      setLogExportBusy(false)
+    }
   }
 
   return (
@@ -1425,6 +1471,43 @@ export const Settings: React.FC = () => {
                     {t('settings.restore_failed')}: {restoreError}
                   </div>
                 )}
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '20px' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 800, marginBottom: '4px' }}>
+                  {t('settings.logs_title')}
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', marginBottom: '8px' }}>
+                  {t('settings.logs_desc')}
+                </p>
+                <div
+                  style={{
+                    color: 'var(--text-muted)',
+                    fontSize: '11.5px',
+                    marginBottom: '12px',
+                    wordBreak: 'break-all',
+                  }}
+                >
+                  {applicationLogInfo?.directory || t('settings.logs_directory_loading')}
+                  {applicationLogInfo
+                    ? ` (${t('settings.logs_file_count', { count: applicationLogInfo.fileCount })})`
+                    : ''}
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button className="btn" onClick={handleOpenApplicationLogs} type="button">
+                    <FolderOpen size={14} />
+                    {t('settings.logs_open_directory')}
+                  </button>
+                  <button
+                    className="btn primary"
+                    onClick={handleExportApplicationLogs}
+                    disabled={logExportBusy}
+                    type="button"
+                  >
+                    <Download size={14} />
+                    {logExportBusy ? t('settings.logs_exporting') : t('settings.logs_export')}
+                  </button>
+                </div>
               </div>
 
               <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '20px' }}>

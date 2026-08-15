@@ -346,24 +346,16 @@ export const Books: React.FC = () => {
   const [isAnnotationsDrawerOpen, setIsAnnotationsDrawerOpen] = useState(false)
   const tocDrawerPanelRef = useDrawerPanelTransition(isTocDrawerOpen, 'left')
   const annotationsDrawerPanelRef = useDrawerPanelTransition(isAnnotationsDrawerOpen)
-  const [isReaderHeaderVisible, setIsReaderHeaderVisible] = useState(false)
-  const headerLeaveTimerRef = useRef<number | null>(null)
   const [readerMainWidth, setReaderMainWidth] = useState(0)
 
-  const showReaderHeader = useCallback(() => {
-    if (headerLeaveTimerRef.current) {
-      clearTimeout(headerLeaveTimerRef.current)
-      headerLeaveTimerRef.current = null
+  // 自动翻页期间通过 document.documentElement 强制保持 header 可见（完全绕过 React state）
+  useEffect(() => {
+    if (isAutoPlaying) {
+      document.documentElement.setAttribute('data-header-force-visible', 'true')
+    } else {
+      document.documentElement.removeAttribute('data-header-force-visible')
     }
-    setIsReaderHeaderVisible(true)
-  }, [])
-
-  const scheduleHideReaderHeader = useCallback(() => {
-    if (headerLeaveTimerRef.current) clearTimeout(headerLeaveTimerRef.current)
-    headerLeaveTimerRef.current = window.setTimeout(() => {
-      setIsReaderHeaderVisible(false)
-    }, 280)
-  }, [])
+  }, [isAutoPlaying])
   const [readerContextMenu, setReaderContextMenu] = useState<ReaderContextMenuState | null>(null)
 
   const api = (window as any).electronAPI
@@ -2985,14 +2977,10 @@ export const Books: React.FC = () => {
             <div
               className="book-reader__header-sensor"
               aria-hidden="true"
-              onMouseEnter={showReaderHeader}
-              onMouseLeave={scheduleHideReaderHeader}
             />
-            {/* Reader Header */}
+            {/* Reader Header - visibility controlled purely by CSS :hover + :focus-within + documentElement data attribute (no React state) */}
             <header
-              className={`book-reader__header ${isReaderHeaderVisible ? 'is-visible' : ''}`}
-              onMouseEnter={showReaderHeader}
-              onMouseLeave={scheduleHideReaderHeader}
+              className="book-reader__header"
               style={{
                 borderBottom: `1px solid ${readerBorderColor}`,
                 backgroundColor: readerHeaderBg,
