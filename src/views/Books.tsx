@@ -97,6 +97,143 @@ const PDF_DEFAULT_PAGE_ASPECT_RATIO = 1.414
 const PDF_CONTINUOUS_OVERSCAN = 4
 const PDF_RENDER_DEVICE_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 1.5)
 const EMPTY_PDF_HIGHLIGHTS: never[] = []
+
+// Memoized PDF continuous scroll list to isolate heavy rendering from state updates
+// during auto-play. In auto-play mode, changes to currentPageIndex / renderWindowCenter
+// are ignored so the reading area stays stable.
+type PdfContinuousScrollListProps = {
+  pdfPageIndexes: number[]
+  currentPageIndex: number
+  renderWindowCenter: number
+  isAutoPlaying: boolean
+  autoPlayRenderRange: { start: number; end: number } | null
+  pdfEstimatedPageHeight: number
+  pdfPageRenderWidth: number
+  pdfOcrPages: Record<number, PdfOcrPageState>
+  pdfHighlightsByPage: Map<number, any[]>
+  handlePdfOcrAreasSelected: (page: number, areas: any[], selectedText: string) => void
+  openReaderContextMenu: (clientX: number, clientY: number, text: string) => void
+  ensurePdfOcrPage: (page: number) => void
+  handleOpenPdfOcrFallback: () => void
+  openSavedHighlight: (highlight: any) => void
+  t: (key: string, options?: any) => string
+}
+
+const PdfContinuousScrollList = React.memo(
+  function PdfContinuousScrollList(props: PdfContinuousScrollListProps) {
+    const {
+      pdfPageIndexes,
+      currentPageIndex,
+      renderWindowCenter,
+      isAutoPlaying,
+      autoPlayRenderRange,
+      pdfEstimatedPageHeight,
+      pdfPageRenderWidth,
+      pdfOcrPages,
+      pdfHighlightsByPage,
+      handlePdfOcrAreasSelected,
+      openReaderContextMenu,
+      ensurePdfOcrPage,
+      handleOpenPdfOcrFallback,
+      openSavedHighlight,
+      t,
+    } = props
+
+    return (
+      <>
+        {pdfPageIndexes.map((idx) => {
+          let isNearViewport: boolean
+          if (isAutoPlaying && autoPlayRenderRange) {
+            isNearViewport = idx >= autoPlayRenderRange.start && idx <= autoPlayRenderRange.end
+          } else {
+            const windowCenter = isAutoPlaying ? renderWindowCenter : currentPageIndex
+            isNearViewport = Math.abs(idx - windowCenter) <= PDF_CONTINUOUS_OVERSCAN
+          }
+
+          if (!isNearViewport) {
+            return (
+              <div
+                key={idx}
+                className="book-reader__pdf-page-slot is-placeholder"
+                data-page-number={idx + 1}
+                style={{
+                  height: `${pdfEstimatedPageHeight}px`,
+                  width: `${pdfPageRenderWidth || 600}px`,
+                }}
+              >
+                {t('books.page_label', { num: idx + 1 })}
+              </div>
+            )
+          }
+
+          return (
+            <div
+              key={idx}
+              className="book-reader__pdf-page-slot is-rendered"
+              data-page-number={idx + 1}
+              style={{
+                width: `${pdfPageRenderWidth || 600}px`,
+                minHeight: `${pdfEstimatedPageHeight}px`,
+              }}
+            >
+              <Page
+                pageNumber={idx + 1}
+                devicePixelRatio={PDF_RENDER_DEVICE_PIXEL_RATIO}
+                renderTextLayer={true}
+                renderAnnotationLayer={false}
+                width={pdfPageRenderWidth || undefined}
+                loading={
+                  <div
+                    className="book-reader__pdf-page-loading"
+                    style={{ minHeight: `${pdfEstimatedPageHeight}px` }}
+                  >
+                    {t('books.pdf_rendering_page', { num: idx + 1 })}
+                  </div>
+                }
+              />
+              {(pdfOcrPages[idx + 1] || pdfHighlightsByPage.has(idx + 1)) && (
+                <PdfOcrTextLayer
+                  words={pdfOcrPages[idx + 1]?.data?.words || []}
+                  status={pdfOcrPages[idx + 1]?.status || 'idle'}
+                  progressLabel={pdfOcrPages[idx + 1]?.progressLabel}
+                  onSelectAreas={(areas, selectedText) =>
+                    void handlePdfOcrAreasSelected(idx + 1, areas, selectedText)
+                  }
+                  onOpenContextMenu={({ clientX, clientY, text }) =>
+                    openReaderContextMenu(clientX, clientY, text)
+                  }
+                  onRetry={() => void ensurePdfOcrPage(idx + 1)}
+                  onFallback={handleOpenPdfOcrFallback}
+                  savedHighlights={pdfHighlightsByPage.get(idx + 1) || EMPTY_PDF_HIGHLIGHTS}
+                  onOpenHighlight={openSavedHighlight}
+                />
+              )}
+            </div>
+          )
+        })}
+      </>
+    )
+  },
+  (prev, next) => {
+    // Custom areEqual: during auto-play, ignore currentPageIndex and renderWindowCenter
+    // so the reading area does not re-render when these values change.
+    if (prev.isAutoPlaying !== next.isAutoPlaying) return false
+    if (prev.autoPlayRenderRange !== next.autoPlayRenderRange) return false
+    if (prev.pdfPageRenderWidth !== next.pdfPageRenderWidth) return false
+    if (prev.pdfEstimatedPageHeight !== next.pdfEstimatedPageHeight) return false
+
+    if (next.isAutoPlaying) {
+      // In auto-play mode, consider the list equal (skip re-render) unless structural props changed
+      return true
+    }
+
+    // Normal mode: check values that affect virtual window
+    return (
+      prev.currentPageIndex === next.currentPageIndex &&
+      prev.renderWindowCenter === next.renderWindowCenter
+    )
+  }
+)
 type PdfOcrPageState = {
   status: 'idle' | 'loading' | 'ready' | 'error'
   data?: PdfOcrPage
@@ -216,6 +353,11 @@ export const Books: React.FC = () => {
   // This drives the PDF virtual window so it can advance without waiting for throttled currentPageIndex
   const renderWindowCenterRef = useRef(0)
   const [renderWindowCenter, setRenderWindowCenter] = useState(0)
+
+  // Fixed render range locked at the moment auto-play starts in PDF scroll mode.
+  // During auto-play we render exactly this range (no more, no less) to keep DOM stable.
+  type AutoPlayRenderRange = { start: number; end: number } | null
+  const [autoPlayRenderRange, setAutoPlayRenderRange] = useState<AutoPlayRenderRange>(null)
   const annotationInputRef = useRef<HTMLInputElement | null>(null)
   // Guards the scroll handler from fighting a programmatic scroll (button / progress jump).
   const isProgrammaticScrollRef = useRef(false)
@@ -1944,6 +2086,13 @@ export const Books: React.FC = () => {
     const isPdfScrollMode = isPdfFile && pdfLayoutMode === 'scroll' && pdfScrollRef.current && pdfNumPages > 0
 
     if (isPdfScrollMode) {
+      // Lock the render range at the moment auto-play starts to keep DOM stable
+      if (!autoPlayRenderRange) {
+        const start = Math.max(0, currentPageIndex - 2)
+        const end = pdfNumPages - 1
+        setAutoPlayRenderRange({ start, end })
+      }
+
       const container = pdfScrollRef.current!
       let lastTime = performance.now()
       let currentScrollTop = container.scrollTop
@@ -1976,13 +2125,6 @@ export const Books: React.FC = () => {
 
         if (nextPageIndex !== currentPdfPageIndexRef.current) {
           currentPdfPageIndexRef.current = nextPageIndex
-
-          // Update renderWindowCenter frequently (every page change) to keep virtual window advancing
-          // This ensures subsequent pages are pre-rendered even if currentPageIndex is throttled
-          renderWindowCenterRef.current = nextPageIndex
-          if (Math.abs(nextPageIndex - renderWindowCenter) >= 1) {
-            setRenderWindowCenter(nextPageIndex)
-          }
 
           // Still throttle currentPageIndex (for TOC + header only)
           const now = Date.now()
@@ -3626,79 +3768,23 @@ export const Books: React.FC = () => {
                                   padding: '16px 0',
                                 }}
                               >
-                                {pdfPageIndexes.map((idx) => {
-                                  // Use renderWindowCenter for virtual window during auto-play.
-                                  // This advances frequently (per page) so subsequent pages are pre-rendered,
-                                  // while currentPageIndex (throttled) only drives TOC/header.
-                                  const windowCenter = isAutoPlaying ? renderWindowCenter : currentPageIndex
-                                  const isNearViewport = Math.abs(idx - windowCenter) <= PDF_CONTINUOUS_OVERSCAN
-                                  if (!isNearViewport) {
-                                    return (
-                                      <div
-                                        key={idx}
-                                        className="book-reader__pdf-page-slot is-placeholder"
-                                        data-page-number={idx + 1}
-                                        style={{
-                                          height: `${pdfEstimatedPageHeight}px`,
-                                          width: `${pdfPageRenderWidth || 600}px`,
-                                        }}
-                                      >
-                                        {t('books.page_label', { num: idx + 1 })}
-                                      </div>
-                                    )
-                                  }
-                                  return (
-                                    <div
-                                      key={idx}
-                                      className="book-reader__pdf-page-slot is-rendered"
-                                      data-page-number={idx + 1}
-                                      style={{
-                                        width: `${pdfPageRenderWidth || 600}px`,
-                                        minHeight: `${pdfEstimatedPageHeight}px`,
-                                      }}
-                                    >
-                                      <Page
-                                        pageNumber={idx + 1}
-                                        devicePixelRatio={PDF_RENDER_DEVICE_PIXEL_RATIO}
-                                        renderTextLayer={true}
-                                        renderAnnotationLayer={false}
-                                        width={pdfPageRenderWidth || undefined}
-                                        loading={
-                                          <div
-                                            className="book-reader__pdf-page-loading"
-                                            style={{ minHeight: `${pdfEstimatedPageHeight}px` }}
-                                          >
-                                            {t('books.pdf_rendering_page', { num: idx + 1 })}
-                                          </div>
-                                        }
-                                      />
-                                      {(pdfOcrPages[idx + 1] ||
-                                        pdfHighlightsByPage.has(idx + 1)) && (
-                                        <PdfOcrTextLayer
-                                          words={pdfOcrPages[idx + 1]?.data?.words || []}
-                                          status={pdfOcrPages[idx + 1]?.status || 'idle'}
-                                          progressLabel={pdfOcrPages[idx + 1]?.progressLabel}
-                                          onSelectAreas={(areas, selectedText) =>
-                                            void handlePdfOcrAreasSelected(
-                                              idx + 1,
-                                              areas,
-                                              selectedText,
-                                            )
-                                          }
-                                          onOpenContextMenu={({ clientX, clientY, text }) =>
-                                            openReaderContextMenu(clientX, clientY, text)
-                                          }
-                                          onRetry={() => void ensurePdfOcrPage(idx + 1)}
-                                          onFallback={handleOpenPdfOcrFallback}
-                                          savedHighlights={
-                                            pdfHighlightsByPage.get(idx + 1) || EMPTY_PDF_HIGHLIGHTS
-                                          }
-                                          onOpenHighlight={openSavedHighlight}
-                                        />
-                                      )}
-                                    </div>
-                                  )
-                                })}
+                                <PdfContinuousScrollList
+                                  pdfPageIndexes={pdfPageIndexes}
+                                  currentPageIndex={currentPageIndex}
+                                  renderWindowCenter={renderWindowCenter}
+                                  isAutoPlaying={isAutoPlaying}
+                                  autoPlayRenderRange={autoPlayRenderRange}
+                                  pdfEstimatedPageHeight={pdfEstimatedPageHeight}
+                                  pdfPageRenderWidth={pdfPageRenderWidth}
+                                  pdfOcrPages={pdfOcrPages}
+                                  pdfHighlightsByPage={pdfHighlightsByPage}
+                                  handlePdfOcrAreasSelected={handlePdfOcrAreasSelected}
+                                  openReaderContextMenu={openReaderContextMenu}
+                                  ensurePdfOcrPage={ensurePdfOcrPage}
+                                  handleOpenPdfOcrFallback={handleOpenPdfOcrFallback}
+                                  openSavedHighlight={openSavedHighlight}
+                                  t={t}
+                                />
                               </div>
                             ) : (
                               <>
