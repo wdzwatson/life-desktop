@@ -3016,7 +3016,7 @@ export const Books: React.FC = () => {
                       className="book-reader__layout-dropdown"
                       value={pdfLayoutMode}
                       onChange={(e) =>
-                        startTransition(() => setPdfLayoutMode(e.target.value as PdfLayoutMode))
+                        handlePdfLayoutModeChange(e.target.value as PdfLayoutMode)
                       }
                       controlHeight={28}
                       searchable={false}
@@ -3526,6 +3526,27 @@ export const Books: React.FC = () => {
                               </div>
                             }
                           >
+                            {/* Friendly overlay during layout mode switch to prevent perceived blank flash */}
+                            {isPdfTransitioning && (
+                              <div
+                                className="pdf-transition-overlay"
+                                style={{
+                                  position: 'absolute',
+                                  inset: 0,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  backgroundColor: 'rgba(0,0,0,0.35)',
+                                  color: '#fff',
+                                  fontSize: '13px',
+                                  zIndex: 100,
+                                  pointerEvents: 'none',
+                                  borderRadius: '4px',
+                                }}
+                              >
+                                {t('books.pdf_reloading')}
+                              </div>
+                            )}
                             {pdfLayoutMode === 'scroll' ? (
                               <div
                                 style={{
