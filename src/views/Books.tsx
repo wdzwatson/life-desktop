@@ -3299,15 +3299,10 @@ export const Books: React.FC = () => {
                       className={`book-reader__side-drawer book-reader__side-drawer--toc ${isTocDrawerOpen ? 'is-open' : ''}`}
                       aria-hidden={!isTocDrawerOpen}
                       style={{
-                        gridColumn: 1,
                         minWidth: 0,
                         width: '100%',
                         height: '100%',
                         boxSizing: 'border-box',
-                        borderRight: isTocDrawerOpen
-                          ? `1px solid ${readerBorderColor}`
-                          : '0 solid transparent',
-                        padding: isTocDrawerOpen ? '16px' : '0',
                         overflowY: 'auto',
                         overflowX: 'hidden',
                         backgroundColor: isDarkReader ? '#151515' : '#FBFAF7',
@@ -3316,6 +3311,10 @@ export const Books: React.FC = () => {
                         flexDirection: 'column',
                         pointerEvents: isTocDrawerOpen ? 'auto' : 'none',
                         zIndex: 10,
+                        // Use transform instead of gridColumn to avoid layout thrash on open/close
+                        transform: isTocDrawerOpen ? 'translateX(0)' : 'translateX(-100%)',
+                        transition: 'transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)',
+                        contain: 'layout style paint',
                       }}
                     >
                       <div
