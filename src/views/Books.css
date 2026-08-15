@@ -124,7 +124,10 @@
   will-change: opacity, transform;
 }
 
-.book-reader__header.is-visible {
+/* Pure CSS hover trigger — avoids any React state updates on mouse move.
+   The invisible sensor div + direct hover on header itself controls visibility. */
+.book-reader__header-sensor:hover + .book-reader__header,
+.book-reader__header:hover {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
