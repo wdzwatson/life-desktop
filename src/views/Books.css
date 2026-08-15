@@ -155,6 +155,8 @@
   position: relative;
   opacity: 0;
   will-change: opacity, transform;
+  /* Isolate layout/paint to prevent drawer open/close from causing main content jank */
+  contain: layout style paint;
 }
 
 .book-reader__side-drawer.is-open {
