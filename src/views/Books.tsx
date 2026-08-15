@@ -3581,8 +3581,9 @@ export const Books: React.FC = () => {
                                 }}
                               >
                                 {pdfPageIndexes.map((idx) => {
-                                  const isNearViewport =
-                                    Math.abs(idx - currentPageIndex) <= PDF_CONTINUOUS_OVERSCAN
+                                  // Reduce virtual window during auto-play to lower per-frame work
+                                  const effectiveOverscan = isAutoPlaying ? 2 : PDF_CONTINUOUS_OVERSCAN
+                                  const isNearViewport = Math.abs(idx - currentPageIndex) <= effectiveOverscan
                                   if (!isNearViewport) {
                                     return (
                                       <div
