@@ -119,7 +119,6 @@ type PdfContinuousScrollListProps = {
   renderWindowCenter: number
   isAutoPlaying: boolean
   autoPlaySpeed: number
-  autoPlayRenderRange: { start: number; end: number } | null
   pdfEstimatedPageHeight: number
   pdfPageRenderWidth: number
   pdfOcrPages: Record<number, PdfOcrPageState>
@@ -140,7 +139,6 @@ const PdfContinuousScrollList = React.memo(
       renderWindowCenter,
       isAutoPlaying,
       autoPlaySpeed,
-      autoPlayRenderRange,
       pdfEstimatedPageHeight,
       pdfPageRenderWidth,
       pdfOcrPages,
@@ -230,7 +228,6 @@ const PdfContinuousScrollList = React.memo(
     // Custom areEqual for PdfContinuousScrollList
     if (prev.pdfPageRenderWidth !== next.pdfPageRenderWidth) return false
     if (prev.pdfEstimatedPageHeight !== next.pdfEstimatedPageHeight) return false
-    if (prev.autoPlayRenderRange !== next.autoPlayRenderRange) return false
 
     // During auto-play, ignore currentPageIndex / renderWindowCenter changes
     // so the reading area stays stable. Only structural changes (range, size) matter.
@@ -364,11 +361,6 @@ export const Books: React.FC = () => {
   // This drives the PDF virtual window so it can advance without waiting for throttled currentPageIndex
   const renderWindowCenterRef = useRef(0)
   const [renderWindowCenter, setRenderWindowCenter] = useState(0)
-
-  // Fixed render range locked at the moment auto-play starts in PDF scroll mode.
-  // During auto-play we render exactly this range (no more, no less) to keep DOM stable.
-  type AutoPlayRenderRange = { start: number; end: number } | null
-  const [autoPlayRenderRange, setAutoPlayRenderRange] = useState<AutoPlayRenderRange>(null)
   const annotationInputRef = useRef<HTMLInputElement | null>(null)
   // Guards the scroll handler from fighting a programmatic scroll (button / progress jump).
   const isProgrammaticScrollRef = useRef(false)
@@ -2097,13 +2089,6 @@ export const Books: React.FC = () => {
     const isPdfScrollMode = isPdfFile && pdfLayoutMode === 'scroll' && pdfScrollRef.current && pdfNumPages > 0
 
     if (isPdfScrollMode) {
-      // Lock the render range at the moment auto-play starts to keep DOM stable
-      if (!autoPlayRenderRange) {
-        const start = Math.max(0, currentPageIndex - 2)
-        const end = pdfNumPages - 1
-        setAutoPlayRenderRange({ start, end })
-      }
-
       const container = pdfScrollRef.current!
       let lastTime = performance.now()
       let currentScrollTop = container.scrollTop
@@ -3785,7 +3770,6 @@ export const Books: React.FC = () => {
                                   renderWindowCenter={renderWindowCenter}
                                   isAutoPlaying={isAutoPlaying}
                                   autoPlaySpeed={autoPlaySpeed}
-                                  autoPlayRenderRange={autoPlayRenderRange}
                                   pdfEstimatedPageHeight={pdfEstimatedPageHeight}
                                   pdfPageRenderWidth={pdfPageRenderWidth}
                                   pdfOcrPages={pdfOcrPages}
