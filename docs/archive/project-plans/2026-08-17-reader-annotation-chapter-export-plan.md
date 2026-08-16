@@ -1,6 +1,10 @@
 # PDF/EPUB 章节感知批注与导出方案
 
-状态：待审核
+状态：已归档（2026-08-17；多级目录与性能约束修订版）
+
+配套原子任务：`docs/archive/project-plans/2026-08-17-reader-annotation-chapter-export-atomic-tasks.md`
+
+本版基于部分功能已经落地的前提，新增内容应采用增量方式接入，不以重做阅读器为前提，也不把增强功能的解析成本转嫁给原有阅读路径。
 
 ## 1. 目标
 
@@ -19,6 +23,16 @@
 - PDF、EPUB、原生文本层和 OCR 文本层使用同一套持久化模型。
 - 重新解析目录或调整阅读器布局后，历史批注仍可定位或降级到可审核状态。
 
+### 非回退约束
+
+目录和批注属于增强功能，不能改变原有阅读路径的性能基线：
+
+- 第一页的加载、显示、翻页、滚动和文本选择不等待目录分析。
+- 目录分析不在 React renderer 中同步解析整个 PDF。
+- 用户选择文本后先完成可见交互和原文保存，再异步补充章节路径；不能因为章节识别而阻塞右键菜单或批注编辑器。
+- 目录缓存命中时直接使用旧结果，后台更新完成后再无感刷新，不显示空白目录。
+- 目录树和批注栏只更新受影响的节点，不因一个条目变化而重绘整个阅读器。
+
 ## 2. 当前实现与缺口
 
 当前 `books` 数据库的 `highlights` 表只有 `text`、`annotation` 和 JSON `anchor` 字段。翻译结果目前保存在 React 状态中，只有用户点击“用作批注”后才可能进入 `annotation`，因此无法区分翻译和普通批注。
@@ -32,11 +46,11 @@ PDF 原生文本选择目前通过 PDF.js 文本层的 `Range.getClientRects()` 
 
 相关代码位置：
 
-- 选择与 PDF 坐标锚点：[src/views/Books.tsx](../src/views/Books.tsx:1666)
-- 写入现有 `highlights`：[src/views/Books.tsx](../src/views/Books.tsx:2498)
-- PDF/OCR 高亮覆盖层：[src/components/PdfOcrTextLayer.tsx](../src/components/PdfOcrTextLayer.tsx:257)
-- 现有导出：[src/views/Books.tsx](../src/views/Books.tsx:2687)
-- 数据库表结构：[electron/db/schema.ts](../electron/db/schema.ts:567)
+- 选择与 PDF 坐标锚点：[src/views/Books.tsx](../../../src/views/Books.tsx:1666)
+- 写入现有 `highlights`：[src/views/Books.tsx](../../../src/views/Books.tsx:2498)
+- PDF/OCR 高亮覆盖层：[src/components/PdfOcrTextLayer.tsx](../../../src/components/PdfOcrTextLayer.tsx:257)
+- 现有导出：[src/views/Books.tsx](../../../src/views/Books.tsx:2687)
+- 数据库表结构：[electron/db/schema.ts](../../../electron/db/schema.ts:567)
 
 ## 3. 总体架构
 
@@ -75,9 +89,11 @@ flowchart TD
 对 PDF 使用以下优先级：
 
 1. PDF.js `PDFDocumentProxy.getOutline()`：PDF 自带书签，最可靠。
-2. `pdf-inspector.extractStructureElements()` + `extractTextWithPositions()`：Tagged PDF 的 H1-H6、TOC/TOCI 等结构。
-3. `pdf-inspector.extractPagesMarkdownAsync()`：无书签、无结构标签时，根据字体大小、粗体、布局和标题模式推断。
+2. `pdf-inspector.extractStructureElements()` + `extractTextWithPositions()`：Tagged PDF 的任意深度结构，包括 H1-H6、TOC/TOCI 等角色。
+3. `pdf-inspector.extractPagesMarkdownAsync()`：无书签、无结构标签时，根据字体大小、粗体、布局和标题模式推断多级标题。
 4. 仅保存页码和“未识别章节”：不要为了生成漂亮标题而伪造低置信度章节。
+
+这里不设置“两级目录”或固定最大深度。`level`、`parent_id` 和 `path` 必须支持任意深度；H1-H6 只是 PDF Tagged 结构的常见角色，不是产品层级上限。
 
 EPUB 继续使用现有 EPUB TOC 和章节/段落偏移，不需要经过 PDF 章节解析流程。
 
@@ -93,12 +109,14 @@ CREATE TABLE IF NOT EXISTS book_outline_nodes (
   source TEXT NOT NULL CHECK(source IN ('pdf-outline', 'pdf-tagged', 'pdf-inferred', 'epub-toc')),
   level INTEGER NOT NULL,
   title TEXT NOT NULL,
+  node_kind TEXT NOT NULL DEFAULT 'section',
   page_start INTEGER,
   y_start REAL,
   page_end INTEGER,
   y_end REAL,
   confidence REAL,
   sort_order INTEGER NOT NULL,
+  path_key TEXT NOT NULL,
   locator_json TEXT NOT NULL,
   parser_version TEXT NOT NULL,
   content_hash TEXT NOT NULL,
@@ -110,6 +128,9 @@ CREATE TABLE IF NOT EXISTS book_outline_nodes (
 
 CREATE INDEX IF NOT EXISTS book_outline_nodes_book_order_idx
   ON book_outline_nodes(book_id, sort_order);
+
+CREATE INDEX IF NOT EXISTS book_outline_nodes_book_path_idx
+  ON book_outline_nodes(book_id, path_key);
 ```
 
 `locator_json` 保存来源特有的跳转信息：
@@ -119,9 +140,67 @@ CREATE INDEX IF NOT EXISTS book_outline_nodes_book_order_idx
 - 推断标题：page、PDF 点坐标、标题文本匹配信息。
 - EPUB TOC：chapter index、href、paragraph offset。
 
-章节解析结果需要按文件内容哈希和解析器版本缓存。打开阅读器时先显示第一页，章节解析在后台执行；解析完成后再刷新目录，不阻塞首屏。
+`path_key` 是稳定的文档内排序路径，例如 `0001/0003/0002`，不把路径编码成固定的 `chapter`/`section` 两列。`node_kind` 可用于区分 `chapter`、`section`、`subsection`、`appendix`、`toc` 等语义，但不能限制树的深度。
 
-### 4.3 章节定位算法
+章节解析结果需要按文件内容哈希和解析器版本缓存。建议增加一次解析运行状态：
+
+```sql
+CREATE TABLE IF NOT EXISTS book_outline_runs (
+  book_id INTEGER NOT NULL,
+  content_hash TEXT NOT NULL,
+  parser_version TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('idle', 'running', 'ready', 'error')),
+  progress REAL,
+  error_message TEXT,
+  started_at TEXT,
+  completed_at TEXT,
+  PRIMARY KEY (book_id, content_hash, parser_version),
+  FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+);
+```
+
+打开阅读器时先显示第一页和已有缓存；没有缓存时目录抽屉显示“正在分析目录”，但阅读器保持可用。解析完成后只刷新目录状态和树，不重新加载 PDF 文档。
+
+### 4.3 多级树与章节路径
+
+章节树在内存中同时保留两种索引：
+
+- `childrenByParent`：用于递归渲染、展开和折叠。
+- 按 `(page_start, y_start, sort_order)` 排序的扁平区间索引：用于批注定位，不逐条扫描所有节点。
+
+每个节点的完整路径是一个数组，而不是只有“章节标题”和“小节标题”：
+
+```ts
+type OutlinePathNode = {
+  id: string
+  title: string
+  level: number
+  source: 'pdf-outline' | 'pdf-tagged' | 'pdf-inferred' | 'epub-toc'
+}
+
+type OutlinePathSnapshot = {
+  nodes: OutlinePathNode[]
+  confidence: number
+  resolvedBy: 'native-outline' | 'tagged-structure' | 'inferred-heading' | 'page-only'
+}
+```
+
+批注、导出和深链接都保存完整 `OutlinePathSnapshot.nodes`。展示时可将前两级简称为章节/小节，但不能丢弃第三级及更深层级。
+
+### 4.4 多级目录的友好交互
+
+目录抽屉应使用递归树，而不是固定的两列或两级列表：
+
+- 每个可展开节点都有独立展开/折叠状态，状态按书籍保存。
+- 当前阅读位置自动展开其祖先路径，并高亮当前最深节点。
+- 点击任意节点跳转到该节点的起始页和起始位置。
+- 提供“展开到当前章节”和“全部折叠”，不默认展开数百个后代节点。
+- 深度超过常见层级时仍保留完整数据；视觉上使用树连接线和紧凑缩进，避免侧栏宽度无限增长。
+- 目录节点超过可接受数量时使用虚拟列表或按展开分支懒渲染，不能一次性创建几千个按钮。
+
+目录分析期间显示非阻塞状态条：`正在分析目录`、`已完成部分目录`、`目录分析失败，可重试`。状态条提供重试，但不遮挡阅读区域；旧缓存存在时继续显示旧目录并标记“正在更新”。
+
+### 4.5 章节定位算法
 
 对一个选区，统一得到文档位置 `DocumentPosition`：
 
@@ -133,17 +212,21 @@ type DocumentPosition = {
   chapterIndex?: number
   blockOffset?: number
   charOffset?: number
+  outlineNodeId?: string
+  outlinePath?: OutlinePathSnapshot
 }
 ```
 
-PDF 定位使用 `(pageNumber, y)`，选择拥有最大 `page_start/y_start` 且不晚于选区起点的章节节点；优先选择最深层级节点。EPUB 使用现有 `(chapterIndex, blockOffset)` 精确匹配。
+PDF 定位使用 `(pageNumber, y)`，在预先构建的扁平区间索引中选择拥有最大 `page_start/y_start` 且不晚于选区起点的节点；同一位置优先选择最深层级节点。EPUB 使用现有 `(chapterIndex, blockOffset)` 精确匹配，并沿 EPUB TOC 父链构建完整路径。
 
 最终保存两份信息：
 
 1. `outline_node_id`：便于未来重新解析目录后修正关联。
-2. `outline_snapshot`：保存创建批注时的章节标题和完整层级，保证导出不会因目录变化而失去上下文。
+2. `outline_snapshot`：保存创建批注时的完整路径，保证导出不会因目录变化而失去上下文。
 
-如果选区跨越多个章节，使用起始章节作为主章节，同时记录 `end_outline_snapshot`；导出时在条目上标记“跨章节”，不强行拆分原文。
+用户选择时先保存 `anchor`、原文和页码，章节路径在内存索引命中时立即写入；索引尚未就绪时先写入 `location_status = 'pending'`，后台完成后更新路径。批注栏显示“章节识别中”，不阻塞用户继续编辑。
+
+如果选区跨越多个章节，使用起始节点作为主节点，同时记录 `end_outline_snapshot`；导出时标记“跨章节”，不强行拆分原文。
 
 ## 5. 统一数据模型
 
@@ -162,8 +245,11 @@ CREATE TABLE IF NOT EXISTS reader_selections (
   anchor_version INTEGER NOT NULL DEFAULT 2,
   anchor_json TEXT NOT NULL,
   locator_json TEXT NOT NULL,
+  location_status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(location_status IN ('pending', 'resolved', 'page-only', 'error')),
   outline_node_id TEXT,
   outline_snapshot_json TEXT NOT NULL,
+  end_outline_snapshot_json TEXT,
   source_hash TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -173,6 +259,9 @@ CREATE TABLE IF NOT EXISTS reader_selections (
 
 CREATE INDEX IF NOT EXISTS reader_selections_book_order_idx
   ON reader_selections(book_id, created_at);
+
+CREATE INDEX IF NOT EXISTS reader_selections_book_location_idx
+  ON reader_selections(book_id, location_status, outline_node_id);
 ```
 
 ### 5.2 `reader_annotation_items`
@@ -237,6 +326,30 @@ type ReaderAnchorV2 = {
 
 `pdfPoints` 是可选冗余定位信息，用于窗口尺寸变化或文本层变化后的重定位；当前显示仍以归一化 DOM 矩形为准。
 
+### 5.4 章节解析与阅读性能
+
+章节增强必须遵循“缓存优先、后台分析、增量更新”：
+
+- PDF 文档加载成功后先调用 PDF.js 的原生 `getOutline()`；该结果作为首选目录，不等待 `pdf-inspector`。
+- 只有原生目录为空或用户主动刷新时，才启动 `pdf-inspector` fallback。
+- `extractPagesMarkdownAsync()` 放在 Electron Worker/线程池；同步的结构和坐标 API 放在专用 Worker Thread，不在 renderer 或主进程直接运行。
+- 一个书籍同一时间只允许一个目录分析任务；新任务取消旧任务或复用其 Promise，避免重复解析。
+- 分析结果按文件内容哈希、解析器版本和 PDF 页数缓存；缓存命中直接复用，文件未变化不重新解析。
+- 新增批注不触发全书重新解析，只对当前内存目录索引做 O(log n) 定位。
+- 目录刷新只更新目录树和批注位置状态，不重建 `<Document>`、不重置滚动位置、不重新渲染已显示页面。
+
+建议把以下指标作为实现门槛，而不是上线后再观察：
+
+| 场景 | 目标 |
+|---|---|
+| 已有缓存打开阅读器 | 不增加第一页可见时间 |
+| 无缓存打开阅读器 | 目录分析不阻塞第一页和文本选择 |
+| 缓存已就绪时保存选区 | 章节定位不阻塞编辑器，目标为一次事件循环内完成 |
+| 大 PDF 后台分析 | 不阻塞滚动、翻页和窗口拖动 |
+| 目录树展开 | 只渲染当前展开分支，不能一次性渲染全部深层节点 |
+
+出现异常时保留页面级定位，`location_status` 设为 `page-only` 或 `error`，让用户可以继续使用和导出，不把失败转换成空白或不可编辑状态。
+
 ## 6. 三类批注交互与视觉设计
 
 ### 6.1 创建流程
@@ -291,6 +404,8 @@ type ExportAnnotationRecord = {
 
 章节或页码无法识别时，归入“未识别章节”，并保留页码，不丢弃条目。
 
+`chapterPath` 是完整路径数组，不允许在导出模型中降级成固定的 `chapter` 和 `section` 两个字段。导出分组按完整路径进行；同一父节点下的不同深层节点必须保持原目录顺序。
+
 ### 7.2 Markdown 导出格式
 
 建议输出如下：
@@ -327,6 +442,13 @@ type ExportAnnotationRecord = {
 
 Markdown 不依赖颜色表达类型，使用标题和文字标签；HTML、DOCX 和 PDF 导出可以在此基础上增加颜色和图标。
 
+Markdown 的标准标题通常只支持 H1-H6，但源目录不能因此截断。建议：
+
+- 书名使用 H1，前五级目录使用 H2-H6。
+- 第六级之后使用带完整路径的加粗路径行和嵌套列表，保留 `data-outline-depth` 或等价元信息。
+- HTML/DOCX/PDF 使用真实的任意深度层级，不受 Markdown 标题限制。
+- 每条记录始终附带完整面包屑，例如“第一章 / 1.2 / 1.2.3 / 1.2.3.1”。
+
 ### 7.3 增量同步
 
 当前导出会按标题覆盖整篇 Note，并且使用当前章节。建议改成：
@@ -337,6 +459,8 @@ Markdown 不依赖颜色表达类型，使用标题和文字标签；HTML、DOCX
 - 每个条目带稳定 ID，重复导出不会产生重复条目。
 
 第一阶段建议只实现 Markdown/Notes 导出，复用现有 Notes 模块；第二阶段再增加独立 `.md`、`.html`、`.docx` 和 `.pdf` 文件导出。
+
+导出生成应在后台执行。用户点击导出后立即显示“正在整理批注”，批注栏和阅读器继续可用；导出失败保留重试入口，并显示失败原因，不清空已有 Note。
 
 ## 8. 迁移策略
 
@@ -389,6 +513,27 @@ electron/worker/pdfInspectorWorker.ts
 
 `pdf-inspector` 不应直接打进 React renderer。Node N-API 版本应放在 Electron 主进程或 Worker 中，通过窄 IPC 接口返回章节结果和定位数据。
 
+### 9.1 性能与状态实现要求
+
+章节解析服务需要暴露明确状态，而不是让 UI 通过“目录是否为空”猜测状态：
+
+```ts
+type OutlineAnalysisState =
+  | { status: 'idle'; cached: boolean }
+  | { status: 'running'; cached: boolean; progress?: number; cancel: () => void }
+  | { status: 'ready'; cached: boolean; nodeCount: number; updatedAt: string }
+  | { status: 'error'; cached: boolean; message: string; retry: () => void }
+```
+
+实现上需要遵循以下边界：
+
+- `Document` 和已渲染页面组件不订阅完整目录树，只订阅当前页和当前路径。
+- 目录抽屉使用递归的 memoized 节点组件；批注栏按章节路径分组，并对大量条目使用虚拟列表。
+- 解析进度只更新状态条，不能让每个页面解析进度触发阅读器整体 React render。
+- 选择文本、打开上下文菜单、保存划线应优先于低优先级目录更新。
+- 用户关闭阅读器或切换书籍时取消目录任务，避免旧任务回写新书的章节状态。
+- 章节识别失败不回滚已保存的条目；后台只能把 `pending` 更新为 `resolved`、`page-only` 或 `error`。
+
 ## 10. 分阶段实施
 
 ### Phase 1：数据模型和迁移
@@ -403,9 +548,11 @@ electron/worker/pdfInspectorWorker.ts
 
 - PDF.js 加载成功后读取原生 outline。
 - 无 outline 时后台运行 `pdf-inspector`。
-- 保存章节树缓存和解析版本。
+- 保存任意深度章节树、父子关系、完整路径、缓存版本和运行状态。
+- 建立按页码和 y 坐标的定位索引，避免保存每条批注时扫描整棵树。
 - 给每个新选区写入章节/小节快照。
 - 对无法定位的条目标记 `confidence` 和“未识别章节”。
+- 目录更新期间继续显示旧缓存或页码目录，不阻塞阅读。
 
 ### Phase 3：三类交互
 
@@ -425,8 +572,11 @@ electron/worker/pdfInspectorWorker.ts
 ### Phase 5：质量和性能
 
 - 建立普通文本、多栏、扫描、混合、无目录和损坏容错 PDF 样本集。
+- 建立三级、五级和更深目录样本，验证父子关系、展开状态、当前路径和导出层级。
 - 验证章节定位、跨页选择、缩放重绘、OCR 选择和导出顺序。
 - 首屏不等待目录解析。
+- 对缓存命中、缓存未命中、解析失败、取消解析和大批注列表分别做交互性能测试。
+- 用性能记录确认目录能力不会增加第一页可见时间、文本选择延迟和滚动卡顿。
 - 结构/坐标解析放 Worker，主线程不被大 PDF 阻塞。
 
 ## 11. 验收标准
@@ -435,12 +585,14 @@ electron/worker/pdfInspectorWorker.ts
 - 批注栏可以只查看一种类型，并且不依赖颜色才能识别类型。
 - 每条导出记录包含原文、类型正文、章节路径、页码和深链接。
 - 原生 PDF 书签跳转优先使用 PDF.js，不被启发式标题覆盖。
+- PDF/EPUB 目录支持任意深度，目录树、批注路径和导出路径不丢失第三级及更深节点。
 - 没有目录的 PDF 不产生虚假章节，至少保留页码和“未识别章节”。
 - PDF 缩放、布局切换和重新打开后，已保存矩形仍能正确显示。
 - OCR 页面与原生文本页面共用相同的批注栏和导出格式。
 - 重复导出不会重复添加条目，删除条目会从生成区域消失。
 - 迁移前后的条目数量可核对，旧数据不因无法识别类型而丢失。
-- 大 PDF 的章节分析不阻塞第一页渲染和用户选择。
+- 大 PDF 的章节分析不阻塞第一页渲染、用户选择、翻页、滚动和窗口调整。
+- 目录分析中的加载、部分完成、失败和重试状态可理解、可操作，并且不会遮挡阅读内容。
 
 ## 12. 需要审核的决策
 
@@ -449,3 +601,4 @@ electron/worker/pdfInspectorWorker.ts
 3. 是否允许用户自定义三类颜色？第一阶段推荐固定语义颜色，后续再支持主题级调整。
 4. 第一阶段导出是否只做 Notes Markdown？推荐是，先保证章节分组和数据正确，再增加 DOCX/PDF 样式导出。
 5. 是否允许用户手动修正“未识别章节”？推荐增加“修改章节归属”入口，修正结果写入快照，不修改 PDF 原文。
+6. Markdown 中第六级之后的目录是否接受“完整路径 + 嵌套列表”的表现形式？推荐接受，以避免为了 Markdown 标题限制而截断真实目录。
