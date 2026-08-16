@@ -4,6 +4,7 @@ import fs from 'fs'
 import { ensureVideoGroupSchema } from './videoGroupSchema'
 import { initializeVaultSchema } from '../vault/schema'
 import { initializeAISchema } from '../ai/schema'
+import { ensureReaderAnnotationSchema } from '../readerAnnotationStore'
 
 const VIDEO_STATUS_CHECK =
   "CHECK(status IN ('unclassified', 'not_downloaded', 'queued', 'downloading', 'downloaded', 'download_failed', 'invalid'))"
@@ -599,6 +600,7 @@ export function initializeUserDatabase(userDbDir: string) {
       PRIMARY KEY (entity_type, entity_id, locale)
     );
   `)
+  ensureReaderAnnotationSchema(booksDb)
 
   const categoryColumns = booksDb.prepare('PRAGMA table_info(categories)').all() as { name: string }[]
   if (!categoryColumns.some((column) => column.name === 'parent_id')) {
