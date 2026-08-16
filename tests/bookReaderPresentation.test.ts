@@ -96,6 +96,11 @@ test('reader content expands while preserving navigation gutters', () => {
   assert.match(booksSource, /padding:\s*'32px 56px'/)
 })
 
+test('PDF width measurement uses the client area with scrollbar tolerance', () => {
+  assert.match(booksSource, /el\.clientWidth - PDF_SCROLLBAR_WIDTH_TOLERANCE/)
+  assert.match(booksSource, /getPdfPageRenderWidth\(pdfReaderWidth, pdfLayoutMode\)/)
+})
+
 test('saved highlights render on the source text and open their annotation', () => {
   assert.match(booksSource, /className=\{`book-reader__saved-highlight/)
   assert.match(booksSource, /openSavedHighlight\(segment\.highlight\)/)

@@ -95,6 +95,8 @@ const DEFAULT_READER_SHORTCUTS = {
 const PDF_OCR_ENGINE_VERSION = 'tesseract-v3'
 const PDF_DEFAULT_PAGE_ASPECT_RATIO = 1.414
 const PDF_CONTINUOUS_OVERSCAN = 4
+// Keep rendered pages inside the client area when a native vertical scrollbar is present.
+const PDF_SCROLLBAR_WIDTH_TOLERANCE = 16
 
 // Dynamic overscan for auto-play based on speed (seconds per page)
 // Faster speed → larger overscan to reduce blank pages
@@ -2239,6 +2241,12 @@ export const Books: React.FC = () => {
       if (!el) return
       const rect = el.getBoundingClientRect()
       const roundedReaderWidth = Math.round(rect.width)
+      // getBoundingClientRect() includes the space reserved for a native scrollbar.
+      // Use clientWidth for PDF sizing and leave a small safety margin for the
+      // scrollbar in the nested continuous-scroll viewport.
+      const pdfReaderWidth = isPdf
+        ? Math.max(0, Math.round(el.clientWidth - PDF_SCROLLBAR_WIDTH_TOLERANCE))
+        : roundedReaderWidth
       const prevWidth = lastMeasuredWidthRef.current
       const widthDelta = Math.abs(roundedReaderWidth - prevWidth)
       if (prevWidth > 0 && widthDelta > 40) {
@@ -2249,12 +2257,12 @@ export const Books: React.FC = () => {
         })
       }
       lastMeasuredWidthRef.current = roundedReaderWidth
-      setReaderMainWidth((prev) => (prev === roundedReaderWidth ? prev : roundedReaderWidth))
+      setReaderMainWidth((prev) => (prev === pdfReaderWidth ? prev : pdfReaderWidth))
       const vw = window.innerWidth
       const pdfContentWidth =
         pdfLayoutMode === 'dual'
-          ? getPdfPageRenderWidth(rect.width, pdfLayoutMode) * 2 + 20
-          : getPdfPageRenderWidth(rect.width, pdfLayoutMode)
+          ? getPdfPageRenderWidth(pdfReaderWidth, pdfLayoutMode) * 2 + 20
+          : getPdfPageRenderWidth(pdfReaderWidth, pdfLayoutMode)
       const contentWidth = isPdf
         ? Math.min(rect.width, pdfContentWidth)
         : Math.min(rect.width, 1180)
