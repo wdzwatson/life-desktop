@@ -15,6 +15,7 @@ import {
   getReaderContentGridColumns,
   getReaderTextSegments,
   isReadingBlockHeading,
+  mergePdfSelectionAreas,
   decodeHtmlText,
   normalizeTocTitle,
   resolveChapterTitleFromHtml,
@@ -96,6 +97,35 @@ test('PDF continuous scroll locates the active page with ordered page offsets', 
   })
   assert.equal(getPdfPageIndexAtOffset(largeDocument, 5_432_150), 54_321)
   assert.ok(offsetReads <= 18)
+})
+
+test('PDF selection areas merge same-line fragments across spaces and font metrics', () => {
+  const merged = mergePdfSelectionAreas([
+    { x: 0.1, y: 0.2, width: 0.04, height: 0.03 },
+    { x: 0.18, y: 0.195, width: 0.08, height: 0.04 },
+    { x: 0.3, y: 0.2, width: 0.05, height: 0.03 },
+  ])
+
+  assert.equal(merged.length, 1)
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(merged[0]).map(([key, value]) => [key, Number(value.toFixed(3))]),
+    ),
+    { x: 0.1, y: 0.195, width: 0.25, height: 0.04 },
+  )
+})
+
+test('PDF selection area merging preserves separate visual lines', () => {
+  const merged = mergePdfSelectionAreas([
+    { x: 0.1, y: 0.2, width: 0.2, height: 0.02 },
+    { x: 0.1, y: 0.25, width: 0.3, height: 0.02 },
+  ])
+
+  assert.equal(merged.length, 2)
+  assert.deepEqual(
+    merged.map((area) => area.y),
+    [0.2, 0.25],
+  )
 })
 
 test('annotation editor focus does not scroll the reader', () => {
