@@ -172,6 +172,14 @@
 - 原生目录优先级高于 fallback；深度超过两级不被截断。
 - 目录读取失败不影响第一页渲染和文本选择。
 
+完成记录：
+
+- 完成日期：2026-08-17
+- 提交：`18d941c`
+- 结果：新增 PDF.js 原生 `getOutline()` 适配器，支持命名 destination、任意深度扁平化、父路径、页码/y 坐标解析和失败/空目录状态；PDF 阅读器在 `Document` 加载成功后异步读取 outline，优先展示原生目录，失败或空目录时回退页码目录。
+- 验证：`node --test --import tsx tests/pdfOutlineAdapter.test.ts tests/bookReaderPresentation.test.ts`、`npm test`、`npm run lint`、`npm run build`、`git diff --check` 通过
+- 风险/后续：当前只完成 PDF.js 原生目录读取和 renderer 展示，尚未写入 `book_outline_nodes`；AT-06/AT-07 将继续处理 fallback、缓存、取消和统一章节索引。
+
 ### AT-06 `pdf-inspector` Worker fallback、缓存和取消
 
 目标：为无原生书签或 Tagged PDF 提供后台结构分析，同时隔离 Node API。
