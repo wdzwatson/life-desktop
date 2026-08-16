@@ -86,6 +86,14 @@
 - 非法 kind、缺少翻译语言、空批注正文和坏 Anchor 被拒绝。
 - 单页、跨页、EPUB 偏移和 page-only 定位均可序列化/反序列化且不丢字段。
 
+完成记录：
+
+- 完成日期：2026-08-17
+- 提交：`5ca8260`
+- 结果：新增统一阅读器批注领域契约，覆盖 `ReaderAnchorV2`、`DocumentPosition`、完整多级 `OutlinePathSnapshot`、三类批注、解析状态、运行状态和导出记录；新增序列化/规范化服务，支持旧 Anchor 到 v2 转换、跨页排序、EPUB 偏移、page-only 定位和深链接导出。
+- 验证：`node --test --import tsx tests/readerAnnotationSerializer.test.ts tests/bookReaderUtils.test.ts`、`npm test`、`npm run lint`、`npm run build`、`git diff --check` 通过
+- 风险/后续：当前仅建立 UI/DB 前的纯契约层；AT-03 需要把这些类型落到数据库 schema 和查询服务。
+
 ### AT-03 章节树、解析运行和批注数据库表
 
 目标：落地任意深度目录和“选区 + 条目”两层持久化模型。
