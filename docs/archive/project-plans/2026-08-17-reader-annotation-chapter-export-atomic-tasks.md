@@ -202,6 +202,14 @@
 - 原生目录为空时按 Tagged -> inferred -> page-only 顺序 fallback。
 - 大文件解析期间 renderer 可响应；切换书籍或关闭阅读器不会回写旧任务结果。
 
+完成记录：
+
+- 完成日期：2026-08-17
+- 提交：`5081473`
+- 结果：新增主进程 `ReaderOutlineService`、窄 IPC 和独立 Worker，将 `pdf-inspector` 的 Tagged / Markdown 推断 / 页码目录分析放到后台执行，并按内容哈希、解析器版本、页数缓存结果；支持取消、进度通知和旧任务隔离，renderer 只通过 IPC 读取结构化目录。
+- 验证：`node --test --import tsx tests/readerOutlineService.test.mjs tests/bookReaderPresentation.test.ts tests/screenCaptureAndReaderAssist.test.ts`、`npm test`、`npm run lint`、`npm run build`、`git diff --check` 通过
+- 风险/后续：当前目录结果已经可缓存和取消，但还没有把任意深度目录组织成统一的定位索引；AT-07 会补这一层，供后续异步归属和导出复用。
+
 ### AT-07 任意深度章节树和页码/y 坐标定位索引
 
 目标：把解析结果转换为高效可渲染、可定位的章节结构。
@@ -222,6 +230,14 @@
 
 - 定位复杂度不随批注数量线性扫描整棵树。
 - 深层节点、同页不同 y、无目录和 page-only 情况均返回稳定结果。
+
+完成记录：
+
+- 完成日期：2026-08-17
+- 提交：`c7763e3`
+- 结果：新增纯服务 `src/services/outlineIndex.ts`，把任意深度目录转换为 `childrenByParent`、`flatIndex`、`nodesById` 和完整路径快照；定位时用页码 + y 的二分索引找出不晚于选区起点的主节点，并保留 page-only 兜底和跨章节起止路径。
+- 验证：`node --import tsx --test tests/outlineIndex.test.ts tests/readerOutlineService.test.mjs`、`npm test`、`npm run lint`、`npm run build`、`git diff --check` 通过
+- 风险/后续：当前已经能稳定反推目录链，但还没有接到保存选区的异步归属流程；AT-08 会把这层索引接进 `Books.tsx` 和选区保存路径。
 
 ### AT-08 选区异步章节归属与 `pending` 状态
 
