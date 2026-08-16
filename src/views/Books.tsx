@@ -55,6 +55,7 @@ import {
   TO_READ_BOOK_SHELF_ID,
 } from './bookCategorySidebarUtils'
 import { getBookCoverUrl } from './bookCoverUtils'
+import { loadPdfOutline, type PdfOutlineEntry, type PdfOutlineLoadResult } from '../services/pdfOutlineAdapter'
 import {
   compareReaderHighlightsByDocumentPosition,
   getActiveTocIndex,
@@ -96,6 +97,8 @@ type BookBatchQueueItem = {
   error?: string
   coverWarning?: string
 }
+
+type PdfOutlineUiStatus = PdfOutlineLoadResult['status'] | 'loading'
 
 const DEFAULT_READER_SHORTCUTS = {
   readerTranslate: 'Alt+T',
@@ -395,6 +398,8 @@ export const Books: React.FC = () => {
   const [pdfNumPages, setPdfNumPages] = useState<number>(0)
   const [pdfPageAspectRatio, setPdfPageAspectRatio] = useState(PDF_DEFAULT_PAGE_ASPECT_RATIO)
   const [pdfPageAspectRatios, setPdfPageAspectRatios] = useState<Record<number, number>>({})
+  const [pdfOutlineEntries, setPdfOutlineEntries] = useState<PdfOutlineEntry[] | null>(null)
+  const [pdfOutlineStatus, setPdfOutlineStatus] = useState<PdfOutlineUiStatus>('empty')
   const [isLoadingReader, setIsLoadingReader] = useState(false)
   const [pdfLayoutMode, setPdfLayoutMode] = useState<PdfLayoutMode>('single')
   const [isPdfTransitioning, setIsPdfTransitioning] = useState(false)
@@ -1389,6 +1394,8 @@ export const Books: React.FC = () => {
     setPdfNumPages(0)
     setPdfPageAspectRatio(PDF_DEFAULT_PAGE_ASPECT_RATIO)
     setPdfPageAspectRatios({})
+    setPdfOutlineEntries(null)
+    setPdfOutlineStatus('empty')
     resumeAutoPlayAfterResizeRef.current = false
     pdfInitializedRef.current = false
 
@@ -1504,6 +1511,8 @@ export const Books: React.FC = () => {
     setPdfNumPages(0)
     setPdfPageAspectRatio(PDF_DEFAULT_PAGE_ASPECT_RATIO)
     setPdfPageAspectRatios({})
+    setPdfOutlineEntries(null)
+    setPdfOutlineStatus('empty')
     resumeAutoPlayAfterResizeRef.current = false
     setCurrentPageIndex(0)
     setSelectedHighlightText('')
@@ -2042,6 +2051,15 @@ export const Books: React.FC = () => {
     setPdfPageAspectRatio(aspectRatio)
     setPdfNumPages(numPages)
     setCurrentPageIndex(initialPage)
+
+    setPdfOutlineEntries(null)
+    setPdfOutlineStatus('empty')
+    setPdfOutlineStatus('loading')
+    void loadPdfOutline(pdfDocument).then((outlineResult) => {
+      if (sessionId !== readerSessionRef.current) return
+      setPdfOutlineStatus(outlineResult.status)
+      setPdfOutlineEntries(outlineResult.status === 'ready' ? outlineResult.entries : null)
+    })
   }
 
   const handlePdfPageAspectRatioLoaded = (pageNumber: number, ratio: number) => {
@@ -4062,38 +4080,93 @@ export const Books: React.FC = () => {
                         {isTocDrawerOpen &&
                           (() => {
                             if (isPdf) {
-                              return pdfPageIndexes.map((idx) => {
-                                const pageIndex = idx
-                                const isActive =
-                                  pdfLayoutMode === 'dual'
-                                    ? pageIndex >= currentPageIndex &&
-                                      pageIndex <= currentPageIndex + 1
-                                    : pageIndex === currentPageIndex
-                                return (
-                                  <button
-                                    key={pageIndex}
-                                    className={`book-reader__pdf-toc-page ${isActive ? 'is-active' : ''}`}
-                                    data-pdf-toc-page={pageIndex + 1}
-                                    aria-current={isActive ? 'page' : undefined}
-                                    onClick={() => {
-                                      setCurrentPageIndex(pageIndex)
-                                      setReadingProgress(
-                                        Math.round((pageIndex / (pdfNumPages - 1 || 1)) * 100),
-                                      )
-                                      if (pdfLayoutMode === 'scroll') {
-                                        requestAnimationFrame(() => {
-                                          requestAnimationFrame(() =>
-                                            scrollPdfToPage(pageIndex, 'auto'),
+                              const hasOutlineEntries = Boolean(
+                                pdfOutlineEntries && pdfOutlineEntries.length > 0,
+                              )
+                              const pdfTocEntries = hasOutlineEntries && pdfOutlineEntries
+                                ? pdfOutlineEntries
+                                : pdfPageIndexes.map((idx) => ({
+                                    id: `page-${idx + 1}`,
+                                    title: t('books.page_label', { num: idx + 1 }),
+                                    level: 0,
+                                    pathKey: `page-${idx + 1}`,
+                                    parentPathKey: null,
+                                    pageNumber: idx + 1,
+                                    y: null,
+                                    destination: null,
+                                    resolved: true,
+                                    childrenCount: 0,
+                                  }))
+                              return (
+                                <>
+                                  {pdfOutlineStatus === 'loading' && !hasOutlineEntries && (
+                                    <div
+                                      style={{
+                                        color: 'var(--text-muted)',
+                                        fontSize: '12px',
+                                        padding: '4px 8px 8px',
+                                      }}
+                                    >
+                                      {t('books.pdf_outline_loading') || '目录分析中…'}
+                                    </div>
+                                  )}
+                                  {pdfOutlineStatus === 'error' && !hasOutlineEntries && (
+                                    <div
+                                      style={{
+                                        color: 'var(--text-muted)',
+                                        fontSize: '12px',
+                                        padding: '4px 8px 8px',
+                                      }}
+                                    >
+                                      {t('books.pdf_outline_failed') || '目录读取失败，已回退到页码目录'}
+                                    </div>
+                                  )}
+                                  {pdfTocEntries.map((entry, idx) => {
+                                    const pageIndex = Math.max(0, (entry.pageNumber || idx + 1) - 1)
+                                    const isActive =
+                                      pdfLayoutMode === 'dual'
+                                        ? pageIndex >= currentPageIndex &&
+                                          pageIndex <= currentPageIndex + 1
+                                        : pageIndex === currentPageIndex
+                                    const canJump = Number.isInteger(entry.pageNumber)
+                                    return (
+                                      <button
+                                        key={entry.pathKey}
+                                        className={`book-reader__pdf-toc-page ${isActive ? 'is-active' : ''}`}
+                                        data-pdf-toc-page={entry.pageNumber ?? pageIndex + 1}
+                                        aria-current={isActive ? 'page' : undefined}
+                                        aria-disabled={!canJump}
+                                        disabled={!canJump}
+                                        onClick={() => {
+                                          if (!canJump) return
+                                          setCurrentPageIndex(pageIndex)
+                                          setReadingProgress(
+                                            Math.round((pageIndex / (pdfNumPages - 1 || 1)) * 100),
                                           )
-                                        })
-                                      }
-                                    }}
-                                    title={t('books.page_label', { num: pageIndex + 1 })}
-                                  >
-                                    {t('books.page_label', { num: pageIndex + 1 })}
-                                  </button>
-                                )
-                              })
+                                          if (pdfLayoutMode === 'scroll') {
+                                            requestAnimationFrame(() => {
+                                              requestAnimationFrame(() =>
+                                                scrollPdfToPage(pageIndex, 'auto'),
+                                              )
+                                            })
+                                          }
+                                        }}
+                                        title={
+                                          canJump
+                                            ? `${entry.title} · ${t('books.page_label', { num: pageIndex + 1 })}`
+                                            : entry.title
+                                        }
+                                        style={{
+                                          paddingLeft: `${8 + entry.level * 14}px`,
+                                          opacity: canJump ? 1 : 0.55,
+                                        }}
+                                      >
+                                        {entry.title}
+                                      </button>
+                                    )
+                                  })}
+                                </>
+                              )
                             }
 
                             if (!bookChapters) return null

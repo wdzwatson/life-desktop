@@ -48,7 +48,7 @@ test('PDF continuous mode owns its scroll viewport and excludes page-flip mode',
   assert.match(booksSource, /overflowY:\s*isPdf && pdfLayoutMode === 'scroll' \? 'hidden' : 'auto'/)
   assert.match(booksStyles, /\.book-reader__reading-surface\.is-pdf\.is-scroll\s*\{[^}]*height:\s*100%/)
   assert.match(booksSource, /onScroll=\{pdfLayoutMode === 'scroll' \? handlePdfScroll : undefined\}/)
-  assert.match(booksSource, /data-pdf-toc-page=\{pageIndex \+ 1\}/)
+  assert.match(booksSource, /loadPdfOutline\(pdfDocument\)/)
   assert.match(booksSource, /drawer\.scrollTo\(\{ top: buttonBottom - drawer\.clientHeight \}\)/)
   assert.doesNotMatch(booksSource, /value="simulation"/)
   assert.doesNotMatch(booksSource, /pdf-flip-page/)
@@ -158,4 +158,11 @@ test('PDF reader provides PDF.js with bundled WASM decoder files through a stabl
   assert.match(booksSource, /options=\{pdfDocumentOptions\}/)
   assert.match(viteConfig, /\['openjpeg\.wasm', 'qcms_bg\.wasm'\]/)
   assert.match(viteConfig, /dist', 'pdfjs', 'wasm'/)
+})
+
+test('PDF outline loads asynchronously after PDF render success and falls back cleanly', () => {
+  assert.match(booksSource, /loadPdfOutline\(pdfDocument\)/)
+  assert.match(booksSource, /setPdfOutlineStatus\('loading'\)/)
+  assert.match(booksSource, /pdfOutlineEntries/)
+  assert.match(booksSource, /pdfOutlineStatus === 'error'/)
 })
