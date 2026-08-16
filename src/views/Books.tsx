@@ -95,19 +95,17 @@ const DEFAULT_READER_SHORTCUTS = {
 const PDF_OCR_ENGINE_VERSION = 'tesseract-v3'
 const PDF_DEFAULT_PAGE_ASPECT_RATIO = 1.414
 const PDF_CONTINUOUS_OVERSCAN = 4
+const PDF_AUTOPLAY_PREFETCH_MARGIN = 2
 // Keep rendered pages inside the client area when a native vertical scrollbar is present.
 const PDF_SCROLLBAR_WIDTH_TOLERANCE = 16
 
-// Dynamic overscan for auto-play based on speed (seconds per page)
-// Faster speed → larger overscan to reduce blank pages
+// Keep a small, bounded render window during auto-play. The window advances
+// ahead of the active page instead of mounting a large speed-dependent range.
 const getEffectiveOverscan = (speed: number, isAutoPlaying: boolean): number => {
   if (!isAutoPlaying) return PDF_CONTINUOUS_OVERSCAN
 
-  // Map speed (sec/page) to overscan
-  // 15s → ~10, 8s → ~13, 5s → ~15, 3s → ~20
-  const base = 8
-  const speedFactor = Math.max(3, Math.min(18, Math.floor(36 / speed)))
-  return base + speedFactor
+  // The fastest available setting gets one extra page of lead time.
+  return speed <= 5 ? 4 : 3
 }
 const PDF_RENDER_DEVICE_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 1.5)
 const EMPTY_PDF_HIGHLIGHTS: never[] = []
@@ -123,6 +121,9 @@ type PdfContinuousScrollListProps = {
   autoPlaySpeed: number
   pdfEstimatedPageHeight: number
   pdfPageRenderWidth: number
+  pdfPageAspectRatio: number
+  pdfPageAspectRatios: Record<number, number>
+  onPageAspectRatioLoaded?: (pageNumber: number, ratio: number) => void
   pdfOcrPages: Record<number, PdfOcrPageState>
   pdfHighlightsByPage: Map<number, any[]>
   handlePdfOcrAreasSelected: (page: number, areas: any[], selectedText: string) => void
@@ -144,6 +145,8 @@ const PdfContinuousScrollList = React.memo(
       autoPlaySpeed,
       pdfEstimatedPageHeight,
       pdfPageRenderWidth,
+      pdfPageAspectRatio,
+      pdfPageAspectRatios,
       pdfOcrPages,
       pdfHighlightsByPage,
       handlePdfOcrAreasSelected,
@@ -162,6 +165,10 @@ const PdfContinuousScrollList = React.memo(
         {pdfPageIndexes.map((idx) => {
           const windowCenter = isAutoPlaying ? renderWindowCenter : currentPageIndex
           const isNearViewport = Math.abs(idx - windowCenter) <= effectiveOverscan
+          const pageRatio = pdfPageAspectRatios[idx + 1] ?? pdfPageAspectRatio
+          const pageHeight = Math.round(
+            (pdfPageRenderWidth || 600) * pageRatio,
+          )
 
           if (!isNearViewport) {
             return (
@@ -170,7 +177,7 @@ const PdfContinuousScrollList = React.memo(
                 className="book-reader__pdf-page-slot is-placeholder"
                 data-page-number={idx + 1}
                 style={{
-                  height: `${pdfEstimatedPageHeight}px`,
+                  height: `${pageHeight || pdfEstimatedPageHeight}px`,
                   width: `${pdfPageRenderWidth || 600}px`,
                 }}
               >
@@ -185,8 +192,8 @@ const PdfContinuousScrollList = React.memo(
               className="book-reader__pdf-page-slot is-rendered"
               data-page-number={idx + 1}
               style={{
+                height: `${pageHeight || pdfEstimatedPageHeight}px`,
                 width: `${pdfPageRenderWidth || 600}px`,
-                minHeight: `${pdfEstimatedPageHeight}px`,
               }}
             >
               <Page
@@ -195,13 +202,18 @@ const PdfContinuousScrollList = React.memo(
                 renderTextLayer={true}
                 renderAnnotationLayer={false}
                 width={pdfPageRenderWidth || undefined}
+                onLoadSuccess={(page) => {
+                  const ratio = page.height / page.width
+                  if (!Number.isFinite(ratio) || ratio <= 0) return
+                  props.onPageAspectRatioLoaded?.(idx + 1, ratio)
+                }}
                 onRenderSuccess={() => {
                   props.onFirstVisiblePageRendered?.()
                 }}
                 loading={
                   <div
                     className="book-reader__pdf-page-loading"
-                    style={{ minHeight: `${pdfEstimatedPageHeight}px` }}
+                    style={{ height: `${pageHeight || pdfEstimatedPageHeight}px` }}
                   >
                     {t('books.pdf_rendering_page', { num: idx + 1 })}
                   </div>
@@ -232,8 +244,13 @@ const PdfContinuousScrollList = React.memo(
   },
   (prev, next) => {
     // Custom areEqual for PdfContinuousScrollList
+    // Mode and speed affect the effective overscan and must not be skipped.
+    if (prev.isAutoPlaying !== next.isAutoPlaying) return false
+    if (prev.autoPlaySpeed !== next.autoPlaySpeed) return false
     if (prev.pdfPageRenderWidth !== next.pdfPageRenderWidth) return false
     if (prev.pdfEstimatedPageHeight !== next.pdfEstimatedPageHeight) return false
+    if (prev.pdfPageAspectRatio !== next.pdfPageAspectRatio) return false
+    if (prev.pdfPageAspectRatios !== next.pdfPageAspectRatios) return false
 
     // During auto-play, only care about renderWindowCenter changes
     // so the virtual window can advance and pre-render subsequent pages.
@@ -327,6 +344,7 @@ export const Books: React.FC = () => {
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null)
   const [pdfNumPages, setPdfNumPages] = useState<number>(0)
   const [pdfPageAspectRatio, setPdfPageAspectRatio] = useState(PDF_DEFAULT_PAGE_ASPECT_RATIO)
+  const [pdfPageAspectRatios, setPdfPageAspectRatios] = useState<Record<number, number>>({})
   const [isLoadingReader, setIsLoadingReader] = useState(false)
   const [pdfLayoutMode, setPdfLayoutMode] = useState<PdfLayoutMode>('single')
   const [isPdfTransitioning, setIsPdfTransitioning] = useState(false)
@@ -370,6 +388,7 @@ export const Books: React.FC = () => {
   const [renderWindowCenter, setRenderWindowCenter] = useState(0)
   const prevIsAutoPlayingRef = useRef(false)
   const hasNotifiedFirstPageRef = useRef(false)
+  const resumeAutoPlayAfterResizeRef = useRef(false)
   const annotationInputRef = useRef<HTMLInputElement | null>(null)
   // Guards the scroll handler from fighting a programmatic scroll (button / progress jump).
   const isProgrammaticScrollRef = useRef(false)
@@ -1313,6 +1332,8 @@ export const Books: React.FC = () => {
     setPdfData(null)
     setPdfNumPages(0)
     setPdfPageAspectRatio(PDF_DEFAULT_PAGE_ASPECT_RATIO)
+    setPdfPageAspectRatios({})
+    resumeAutoPlayAfterResizeRef.current = false
     pdfInitializedRef.current = false
 
     // Mark reading status
@@ -1426,6 +1447,8 @@ export const Books: React.FC = () => {
     setPdfData(null)
     setPdfNumPages(0)
     setPdfPageAspectRatio(PDF_DEFAULT_PAGE_ASPECT_RATIO)
+    setPdfPageAspectRatios({})
+    resumeAutoPlayAfterResizeRef.current = false
     setCurrentPageIndex(0)
     setSelectedHighlightText('')
     setSelectedHighlightAnchor(null)
@@ -1895,6 +1918,14 @@ export const Books: React.FC = () => {
     setCurrentPageIndex(initialPage)
   }
 
+  const handlePdfPageAspectRatioLoaded = (pageNumber: number, ratio: number) => {
+    setPdfPageAspectRatios((current) => {
+      const previous = current[pageNumber]
+      if (previous !== undefined && Math.abs(previous - ratio) < 0.001) return current
+      return { ...current, [pageNumber]: ratio }
+    })
+  }
+
   const handlePdfWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     if (pdfLayoutMode === 'scroll') return
 
@@ -2089,6 +2120,7 @@ export const Books: React.FC = () => {
         cancelAnimationFrame(pdfAutoScrollRafRef.current)
         pdfAutoScrollRafRef.current = null
       }
+      prevIsAutoPlayingRef.current = false
       return
     }
 
@@ -2098,27 +2130,40 @@ export const Books: React.FC = () => {
     const isPdfScrollMode = isPdfFile && pdfLayoutMode === 'scroll' && pdfScrollRef.current && pdfNumPages > 0
 
     if (isPdfScrollMode) {
-      // 刚开始自动翻页时给用户一个明确的 loading 提示
       if (!prevIsAutoPlayingRef.current) {
-        hasNotifiedFirstPageRef.current = false
-        setIsPdfTransitioning(true)
+        const currentPage = Math.max(
+          0,
+          Math.min(pdfNumPages - 1, currentPdfPageIndexRef.current),
+        )
+        renderWindowCenterRef.current = currentPage
+        setRenderWindowCenter(currentPage)
       }
       prevIsAutoPlayingRef.current = true
 
       const container = pdfScrollRef.current!
       let lastTime = performance.now()
       let currentScrollTop = container.scrollTop
+      let previousScrollHeight = container.scrollHeight
 
       const animate = (time: number) => {
         const delta = time - lastTime
         lastTime = time
 
-        const avgPageHeight = container.scrollHeight / pdfNumPages
+        const scrollHeight = container.scrollHeight
+        if (scrollHeight !== previousScrollHeight) {
+          // React/PDF.js may have changed a page's measured height between frames.
+          // Continue from the browser's post-layout position instead of overwriting
+          // its scroll anchoring with the stale local value.
+          currentScrollTop = container.scrollTop
+          previousScrollHeight = scrollHeight
+        }
+
+        const avgPageHeight = scrollHeight / pdfNumPages
         const pixelsPerMs = avgPageHeight / (autoPlaySpeed * 1000)
         const increment = pixelsPerMs * delta
 
         currentScrollTop += increment
-        const maxScroll = container.scrollHeight - container.clientHeight
+        const maxScroll = scrollHeight - container.clientHeight
 
         if (currentScrollTop >= maxScroll - 1) {
           container.scrollTop = maxScroll
@@ -2138,10 +2183,19 @@ export const Books: React.FC = () => {
         if (nextPageIndex !== currentPdfPageIndexRef.current) {
           currentPdfPageIndexRef.current = nextPageIndex
 
-          // Always update renderWindowCenter during auto-play so the virtual window
-          // can advance and pre-render subsequent pages in time.
-          renderWindowCenterRef.current = nextPageIndex
-          setRenderWindowCenter(nextPageIndex)
+          // Advance the window only when the active page reaches its front edge.
+          // Keeping a small lead avoids mounting/unmounting a page at every midpoint.
+          const renderWindowCenter = renderWindowCenterRef.current
+          const overscan = getEffectiveOverscan(autoPlaySpeed, true)
+          const prefetchThreshold = Math.max(1, overscan - PDF_AUTOPLAY_PREFETCH_MARGIN)
+          if (nextPageIndex >= renderWindowCenter + prefetchThreshold) {
+            const nextWindowCenter = Math.min(
+              pdfNumPages - 1,
+              nextPageIndex + PDF_AUTOPLAY_PREFETCH_MARGIN,
+            )
+            renderWindowCenterRef.current = nextWindowCenter
+            startTransition(() => setRenderWindowCenter(nextWindowCenter))
+          }
 
           // Still throttle currentPageIndex (for TOC + header only)
           const now = Date.now()
@@ -2250,11 +2304,23 @@ export const Books: React.FC = () => {
       const prevWidth = lastMeasuredWidthRef.current
       const widthDelta = Math.abs(roundedReaderWidth - prevWidth)
       if (prevWidth > 0 && widthDelta > 40) {
-        // Significant resize (e.g. drawer open/close or window drag) — show friendly overlay
-        setIsPdfTransitioning(true)
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => setIsPdfTransitioning(false))
-        })
+        const isPdfFile =
+          readingBook.cover === 'PDF' || readingBook.path.toLowerCase().endsWith('.pdf')
+        if (isAutoPlaying && isPdfFile && pdfLayoutMode === 'scroll') {
+          // A running auto-scroll loop cannot safely continue while page widths
+          // are being recalculated. Pause it and let the first resized page render
+          // before resuming from the current page.
+          resumeAutoPlayAfterResizeRef.current = true
+          hasNotifiedFirstPageRef.current = false
+          setIsAutoPlaying(false)
+          setIsPdfTransitioning(true)
+        } else {
+          // Keep the existing transition feedback for manual layout changes.
+          setIsPdfTransitioning(true)
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => setIsPdfTransitioning(false))
+          })
+        }
       }
       lastMeasuredWidthRef.current = roundedReaderWidth
       setReaderMainWidth((prev) => (prev === pdfReaderWidth ? prev : pdfReaderWidth))
@@ -2307,6 +2373,7 @@ export const Books: React.FC = () => {
   }, [
     readingBook,
     isLoadingReader,
+    isAutoPlaying,
     bookChapters,
     epubLayoutMode,
     pdfLayoutMode,
@@ -2637,6 +2704,22 @@ export const Books: React.FC = () => {
   const isPdf =
     readingBook && (readingBook.cover === 'PDF' || readingBook.path.toLowerCase().endsWith('.pdf'))
   const hasBookChapters = Boolean(bookChapters && bookChapters.length > 0)
+
+  const handleAutoPlayToggle = () => {
+    const nextIsAutoPlaying = !isAutoPlaying
+    // A manual toggle takes precedence over a pending resize recovery.
+    resumeAutoPlayAfterResizeRef.current = false
+    if (nextIsAutoPlaying && isPdf && pdfLayoutMode === 'scroll' && pdfNumPages > 0) {
+      const currentPage = Math.max(
+        0,
+        Math.min(pdfNumPages - 1, currentPdfPageIndexRef.current),
+      )
+      renderWindowCenterRef.current = currentPage
+      setRenderWindowCenter(currentPage)
+    }
+    setIsAutoPlaying(nextIsAutoPlaying)
+  }
+
   const showEpubToc = shouldShowEpubToc(Boolean(isPdf), hasBookChapters, epubLayoutMode)
   const showReaderToc = showEpubToc || Boolean(isPdf && pdfNumPages > 0)
   const tocDrawerWidth = 260
@@ -3258,7 +3341,7 @@ export const Books: React.FC = () => {
 
                     <button
                       className={`btn sm ${isAutoPlaying ? 'primary' : ''}`}
-                      onClick={() => setIsAutoPlaying(!isAutoPlaying)}
+                      onClick={handleAutoPlayToggle}
                       style={{
                         padding: '4px 8px',
                         fontSize: '12px',
@@ -3799,6 +3882,9 @@ export const Books: React.FC = () => {
                                   autoPlaySpeed={autoPlaySpeed}
                                   pdfEstimatedPageHeight={pdfEstimatedPageHeight}
                                   pdfPageRenderWidth={pdfPageRenderWidth}
+                                  pdfPageAspectRatio={pdfPageAspectRatio}
+                                  pdfPageAspectRatios={pdfPageAspectRatios}
+                                  onPageAspectRatioLoaded={handlePdfPageAspectRatioLoaded}
                                   pdfOcrPages={pdfOcrPages}
                                   pdfHighlightsByPage={pdfHighlightsByPage}
                                   handlePdfOcrAreasSelected={handlePdfOcrAreasSelected}
@@ -3810,6 +3896,19 @@ export const Books: React.FC = () => {
                                     if (!hasNotifiedFirstPageRef.current) {
                                       hasNotifiedFirstPageRef.current = true
                                       setIsPdfTransitioning(false)
+                                      if (resumeAutoPlayAfterResizeRef.current) {
+                                        resumeAutoPlayAfterResizeRef.current = false
+                                        const currentPage = Math.max(
+                                          0,
+                                          Math.min(
+                                            pdfNumPages - 1,
+                                            currentPdfPageIndexRef.current,
+                                          ),
+                                        )
+                                        renderWindowCenterRef.current = currentPage
+                                        setRenderWindowCenter(currentPage)
+                                        setIsAutoPlaying(true)
+                                      }
                                     }
                                   }}
                                   t={t}

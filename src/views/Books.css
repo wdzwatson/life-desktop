@@ -195,27 +195,6 @@
   outline-offset: -2px;
 }
 
-/* PDF 连续滚动模式下的页面槽性能优化（Option B） */
-.book-reader__pdf-page-slot.is-rendered,
-.book-reader__pdf-page-slot.is-placeholder {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 1200px; /* 根据实际页高调整 */
-}
-
-/* PDF 连续滚动模式下的页面槽性能优化（Option B） */
-.book-reader__pdf-page-slot.is-rendered,
-.book-reader__pdf-page-slot.is-placeholder {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 1200px; /* 根据实际页高调整 */
-}
-
-/* PDF 连续滚动模式下的页面槽性能优化（Option B） */
-.book-reader__pdf-page-slot.is-rendered,
-.book-reader__pdf-page-slot.is-placeholder {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 1200px; /* 根据实际页高调整 */
-}
-
 .book-reader__saved-highlight {
   margin: 0;
   padding: 1px 2px;
@@ -403,8 +382,7 @@
   flex: 0 0 auto;
   box-sizing: border-box;
   contain: layout paint style;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 800px;
+  overflow: hidden;
 }
 
 .book-reader__pdf-page-slot.is-placeholder {
