@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  compareReaderHighlightsByDocumentPosition,
   getAnchorBlockOffset,
   getActiveTocIndex,
+  getReaderAnnotationKind,
   getPageOfParagraph,
   getParagraphOffsetOfPage,
   getAnnotationEditorFocusOptions,
@@ -35,14 +37,8 @@ test('EPUB TOC drawer is available for EPUB chapters', () => {
 test('reader content grid reserves space only for open side drawers', () => {
   assert.equal(getReaderContentGridColumns(true), '0px minmax(0, 1fr) 0px')
   assert.equal(getReaderContentGridColumns(false), '0px minmax(0, 1fr) 0px')
-  assert.equal(
-    getReaderContentGridColumns(true, true, 260, false, 320),
-    '260px minmax(0, 1fr) 0px',
-  )
-  assert.equal(
-    getReaderContentGridColumns(false, true, 260, true, 280),
-    '0px minmax(0, 1fr) 280px',
-  )
+  assert.equal(getReaderContentGridColumns(true, true, 260, false, 320), '260px minmax(0, 1fr) 0px')
+  assert.equal(getReaderContentGridColumns(false, true, 260, true, 280), '0px minmax(0, 1fr) 280px')
   assert.equal(
     getReaderContentGridColumns(true, true, 240, true, 300),
     '240px minmax(0, 1fr) 300px',
@@ -89,18 +85,15 @@ test('PDF continuous scroll locates the active page with ordered page offsets', 
   assert.equal(getPdfPageIndexAtOffset([], 100), 0)
 
   let offsetReads = 0
-  const largeDocument = new Proxy(
-    { length: 100_000 } as ArrayLike<{ offsetTop: number }>,
-    {
-      get(target, property) {
-        if (typeof property === 'string' && /^\d+$/.test(property)) {
-          offsetReads += 1
-          return { offsetTop: Number(property) * 100 }
-        }
-        return Reflect.get(target, property)
-      },
+  const largeDocument = new Proxy({ length: 100_000 } as ArrayLike<{ offsetTop: number }>, {
+    get(target, property) {
+      if (typeof property === 'string' && /^\d+$/.test(property)) {
+        offsetReads += 1
+        return { offsetTop: Number(property) * 100 }
+      }
+      return Reflect.get(target, property)
     },
-  )
+  })
   assert.equal(getPdfPageIndexAtOffset(largeDocument, 5_432_150), 54_321)
   assert.ok(offsetReads <= 18)
 })
@@ -109,19 +102,101 @@ test('annotation editor focus does not scroll the reader', () => {
   assert.deepEqual(getAnnotationEditorFocusOptions(), { preventScroll: true })
 })
 
+test('reader annotations retain explicit kinds and classify legacy rows safely', () => {
+  assert.equal(
+    getReaderAnnotationKind({
+      id: 'translation',
+      text: 'Source',
+      annotation: '译文',
+      anchor: JSON.stringify({ pageNumber: 1, kind: 'translation' }),
+    }),
+    'translation',
+  )
+  assert.equal(getReaderAnnotationKind({ id: 'note', text: 'Source', annotation: 'Note' }), 'note')
+  assert.equal(
+    getReaderAnnotationKind({ id: 'legacy-empty', text: 'Source', annotation: 'No annotations' }),
+    'highlight',
+  )
+})
+
+test('reader annotations sort by page or chapter block before creation order', () => {
+  const pdfRows = [
+    {
+      id: 'page-two',
+      text: 'Page 2',
+      anchor: JSON.stringify({
+        pageNumber: 2,
+        areas: [{ x: 0.1, y: 0.1, width: 0.2, height: 0.05 }],
+      }),
+    },
+    {
+      id: 'page-one-lower',
+      text: 'Lower',
+      anchor: JSON.stringify({
+        pageNumber: 1,
+        areas: [{ x: 0.1, y: 0.8, width: 0.2, height: 0.05 }],
+      }),
+    },
+    {
+      id: 'page-one-upper',
+      text: 'Upper',
+      anchor: JSON.stringify({
+        pageNumber: 1,
+        areas: [{ x: 0.1, y: 0.2, width: 0.2, height: 0.05 }],
+      }),
+    },
+  ].sort(compareReaderHighlightsByDocumentPosition)
+  assert.deepEqual(
+    pdfRows.map((row) => row.id),
+    ['page-one-upper', 'page-one-lower', 'page-two'],
+  )
+
+  const epubRows = [
+    {
+      id: 'second-block',
+      text: 'Second',
+      anchor: JSON.stringify({ chapterIndex: 0, blockOffset: 4 }),
+    },
+    {
+      id: 'next-chapter',
+      text: 'Next',
+      anchor: JSON.stringify({ chapterIndex: 1, blockOffset: 0 }),
+    },
+    {
+      id: 'first-block',
+      text: 'First',
+      anchor: JSON.stringify({ chapterIndex: 0, blockOffset: 1 }),
+    },
+  ].sort(compareReaderHighlightsByDocumentPosition)
+  assert.deepEqual(
+    epubRows.map((row) => row.id),
+    ['first-block', 'second-block', 'next-chapter'],
+  )
+})
+
 test('reader highlights resolve precise character anchors and legacy text matches', () => {
   const precise = getReaderTextSegments(
     'Alpha beta gamma',
-    [{ id: 'precise', text: 'beta', annotation: 'note', anchor: JSON.stringify({ chapterIndex: 0, blockOffset: 2, startOffset: 6, endOffset: 10 }) }],
+    [
+      {
+        id: 'precise',
+        text: 'beta',
+        annotation: 'note',
+        anchor: JSON.stringify({ chapterIndex: 0, blockOffset: 2, startOffset: 6, endOffset: 10 }),
+      },
+    ],
     0,
     2,
     'Chapter',
   )
-  assert.deepEqual(precise.map((segment) => [segment.text, segment.highlight?.id]), [
-    ['Alpha ', undefined],
-    ['beta', 'precise'],
-    [' gamma', undefined],
-  ])
+  assert.deepEqual(
+    precise.map((segment) => [segment.text, segment.highlight?.id]),
+    [
+      ['Alpha ', undefined],
+      ['beta', 'precise'],
+      [' gamma', undefined],
+    ],
+  )
 
   const legacy = getReaderTextSegments(
     'Legacy selection remains visible',
@@ -136,7 +211,13 @@ test('reader highlights resolve precise character anchors and legacy text matche
 test('PDF highlight anchors are not matched into EPUB paragraphs', () => {
   const segments = getReaderTextSegments(
     'PDF text',
-    [{ id: 'pdf', text: 'PDF', anchor: JSON.stringify({ pageNumber: 2, areas: [{ x: 0, y: 0, width: 1, height: 1 }] }) }],
+    [
+      {
+        id: 'pdf',
+        text: 'PDF',
+        anchor: JSON.stringify({ pageNumber: 2, areas: [{ x: 0, y: 0, width: 1, height: 1 }] }),
+      },
+    ],
     0,
     0,
     'Chapter',
@@ -190,7 +271,10 @@ test('reading progress is derived from EPUB chapter and paragraph position', () 
 test('reading progress clamps out-of-range chapter and paragraph positions', () => {
   const chapters = [
     { title: 'Chapter 1', paragraphs: ['Intro'] },
-    { title: 'Chapter 2', paragraphs: Array.from({ length: 7 }, (_, idx) => `paragraph ${idx + 1}`) },
+    {
+      title: 'Chapter 2',
+      paragraphs: Array.from({ length: 7 }, (_, idx) => `paragraph ${idx + 1}`),
+    },
   ]
 
   assert.equal(getReadingProgressForLocation(chapters, -4, 0), 0)
