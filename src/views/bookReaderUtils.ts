@@ -15,6 +15,7 @@ export type TocEntry = {
 
 export type EpubLayoutMode = 'single' | 'dual' | 'scroll'
 export type PdfLayoutMode = 'single' | 'dual' | 'scroll'
+export type ReaderAnnotationKind = 'translation' | 'highlight' | 'note'
 
 export type ReaderHighlightAnchor = {
   chapter?: string
@@ -25,6 +26,7 @@ export type ReaderHighlightAnchor = {
   pageNumber?: number
   areas?: Array<{ x: number; y: number; width: number; height: number }>
   highlighted?: boolean
+  kind?: ReaderAnnotationKind
 }
 
 export type ReaderHighlight = {
@@ -32,6 +34,7 @@ export type ReaderHighlight = {
   text: string
   annotation?: string
   anchor?: string | ReaderHighlightAnchor | null
+  created_at?: string
 }
 
 export type ReaderTextSegment = {
@@ -50,6 +53,59 @@ export const parseReaderHighlightAnchor = (anchor: ReaderHighlight['anchor']) =>
   }
 }
 
+const isReaderAnnotationKind = (value: unknown): value is ReaderAnnotationKind =>
+  value === 'translation' || value === 'highlight' || value === 'note'
+
+export const getReaderAnnotationKind = (highlight: ReaderHighlight): ReaderAnnotationKind => {
+  const anchor = parseReaderHighlightAnchor(highlight.anchor)
+  if (isReaderAnnotationKind(anchor?.kind)) return anchor.kind
+
+  const annotation = String(highlight.annotation ?? '').trim()
+  const hasAnnotation =
+    annotation.length > 0 && annotation !== '无批注记录' && annotation !== 'No annotations'
+  return hasAnnotation ? 'note' : 'highlight'
+}
+
+const getReaderHighlightDocumentPosition = (highlight: ReaderHighlight) => {
+  const anchor = parseReaderHighlightAnchor(highlight.anchor)
+  if (!anchor) return [1, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER]
+
+  if (Number.isInteger(anchor.pageNumber)) {
+    const firstArea = [...(anchor.areas || [])].sort(
+      (left, right) => left.y - right.y || left.x - right.x,
+    )[0]
+    return [0, anchor.pageNumber as number, firstArea?.y ?? 0, firstArea?.x ?? 0]
+  }
+
+  if (Number.isInteger(anchor.chapterIndex)) {
+    return [
+      0,
+      anchor.chapterIndex as number,
+      Number.isInteger(anchor.blockOffset) ? (anchor.blockOffset as number) : 0,
+      Number.isInteger(anchor.startOffset) ? (anchor.startOffset as number) : 0,
+    ]
+  }
+
+  return [1, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER]
+}
+
+export const compareReaderHighlightsByDocumentPosition = (
+  left: ReaderHighlight,
+  right: ReaderHighlight,
+) => {
+  const leftPosition = getReaderHighlightDocumentPosition(left)
+  const rightPosition = getReaderHighlightDocumentPosition(right)
+  for (let index = 0; index < leftPosition.length; index += 1) {
+    const difference = leftPosition[index] - rightPosition[index]
+    if (difference !== 0) return difference
+  }
+
+  const createdAtDifference = String(left.created_at || '').localeCompare(
+    String(right.created_at || ''),
+  )
+  return createdAtDifference || left.id.localeCompare(right.id)
+}
+
 export const getReaderTextSegments = (
   text: string,
   highlights: ReaderHighlight[],
@@ -57,23 +113,24 @@ export const getReaderTextSegments = (
   blockOffset: number,
   chapter: string,
 ): ReaderTextSegment[] => {
-  const ranges = highlights.flatMap((highlight) => {
-    const anchor = parseReaderHighlightAnchor(highlight.anchor)
-    const isPreciseAnchor =
-      anchor?.chapterIndex === chapterIndex &&
-      anchor.blockOffset === blockOffset &&
-      Number.isInteger(anchor.startOffset) &&
-      Number.isInteger(anchor.endOffset)
-    if (isPreciseAnchor) {
-      const start = Math.max(0, Math.min(text.length, anchor.startOffset as number))
-      const end = Math.max(start, Math.min(text.length, anchor.endOffset as number))
-      return end > start ? [{ start, end, highlight }] : []
-    }
-    if (anchor?.pageNumber || anchor?.areas?.length) return []
-    if (anchor?.chapter && anchor.chapter !== chapter) return []
-    const start = text.indexOf(highlight.text)
-    return start >= 0 ? [{ start, end: start + highlight.text.length, highlight }] : []
-  })
+  const ranges = highlights
+    .flatMap((highlight) => {
+      const anchor = parseReaderHighlightAnchor(highlight.anchor)
+      const isPreciseAnchor =
+        anchor?.chapterIndex === chapterIndex &&
+        anchor.blockOffset === blockOffset &&
+        Number.isInteger(anchor.startOffset) &&
+        Number.isInteger(anchor.endOffset)
+      if (isPreciseAnchor) {
+        const start = Math.max(0, Math.min(text.length, anchor.startOffset as number))
+        const end = Math.max(start, Math.min(text.length, anchor.endOffset as number))
+        return end > start ? [{ start, end, highlight }] : []
+      }
+      if (anchor?.pageNumber || anchor?.areas?.length) return []
+      if (anchor?.chapter && anchor.chapter !== chapter) return []
+      const start = text.indexOf(highlight.text)
+      return start >= 0 ? [{ start, end: start + highlight.text.length, highlight }] : []
+    })
     .sort((left, right) => left.start - right.start || right.end - left.end)
 
   if (ranges.length === 0) return [{ text }]
@@ -244,16 +301,14 @@ export const getReadingProgressForLocation = (
 ) => {
   if (chapters.length === 0) return 0
 
-  const pageCounts = chapters.map((chapter) =>
-    getPagesForReadingBlocks(chapter.paragraphs || []).length,
+  const pageCounts = chapters.map(
+    (chapter) => getPagesForReadingBlocks(chapter.paragraphs || []).length,
   )
   const totalPages = pageCounts.reduce((sum, count) => sum + count, 0)
   if (totalPages <= 1) return 100
 
   const safeChapterIndex = Math.max(0, Math.min(chapterIndex, chapters.length - 1))
-  const previousPages = pageCounts
-    .slice(0, safeChapterIndex)
-    .reduce((sum, count) => sum + count, 0)
+  const previousPages = pageCounts.slice(0, safeChapterIndex).reduce((sum, count) => sum + count, 0)
   const chapterBlocks = chapters[safeChapterIndex].paragraphs || []
   const localPageIndex = getPageOfParagraph(chapterBlocks, paragraphOffset)
   const safeLocalPageIndex = Math.max(
@@ -296,7 +351,8 @@ export const resolveReaderTocEntry = <T extends TocEntry>(
 
   if (entry.level > 0 && (entry.paragraphOffset || 0) === 0 && currentTitle !== entryTitle) {
     const repairedIndex = chapters.findIndex(
-      (chapter, index) => index >= entry.chapterIndex && normalizeTocTitle(chapter.title) === entryTitle,
+      (chapter, index) =>
+        index >= entry.chapterIndex && normalizeTocTitle(chapter.title) === entryTitle,
     )
     if (repairedIndex >= 0) {
       return {
@@ -374,16 +430,13 @@ export const resolveChapterTitleFromHtml = (
   return fallbackTitle
 }
 
-const findHeadingTarget = (
-  chapters: TocResolutionChapter[],
-  title: string,
-  startIndex: number,
-) => {
+const findHeadingTarget = (chapters: TocResolutionChapter[], title: string, startIndex: number) => {
   const normTitle = normalizeTocTitle(title)
 
   for (let chapterIndex = Math.max(0, startIndex); chapterIndex < chapters.length; chapterIndex++) {
     const headingIndex = chapters[chapterIndex].paragraphs?.findIndex(
-      (block) => isReadingBlockHeading(block) && normalizeTocTitle(getReadingBlockText(block)) === normTitle,
+      (block) =>
+        isReadingBlockHeading(block) && normalizeTocTitle(getReadingBlockText(block)) === normTitle,
     )
     if (headingIndex !== undefined && headingIndex >= 0) {
       return {
@@ -446,7 +499,11 @@ export const resolveTocTarget = (
 
   if (!entry.frag && typeof chapterIndex === 'number' && paragraphOffset === 0) {
     const headingTarget = findHeadingTarget(chapters, entry.title, chapterIndex)
-    if (headingTarget && headingTarget.chapterIndex === chapterIndex && headingTarget.paragraphOffset > 0) {
+    if (
+      headingTarget &&
+      headingTarget.chapterIndex === chapterIndex &&
+      headingTarget.paragraphOffset > 0
+    ) {
       paragraphOffset = headingTarget.paragraphOffset
     }
   }

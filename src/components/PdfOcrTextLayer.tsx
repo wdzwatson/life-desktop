@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { ScanText } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { PdfOcrWord } from '../views/pdfOcrService'
@@ -16,6 +22,8 @@ export type SavedPdfHighlight = {
   text: string
   annotation?: string
   highlighted?: boolean
+  kind?: 'translation' | 'highlight' | 'note'
+  anchor?: string
   areas: PdfOcrSelectionArea[]
 }
 
@@ -74,9 +82,12 @@ export function PdfOcrTextLayer({
   }
 
   const getWordIndexAtPoint = (point: SelectionPoint) => {
-    const containedIndex = words.findIndex((word) =>
-      point.x >= word.x && point.x <= word.x + word.width &&
-      point.y >= word.y && point.y <= word.y + word.height,
+    const containedIndex = words.findIndex(
+      (word) =>
+        point.x >= word.x &&
+        point.x <= word.x + word.width &&
+        point.y >= word.y &&
+        point.y <= word.y + word.height,
     )
     if (containedIndex >= 0) return containedIndex
 
@@ -104,11 +115,19 @@ export function PdfOcrTextLayer({
 
   const getSelectionRows = (indexes: Set<number>) => {
     const rows: {
-      x: number; y: number; width: number; height: number; centerY: number; words: PdfOcrWord[]
+      x: number
+      y: number
+      width: number
+      height: number
+      centerY: number
+      words: PdfOcrWord[]
     }[] = []
     const selectedWords = words
       .filter((_, index) => indexes.has(index))
-      .sort((left, right) => (left.y + left.height / 2) - (right.y + right.height / 2) || left.x - right.x)
+      .sort(
+        (left, right) =>
+          left.y + left.height / 2 - (right.y + right.height / 2) || left.x - right.x,
+      )
     const heights = selectedWords.map((word) => word.height).sort((left, right) => left - right)
     const medianHeight = heights.length ? heights[Math.floor(heights.length / 2)] : 0
     const lineTolerance = Math.min(0.035, Math.max(0.008, medianHeight * 0.75))
@@ -124,7 +143,14 @@ export function PdfOcrTextLayer({
         row.height = Math.max(row.height, word.height)
         row.words.push(word)
       } else {
-        rows.push({ x: word.x, y: word.y, width: word.width, height: word.height, centerY, words: [word] })
+        rows.push({
+          x: word.x,
+          y: word.y,
+          width: word.width,
+          height: word.height,
+          centerY,
+          words: [word],
+        })
       }
     })
     return rows.map((row) => {
@@ -134,7 +160,9 @@ export function PdfOcrTextLayer({
       // has a large gap before the first real word; trim it from presentation
       // while keeping OCR's actual text result untouched.
       const visibleWords =
-        first && second && first.x < 0.1 &&
+        first &&
+        second &&
+        first.x < 0.1 &&
         second.x - (first.x + first.width) > Math.max(0.035, first.width * 1.5)
           ? rowWords.slice(1)
           : rowWords
@@ -142,7 +170,14 @@ export function PdfOcrTextLayer({
       const right = Math.max(...visibleWords.map((word) => word.x + word.width))
       const top = Math.min(...visibleWords.map((word) => word.y))
       const bottom = Math.max(...visibleWords.map((word) => word.y + word.height))
-      return { x: left, y: top, width: right - left, height: bottom - top, centerY: row.centerY, words: visibleWords }
+      return {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+        centerY: row.centerY,
+        words: visibleWords,
+      }
     })
   }
 
@@ -190,7 +225,12 @@ export function PdfOcrTextLayer({
     if (endIndex < 0) return
     const indexes = getRangeIndexes(startIndex, endIndex)
     setSelectedIndexes(indexes)
-    const areas = getSelectionRows(indexes).map(({ x, y, width, height }) => ({ x, y, width, height }))
+    const areas = getSelectionRows(indexes).map(({ x, y, width, height }) => ({
+      x,
+      y,
+      width,
+      height,
+    }))
     const selectedText = getSelectedText(indexes)
     if (areas.length > 0 && selectedText) onSelectAreas(areas, selectedText)
   }
@@ -218,44 +258,50 @@ export function PdfOcrTextLayer({
 
   const renderSavedHighlights = () =>
     savedHighlights.flatMap((highlight) =>
-      highlight.areas.map((area, index) => (
-        <button
-          key={`${highlight.id}-${index}`}
-          type="button"
-          className={`book-reader__pdf-saved-highlight ${
-            highlight.annotation
+      highlight.areas.map((area, index) => {
+        const kind = highlight.kind || (highlight.annotation ? 'note' : 'highlight')
+        const visualState =
+          kind === 'translation'
+            ? 'is-translation'
+            : highlight.annotation
               ? highlight.highlighted === false
                 ? 'is-annotation-only'
                 : 'is-combined'
               : 'is-highlight-only'
-          }`}
-          aria-label={`${highlight.text}: ${highlight.annotation || t('books.mark_highlight')}`}
-          title={highlight.annotation || t('books.mark_highlight')}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation()
-            onOpenHighlight?.(highlight)
-          }}
-          onContextMenu={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            onOpenContextMenu?.({
-              clientX: event.clientX,
-              clientY: event.clientY,
-              text: highlight.text,
-              highlight,
-            })
-          }}
-          style={{
-            position: 'absolute',
-            left: `${area.x * 100}%`,
-            top: `${area.y * 100}%`,
-            width: `${area.width * 100}%`,
-            height: `${area.height * 100}%`,
-            pointerEvents: 'auto',
-          }}
-        />
-      )),
+        return (
+          <button
+            key={`${highlight.id}-${index}`}
+            type="button"
+            className={`book-reader__pdf-saved-highlight is-${kind} ${visualState}`}
+            data-reader-highlight-id={highlight.id}
+            aria-label={`${highlight.text}: ${highlight.annotation || t('books.mark_highlight')}`}
+            title={highlight.annotation || t('books.mark_highlight')}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation()
+              onOpenHighlight?.(highlight)
+            }}
+            onContextMenu={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              onOpenContextMenu?.({
+                clientX: event.clientX,
+                clientY: event.clientY,
+                text: highlight.text,
+                highlight,
+              })
+            }}
+            style={{
+              position: 'absolute',
+              left: `${area.x * 100}%`,
+              top: `${area.y * 100}%`,
+              width: `${area.width * 100}%`,
+              height: `${area.height * 100}%`,
+              pointerEvents: 'auto',
+            }}
+          />
+        )
+      }),
     )
 
   if (status !== 'ready' || words.length === 0) {
@@ -341,9 +387,13 @@ export function PdfOcrTextLayer({
           key={`${row.x}-${row.y}-${index}`}
           aria-hidden="true"
           style={{
-            position: 'absolute', left: `${row.x * 100}%`, top: `${row.y * 100}%`,
-            width: `${row.width * 100}%`, height: `${row.height * 100}%`,
-            background: 'rgba(59, 130, 246, .2)', borderBottom: '1px solid rgba(37, 99, 235, .8)',
+            position: 'absolute',
+            left: `${row.x * 100}%`,
+            top: `${row.y * 100}%`,
+            width: `${row.width * 100}%`,
+            height: `${row.height * 100}%`,
+            background: 'rgba(59, 130, 246, .2)',
+            borderBottom: '1px solid rgba(37, 99, 235, .8)',
             pointerEvents: 'none',
           }}
         />

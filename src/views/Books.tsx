@@ -18,6 +18,7 @@ import {
   GripVertical,
   Highlighter,
   Languages,
+  LocateFixed,
   MessageSquareText,
   PanelLeftClose,
   PanelLeftOpen,
@@ -55,6 +56,7 @@ import {
 } from './bookCategorySidebarUtils'
 import { getBookCoverUrl } from './bookCoverUtils'
 import {
+  compareReaderHighlightsByDocumentPosition,
   getActiveTocIndex,
   getAnnotationEditorFocusOptions,
   getPageOfParagraph,
@@ -63,6 +65,7 @@ import {
   getPdfPageIndexAtOffset,
   getPdfPageRenderWidth,
   getReaderContentGridColumns,
+  getReaderAnnotationKind,
   getReaderTextSegments,
   getReadingBlockText,
   getReadingProgressForLocation,
@@ -72,6 +75,8 @@ import {
   shouldCloseReaderDrawersOnContentClick,
   shouldShowEpubToc,
   type PdfLayoutMode,
+  type ReaderAnnotationKind,
+  type ReaderHighlight,
   type ReaderHighlightAnchor,
   type ReadingBlock,
   type TocEntry,
@@ -176,9 +181,7 @@ const PdfContinuousScrollList = React.memo(
           const windowCenter = isAutoPlaying ? renderWindowCenter : currentPageIndex
           const isNearViewport = Math.abs(idx - windowCenter) <= effectiveOverscan
           const pageRatio = pdfPageAspectRatios[idx + 1] ?? pdfPageAspectRatio
-          const pageHeight = Math.round(
-            (pdfPageRenderWidth || 600) * pageRatio,
-          )
+          const pageHeight = Math.round((pdfPageRenderWidth || 600) * pageRatio)
 
           if (!isNearViewport) {
             return (
@@ -276,7 +279,7 @@ const PdfContinuousScrollList = React.memo(
       prev.currentPageIndex === next.currentPageIndex &&
       prev.renderWindowCenter === next.renderWindowCenter
     )
-  }
+  },
 )
 type PdfOcrPageState = {
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -289,6 +292,11 @@ type ReaderContextMenuState = {
   top: number
   text: string
   highlight?: SavedPdfHighlight
+}
+
+type ReaderAnnotationRecord = ReaderHighlight & {
+  highlighted?: boolean
+  areas?: PdfOcrSelectionArea[]
 }
 
 const normalizeHighlightAnnotation = (value: unknown) => {
@@ -2235,14 +2243,12 @@ export const Books: React.FC = () => {
     const isPdfFile =
       readingBook &&
       (readingBook.cover === 'PDF' || readingBook.path.toLowerCase().endsWith('.pdf'))
-    const isPdfScrollMode = isPdfFile && pdfLayoutMode === 'scroll' && pdfScrollRef.current && pdfNumPages > 0
+    const isPdfScrollMode =
+      isPdfFile && pdfLayoutMode === 'scroll' && pdfScrollRef.current && pdfNumPages > 0
 
     if (isPdfScrollMode) {
       if (!prevIsAutoPlayingRef.current) {
-        const currentPage = Math.max(
-          0,
-          Math.min(pdfNumPages - 1, currentPdfPageIndexRef.current),
-        )
+        const currentPage = Math.max(0, Math.min(pdfNumPages - 1, currentPdfPageIndexRef.current))
         renderWindowCenterRef.current = currentPage
         setRenderWindowCenter(currentPage)
       }
@@ -2500,19 +2506,25 @@ export const Books: React.FC = () => {
     textOverride?: string,
     annotationOverride?: string,
     includesMarkOverride?: boolean,
+    kindOverride?: ReaderAnnotationKind,
+    forceCreate = false,
   ) => {
     const highlightText = textOverride || selectedHighlightText
     if (!highlightText || !readingBook || !api) return
     const annotation = normalizeHighlightAnnotation(annotationOverride ?? newAnnotation)
+    const kind = kindOverride || (annotation ? 'note' : 'highlight')
+    if ((kind === 'note' || kind === 'translation') && !annotation) return
     const anchor = selectedHighlightAnchorRef.current ||
       selectedHighlightAnchor || { chapter: currentChapter, chapterIndex: currentChapterIndex }
-    const includesMark = (includesMarkOverride ?? selectedHighlightIncludesMark) || !annotation
+    const includesMark =
+      kind === 'highlight' ? true : (includesMarkOverride ?? selectedHighlightIncludesMark)
     const storedAnchor = {
       ...anchor,
       highlighted: includesMark,
+      kind,
     }
 
-    const isEditing = Boolean(editingHighlightId)
+    const isEditing = Boolean(editingHighlightId) && !forceCreate
     const query = isEditing
       ? 'UPDATE highlights SET text = ?, annotation = ?, anchor = ? WHERE id = ? AND book_id = ?'
       : `
@@ -2537,7 +2549,11 @@ export const Books: React.FC = () => {
     const res = await api.dbQuery('books', query, params)
 
     if (res?.success) {
-      showToast(t('books.toast_highlight_saved'))
+      showToast(
+        t('books.toast_reader_annotation_saved', {
+          type: t(`books.reader_annotation_kind_${kind}`),
+        }),
+      )
       setSelectedHighlightText('')
       selectedHighlightAnchorRef.current = null
       setSelectedHighlightAnchor(null)
@@ -2545,6 +2561,7 @@ export const Books: React.FC = () => {
       setSelectedHighlightIncludesMark(true)
       setIsSelectionEditorOpen(false)
       setNewAnnotation('')
+      setAiTranslation('')
       setReaderContextMenu(null)
 
       // Reload highlights
@@ -2555,14 +2572,17 @@ export const Books: React.FC = () => {
     }
   }
 
-  const openHighlightAnnotationEditor = (highlight: SavedPdfHighlight) => {
-    const anchor = parseReaderHighlightAnchor((highlight as any).anchor)
+  const openHighlightAnnotationEditor = (highlight: ReaderAnnotationRecord) => {
+    const anchor = parseReaderHighlightAnchor(highlight.anchor)
+    const kind = getReaderAnnotationKind(highlight)
+    const isMarked =
+      highlight.highlighted !== undefined ? highlight.highlighted : anchor?.highlighted !== false
     setSelectedHighlightText(highlight.text)
     setSelectedHighlightAnchor(anchor)
     selectedHighlightAnchorRef.current = anchor
-    setEditingHighlightId(highlight.id)
-    setSelectedHighlightIncludesMark(highlight.highlighted !== false)
-    setNewAnnotation(normalizeHighlightAnnotation(highlight.annotation))
+    setEditingHighlightId(kind === 'translation' ? null : highlight.id)
+    setSelectedHighlightIncludesMark(kind === 'translation' ? false : isMarked)
+    setNewAnnotation(kind === 'note' ? normalizeHighlightAnnotation(highlight.annotation) : '')
     setReaderContextMenu(null)
     setIsAnnotationsDrawerOpen(true)
     setIsSelectionEditorOpen(true)
@@ -2572,39 +2592,64 @@ export const Books: React.FC = () => {
     if (!readingBook || !api) return
     const anchor = parseReaderHighlightAnchor((highlight as any).anchor)
     if (!anchor) return
-    const updatedAnchor = { ...anchor, highlighted: true }
-    const res = await api.dbQuery(
-      'books',
-      'UPDATE highlights SET anchor = ? WHERE id = ? AND book_id = ?',
-      [JSON.stringify(updatedAnchor), highlight.id, readingBook.id],
-    )
+    const kind = getReaderAnnotationKind(highlight as ReaderHighlight)
+    const updatedAnchor = { ...anchor, highlighted: true, kind }
+    const res =
+      kind === 'translation'
+        ? await api.dbQuery(
+            'books',
+            'INSERT INTO highlights (id, book_id, text, annotation, anchor) VALUES (?, ?, ?, ?, ?)',
+            [
+              `hl_${Date.now()}`,
+              readingBook.id,
+              highlight.text,
+              '',
+              JSON.stringify({ ...anchor, highlighted: true, kind: 'highlight' }),
+            ],
+          )
+        : await api.dbQuery(
+            'books',
+            'UPDATE highlights SET anchor = ? WHERE id = ? AND book_id = ?',
+            [JSON.stringify(updatedAnchor), highlight.id, readingBook.id],
+          )
     if (res?.success) {
       const hlRes = await api.dbQuery('books', 'SELECT * FROM highlights WHERE book_id = ?', [
         readingBook.id,
       ])
       if (hlRes?.success) setHighlights(hlRes.data)
       setReaderContextMenu(null)
-      showToast(t('books.toast_highlight_saved'))
+      showToast(
+        t('books.toast_reader_annotation_saved', {
+          type: t('books.reader_annotation_kind_highlight'),
+        }),
+      )
     }
   }
 
-  const handleDeleteSavedHighlight = async (highlight: SavedPdfHighlight) => {
+  const handleDeleteSavedHighlight = async (highlight: ReaderAnnotationRecord) => {
     if (!readingBook || !api) return
     setReaderContextMenu(null)
+    const kind = getReaderAnnotationKind(highlight)
+    const anchor = parseReaderHighlightAnchor(highlight.anchor)
     const hasAnnotation = Boolean(normalizeHighlightAnnotation(highlight.annotation))
-    const isMarked = highlight.highlighted !== false
+    const isMarked =
+      highlight.highlighted !== undefined ? highlight.highlighted : anchor?.highlighted !== false
     const actionKey =
-      hasAnnotation && isMarked
-        ? 'books.delete_combined_action'
-        : hasAnnotation
-          ? 'books.delete_annotation_action'
-          : 'books.delete_highlight_action'
+      kind === 'translation'
+        ? 'books.delete_translation_action'
+        : hasAnnotation && isMarked
+          ? 'books.delete_combined_action'
+          : hasAnnotation
+            ? 'books.delete_annotation_action'
+            : 'books.delete_highlight_action'
     const descriptionKey =
-      hasAnnotation && isMarked
-        ? 'books.delete_combined_desc'
-        : hasAnnotation
-          ? 'books.delete_annotation_desc'
-          : 'books.delete_highlight_desc'
+      kind === 'translation'
+        ? 'books.delete_translation_desc'
+        : hasAnnotation && isMarked
+          ? 'books.delete_combined_desc'
+          : hasAnnotation
+            ? 'books.delete_annotation_desc'
+            : 'books.delete_highlight_desc'
     const allowed = await confirm({
       title: t(actionKey),
       description: t(descriptionKey, { text: highlight.text }),
@@ -2619,6 +2664,14 @@ export const Books: React.FC = () => {
     if (res?.success) {
       setHighlights((current) => current.filter((item) => item.id !== highlight.id))
       setActiveHighlightId((current) => (current === highlight.id ? null : current))
+      if (editingHighlightId === highlight.id) {
+        setEditingHighlightId(null)
+        setIsSelectionEditorOpen(false)
+        setSelectedHighlightText('')
+        selectedHighlightAnchorRef.current = null
+        setSelectedHighlightAnchor(null)
+        setNewAnnotation('')
+      }
       setReaderContextMenu(null)
       showToast(t('books.toast_highlight_deleted'))
     }
@@ -2637,6 +2690,60 @@ export const Books: React.FC = () => {
             : 'smooth',
         })
     })
+  }
+
+  const locateSavedHighlight = (highlight: ReaderHighlight) => {
+    const anchor = parseReaderHighlightAnchor(highlight.anchor)
+    if (!anchor) return
+    setActiveHighlightId(highlight.id)
+
+    const revealSource = () => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const source = Array.from(
+            document.querySelectorAll<HTMLElement>('[data-reader-highlight-id]'),
+          ).find((element) => element.dataset.readerHighlightId === highlight.id)
+          source?.scrollIntoView({
+            block: 'center',
+            inline: 'nearest',
+            behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+              ? 'auto'
+              : 'smooth',
+          })
+          source?.focus({ preventScroll: true })
+        })
+      })
+    }
+
+    if (Number.isInteger(anchor.pageNumber) && pdfNumPages > 0) {
+      const pageIndex = Math.max(0, Math.min(pdfNumPages - 1, (anchor.pageNumber as number) - 1))
+      if (isAutoPlaying) setIsAutoPlaying(false)
+      currentPdfPageIndexRef.current = pageIndex
+      renderWindowCenterRef.current = pageIndex
+      setRenderWindowCenter(pageIndex)
+      setCurrentPageIndex(pageIndex)
+      setReadingProgress(Math.round((pageIndex / (pdfNumPages - 1 || 1)) * 100))
+      if (pdfLayoutMode === 'scroll') {
+        requestAnimationFrame(() => requestAnimationFrame(() => scrollPdfToPage(pageIndex, 'auto')))
+      }
+      revealSource()
+      return
+    }
+
+    if (!bookChapters) return
+    const chapterIndex = Number.isInteger(anchor.chapterIndex)
+      ? Math.max(0, Math.min(bookChapters.length - 1, anchor.chapterIndex as number))
+      : Math.max(
+          0,
+          bookChapters.findIndex((chapter) => chapter.title === anchor.chapter),
+        )
+    const blockOffset = Number.isInteger(anchor.blockOffset) ? (anchor.blockOffset as number) : 0
+    const paragraphs = (bookChapters[chapterIndex]?.paragraphs || []) as ReadingBlock[]
+    setCurrentChapterIndex(chapterIndex)
+    setCurrentChapter(bookChapters[chapterIndex]?.title || anchor.chapter || '')
+    setCurrentParagraphOffset(blockOffset)
+    setCurrentPageIndex(getPageOfParagraph(paragraphs, blockOffset))
+    revealSource()
   }
 
   const pdfHighlightsByPage = useMemo(() => {
@@ -2667,6 +2774,7 @@ export const Books: React.FC = () => {
           ...highlight,
           annotation: normalizeHighlightAnnotation(highlight.annotation),
           highlighted: anchor.highlighted !== false,
+          kind: getReaderAnnotationKind(highlight),
           areas,
         })
         byPage.set(anchor.pageNumber, pageHighlights)
@@ -2677,11 +2785,23 @@ export const Books: React.FC = () => {
     return byPage
   }, [highlights])
 
-  // Copy Deep Link
-  const handleCopyLink = (hl: any) => {
-    const deepLink = `book:${readingBook.id}#${encodeURIComponent(hl.anchor ? JSON.parse(hl.anchor).chapter : currentChapter)}`
-    navigator.clipboard.writeText(`[[${deepLink}]]`)
-    showToast(t('books.toast_link_copied'))
+  const sortedHighlights = useMemo(
+    () => [...(highlights as ReaderHighlight[])].sort(compareReaderHighlightsByDocumentPosition),
+    [highlights],
+  )
+
+  const getReaderAnnotationLocationLabel = (highlight: ReaderHighlight) => {
+    const anchor = parseReaderHighlightAnchor(highlight.anchor)
+    if (Number.isInteger(anchor?.pageNumber)) {
+      return t('books.reader_annotation_page', { page: anchor?.pageNumber })
+    }
+    if (Number.isInteger(anchor?.chapterIndex)) {
+      return t('books.reader_annotation_block', {
+        chapter: (anchor?.chapterIndex as number) + 1,
+        block: Number.isInteger(anchor?.blockOffset) ? (anchor?.blockOffset as number) + 1 : 1,
+      })
+    }
+    return anchor?.chapter || t('books.reader_annotation_location_unknown')
   }
 
   // Export highlights to Notes Module as Markdown (Incremental Sync)
@@ -2883,35 +3003,40 @@ export const Books: React.FC = () => {
           userSelect: 'text',
         }}
       >
-        {textSegments.map((segment, index) =>
-          segment.highlight ? (
-            <mark
-              key={`${segment.highlight.id}-${index}`}
-              className={`book-reader__saved-highlight ${activeHighlightId === segment.highlight.id ? 'is-active' : ''}`}
-              role="button"
-              tabIndex={0}
-              title={
-                normalizeHighlightAnnotation(segment.highlight.annotation) ||
-                t('books.no_annotation')
-              }
-              aria-label={`${segment.text}: ${normalizeHighlightAnnotation(segment.highlight.annotation) || t('books.no_annotation')}`}
-              onClick={(e) => {
-                e.stopPropagation()
-                openSavedHighlight(segment.highlight)
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  openSavedHighlight(segment.highlight)
+        {textSegments.map((segment, index) => {
+          if (segment.highlight) {
+            const kind = getReaderAnnotationKind(segment.highlight)
+            const anchor = parseReaderHighlightAnchor(segment.highlight.anchor)
+            const isCombined = kind === 'note' && anchor?.highlighted !== false
+            return (
+              <mark
+                key={`${segment.highlight.id}-${index}`}
+                className={`book-reader__saved-highlight is-${kind} ${isCombined ? 'is-combined' : ''} ${activeHighlightId === segment.highlight.id ? 'is-active' : ''}`}
+                data-reader-highlight-id={segment.highlight.id}
+                role="button"
+                tabIndex={0}
+                title={
+                  normalizeHighlightAnnotation(segment.highlight.annotation) ||
+                  t('books.no_annotation')
                 }
-              }}
-            >
-              {segment.text}
-            </mark>
-          ) : (
-            <React.Fragment key={`text-${index}`}>{segment.text}</React.Fragment>
-          ),
-        )}
+                aria-label={`${segment.text}: ${normalizeHighlightAnnotation(segment.highlight.annotation) || t('books.no_annotation')}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openSavedHighlight(segment.highlight)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    openSavedHighlight(segment.highlight)
+                  }
+                }}
+              >
+                {segment.text}
+              </mark>
+            )
+          }
+          return <React.Fragment key={`text-${index}`}>{segment.text}</React.Fragment>
+        })}
       </p>
     )
   })
@@ -2935,10 +3060,7 @@ export const Books: React.FC = () => {
     // A manual toggle takes precedence over a pending resize recovery.
     resumeAutoPlayAfterResizeRef.current = false
     if (nextIsAutoPlaying && isPdf && pdfLayoutMode === 'scroll' && pdfNumPages > 0) {
-      const currentPage = Math.max(
-        0,
-        Math.min(pdfNumPages - 1, currentPdfPageIndexRef.current),
-      )
+      const currentPage = Math.max(0, Math.min(pdfNumPages - 1, currentPdfPageIndexRef.current))
       renderWindowCenterRef.current = currentPage
       setRenderWindowCenter(currentPage)
     }
@@ -3059,16 +3181,21 @@ export const Books: React.FC = () => {
   const readerCardBg = isDarkReader ? '#1F1F1F' : 'var(--bg-surface)'
   const readerCardBorder = isDarkReader ? 'rgba(255, 255, 255, 0.08)' : 'var(--color-border)'
   const contextHighlight = readerContextMenu?.highlight
+  const contextHighlightKind = contextHighlight
+    ? getReaderAnnotationKind(contextHighlight as ReaderHighlight)
+    : null
   const contextHighlightHasAnnotation = Boolean(
     normalizeHighlightAnnotation(contextHighlight?.annotation),
   )
   const contextHighlightIsMarked = contextHighlight?.highlighted !== false
   const contextDeleteAction =
-    contextHighlightHasAnnotation && contextHighlightIsMarked
-      ? t('books.delete_combined_action')
-      : contextHighlightHasAnnotation
-        ? t('books.delete_annotation_action')
-        : t('books.delete_highlight_action')
+    contextHighlightKind === 'translation'
+      ? t('books.delete_translation_action')
+      : contextHighlightHasAnnotation && contextHighlightIsMarked
+        ? t('books.delete_combined_action')
+        : contextHighlightHasAnnotation
+          ? t('books.delete_annotation_action')
+          : t('books.delete_highlight_action')
 
   return (
     <div
@@ -3470,10 +3597,7 @@ export const Books: React.FC = () => {
               gridTemplateRows: 'minmax(0, 1fr)',
             }}
           >
-            <div
-              className="book-reader__header-sensor"
-              aria-hidden="true"
-            />
+            <div className="book-reader__header-sensor" aria-hidden="true" />
             {/* Reader Header - visibility controlled purely by CSS :hover + :focus-within + documentElement data attribute (no React state) */}
             <header
               className="book-reader__header"
@@ -3556,9 +3680,7 @@ export const Books: React.FC = () => {
                     <Dropdown
                       className="book-reader__layout-dropdown"
                       value={pdfLayoutMode}
-                      onChange={(e) =>
-                        handlePdfLayoutModeChange(e.target.value as PdfLayoutMode)
-                      }
+                      onChange={(e) => handlePdfLayoutModeChange(e.target.value as PdfLayoutMode)}
                       controlHeight={28}
                       searchable={false}
                     >
@@ -3708,7 +3830,7 @@ export const Books: React.FC = () => {
                   <Copy size={14} /> {t('books.copy_selected_text')}
                 </button>
                 {(!contextHighlight ||
-                  (contextHighlightHasAnnotation && !contextHighlightIsMarked)) && (
+                  (contextHighlightKind !== 'highlight' && !contextHighlightIsMarked)) && (
                   <button
                     type="button"
                     role="menuitem"
@@ -3721,7 +3843,7 @@ export const Books: React.FC = () => {
                     <Highlighter size={14} /> {t('books.mark_highlight')}
                   </button>
                 )}
-                {(!contextHighlight || !contextHighlightHasAnnotation) && (
+                {(!contextHighlight || contextHighlightKind !== 'note') && (
                   <button
                     type="button"
                     role="menuitem"
@@ -3746,7 +3868,13 @@ export const Books: React.FC = () => {
                   role="menuitem"
                   onClick={() => {
                     if (contextHighlight) {
-                      openHighlightAnnotationEditor(contextHighlight)
+                      const anchor = parseReaderHighlightAnchor(contextHighlight.anchor)
+                      selectedHighlightAnchorRef.current = anchor
+                      setSelectedHighlightAnchor(anchor)
+                      setSelectedHighlightText(contextHighlight.text)
+                      setEditingHighlightId(null)
+                      setSelectedHighlightIncludesMark(false)
+                      setNewAnnotation('')
                     } else {
                       setEditingHighlightId(null)
                       setSelectedHighlightIncludesMark(false)
@@ -3919,109 +4047,110 @@ export const Books: React.FC = () => {
                       >
                         {/* Only render the heavy page list when drawer is actually open.
                             Avoids mapping 100+ buttons on every render when closed. */}
-                        {isTocDrawerOpen && (() => {
-                          if (isPdf) {
-                            return pdfPageIndexes.map((idx) => {
-                              const pageIndex = idx
-                              const isActive =
-                                pdfLayoutMode === 'dual'
-                                  ? pageIndex >= currentPageIndex &&
-                                    pageIndex <= currentPageIndex + 1
-                                  : pageIndex === currentPageIndex
+                        {isTocDrawerOpen &&
+                          (() => {
+                            if (isPdf) {
+                              return pdfPageIndexes.map((idx) => {
+                                const pageIndex = idx
+                                const isActive =
+                                  pdfLayoutMode === 'dual'
+                                    ? pageIndex >= currentPageIndex &&
+                                      pageIndex <= currentPageIndex + 1
+                                    : pageIndex === currentPageIndex
+                                return (
+                                  <button
+                                    key={pageIndex}
+                                    className={`book-reader__pdf-toc-page ${isActive ? 'is-active' : ''}`}
+                                    data-pdf-toc-page={pageIndex + 1}
+                                    aria-current={isActive ? 'page' : undefined}
+                                    onClick={() => {
+                                      setCurrentPageIndex(pageIndex)
+                                      setReadingProgress(
+                                        Math.round((pageIndex / (pdfNumPages - 1 || 1)) * 100),
+                                      )
+                                      if (pdfLayoutMode === 'scroll') {
+                                        requestAnimationFrame(() => {
+                                          requestAnimationFrame(() =>
+                                            scrollPdfToPage(pageIndex, 'auto'),
+                                          )
+                                        })
+                                      }
+                                    }}
+                                    title={t('books.page_label', { num: pageIndex + 1 })}
+                                  >
+                                    {t('books.page_label', { num: pageIndex + 1 })}
+                                  </button>
+                                )
+                              })
+                            }
+
+                            if (!bookChapters) return null
+
+                            const tocList =
+                              bookToc && bookToc.length > 0
+                                ? bookToc
+                                : bookChapters.map((c, idx) => ({
+                                    title: c.title,
+                                    level: 0,
+                                    chapterIndex: idx,
+                                    paragraphOffset: 0,
+                                  }))
+                            const resolvedTocList = (tocList as TocEntry[]).map((entry) =>
+                              resolveReaderTocEntry(entry, bookChapters),
+                            )
+                            const activeIdx = getActiveTocIndex(
+                              resolvedTocList,
+                              currentChapterIndex,
+                              currentParagraphOffset,
+                            )
+
+                            return tocList.map((entry, idx) => {
+                              const targetEntry = resolvedTocList[idx]
+                              const isActive = idx === activeIdx
                               return (
                                 <button
-                                  key={pageIndex}
-                                  className={`book-reader__pdf-toc-page ${isActive ? 'is-active' : ''}`}
-                                  data-pdf-toc-page={pageIndex + 1}
-                                  aria-current={isActive ? 'page' : undefined}
+                                  key={idx}
                                   onClick={() => {
-                                    setCurrentPageIndex(pageIndex)
-                                    setReadingProgress(
-                                      Math.round((pageIndex / (pdfNumPages - 1 || 1)) * 100),
+                                    setCurrentChapterIndex(targetEntry.chapterIndex)
+                                    setCurrentChapter(
+                                      bookChapters[targetEntry.chapterIndex]?.title || entry.title,
                                     )
-                                    if (pdfLayoutMode === 'scroll') {
-                                      requestAnimationFrame(() => {
-                                        requestAnimationFrame(() =>
-                                          scrollPdfToPage(pageIndex, 'auto'),
-                                        )
-                                      })
-                                    }
+                                    const paras =
+                                      bookChapters[targetEntry.chapterIndex]?.paragraphs || []
+                                    const targetPage = getPageOfParagraph(
+                                      paras,
+                                      targetEntry.paragraphOffset || 0,
+                                    )
+                                    setCurrentPageIndex(targetPage)
+                                    setCurrentParagraphOffset(targetEntry.paragraphOffset || 0)
                                   }}
-                                  title={t('books.page_label', { num: pageIndex + 1 })}
+                                  title={entry.title}
+                                  style={{
+                                    border: 'none',
+                                    background: 'none',
+                                    textAlign: 'left',
+                                    padding: '6px 8px',
+                                    paddingLeft: `${8 + entry.level * 14}px`,
+                                    borderRadius: '4px',
+                                    color: isActive ? 'var(--color-accent)' : 'inherit',
+                                    fontWeight: isActive
+                                      ? 'bold'
+                                      : entry.level === 0
+                                        ? 600
+                                        : 'normal',
+                                    fontSize: entry.level === 0 ? '12px' : '11.5px',
+                                    opacity: entry.level > 0 ? 0.85 : 1,
+                                    cursor: 'pointer',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                  }}
                                 >
-                                  {t('books.page_label', { num: pageIndex + 1 })}
+                                  {entry.title}
                                 </button>
                               )
                             })
-                          }
-
-                          if (!bookChapters) return null
-
-                          const tocList =
-                            bookToc && bookToc.length > 0
-                              ? bookToc
-                              : bookChapters.map((c, idx) => ({
-                                  title: c.title,
-                                  level: 0,
-                                  chapterIndex: idx,
-                                  paragraphOffset: 0,
-                                }))
-                          const resolvedTocList = (tocList as TocEntry[]).map((entry) =>
-                            resolveReaderTocEntry(entry, bookChapters),
-                          )
-                          const activeIdx = getActiveTocIndex(
-                            resolvedTocList,
-                            currentChapterIndex,
-                            currentParagraphOffset,
-                          )
-
-                          return tocList.map((entry, idx) => {
-                            const targetEntry = resolvedTocList[idx]
-                            const isActive = idx === activeIdx
-                            return (
-                              <button
-                                key={idx}
-                                onClick={() => {
-                                  setCurrentChapterIndex(targetEntry.chapterIndex)
-                                  setCurrentChapter(
-                                    bookChapters[targetEntry.chapterIndex]?.title || entry.title,
-                                  )
-                                  const paras =
-                                    bookChapters[targetEntry.chapterIndex]?.paragraphs || []
-                                  const targetPage = getPageOfParagraph(
-                                    paras,
-                                    targetEntry.paragraphOffset || 0,
-                                  )
-                                  setCurrentPageIndex(targetPage)
-                                  setCurrentParagraphOffset(targetEntry.paragraphOffset || 0)
-                                }}
-                                title={entry.title}
-                                style={{
-                                  border: 'none',
-                                  background: 'none',
-                                  textAlign: 'left',
-                                  padding: '6px 8px',
-                                  paddingLeft: `${8 + entry.level * 14}px`,
-                                  borderRadius: '4px',
-                                  color: isActive ? 'var(--color-accent)' : 'inherit',
-                                  fontWeight: isActive
-                                    ? 'bold'
-                                    : entry.level === 0
-                                      ? 600
-                                      : 'normal',
-                                  fontSize: entry.level === 0 ? '12px' : '11.5px',
-                                  opacity: entry.level > 0 ? 0.85 : 1,
-                                  cursor: 'pointer',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {entry.title}
-                              </button>
-                            )
-                          })
-                        })()}
+                          })()}
                       </div>
                     </aside>
                   )}
@@ -4119,14 +4248,16 @@ export const Books: React.FC = () => {
                                   backdropFilter: 'blur(4px)',
                                 }}
                               >
-                                <div style={{
-                                  width: '18px',
-                                  height: '18px',
-                                  border: '2px solid rgba(226,232,240,0.3)',
-                                  borderTopColor: '#e2e8f0',
-                                  borderRadius: '50%',
-                                  animation: 'spin 0.8s linear infinite'
-                                }} />
+                                <div
+                                  style={{
+                                    width: '18px',
+                                    height: '18px',
+                                    border: '2px solid rgba(226,232,240,0.3)',
+                                    borderTopColor: '#e2e8f0',
+                                    borderRadius: '50%',
+                                    animation: 'spin 0.8s linear infinite',
+                                  }}
+                                />
                                 {t('books.pdf_reloading')}
                               </div>
                             )}
@@ -4166,10 +4297,7 @@ export const Books: React.FC = () => {
                                         resumeAutoPlayAfterResizeRef.current = false
                                         const currentPage = Math.max(
                                           0,
-                                          Math.min(
-                                            pdfNumPages - 1,
-                                            currentPdfPageIndexRef.current,
-                                          ),
+                                          Math.min(pdfNumPages - 1, currentPdfPageIndexRef.current),
                                         )
                                         renderWindowCenterRef.current = currentPage
                                         setRenderWindowCenter(currentPage)
@@ -4761,25 +4889,24 @@ export const Books: React.FC = () => {
                           </span>
                         </div>
                         {aiTranslation && (
-                          <div
-                            style={{
-                              padding: '8px',
-                              borderRadius: '6px',
-                              background: isDarkReader ? '#202020' : '#f1f5f9',
-                              fontSize: '12px',
-                              lineHeight: 1.5,
-                            }}
-                          >
-                            <strong>{t('books.ai_translation_label')}：</strong> {aiTranslation}
+                          <div className="book-reader__translation-result">
+                            <div>
+                              <strong>{t('books.ai_translation_label')}：</strong> {aiTranslation}
+                            </div>
                             <button
                               className="btn sm"
                               type="button"
                               onClick={() =>
-                                setNewAnnotation((current) => current || aiTranslation)
+                                void handleAddHighlight(
+                                  undefined,
+                                  aiTranslation,
+                                  false,
+                                  'translation',
+                                  true,
+                                )
                               }
-                              style={{ marginLeft: '8px', padding: '2px 6px', fontSize: '10px' }}
                             >
-                              {t('books.ai_use_as_annotation')}
+                              <Save size={11} /> {t('books.save_translation')}
                             </button>
                           </div>
                         )}
@@ -4808,6 +4935,7 @@ export const Books: React.FC = () => {
                               setSelectedHighlightIncludesMark(true)
                               setIsSelectionEditorOpen(false)
                               setNewAnnotation('')
+                              setAiTranslation('')
                             }}
                             style={{ padding: '4px 8px', fontSize: '11px' }}
                           >
@@ -4815,7 +4943,10 @@ export const Books: React.FC = () => {
                           </button>
                           <button
                             className="btn sm primary"
-                            onClick={() => void handleAddHighlight()}
+                            onClick={() =>
+                              void handleAddHighlight(undefined, undefined, undefined, 'note')
+                            }
+                            disabled={!newAnnotation.trim()}
                             style={{ padding: '4px 8px', fontSize: '11px' }}
                           >
                             <Save size={10} /> {t('books.save_annotation_btn')}
@@ -4842,11 +4973,13 @@ export const Books: React.FC = () => {
                           margin: 0,
                         }}
                       >
-                        {t('books.highlights_annotations_title')} ({highlights.length})
+                        {t('books.highlights_annotations_title')} ({sortedHighlights.length})
                       </h4>
                       <button
+                        type="button"
                         className="btn sm"
                         onClick={() => setIsAnnotationsDrawerOpen(false)}
+                        aria-label={t('books.hide_annotations') || '收起批注'}
                         title={t('books.hide_annotations') || '收起批注'}
                         style={{
                           width: '28px',
@@ -4859,66 +4992,69 @@ export const Books: React.FC = () => {
                         <PanelRightClose size={13} />
                       </button>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {highlights.map((hl) => (
-                        <div
-                          key={hl.id}
-                          data-reader-annotation-id={hl.id}
-                          className={`book-reader__annotation-card ${activeHighlightId === hl.id ? 'is-active' : ''}`}
-                          style={{
-                            padding: '10px',
-                            backgroundColor: readerCardBg,
-                            border: `1px solid ${readerCardBorder}`,
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                          }}
-                        >
-                          <p
-                            style={{
-                              fontStyle: 'italic',
-                              color: isDarkReader ? '#aaa' : 'var(--text-muted)',
-                              borderLeft: '2px solid var(--color-accent)',
-                              paddingLeft: '6px',
-                              marginBottom: '6px',
-                            }}
+                    <div className="book-reader__annotation-list">
+                      {sortedHighlights.map((hl) => {
+                        const kind = getReaderAnnotationKind(hl)
+                        const KindIcon =
+                          kind === 'translation'
+                            ? Languages
+                            : kind === 'highlight'
+                              ? Highlighter
+                              : MessageSquareText
+                        const content = normalizeHighlightAnnotation(hl.annotation)
+                        return (
+                          <article
+                            key={hl.id}
+                            data-reader-annotation-id={hl.id}
+                            className={`book-reader__annotation-card is-${kind} ${activeHighlightId === hl.id ? 'is-active' : ''}`}
                           >
-                            "{hl.text}"
-                          </p>
-                          <p
-                            style={{
-                              fontWeight: 600,
-                              color: isDarkReader ? '#fff' : 'var(--text-main)',
-                            }}
-                          >
-                            {t('books.annotation_label')}:{' '}
-                            {normalizeHighlightAnnotation(hl.annotation) ||
-                              t('books.no_annotation')}
-                          </p>
-                          <div
-                            style={{
-                              display: 'flex',
-                              justifyContent: 'flex-end',
-                              gap: '6px',
-                              marginTop: '8px',
-                            }}
-                          >
-                            <button
-                              className="btn sm"
-                              onClick={() => handleCopyLink(hl)}
-                              title={t('books.copy_link_tooltip')}
-                              style={{
-                                fontSize: '11px',
-                                padding: '3px 6px',
-                                backgroundColor: isDarkReader ? '#2A2A2A' : '#f0f0f0',
-                                border: 'none',
-                                color: readerTextColor,
-                              }}
-                            >
-                              <Copy size={11} /> {t('books.copy_link_btn')}
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                            <header className="book-reader__annotation-card-header">
+                              <span className="book-reader__annotation-kind">
+                                <KindIcon size={12} aria-hidden="true" />
+                                {t(`books.reader_annotation_kind_${kind}`)}
+                              </span>
+                              <div className="book-reader__annotation-actions">
+                                <button
+                                  type="button"
+                                  className="book-reader__annotation-action"
+                                  onClick={() => locateSavedHighlight(hl)}
+                                  aria-label={t('books.locate_reader_annotation', {
+                                    text: hl.text,
+                                  })}
+                                  title={t('books.locate_reader_annotation', { text: hl.text })}
+                                >
+                                  <LocateFixed size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="book-reader__annotation-action is-danger"
+                                  onClick={() => void handleDeleteSavedHighlight(hl)}
+                                  aria-label={t('books.delete_reader_annotation', {
+                                    text: hl.text,
+                                  })}
+                                  title={t('books.delete_reader_annotation', { text: hl.text })}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </header>
+                            <span className="book-reader__annotation-location">
+                              {getReaderAnnotationLocationLabel(hl)}
+                            </span>
+                            <blockquote className="book-reader__annotation-source">
+                              {hl.text}
+                            </blockquote>
+                            {kind === 'translation' && content && (
+                              <p className="book-reader__annotation-content is-translation">
+                                {content}
+                              </p>
+                            )}
+                            {kind === 'note' && content && (
+                              <p className="book-reader__annotation-content is-note">{content}</p>
+                            )}
+                          </article>
+                        )
+                      })}
                     </div>
                   </aside>
                 </>
