@@ -148,6 +148,8 @@ import { SystemCleanerService } from './systemCleaner/service'
 import { registerSystemCleanerIpc } from './systemCleaner/ipc'
 import { BrowserControlService } from './browserControl/service'
 import { registerBrowserControlIpc } from './browserControl/ipc'
+import { createReaderOutlineService } from './readerOutlineService'
+import { registerReaderOutlineIpc } from './readerOutlineIpc'
 import {
   getBrowserControlRegistrationStatus,
   installBrowserControlNativeHost,
@@ -200,6 +202,7 @@ const aiImageControllers = new Set<AbortController>()
 const aiVideoControllers = new Set<AbortController>()
 let aiRecoveryController: AbortController | null = null
 const browserControlService = new BrowserControlService()
+const readerOutlineService = createReaderOutlineService({ getDb: () => getUserDb('books') })
 const bookBatchImportSessions = new Map<string, { userId: string; items: BatchImportItem[] }>()
 const unlockedPrivateNoteKeys = new Map<string, Buffer>()
 let pendingNoteEditorDraft: Record<string, unknown> | null = null
@@ -2749,6 +2752,11 @@ registerBrowserControlIpc(
       return extensionPath
     },
   },
+)
+
+registerReaderOutlineIpc(
+  { handle: (channel, handler) => ipcMain.handle(channel, handler) },
+  { getService: () => readerOutlineService },
 )
 
 app.whenReady().then(async () => {

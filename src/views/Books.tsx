@@ -400,10 +400,12 @@ export const Books: React.FC = () => {
   const [pdfPageAspectRatios, setPdfPageAspectRatios] = useState<Record<number, number>>({})
   const [pdfOutlineEntries, setPdfOutlineEntries] = useState<PdfOutlineEntry[] | null>(null)
   const [pdfOutlineStatus, setPdfOutlineStatus] = useState<PdfOutlineUiStatus>('empty')
+  const [pdfOutlineAnalysisMessage, setPdfOutlineAnalysisMessage] = useState<string | null>(null)
   const [isLoadingReader, setIsLoadingReader] = useState(false)
   const [pdfLayoutMode, setPdfLayoutMode] = useState<PdfLayoutMode>('single')
   const [isPdfTransitioning, setIsPdfTransitioning] = useState(false)
   const lastMeasuredWidthRef = useRef(0)
+  const activeOutlineBookIdRef = useRef<number | null>(null)
 
   // Friendly transition helper for layout mode changes (prevents blank flash)
   const handlePdfLayoutModeChange = useCallback((mode: PdfLayoutMode) => {
@@ -416,6 +418,27 @@ export const Books: React.FC = () => {
       requestAnimationFrame(() => setIsPdfTransitioning(false))
     })
   }, [])
+
+  const buildPageOnlyPdfOutlineEntries = useCallback(
+    (pageCount: number) =>
+      Array.from({ length: pageCount }, (_, index) => {
+        const pageNumber = index + 1
+        return {
+          id: `page-${pageNumber}`,
+          title: t('books.page_label', { num: pageNumber }),
+          level: 0,
+          pathKey: `page-${pageNumber}`,
+          parentPathKey: null,
+          pageNumber,
+          y: null,
+          destination: null,
+          resolved: true,
+          childrenCount: 0,
+          analysisSource: 'page-only' as const,
+        }
+      }),
+    [t],
+  )
 
   // EPUB reflow view mode: paged single-page, dual-column, or continuous scroll.
   const [epubLayoutMode, setEpubLayoutMode] = useState<'single' | 'dual' | 'scroll'>('single')
@@ -636,6 +659,11 @@ export const Books: React.FC = () => {
         const book = res.data[0]
         readerSessionRef.current += 1
         cancelPdfOcrRequests()
+        if (readingBook && readingBook.id !== book.id && api?.cancelReaderOutlineAnalysis) {
+          void api.cancelReaderOutlineAnalysis(readingBook.id)
+        }
+        activeOutlineBookIdRef.current = book.id
+        setPdfOutlineAnalysisMessage(null)
         setReadingBook(book)
         setReadingProgress(Math.round(book.progress || 0))
         if (chapter) setCurrentChapter(decodeURIComponent(chapter))
@@ -653,6 +681,24 @@ export const Books: React.FC = () => {
       window.removeEventListener('lifeos:open-book', handleOpenBookEvent)
     }
   }, [userId])
+
+  useEffect(() => {
+    if (!api?.onReaderOutlineProgress) return
+    return api.onReaderOutlineProgress((event: {
+      bookId: number
+      state: 'idle' | 'queued' | 'running' | 'completed' | 'cancelled' | 'failed'
+      phase: string
+      progress: number
+      message: string
+      cacheStatus?: 'hit' | 'miss'
+    }) => {
+      if (activeOutlineBookIdRef.current !== event.bookId) return
+      setPdfOutlineAnalysisMessage(event.message)
+      if (event.state === 'queued' || event.state === 'running') {
+        setPdfOutlineStatus('loading')
+      }
+    })
+  }, [api])
 
   const createCategory = async (name: string, parentId: BookShelf['id'] | null) => {
     if (!api?.dbTransaction) {
@@ -1386,6 +1432,11 @@ export const Books: React.FC = () => {
   const handleOpenReader = async (book: any) => {
     readerSessionRef.current += 1
     cancelPdfOcrRequests()
+    if (readingBook && readingBook.id !== book.id && api?.cancelReaderOutlineAnalysis) {
+      void api.cancelReaderOutlineAnalysis(readingBook.id)
+    }
+    activeOutlineBookIdRef.current = book.id
+    setPdfOutlineAnalysisMessage(null)
     setReadingBook(book)
     setReadingProgress(Math.round(book.progress || 0))
     setCurrentPageIndex(0)
@@ -1499,8 +1550,13 @@ export const Books: React.FC = () => {
         showToast(t('books.toast_progress_saved', { progress: readingProgress }))
         loadData()
       }
+      if (api.cancelReaderOutlineAnalysis) {
+        void api.cancelReaderOutlineAnalysis(readingBook.id)
+      }
     }
     readerSessionRef.current += 1
+    activeOutlineBookIdRef.current = null
+    setPdfOutlineAnalysisMessage(null)
     setReadingBook(null)
     setBookChapters(null)
     setBookToc(null)
@@ -2052,13 +2108,60 @@ export const Books: React.FC = () => {
     setPdfNumPages(numPages)
     setCurrentPageIndex(initialPage)
 
+    activeOutlineBookIdRef.current = readingBook.id
+    setPdfOutlineAnalysisMessage(null)
     setPdfOutlineEntries(null)
-    setPdfOutlineStatus('empty')
     setPdfOutlineStatus('loading')
-    void loadPdfOutline(pdfDocument).then((outlineResult) => {
+    void loadPdfOutline(pdfDocument).then(async (outlineResult) => {
       if (sessionId !== readerSessionRef.current) return
-      setPdfOutlineStatus(outlineResult.status)
-      setPdfOutlineEntries(outlineResult.status === 'ready' ? outlineResult.entries : null)
+      if (outlineResult.status === 'ready' && outlineResult.entries.length > 0) {
+        setPdfOutlineStatus('ready')
+        setPdfOutlineEntries(
+          outlineResult.entries.map((entry) => ({
+            ...entry,
+            analysisSource: 'native' as const,
+          })),
+        )
+        setPdfOutlineAnalysisMessage(null)
+        return
+      }
+
+      setPdfOutlineAnalysisMessage(t('books.pdf_outline_loading') || '目录分析中…')
+      if (!api?.analyzeReaderOutline) {
+        setPdfOutlineStatus('error')
+        setPdfOutlineEntries(buildPageOnlyPdfOutlineEntries(numPages))
+        return
+      }
+
+      const analysisRes = await api.analyzeReaderOutline({
+        bookId: readingBook.id,
+        source: 'pdf',
+        filePath: readingBook.path,
+        pageCount: numPages,
+      })
+      if (sessionId !== readerSessionRef.current) return
+      if (analysisRes?.success && analysisRes.data) {
+        const result = analysisRes.data
+        if (result.status === 'ready') {
+          setPdfOutlineStatus('ready')
+          setPdfOutlineEntries(result.entries)
+          setPdfOutlineAnalysisMessage(null)
+          return
+        }
+        if (result.status === 'empty') {
+          setPdfOutlineStatus('ready')
+          setPdfOutlineEntries(buildPageOnlyPdfOutlineEntries(numPages))
+          setPdfOutlineAnalysisMessage(null)
+          return
+        }
+        if (result.status === 'cancelled') {
+          return
+        }
+      }
+
+      setPdfOutlineStatus('error')
+      setPdfOutlineEntries(buildPageOnlyPdfOutlineEntries(numPages))
+      setPdfOutlineAnalysisMessage(t('books.pdf_outline_failed') || '目录读取失败，已回退到页码目录')
     })
   }
 
@@ -4107,7 +4210,9 @@ export const Books: React.FC = () => {
                                         padding: '4px 8px 8px',
                                       }}
                                     >
-                                      {t('books.pdf_outline_loading') || '目录分析中…'}
+                                      {pdfOutlineAnalysisMessage ||
+                                        t('books.pdf_outline_loading') ||
+                                        '目录分析中…'}
                                     </div>
                                   )}
                                   {pdfOutlineStatus === 'error' && !hasOutlineEntries && (
@@ -4118,7 +4223,9 @@ export const Books: React.FC = () => {
                                         padding: '4px 8px 8px',
                                       }}
                                     >
-                                      {t('books.pdf_outline_failed') || '目录读取失败，已回退到页码目录'}
+                                      {pdfOutlineAnalysisMessage ||
+                                        t('books.pdf_outline_failed') ||
+                                        '目录读取失败，已回退到页码目录'}
                                     </div>
                                   )}
                                   {pdfTocEntries.map((entry, idx) => {

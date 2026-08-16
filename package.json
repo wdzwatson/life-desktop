@@ -23,6 +23,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@firecrawl/pdf-inspector": "^1.14.2",
     "@gsap/react": "^2.1.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@uiw/react-time-picker": "^4.22.3",

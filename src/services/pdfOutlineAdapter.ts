@@ -1,6 +1,7 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 
 export type PdfOutlineResolutionStatus = 'ready' | 'empty' | 'error'
+export type PdfOutlineEntrySource = 'native' | 'tagged' | 'inferred' | 'page-only'
 
 export type PdfOutlineEntry = {
   id: string
@@ -13,6 +14,7 @@ export type PdfOutlineEntry = {
   destination: string | readonly unknown[] | null
   resolved: boolean
   childrenCount: number
+  analysisSource?: PdfOutlineEntrySource
 }
 
 export type PdfOutlineLoadResult = {

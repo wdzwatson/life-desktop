@@ -377,6 +377,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternalFile: (relativePath: string) => ipcRenderer.invoke('fs:open-external', relativePath),
   getBookChapters: (relativePath: string) => ipcRenderer.invoke('book:get-chapters', relativePath),
   getBookBuffer: (relativePath: string) => ipcRenderer.invoke('book:get-buffer', relativePath),
+  analyzeReaderOutline: (input: {
+    bookId: number
+    source: 'pdf' | 'ocr' | 'epub' | 'unknown'
+    filePath: string
+    pageCount: number
+    parserVersion?: string
+  }) => ipcRenderer.invoke('reader:outline:analyze', input),
+  cancelReaderOutlineAnalysis: (bookId: number) =>
+    ipcRenderer.invoke('reader:outline:cancel', { bookId }),
+  onReaderOutlineProgress: (
+    callback: (event: {
+      bookId: number
+      state: 'idle' | 'queued' | 'running' | 'completed' | 'cancelled' | 'failed'
+      phase: string
+      progress: number
+      message: string
+      cacheStatus?: 'hit' | 'miss'
+    }) => void,
+  ) => {
+    const subscription = (_event: unknown, event: any) => callback(event)
+    ipcRenderer.on('reader:outline:progress', subscription)
+    return () => ipcRenderer.removeListener('reader:outline:progress', subscription)
+  },
 
   // Video parsing & downloading
   checkVideoTools: () => ipcRenderer.invoke('video:checkTools'),

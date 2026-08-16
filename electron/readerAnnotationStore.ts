@@ -75,6 +75,36 @@ type ReaderAnnotationItemRow = {
   updated_at: string
 }
 
+type ReaderOutlineRunRow = {
+  id: string
+  book_id: number
+  source: ReaderDocumentSource
+  parser_version: string
+  content_hash: string
+  page_count: number
+  state: ReaderOutlineRunState
+  progress: number
+  error_message: string | null
+}
+
+type ReaderOutlineNodeRow = {
+  id: string
+  book_id: number
+  run_id: string
+  source: ReaderDocumentSource
+  parent_id: string | null
+  title: string
+  level: number
+  path_key: string
+  sort_order: number
+  page_start: number | null
+  page_end: number | null
+  y_start: number | null
+  y_end: number | null
+  locator_json: string | null
+  confidence: number | null
+}
+
 const DOCUMENT_SOURCE_CHECK = "CHECK(source IN ('pdf', 'ocr', 'epub', 'unknown'))"
 const OUTLINE_STATUS_CHECK = "CHECK(location_status IN ('pending', 'resolved', 'page-only', 'error'))"
 const OUTLINE_RUN_STATE_CHECK =
@@ -456,4 +486,42 @@ export function listReaderAnnotationItemsByBook(
     )
     .all(...params) as ReaderAnnotationItemRow[]
   return rows
+}
+
+export function listOutlineNodesForRun(db: Database.Database, runId: string) {
+  return db
+    .prepare(
+      `SELECT
+         id, book_id, run_id, source, parent_id, title, level, path_key, sort_order,
+         page_start, page_end, y_start, y_end, locator_json, confidence
+       FROM book_outline_nodes
+       WHERE run_id = ?
+       ORDER BY sort_order, level, id`,
+    )
+    .all(runId) as ReaderOutlineNodeRow[]
+}
+
+export function getOutlineRunByKey(
+  db: Database.Database,
+  input: {
+    bookId: number
+    source: ReaderDocumentSource
+    parserVersion: string
+    contentHash: string
+    pageCount: number
+  },
+) {
+  return db
+    .prepare(
+      `SELECT id, book_id, source, parser_version, content_hash, page_count, state, progress, error_message
+       FROM book_outline_runs
+       WHERE book_id = ? AND source = ? AND parser_version = ? AND content_hash = ? AND page_count = ?`,
+    )
+    .get(
+      input.bookId,
+      input.source,
+      input.parserVersion,
+      input.contentHash,
+      input.pageCount,
+    ) as ReaderOutlineRunRow | undefined
 }
