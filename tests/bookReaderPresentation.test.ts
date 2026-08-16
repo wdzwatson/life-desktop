@@ -33,12 +33,11 @@ test('book library defaults to the to-read shelf', () => {
   )
 })
 
-test('reader header stays hidden until the pointer reaches its top sensor', () => {
+test('reader header top sensor matches the responsive control bar height', () => {
   assert.match(booksSource, /className="book-reader__header-sensor"/)
-  assert.match(booksSource, /setIsReaderHeaderVisible\(true\)/)
   assert.match(booksStyles, /\.book-reader__header\s*\{[\s\S]*?opacity:\s*0[\s\S]*?transform:\s*translateY/)
-  assert.match(booksStyles, /\.book-reader__header\.is-visible/)
-  assert.doesNotMatch(booksStyles, /\.book-reader__header:focus-within/)
+  assert.match(booksStyles, /\.book-reader__header-sensor\s*\{[\s\S]*?height:\s*44px/)
+  assert.match(booksStyles, /\.book-reader__header-sensor:hover \+ \.book-reader__header/)
 })
 
 test('PDF continuous mode owns its scroll viewport and excludes page-flip mode', () => {
