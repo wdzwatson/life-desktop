@@ -17,6 +17,66 @@ export type EpubLayoutMode = 'single' | 'dual' | 'scroll'
 export type PdfLayoutMode = 'single' | 'dual' | 'scroll'
 export type ReaderAnnotationKind = 'translation' | 'highlight' | 'note'
 
+export type PdfSelectionArea = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export const mergePdfSelectionAreas = (areas: PdfSelectionArea[]): PdfSelectionArea[] => {
+  const validAreas = areas
+    .filter(
+      (area) =>
+        Number.isFinite(area.x) &&
+        Number.isFinite(area.y) &&
+        Number.isFinite(area.width) &&
+        Number.isFinite(area.height) &&
+        area.width > 0 &&
+        area.height > 0,
+    )
+    .map((area) => ({ ...area }))
+    .sort(
+      (left, right) => left.y + left.height / 2 - (right.y + right.height / 2) || left.x - right.x,
+    )
+
+  if (validAreas.length < 2) return validAreas
+
+  const heights = validAreas.map((area) => area.height).sort((left, right) => left - right)
+  const medianHeight = heights[Math.floor(heights.length / 2)]
+  const lineTolerance = Math.min(0.035, Math.max(0.004, medianHeight * 0.65))
+  const rows: Array<{ area: PdfSelectionArea; centerY: number; count: number }> = []
+
+  validAreas.forEach((area) => {
+    const centerY = area.y + area.height / 2
+    const row = rows[rows.length - 1]
+    const verticalOverlap = row
+      ? Math.min(row.area.y + row.area.height, area.y + area.height) -
+        Math.max(row.area.y, area.y)
+      : 0
+    const overlapRatio = row ? verticalOverlap / Math.min(row.area.height, area.height) : 0
+    const sameLine =
+      row &&
+      (Math.abs(row.centerY - centerY) <= lineTolerance || overlapRatio >= 0.55)
+
+    if (!row || !sameLine) {
+      rows.push({ area, centerY, count: 1 })
+      return
+    }
+
+    const current = row.area
+    const left = Math.min(current.x, area.x)
+    const right = Math.max(current.x + current.width, area.x + area.width)
+    const top = Math.min(current.y, area.y)
+    const bottom = Math.max(current.y + current.height, area.y + area.height)
+    row.area = { x: left, y: top, width: right - left, height: bottom - top }
+    row.centerY = (row.centerY * row.count + centerY) / (row.count + 1)
+    row.count += 1
+  })
+
+  return rows.map((row) => row.area).sort((left, right) => left.y - right.y || left.x - right.x)
+}
+
 export type ReaderHighlightAnchor = {
   chapter?: string
   chapterIndex?: number

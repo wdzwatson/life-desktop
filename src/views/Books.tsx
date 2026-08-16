@@ -70,6 +70,7 @@ import {
   getReadingBlockText,
   getReadingProgressForLocation,
   isReadingBlockHeading,
+  mergePdfSelectionAreas,
   parseReaderHighlightAnchor,
   resolveReaderTocEntry,
   shouldCloseReaderDrawersOnContentClick,
@@ -119,6 +120,25 @@ const getEffectiveOverscan = (speed: number, isAutoPlaying: boolean): number => 
 }
 const PDF_RENDER_DEVICE_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 1.5)
 const EMPTY_PDF_HIGHLIGHTS: never[] = []
+
+const setReaderHighlightHoverState = (highlightId: string, isHovered: boolean) => {
+  if (!highlightId) return
+  const nodes = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-reader-highlight-id]'),
+  ).filter((node) => node.dataset.readerHighlightId === highlightId)
+
+  if (isHovered) {
+    nodes.forEach((node) => node.classList.add('is-hovered'))
+    return
+  }
+
+  // Defer removal so moving between wrapped fragments of one annotation does
+  // not flash the other fragments off between pointerleave/pointerenter.
+  window.requestAnimationFrame(() => {
+    const stillHovered = nodes.some((node) => node.matches(':hover'))
+    if (!stillHovered) nodes.forEach((node) => node.classList.remove('is-hovered'))
+  })
+}
 
 // Memoized PDF continuous scroll list to isolate heavy rendering from state updates
 // during auto-play. In auto-play mode, changes to currentPageIndex / renderWindowCenter
@@ -1694,8 +1714,8 @@ export const Books: React.FC = () => {
           const pageNumber = Number(pageElement?.dataset.pageNumber)
           const pageBounds = pageElement?.getBoundingClientRect()
           const areas = pageBounds
-            ? Array.from(range.getClientRects())
-                .map((rect) => {
+            ? mergePdfSelectionAreas(
+                Array.from(range.getClientRects()).map((rect) => {
                   const left = Math.max(rect.left, pageBounds.left)
                   const top = Math.max(rect.top, pageBounds.top)
                   const right = Math.min(rect.right, pageBounds.right)
@@ -1706,14 +1726,8 @@ export const Books: React.FC = () => {
                     width: (right - left) / pageBounds.width,
                     height: (bottom - top) / pageBounds.height,
                   }
-                })
-                .filter(
-                  (area) =>
-                    Number.isFinite(area.x) &&
-                    Number.isFinite(area.y) &&
-                    area.width > 0 &&
-                    area.height > 0,
-                )
+                }),
+              )
             : []
           if (Number.isInteger(pageNumber) && areas.length > 0) {
             const anchor = { pageNumber, areas }
@@ -1957,14 +1971,14 @@ export const Books: React.FC = () => {
       showToast(t('books.ocr_selection_empty'))
       return
     }
-    const normalizedAreas = areas
-      .map((area) => ({
+    const normalizedAreas = mergePdfSelectionAreas(
+      areas.map((area) => ({
         x: Math.max(0, Math.min(1, Number(area.x))),
         y: Math.max(0, Math.min(1, Number(area.y))),
         width: Math.max(0, Math.min(1, Number(area.width))),
         height: Math.max(0, Math.min(1, Number(area.height))),
-      }))
-      .filter((area) => area.width > 0 && area.height > 0)
+      })),
+    )
     if (normalizedAreas.length === 0) {
       showToast(t('books.ocr_selection_empty'))
       return
@@ -2752,22 +2766,14 @@ export const Books: React.FC = () => {
       try {
         const anchor = JSON.parse(highlight.anchor || '{}')
         if (!Number.isInteger(anchor.pageNumber) || !Array.isArray(anchor.areas)) return
-        const areas = anchor.areas
-          .map((area: any) => ({
+        const areas = mergePdfSelectionAreas(
+          anchor.areas.map((area: any) => ({
             x: Math.max(0, Math.min(1, Number(area?.x))),
             y: Math.max(0, Math.min(1, Number(area?.y))),
             width: Math.max(0, Math.min(1, Number(area?.width))),
             height: Math.max(0, Math.min(1, Number(area?.height))),
-          }))
-          .filter(
-            (area: { x: number; y: number; width: number; height: number }) =>
-              Number.isFinite(area.x) &&
-              Number.isFinite(area.y) &&
-              Number.isFinite(area.width) &&
-              Number.isFinite(area.height) &&
-              area.width > 0 &&
-              area.height > 0,
-          )
+          })),
+        )
         if (areas.length === 0) return
         const pageHighlights = byPage.get(anchor.pageNumber) || []
         pageHighlights.push({
@@ -3020,6 +3026,12 @@ export const Books: React.FC = () => {
                   t('books.no_annotation')
                 }
                 aria-label={`${segment.text}: ${normalizeHighlightAnnotation(segment.highlight.annotation) || t('books.no_annotation')}`}
+                onPointerEnter={(event) =>
+                  setReaderHighlightHoverState(event.currentTarget.dataset.readerHighlightId || '', true)
+                }
+                onPointerLeave={(event) =>
+                  setReaderHighlightHoverState(event.currentTarget.dataset.readerHighlightId || '', false)
+                }
                 onClick={(e) => {
                   e.stopPropagation()
                   openSavedHighlight(segment.highlight)

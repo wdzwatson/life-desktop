@@ -9,13 +9,9 @@ import { ScanText } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { PdfOcrWord } from '../views/pdfOcrService'
 import { joinOcrWords } from '../ocrTextUtils'
+import type { PdfSelectionArea } from '../views/bookReaderUtils'
 
-export type PdfOcrSelectionArea = {
-  x: number
-  y: number
-  width: number
-  height: number
-}
+export type PdfOcrSelectionArea = PdfSelectionArea
 
 export type SavedPdfHighlight = {
   id: string
@@ -59,6 +55,7 @@ export function PdfOcrTextLayer({
   const layerRef = useRef<HTMLDivElement | null>(null)
   const dragStartIndexRef = useRef<number | null>(null)
   const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(() => new Set())
+  const [hoveredHighlightId, setHoveredHighlightId] = useState<string | null>(null)
 
   useEffect(() => {
     if (selectedIndexes.size === 0) return
@@ -272,10 +269,11 @@ export function PdfOcrTextLayer({
           <button
             key={`${highlight.id}-${index}`}
             type="button"
-            className={`book-reader__pdf-saved-highlight is-${kind} ${visualState}`}
+            className={`book-reader__pdf-saved-highlight is-${kind} ${visualState} ${hoveredHighlightId === highlight.id ? 'is-active' : ''}`}
             data-reader-highlight-id={highlight.id}
             aria-label={`${highlight.text}: ${highlight.annotation || t('books.mark_highlight')}`}
             title={highlight.annotation || t('books.mark_highlight')}
+            onPointerEnter={() => setHoveredHighlightId(highlight.id)}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation()
@@ -361,6 +359,7 @@ export function PdfOcrTextLayer({
     return (
       <div
         aria-label={t('books.ocr_text_layer_label')}
+        onPointerLeave={() => setHoveredHighlightId(null)}
         style={{ position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none' }}
       >
         {renderSavedHighlights()}
@@ -378,6 +377,7 @@ export function PdfOcrTextLayer({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={cancelPointerSelection}
+      onPointerLeave={() => setHoveredHighlightId(null)}
       onContextMenu={handleContextMenu}
       style={{ position: 'absolute', inset: 0, zIndex: 3, cursor: 'text', touchAction: 'none' }}
     >
