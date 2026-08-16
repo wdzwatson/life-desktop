@@ -636,7 +636,7 @@ export const Books: React.FC = () => {
         if (chapter) setCurrentChapter(decodeURIComponent(chapter))
 
         // Load highlights for this book
-        const hlRes = await api.dbQuery('books', 'SELECT * FROM highlights WHERE book_id = ?', [
+        const hlRes = await api.dbQuery('books', 'SELECT * FROM reader_highlights_compat WHERE book_id = ?', [
           bookId,
         ])
         if (hlRes?.success) setHighlights(hlRes.data)
@@ -1400,7 +1400,7 @@ export const Books: React.FC = () => {
 
     // Load highlights
     if (api) {
-      const hlRes = await api.dbQuery('books', 'SELECT * FROM highlights WHERE book_id = ?', [
+      const hlRes = await api.dbQuery('books', 'SELECT * FROM reader_highlights_compat WHERE book_id = ?', [
         book.id,
       ])
       if (hlRes?.success) setHighlights(hlRes.data)
@@ -2579,7 +2579,7 @@ export const Books: React.FC = () => {
       setReaderContextMenu(null)
 
       // Reload highlights
-      const hlRes = await api.dbQuery('books', 'SELECT * FROM highlights WHERE book_id = ?', [
+      const hlRes = await api.dbQuery('books', 'SELECT * FROM reader_highlights_compat WHERE book_id = ?', [
         readingBook.id,
       ])
       if (hlRes?.success) setHighlights(hlRes.data)
@@ -2627,7 +2627,7 @@ export const Books: React.FC = () => {
             [JSON.stringify(updatedAnchor), highlight.id, readingBook.id],
           )
     if (res?.success) {
-      const hlRes = await api.dbQuery('books', 'SELECT * FROM highlights WHERE book_id = ?', [
+    const hlRes = await api.dbQuery('books', 'SELECT * FROM reader_highlights_compat WHERE book_id = ?', [
         readingBook.id,
       ])
       if (hlRes?.success) setHighlights(hlRes.data)
