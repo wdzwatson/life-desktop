@@ -60,9 +60,9 @@
 完成记录：
 
 - 完成日期：2026-08-17
-- 提交：待生成
+- 提交：`7deafd8`
 - 结果：新增 reader 基线清单与回归测试，覆盖 PDF/EPUB 首屏、文本选择、翻页、滚动和 OCR 的非阻塞契约；renderer 不直接同步解析目录，选择流程不等待目录结果。
-- 验证：待执行 `npm test`、`npm run lint`、`npm run build`、`git diff --check`
+- 验证：`npm test`、`npm run lint`、`npm run build`、`git diff --check` 通过
 
 ### AT-02 共享领域类型、Anchor v2 与导出类型
 
