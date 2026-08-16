@@ -265,7 +265,7 @@
 
 .book-reader__drawer-toggle {
   position: absolute;
-  top: 16px;
+  top: 56px;
   z-index: 40;
   width: 34px;
   height: 34px;
@@ -640,7 +640,7 @@
   .book-reader__main { padding-right: 44px !important; padding-left: 44px !important; }
 
   .book-reader__drawer-toggle {
-    top: 12px;
+    top: 56px;
   }
 
   .book-batch-import {

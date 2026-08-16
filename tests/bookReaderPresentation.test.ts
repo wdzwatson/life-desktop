@@ -71,6 +71,8 @@ test('reader annotations use a right-side icon control with a count badge', () =
   assert.match(booksSource, /book-reader__drawer-toggle--annotations/)
   assert.match(booksSource, /className="book-reader__annotation-count"/)
   assert.match(booksStyles, /\.book-reader__annotation-count\s*\{/)
+  assert.match(booksStyles, /\.book-reader__drawer-toggle\s*\{[\s\S]*?top:\s*56px/)
+  assert.match(booksStyles, /@media \(max-width: 720px\)[\s\S]*?\.book-reader__drawer-toggle\s*\{\s*top:\s*56px/)
   assert.match(booksSource, /aria-controls="book-reader-annotations"/)
 })
 
