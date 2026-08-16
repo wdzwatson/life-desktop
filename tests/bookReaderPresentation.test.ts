@@ -4,6 +4,10 @@ import test from 'node:test'
 
 const booksSource = readFileSync(new URL('../src/views/Books.tsx', import.meta.url), 'utf8')
 const booksStyles = readFileSync(new URL('../src/views/Books.css', import.meta.url), 'utf8')
+const pdfOcrTextLayer = readFileSync(
+  new URL('../src/components/PdfOcrTextLayer.tsx', import.meta.url),
+  'utf8',
+)
 const viteConfig = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8')
 
 test('book shelf titles support two lines while preserving the full title as a tooltip', () => {
@@ -80,6 +84,10 @@ test('reader toolbar uses compact dropdowns and stable theme swatches', () => {
   assert.match(booksSource, /className="book-reader__layout-dropdown"/)
   assert.match(booksSource, /className=\{`book-reader__theme-swatch/)
   assert.match(booksStyles, /\.book-reader__theme-swatch\s*\{[\s\S]*?flex:\s*0 0 20px[\s\S]*?padding:\s*0/)
+  assert.match(
+    booksStyles,
+    /\.book-reader__layout-dropdown \.dropdown__control--is-focused\s*\{\s*box-shadow:\s*none/,
+  )
 })
 
 test('reader selection actions are presented in a contextual menu', () => {
@@ -109,6 +117,17 @@ test('saved highlights render on the source text and open their annotation', () 
   assert.match(booksSource, /data-reader-annotation-id=\{hl\.id\}/)
   assert.match(booksStyles, /\.book-reader__saved-highlight:hover/)
   assert.match(booksStyles, /\.book-reader__pdf-saved-highlight:hover/)
+  assert.match(booksSource, /prev\.pdfHighlightsByPage !== next\.pdfHighlightsByPage/)
+  assert.match(booksSource, /prev\.pdfOcrPages !== next\.pdfOcrPages/)
+  assert.match(booksSource, /range\.getClientRects\(\)/)
+  assert.match(booksSource, /onMouseUp=\{handleTextSelection\}/)
+  assert.match(pdfOcrTextLayer, /is-highlight-only/)
+  assert.match(pdfOcrTextLayer, /is-annotation-only/)
+  assert.match(pdfOcrTextLayer, /is-combined/)
+  assert.match(pdfOcrTextLayer, /title=\{highlight\.annotation \|\| t\('books\.mark_highlight'\)\}/)
+  assert.match(pdfOcrTextLayer, /onContextMenu=\{\(event\)/)
+  assert.match(booksSource, /DELETE FROM highlights WHERE id = \? AND book_id = \?/)
+  assert.match(booksSource, /highlighted:\s*includesMark/)
 })
 
 test('PDF reader provides PDF.js with bundled WASM decoder files through a stable option object', () => {
