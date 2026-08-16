@@ -217,18 +217,40 @@
 }
 
 .book-reader__pdf-saved-highlight {
+  box-sizing: border-box;
+  display: block;
   z-index: 5;
+  min-height: 3px;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 65%, transparent);
+  border: 0;
   border-radius: 2px;
-  background: color-mix(in srgb, var(--color-accent) 24%, transparent);
+  background: transparent;
   cursor: pointer;
-  transition: background-color 180ms ease, box-shadow 180ms ease;
+  pointer-events: auto;
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.book-reader__pdf-saved-highlight.is-highlight-only {
+  border-bottom: 2px solid var(--color-accent);
+}
+
+.book-reader__pdf-saved-highlight.is-annotation-only {
+  border: 1px dashed color-mix(in srgb, var(--color-accent) 78%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+
+.book-reader__pdf-saved-highlight.is-combined {
+  border: 1px solid color-mix(in srgb, var(--color-accent) 68%, transparent);
+  border-bottom: 2px solid var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 26%, transparent);
 }
 
 .book-reader__pdf-saved-highlight:hover,
 .book-reader__pdf-saved-highlight:focus-visible {
-  outline: none;
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
   background: color-mix(in srgb, var(--color-accent) 42%, transparent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 28%, transparent);
 }
@@ -351,6 +373,9 @@
 .book-reader__layout-dropdown { width: 118px; flex: 0 0 118px; }
 .book-reader__speed-dropdown { width: 82px; flex: 0 0 82px; }
 .book-reader__toolbar .dropdown__control { border-color: var(--color-border); background: transparent; color: inherit; font-size: 12px; }
+.book-reader__layout-dropdown .dropdown__control--is-focused {
+  box-shadow: none;
+}
 .book-reader__toolbar .dropdown__value-container { padding: 0 4px 0 8px; }
 .book-reader__toolbar .dropdown__indicator { width: 24px; }
 

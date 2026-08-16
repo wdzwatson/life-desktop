@@ -24,6 +24,7 @@ export type ReaderHighlightAnchor = {
   endOffset?: number
   pageNumber?: number
   areas?: Array<{ x: number; y: number; width: number; height: number }>
+  highlighted?: boolean
 }
 
 export type ReaderHighlight = {

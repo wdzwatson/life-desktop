@@ -11,9 +11,11 @@ export type PdfOcrSelectionArea = {
   height: number
 }
 
-type SavedPdfHighlight = {
+export type SavedPdfHighlight = {
   id: string
+  text: string
   annotation?: string
+  highlighted?: boolean
   areas: PdfOcrSelectionArea[]
 }
 
@@ -34,7 +36,12 @@ export function PdfOcrTextLayer({
   status: 'idle' | 'loading' | 'ready' | 'error'
   progressLabel?: string
   onSelectAreas: (areas: PdfOcrSelectionArea[], selectedText: string) => void
-  onOpenContextMenu?: (event: { clientX: number; clientY: number; text: string }) => void
+  onOpenContextMenu?: (event: {
+    clientX: number
+    clientY: number
+    text: string
+    highlight?: SavedPdfHighlight
+  }) => void
   onRetry?: () => void
   onFallback?: () => void
   savedHighlights?: SavedPdfHighlight[]
@@ -209,33 +216,111 @@ export function PdfOcrTextLayer({
     if (text) onOpenContextMenu?.({ clientX: event.clientX, clientY: event.clientY, text })
   }
 
-  if (status !== 'ready' || words.length === 0) {
-    if (status === 'loading') return (
-      <span
-        role="status"
-        style={{
-          position: 'absolute', right: 8, top: 8, zIndex: 4, padding: '3px 6px',
-          borderRadius: 4, background: 'rgba(15, 23, 42, .72)', color: '#fff', fontSize: 10,
-          pointerEvents: 'none',
-        }}
-      >
-        {progressLabel || t('books.ocr_recognizing_page')}
-      </span>
+  const renderSavedHighlights = () =>
+    savedHighlights.flatMap((highlight) =>
+      highlight.areas.map((area, index) => (
+        <button
+          key={`${highlight.id}-${index}`}
+          type="button"
+          className={`book-reader__pdf-saved-highlight ${
+            highlight.annotation
+              ? highlight.highlighted === false
+                ? 'is-annotation-only'
+                : 'is-combined'
+              : 'is-highlight-only'
+          }`}
+          aria-label={`${highlight.text}: ${highlight.annotation || t('books.mark_highlight')}`}
+          title={highlight.annotation || t('books.mark_highlight')}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpenHighlight?.(highlight)
+          }}
+          onContextMenu={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onOpenContextMenu?.({
+              clientX: event.clientX,
+              clientY: event.clientY,
+              text: highlight.text,
+              highlight,
+            })
+          }}
+          style={{
+            position: 'absolute',
+            left: `${area.x * 100}%`,
+            top: `${area.y * 100}%`,
+            width: `${area.width * 100}%`,
+            height: `${area.height * 100}%`,
+            pointerEvents: 'auto',
+          }}
+        />
+      )),
     )
-    if (status === 'error') return (
+
+  if (status !== 'ready' || words.length === 0) {
+    const statusContent =
+      status === 'loading' ? (
+        <span
+          role="status"
+          style={{
+            position: 'absolute',
+            right: 8,
+            top: 8,
+            zIndex: 4,
+            padding: '3px 6px',
+            borderRadius: 4,
+            background: 'rgba(15, 23, 42, .72)',
+            color: '#fff',
+            fontSize: 10,
+            pointerEvents: 'none',
+          }}
+        >
+          {progressLabel || t('books.ocr_recognizing_page')}
+        </span>
+      ) : status === 'error' ? (
+        <div
+          role="alert"
+          style={{
+            position: 'absolute',
+            right: 8,
+            top: 8,
+            zIndex: 4,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 6px',
+            borderRadius: 4,
+            background: 'rgba(127, 29, 29, .9)',
+            color: '#fff',
+            fontSize: 10,
+            pointerEvents: 'auto',
+          }}
+        >
+          <span>{t('books.ocr_failed_inline')}</span>
+          {onRetry && (
+            <button className="btn sm" type="button" onClick={onRetry}>
+              {t('books.ocr_retry')}
+            </button>
+          )}
+          {onFallback && (
+            <button className="btn sm" type="button" onClick={onFallback}>
+              <ScanText size={11} /> {t('books.ocr_select_retry')}
+            </button>
+          )}
+        </div>
+      ) : null
+
+    if (savedHighlights.length === 0) return statusContent
+    return (
       <div
-        role="alert"
-        style={{
-          position: 'absolute', right: 8, top: 8, zIndex: 4, display: 'flex', alignItems: 'center', gap: 4,
-          padding: '4px 6px', borderRadius: 4, background: 'rgba(127, 29, 29, .9)', color: '#fff', fontSize: 10,
-        }}
+        aria-label={t('books.ocr_text_layer_label')}
+        style={{ position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none' }}
       >
-        <span>{t('books.ocr_failed_inline')}</span>
-        {onRetry && <button className="btn sm" type="button" onClick={onRetry}>{t('books.ocr_retry')}</button>}
-        {onFallback && <button className="btn sm" type="button" onClick={onFallback}><ScanText size={11} /> {t('books.ocr_select_retry')}</button>}
+        {renderSavedHighlights()}
+        {statusContent}
       </div>
     )
-    return null
   }
 
   return (
@@ -250,29 +335,7 @@ export function PdfOcrTextLayer({
       onContextMenu={handleContextMenu}
       style={{ position: 'absolute', inset: 0, zIndex: 3, cursor: 'text', touchAction: 'none' }}
     >
-      {savedHighlights.flatMap((highlight) =>
-        highlight.areas.map((area, index) => (
-          <button
-            key={`${highlight.id}-${index}`}
-            type="button"
-            className="book-reader__pdf-saved-highlight"
-            aria-label={highlight.annotation || t('books.no_annotation')}
-            title={highlight.annotation || t('books.no_annotation')}
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation()
-              onOpenHighlight?.(highlight)
-            }}
-            style={{
-              position: 'absolute',
-              left: `${area.x * 100}%`,
-              top: `${area.y * 100}%`,
-              width: `${area.width * 100}%`,
-              height: `${area.height * 100}%`,
-            }}
-          />
-        )),
-      )}
+      {renderSavedHighlights()}
       {highlightRows.map((row, index) => (
         <div
           key={`${row.x}-${row.y}-${index}`}
