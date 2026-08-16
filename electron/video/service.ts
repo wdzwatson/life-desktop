@@ -55,6 +55,16 @@ function getUnsupportedScriptMessage(command: string) {
   return 'Batch script paths are not supported for video tools. Configure the executable (.exe) path instead.'
 }
 
+function getMissingExplicitToolMessage(command: string) {
+  const looksLikePath =
+    path.isAbsolute(command) ||
+    command.includes(path.sep) ||
+    (process.platform === 'win32' && command.includes(path.posix.sep))
+  if (!looksLikePath) return undefined
+  if (fs.existsSync(command)) return undefined
+  return `Video tool path does not exist: ${command}`
+}
+
 function buildSpawnOptions() {
   return { windowsHide: true, shell: false }
 }
@@ -579,6 +589,22 @@ export async function startVideoDownload(input: {
     input.onFailed?.(unsupportedScriptMessage)
     return { success: false, error: unsupportedScriptMessage }
   }
+  input.mainWindow?.webContents.send('video:download-progress', {
+    videoId: input.videoId,
+    title: input.title,
+    progress: 0,
+    phase: 'preparing',
+  })
+  const missingExplicitToolMessage = getMissingExplicitToolMessage(ytDlpPath)
+  if (missingExplicitToolMessage) {
+    input.mainWindow?.webContents.send('video:download-failed', {
+      videoId: input.videoId,
+      title: input.title,
+      message: missingExplicitToolMessage,
+    })
+    input.onFailed?.(missingExplicitToolMessage)
+    return { success: false, error: missingExplicitToolMessage }
+  }
   const quality = (input.settings.qualityPreference || 'best') as VideoQualityPreference
   const cookieConfig = resolveCookieConfigForUrl(input.settings, input.url)
   const ffmpegPath = resolveVideoToolPath(input.settings, 'ffmpeg')
@@ -586,12 +612,6 @@ export async function startVideoDownload(input: {
     settings: input.settings,
     url: input.url,
     outputDir: input.outputDir,
-  })
-  input.mainWindow?.webContents.send('video:download-progress', {
-    videoId: input.videoId,
-    title: input.title,
-    progress: 0,
-    phase: 'preparing',
   })
   const emitProgress = async (progress: number | undefined, message: string, phase: string) => {
     if (typeof progress === 'number') await input.onProgress?.(progress, message)

@@ -8,9 +8,12 @@ test('task creation and editing use one right drawer with picker-based time and 
 
   assert.match(tasksView, /task-drawer/)
   assert.match(tasksView, /drawerMode === 'create'/)
-  assert.match(tasksView, /import DatePicker(?:, \{ registerLocale \})? from 'react-datepicker'/)
-  assert.match(tasksView, /showTimeInput/)
-  assert.doesNotMatch(tasksView, /timeIntervals=\{5\}/)
+  assert.match(
+    tasksView,
+    /import ReactDatePicker(?:, \{ registerLocale \})? from 'react-datepicker'/,
+  )
+  assert.match(tasksView, /DateTimePicker/)
+  assert.match(tasksView, /TimePicker/)
   assert.match(tasksView, /portalId="task-drawer-datepicker-portal"/)
   assert.doesNotMatch(tasksView, /openDrawerDatePicker/)
   assert.doesNotMatch(tasksView, /onClickOutside=\{\(\) => setOpenDrawerDatePicker\(null\)\}/)
@@ -19,8 +22,6 @@ test('task creation and editing use one right drawer with picker-based time and 
   assert.match(tasksView, /closeDrawerDatePickersOnOutsidePointerDown/)
   assert.match(tasksView, /validation_title_required/)
   assert.match(tasksView, /task-time-window-error/)
-  assert.match(tasksView, /customInput=\{/)
-  assert.match(tasksView, /DatePickerInput/)
   assert.match(tasksView, /recurring_task_checkbox_label/)
   assert.match(tasksView, /handleSaveDrawer/)
   assert.match(tasksView, /requiresReview: false/)

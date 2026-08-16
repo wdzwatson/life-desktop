@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "pdf-first-screen",
+      "format": "pdf",
+      "interaction": "first-screen",
+      "blocking": false
+    },
+    {
+      "id": "epub-first-screen",
+      "format": "epub",
+      "interaction": "first-screen",
+      "blocking": false
+    },
+    {
+      "id": "pdf-text-selection",
+      "format": "pdf",
+      "interaction": "text-selection",
+      "blocking": false
+    },
+    {
+      "id": "pdf-page-turn",
+      "format": "pdf",
+      "interaction": "page-turn",
+      "blocking": false
+    },
+    {
+      "id": "pdf-scroll",
+      "format": "pdf",
+      "interaction": "scroll",
+      "blocking": false
+    },
+    {
+      "id": "pdf-ocr-page",
+      "format": "pdf",
+      "interaction": "ocr-page",
+      "blocking": false
+    }
+  ],
+  "samples": [
+    {
+      "id": "pdf-no-outline",
+      "format": "pdf",
+      "outline": "none",
+      "pageCount": 12,
+      "selectionMode": "text",
+      "description": "Plain text PDF without any directory data."
+    },
+    {
+      "id": "pdf-with-outline",
+      "format": "pdf",
+      "outline": "native",
+      "pageCount": 36,
+      "selectionMode": "text",
+      "description": "Regular PDF with a native outline tree and nested sections."
+    },
+    {
+      "id": "pdf-large",
+      "format": "pdf",
+      "outline": "native",
+      "pageCount": 320,
+      "selectionMode": "text",
+      "description": "Long PDF used to guard scroll, page turn, and selection responsiveness."
+    },
+    {
+      "id": "pdf-scanned",
+      "format": "pdf",
+      "outline": "none",
+      "pageCount": 48,
+      "selectionMode": "ocr",
+      "description": "Scan-first PDF that depends on OCR page handling."
+    }
+  ],
+  "contracts": {
+    "rendererOutlineAnalysis": {
+      "blocking": false,
+      "phase": "background"
+    },
+    "selectionWaitsForOutline": {
+      "blocking": false,
+      "phase": "immediate"
+    }
+  },
+  "budgetsMs": {
+    "pdfFirstScreen": 1600,
+    "epubFirstScreen": 1200,
+    "selectionAck": 120,
+    "pageTurn": 16,
+    "scrollFrame": 16,
+    "ocrInlineStatus": 250
+  }
+}
