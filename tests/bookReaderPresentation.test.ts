@@ -19,7 +19,7 @@ test('book shelf edit action remains distinct from the card surface on hover', (
 })
 
 test('reader header gives long titles a responsive, non-overlapping layout', () => {
-  assert.match(booksSource, /className=\{`book-reader__header/)
+  assert.match(booksSource, /className="book-reader__header"/)
   assert.match(booksSource, /className="book-reader__title"/)
   assert.match(booksSource, /className="book-reader__toolbar"/)
   assert.match(booksStyles, /\.book-reader__title\s*\{[\s\S]*?-webkit-line-clamp:\s*2/)
