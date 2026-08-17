@@ -32,11 +32,14 @@ import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../components/AccessibleDialog'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import { Dropdown } from '../components/Dropdown'
+import {
+  PdfAnnotationLayer,
+  type SavedPdfHighlight,
+} from '../components/PdfAnnotationLayer'
 import { PdfOcrOverlay } from '../components/PdfOcrOverlay'
 import {
   PdfOcrTextLayer,
   type PdfOcrSelectionArea,
-  type SavedPdfHighlight,
 } from '../components/PdfOcrTextLayer'
 import { useDrawerPanelTransition } from '../components/useDrawerTransition'
 import { ViewportPortal } from '../components/ViewportPortal'
@@ -68,6 +71,7 @@ import {
   getPdfPageRenderWidth,
   getReaderContentGridColumns,
   getReaderAnnotationKind as getReaderAnnotationKindLegacy,
+  getReaderHighlightPdfPageAreas,
   getReaderTextSegments,
   getReadingBlockText,
   getReadingProgressForLocation,
@@ -195,6 +199,7 @@ type PdfContinuousScrollListProps = {
   onPageAspectRatioLoaded?: (pageNumber: number, ratio: number) => void
   pdfOcrPages: Record<number, PdfOcrPageState>
   pdfHighlightsByPage: Map<number, any[]>
+  activeHighlightId: string | null
   handlePdfOcrAreasSelected: (page: number, areas: any[], selectedText: string) => void
   openReaderContextMenu: (
     clientX: number,
@@ -223,6 +228,7 @@ const PdfContinuousScrollList = React.memo(
       pdfPageAspectRatios,
       pdfOcrPages,
       pdfHighlightsByPage,
+      activeHighlightId,
       handlePdfOcrAreasSelected,
       openReaderContextMenu,
       ensurePdfOcrPage,
@@ -291,7 +297,7 @@ const PdfContinuousScrollList = React.memo(
                   </div>
                 }
               />
-              {(pdfOcrPages[idx + 1] || pdfHighlightsByPage.has(idx + 1)) && (
+              {pdfOcrPages[idx + 1] && (
                 <PdfOcrTextLayer
                   words={pdfOcrPages[idx + 1]?.data?.words || []}
                   status={pdfOcrPages[idx + 1]?.status || 'idle'}
@@ -299,13 +305,21 @@ const PdfContinuousScrollList = React.memo(
                   onSelectAreas={(areas, selectedText) =>
                     void handlePdfOcrAreasSelected(idx + 1, areas, selectedText)
                   }
-                  onOpenContextMenu={({ clientX, clientY, text, highlight }) =>
-                    openReaderContextMenu(clientX, clientY, text, highlight)
+                  onOpenContextMenu={({ clientX, clientY, text }) =>
+                    openReaderContextMenu(clientX, clientY, text)
                   }
                   onRetry={() => void ensurePdfOcrPage(idx + 1)}
                   onFallback={handleOpenPdfOcrFallback}
-                  savedHighlights={pdfHighlightsByPage.get(idx + 1) || EMPTY_PDF_HIGHLIGHTS}
+                />
+              )}
+              {pdfHighlightsByPage.has(idx + 1) && (
+                <PdfAnnotationLayer
+                  highlights={pdfHighlightsByPage.get(idx + 1) || EMPTY_PDF_HIGHLIGHTS}
+                  activeHighlightId={activeHighlightId}
                   onOpenHighlight={openSavedHighlight}
+                  onOpenContextMenu={({ clientX, clientY, text, highlight }) =>
+                    openReaderContextMenu(clientX, clientY, text, highlight)
+                  }
                 />
               )}
             </div>
@@ -325,6 +339,7 @@ const PdfContinuousScrollList = React.memo(
     if (prev.pdfPageAspectRatios !== next.pdfPageAspectRatios) return false
     if (prev.pdfOcrPages !== next.pdfOcrPages) return false
     if (prev.pdfHighlightsByPage !== next.pdfHighlightsByPage) return false
+    if (prev.activeHighlightId !== next.activeHighlightId) return false
 
     // During auto-play, only care about renderWindowCenter changes
     // so the virtual window can advance and pre-render subsequent pages.
@@ -375,6 +390,14 @@ const getReaderAnnotationKind = (highlight: ReaderHighlightRecordLike): ReaderUi
   highlight.kind === 'underline'
     ? 'highlight'
     : (highlight.kind ?? getReaderAnnotationKindLegacy(highlight))
+
+const getPersistedReaderHighlightAnchor = (highlight: ReaderHighlight) => {
+  try {
+    return normalizeReaderAnchorV2(highlight.anchor) as unknown as ReaderHighlightAnchor
+  } catch {
+    return parseReaderHighlightAnchor(highlight.anchor)
+  }
+}
 
 export const Books: React.FC = () => {
   const { t, i18n } = useTranslation()
@@ -1919,29 +1942,49 @@ export const Books: React.FC = () => {
         // than EPUB blocks. Persist the selected client rects as normalized page
         // areas so saved highlights can be painted back over the PDF canvas.
         if (isPdf && range) {
-          const startElement =
-            range.startContainer.parentElement?.closest<HTMLElement>('[data-page-number]')
-          const pageElement = startElement || getPdfPageElement(currentPageIndex + 1)
-          const pageNumber = Number(pageElement?.dataset.pageNumber)
-          const pageBounds = pageElement?.getBoundingClientRect()
-          const areas = pageBounds
-            ? mergePdfSelectionAreas(
-                Array.from(range.getClientRects()).map((rect) => {
-                  const left = Math.max(rect.left, pageBounds.left)
-                  const top = Math.max(rect.top, pageBounds.top)
-                  const right = Math.min(rect.right, pageBounds.right)
-                  const bottom = Math.min(rect.bottom, pageBounds.bottom)
-                  return {
-                    x: (left - pageBounds.left) / pageBounds.width,
-                    y: (top - pageBounds.top) / pageBounds.height,
-                    width: (right - left) / pageBounds.width,
-                    height: (bottom - top) / pageBounds.height,
-                  }
-                }),
-              )
-            : []
-          if (Number.isInteger(pageNumber) && areas.length > 0) {
-            const anchor = { pageNumber, areas }
+          const pageElements = Array.from(
+            readerMainRef.current?.querySelectorAll<HTMLElement>('[data-page-number]') || [],
+          )
+          const areasByPage = new Map<number, PdfOcrSelectionArea[]>()
+          Array.from(range.getClientRects()).forEach((rect) => {
+            const target = pageElements
+              .map((element) => {
+                const bounds = element.getBoundingClientRect()
+                const left = Math.max(rect.left, bounds.left)
+                const top = Math.max(rect.top, bounds.top)
+                const right = Math.min(rect.right, bounds.right)
+                const bottom = Math.min(rect.bottom, bounds.bottom)
+                return { element, bounds, left, top, right, bottom, overlap: (right - left) * (bottom - top) }
+              })
+              .filter((candidate) => candidate.overlap > 0)
+              .sort((left, right) => right.overlap - left.overlap)[0]
+            if (!target || target.bounds.width <= 0 || target.bounds.height <= 0) return
+            const pageNumber = Number(target.element.dataset.pageNumber)
+            if (!Number.isInteger(pageNumber)) return
+            const pageAreas = areasByPage.get(pageNumber) || []
+            pageAreas.push({
+              x: (target.left - target.bounds.left) / target.bounds.width,
+              y: (target.top - target.bounds.top) / target.bounds.height,
+              width: (target.right - target.left) / target.bounds.width,
+              height: (target.bottom - target.top) / target.bounds.height,
+            })
+            areasByPage.set(pageNumber, pageAreas)
+          })
+          const positions = Array.from(areasByPage, ([pageNumber, areas]) =>
+            mergePdfSelectionAreas(areas).map((area) => ({
+              source: 'pdf' as const,
+              pageNumber,
+              ...area,
+            })),
+          ).flat()
+          if (positions.length > 0) {
+            const anchor = {
+              version: 2 as const,
+              source: 'pdf' as const,
+              selectedText,
+              positions,
+              outlinePath: null,
+            }
             selectedHighlightAnchorRef.current = anchor
             setSelectedHighlightAnchor(anchor)
           } else {
@@ -1963,6 +2006,7 @@ export const Books: React.FC = () => {
           endRange.selectNodeContents(startBlock)
           endRange.setEnd(range.endContainer, range.endOffset)
           const anchor = {
+            source: 'epub' as const,
             chapter:
               bookChapters?.[Number(startBlock.dataset.epubChapterIndex)]?.title || currentChapter,
             chapterIndex: Number(startBlock.dataset.epubChapterIndex),
@@ -2203,7 +2247,7 @@ export const Books: React.FC = () => {
       showToast(t('books.ocr_selection_empty'))
       return
     }
-    const anchor = { pageNumber, areas: normalizedAreas }
+    const anchor = { source: 'ocr' as const, pageNumber, areas: normalizedAreas }
     selectedHighlightAnchorRef.current = anchor
     setSelectedHighlightAnchor(anchor)
     // The user has selected words from the page-level OCR result already.
@@ -2910,12 +2954,13 @@ export const Books: React.FC = () => {
     mode: 'edit' | 'add-note' = 'edit',
   ) => {
     const anchor = parseReaderHighlightAnchor(highlight.anchor)
+    const persistedAnchor = getPersistedReaderHighlightAnchor(highlight)
     const kind = getReaderAnnotationKind(highlight)
     const isMarked =
       highlight.highlighted !== undefined ? highlight.highlighted : anchor?.highlighted !== false
     setSelectedHighlightText(highlight.text)
-    setSelectedHighlightAnchor(anchor)
-    selectedHighlightAnchorRef.current = anchor
+    setSelectedHighlightAnchor(persistedAnchor)
+    selectedHighlightAnchorRef.current = persistedAnchor
     selectedSelectionIdRef.current = highlight.selection_id || highlight.id
     editingAnnotationKindRef.current = mode === 'edit' ? kind : null
     selectedTranslationLanguageRef.current =
@@ -2943,8 +2988,9 @@ export const Books: React.FC = () => {
     if (!anchor) return
     selectedSelectionIdRef.current =
       (highlight as ReaderAnnotationRecord).selection_id || highlight.id
-    selectedHighlightAnchorRef.current = anchor
-    setSelectedHighlightAnchor(anchor)
+    const persistedAnchor = getPersistedReaderHighlightAnchor(highlight as ReaderHighlight)
+    selectedHighlightAnchorRef.current = persistedAnchor
+    setSelectedHighlightAnchor(persistedAnchor)
     setSelectedHighlightText(highlight.text)
     setEditingHighlightId(null)
     editingAnnotationKindRef.current = null
@@ -3068,11 +3114,9 @@ export const Books: React.FC = () => {
   const pdfHighlightsByPage = useMemo(() => {
     const byPage = new Map<number, any[]>()
     highlights.forEach((highlight) => {
-      try {
-        const anchor = JSON.parse(highlight.anchor || '{}')
-        if (!Number.isInteger(anchor.pageNumber) || !Array.isArray(anchor.areas)) return
+      getReaderHighlightPdfPageAreas(highlight.anchor).forEach(({ pageNumber, areas: rawAreas }) => {
         const areas = mergePdfSelectionAreas(
-          anchor.areas.map((area: any) => ({
+          rawAreas.map((area) => ({
             x: Math.max(0, Math.min(1, Number(area?.x))),
             y: Math.max(0, Math.min(1, Number(area?.y))),
             width: Math.max(0, Math.min(1, Number(area?.width))),
@@ -3080,18 +3124,16 @@ export const Books: React.FC = () => {
           })),
         )
         if (areas.length === 0) return
-        const pageHighlights = byPage.get(anchor.pageNumber) || []
+        const pageHighlights = byPage.get(pageNumber) || []
         pageHighlights.push({
           ...highlight,
           annotation: normalizeHighlightAnnotation(highlight.annotation),
-          highlighted: anchor.highlighted !== false,
+          highlighted: parseReaderHighlightAnchor(highlight.anchor)?.highlighted !== false,
           kind: getReaderAnnotationKind(highlight),
           areas,
         })
-        byPage.set(anchor.pageNumber, pageHighlights)
-      } catch {
-        // Ignore legacy or malformed anchors that cannot be placed on a PDF page.
-      }
+        byPage.set(pageNumber, pageHighlights)
+      })
     })
     return byPage
   }, [highlights])
@@ -3116,6 +3158,8 @@ export const Books: React.FC = () => {
     const locationStatus = String((highlight as any).location_status || (highlight as any).locationStatus || '').trim()
     if (locationStatus === 'pending') return t('books.reader_annotation_pending')
     const anchor = parseReaderHighlightAnchor(highlight.anchor)
+    if (!anchor) return t('books.reader_annotation_anchor_invalid')
+    if (locationStatus === 'error') return t('books.reader_annotation_location_error')
     const outlinePath = parseOutlinePathSnapshot((highlight as any).outline_path_json)
     const outlineTitles = outlinePath?.nodes?.map((node) => String(node.title || '').trim()).filter(Boolean) || []
     if (outlineTitles.length > 0) return outlineTitles.join(' · ')
@@ -3332,21 +3376,31 @@ export const Books: React.FC = () => {
       >
         {textSegments.map((segment, index) => {
           if (segment.highlight) {
-            const kind = getReaderAnnotationKind(segment.highlight)
-            const anchor = parseReaderHighlightAnchor(segment.highlight.anchor)
-            const isCombined = kind === 'note' && anchor?.highlighted !== false
+            const segmentHighlights = segment.highlights || [segment.highlight]
+            const noteHighlight = segmentHighlights.find(
+              (highlight) => getReaderAnnotationKind(highlight) === 'note',
+            )
+            const underlineHighlight = segmentHighlights.find(
+              (highlight) => getReaderAnnotationKind(highlight) === 'highlight',
+            )
+            const primaryHighlight = noteHighlight || underlineHighlight || segment.highlight
+            const kind = noteHighlight ? 'note' : 'highlight'
+            const isCombined = Boolean(noteHighlight && underlineHighlight)
+            const isActive = segmentHighlights.some(
+              (highlight) => highlight.id === activeHighlightId,
+            )
             return (
               <mark
-                key={`${segment.highlight.id}-${index}`}
-                className={`book-reader__saved-highlight is-${kind} ${isCombined ? 'is-combined' : ''} ${activeHighlightId === segment.highlight.id ? 'is-active' : ''}`}
-                data-reader-highlight-id={segment.highlight.id}
+                key={`${primaryHighlight.id}-${index}`}
+                className={`book-reader__saved-highlight is-${kind} ${isCombined ? 'is-combined' : ''} ${isActive ? 'is-active' : ''}`}
+                data-reader-highlight-id={primaryHighlight.id}
                 role="button"
                 tabIndex={0}
                 title={
-                  normalizeHighlightAnnotation(segment.highlight.annotation) ||
+                  normalizeHighlightAnnotation(noteHighlight?.annotation) ||
                   t('books.no_annotation')
                 }
-                aria-label={`${segment.text}: ${normalizeHighlightAnnotation(segment.highlight.annotation) || t('books.no_annotation')}`}
+                aria-label={`${segment.text}: ${normalizeHighlightAnnotation(noteHighlight?.annotation) || t('books.no_annotation')}`}
                 onPointerEnter={(event) =>
                   setReaderHighlightHoverState(event.currentTarget.dataset.readerHighlightId || '', true)
                 }
@@ -3355,12 +3409,12 @@ export const Books: React.FC = () => {
                 }
                 onClick={(e) => {
                   e.stopPropagation()
-                  openSavedHighlight(segment.highlight)
+                  openSavedHighlight(primaryHighlight)
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault()
-                    openSavedHighlight(segment.highlight)
+                    openSavedHighlight(primaryHighlight)
                   }
                 }}
               >
@@ -4200,7 +4254,7 @@ export const Books: React.FC = () => {
                   role="menuitem"
                   onClick={() => {
                     if (contextHighlight) {
-                      const anchor = parseReaderHighlightAnchor(contextHighlight.anchor)
+                      const anchor = getPersistedReaderHighlightAnchor(contextHighlight)
                       selectedHighlightAnchorRef.current = anchor
                       setSelectedHighlightAnchor(anchor)
                       setSelectedHighlightText(contextHighlight.text)
@@ -4680,6 +4734,7 @@ export const Books: React.FC = () => {
                                   onPageAspectRatioLoaded={handlePdfPageAspectRatioLoaded}
                                   pdfOcrPages={pdfOcrPages}
                                   pdfHighlightsByPage={pdfHighlightsByPage}
+                                  activeHighlightId={activeHighlightId}
                                   handlePdfOcrAreasSelected={handlePdfOcrAreasSelected}
                                   openReaderContextMenu={openReaderContextMenu}
                                   ensurePdfOcrPage={ensurePdfOcrPage}
@@ -4748,8 +4803,7 @@ export const Books: React.FC = () => {
                                             </div>
                                           }
                                         />
-                                        {(pdfOcrPages[currentPageIndex + 1] ||
-                                          pdfHighlightsByPage.has(currentPageIndex + 1)) && (
+                                        {pdfOcrPages[currentPageIndex + 1] && (
                                           <PdfOcrTextLayer
                                             words={
                                               pdfOcrPages[currentPageIndex + 1]?.data?.words || []
@@ -4767,6 +4821,23 @@ export const Books: React.FC = () => {
                                                 selectedText,
                                               )
                                             }
+                                            onOpenContextMenu={({ clientX, clientY, text }) =>
+                                              openReaderContextMenu(clientX, clientY, text)
+                                            }
+                                            onRetry={() =>
+                                              void ensurePdfOcrPage(currentPageIndex + 1)
+                                            }
+                                            onFallback={handleOpenPdfOcrFallback}
+                                          />
+                                        )}
+                                        {pdfHighlightsByPage.has(currentPageIndex + 1) && (
+                                          <PdfAnnotationLayer
+                                            highlights={
+                                              pdfHighlightsByPage.get(currentPageIndex + 1) ||
+                                              EMPTY_PDF_HIGHLIGHTS
+                                            }
+                                            activeHighlightId={activeHighlightId}
+                                            onOpenHighlight={openSavedHighlight}
                                             onOpenContextMenu={({
                                               clientX,
                                               clientY,
@@ -4780,15 +4851,6 @@ export const Books: React.FC = () => {
                                                 highlight,
                                               )
                                             }
-                                            onRetry={() =>
-                                              void ensurePdfOcrPage(currentPageIndex + 1)
-                                            }
-                                            onFallback={handleOpenPdfOcrFallback}
-                                            savedHighlights={
-                                              pdfHighlightsByPage.get(currentPageIndex + 1) ||
-                                              EMPTY_PDF_HIGHLIGHTS
-                                            }
-                                            onOpenHighlight={openSavedHighlight}
                                           />
                                         )}
                                       </div>
@@ -4818,8 +4880,7 @@ export const Books: React.FC = () => {
                                               </div>
                                             }
                                           />
-                                          {(pdfOcrPages[currentPageIndex + 2] ||
-                                            pdfHighlightsByPage.has(currentPageIndex + 2)) && (
+                                          {pdfOcrPages[currentPageIndex + 2] && (
                                             <PdfOcrTextLayer
                                               words={
                                                 pdfOcrPages[currentPageIndex + 2]?.data?.words || []
@@ -4837,6 +4898,23 @@ export const Books: React.FC = () => {
                                                   selectedText,
                                                 )
                                               }
+                                              onOpenContextMenu={({ clientX, clientY, text }) =>
+                                                openReaderContextMenu(clientX, clientY, text)
+                                              }
+                                              onRetry={() =>
+                                                void ensurePdfOcrPage(currentPageIndex + 2)
+                                              }
+                                              onFallback={handleOpenPdfOcrFallback}
+                                            />
+                                          )}
+                                          {pdfHighlightsByPage.has(currentPageIndex + 2) && (
+                                            <PdfAnnotationLayer
+                                              highlights={
+                                                pdfHighlightsByPage.get(currentPageIndex + 2) ||
+                                                EMPTY_PDF_HIGHLIGHTS
+                                              }
+                                              activeHighlightId={activeHighlightId}
+                                              onOpenHighlight={openSavedHighlight}
                                               onOpenContextMenu={({
                                                 clientX,
                                                 clientY,
@@ -4850,15 +4928,6 @@ export const Books: React.FC = () => {
                                                   highlight,
                                                 )
                                               }
-                                              onRetry={() =>
-                                                void ensurePdfOcrPage(currentPageIndex + 2)
-                                              }
-                                              onFallback={handleOpenPdfOcrFallback}
-                                              savedHighlights={
-                                                pdfHighlightsByPage.get(currentPageIndex + 2) ||
-                                                EMPTY_PDF_HIGHLIGHTS
-                                              }
-                                              onOpenHighlight={openSavedHighlight}
                                             />
                                           )}
                                         </div>
@@ -4890,8 +4959,7 @@ export const Books: React.FC = () => {
                                           </div>
                                         }
                                       />
-                                      {(pdfOcrPages[currentPageIndex + 1] ||
-                                        pdfHighlightsByPage.has(currentPageIndex + 1)) && (
+                                      {pdfOcrPages[currentPageIndex + 1] && (
                                         <PdfOcrTextLayer
                                           words={
                                             pdfOcrPages[currentPageIndex + 1]?.data?.words || []
@@ -4909,23 +4977,36 @@ export const Books: React.FC = () => {
                                               selectedText,
                                             )
                                           }
+                                          onOpenContextMenu={({ clientX, clientY, text }) =>
+                                            openReaderContextMenu(clientX, clientY, text)
+                                          }
+                                          onRetry={() =>
+                                            void ensurePdfOcrPage(currentPageIndex + 1)
+                                          }
+                                          onFallback={handleOpenPdfOcrFallback}
+                                        />
+                                      )}
+                                      {pdfHighlightsByPage.has(currentPageIndex + 1) && (
+                                        <PdfAnnotationLayer
+                                          highlights={
+                                            pdfHighlightsByPage.get(currentPageIndex + 1) ||
+                                            EMPTY_PDF_HIGHLIGHTS
+                                          }
+                                          activeHighlightId={activeHighlightId}
+                                          onOpenHighlight={openSavedHighlight}
                                           onOpenContextMenu={({
                                             clientX,
                                             clientY,
                                             text,
                                             highlight,
                                           }) =>
-                                            openReaderContextMenu(clientX, clientY, text, highlight)
+                                            openReaderContextMenu(
+                                              clientX,
+                                              clientY,
+                                              text,
+                                              highlight,
+                                            )
                                           }
-                                          onRetry={() =>
-                                            void ensurePdfOcrPage(currentPageIndex + 1)
-                                          }
-                                          onFallback={handleOpenPdfOcrFallback}
-                                          savedHighlights={
-                                            pdfHighlightsByPage.get(currentPageIndex + 1) ||
-                                            EMPTY_PDF_HIGHLIGHTS
-                                          }
-                                          onOpenHighlight={openSavedHighlight}
                                         />
                                       )}
                                     </div>

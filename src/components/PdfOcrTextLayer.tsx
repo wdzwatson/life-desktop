@@ -13,16 +13,6 @@ import type { PdfSelectionArea } from '../views/bookReaderUtils'
 
 export type PdfOcrSelectionArea = PdfSelectionArea
 
-export type SavedPdfHighlight = {
-  id: string
-  text: string
-  annotation?: string
-  highlighted?: boolean
-  kind?: 'translation' | 'highlight' | 'note'
-  anchor?: string
-  areas: PdfOcrSelectionArea[]
-}
-
 type SelectionPoint = { x: number; y: number }
 
 export function PdfOcrTextLayer({
@@ -33,8 +23,6 @@ export function PdfOcrTextLayer({
   onOpenContextMenu,
   onRetry,
   onFallback,
-  savedHighlights = [],
-  onOpenHighlight,
 }: {
   words: PdfOcrWord[]
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -44,18 +32,14 @@ export function PdfOcrTextLayer({
     clientX: number
     clientY: number
     text: string
-    highlight?: SavedPdfHighlight
   }) => void
   onRetry?: () => void
   onFallback?: () => void
-  savedHighlights?: SavedPdfHighlight[]
-  onOpenHighlight?: (highlight: SavedPdfHighlight) => void
 }) {
   const { t } = useTranslation()
   const layerRef = useRef<HTMLDivElement | null>(null)
   const dragStartIndexRef = useRef<number | null>(null)
   const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(() => new Set())
-  const [hoveredHighlightId, setHoveredHighlightId] = useState<string | null>(null)
 
   useEffect(() => {
     if (selectedIndexes.size === 0) return
@@ -253,55 +237,6 @@ export function PdfOcrTextLayer({
     if (text) onOpenContextMenu?.({ clientX: event.clientX, clientY: event.clientY, text })
   }
 
-  const renderSavedHighlights = () =>
-    savedHighlights.flatMap((highlight) =>
-      highlight.areas.map((area, index) => {
-        const kind = highlight.kind || (highlight.annotation ? 'note' : 'highlight')
-        const visualState =
-          kind === 'translation'
-            ? 'is-translation'
-            : highlight.annotation
-              ? highlight.highlighted === false
-                ? 'is-annotation-only'
-                : 'is-combined'
-              : 'is-highlight-only'
-        return (
-          <button
-            key={`${highlight.id}-${index}`}
-            type="button"
-            className={`book-reader__pdf-saved-highlight is-${kind} ${visualState} ${hoveredHighlightId === highlight.id ? 'is-active' : ''}`}
-            data-reader-highlight-id={highlight.id}
-            aria-label={`${highlight.text}: ${highlight.annotation || t('books.mark_highlight')}`}
-            title={highlight.annotation || t('books.mark_highlight')}
-            onPointerEnter={() => setHoveredHighlightId(highlight.id)}
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation()
-              onOpenHighlight?.(highlight)
-            }}
-            onContextMenu={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              onOpenContextMenu?.({
-                clientX: event.clientX,
-                clientY: event.clientY,
-                text: highlight.text,
-                highlight,
-              })
-            }}
-            style={{
-              position: 'absolute',
-              left: `${area.x * 100}%`,
-              top: `${area.y * 100}%`,
-              width: `${area.width * 100}%`,
-              height: `${area.height * 100}%`,
-              pointerEvents: 'auto',
-            }}
-          />
-        )
-      }),
-    )
-
   if (status !== 'ready' || words.length === 0) {
     const statusContent =
       status === 'loading' ? (
@@ -355,17 +290,7 @@ export function PdfOcrTextLayer({
         </div>
       ) : null
 
-    if (savedHighlights.length === 0) return statusContent
-    return (
-      <div
-        aria-label={t('books.ocr_text_layer_label')}
-        onPointerLeave={() => setHoveredHighlightId(null)}
-        style={{ position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none' }}
-      >
-        {renderSavedHighlights()}
-        {statusContent}
-      </div>
-    )
+    return statusContent
   }
 
   return (
@@ -377,11 +302,9 @@ export function PdfOcrTextLayer({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={cancelPointerSelection}
-      onPointerLeave={() => setHoveredHighlightId(null)}
       onContextMenu={handleContextMenu}
       style={{ position: 'absolute', inset: 0, zIndex: 3, cursor: 'text', touchAction: 'none' }}
     >
-      {renderSavedHighlights()}
       {highlightRows.map((row, index) => (
         <div
           key={`${row.x}-${row.y}-${index}`}

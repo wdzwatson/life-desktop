@@ -246,6 +246,7 @@
 }
 
 .book-reader__pdf-saved-highlight {
+  position: absolute;
   box-sizing: border-box;
   display: block;
   z-index: 5;
@@ -259,6 +260,15 @@
   transition:
     background-color 180ms ease,
     box-shadow 180ms ease;
+}
+
+.book-reader__pdf-annotation-layer {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  overflow: hidden;
+  contain: layout paint style;
+  pointer-events: none;
 }
 
 .book-reader__pdf-saved-highlight.is-highlight-only {

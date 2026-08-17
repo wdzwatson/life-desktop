@@ -178,6 +178,8 @@ test('anchors round-trip single-page, cross-page, epub, and page-only positions'
   assert.equal(pageOnlyAnchor.positions[0].pageNumber, 9)
   assert.equal(pageOnlyAnchor.positions[0].x, 0.2)
   assert.equal(pageOnlyAnchor.positions[0].y, 0.3)
+  assert.equal(pageOnlyAnchor.positions[0].width, 0.1)
+  assert.equal(pageOnlyAnchor.positions[0].height, 0.05)
 
   const roundTrip = deserializeReaderAnnotationItem(serializeReaderAnnotationItem(baseItem))
   assert.deepEqual(roundTrip.anchor.positions.map((position) => position.pageNumber), [12, 13])

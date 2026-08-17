@@ -13,11 +13,13 @@ import {
   getPdfPageRenderWidth,
   getReadingProgressForLocation,
   getReaderContentGridColumns,
+  getReaderHighlightPdfPageAreas,
   getReaderTextSegments,
   isReadingBlockHeading,
   mergePdfSelectionAreas,
   decodeHtmlText,
   normalizeTocTitle,
+  parseReaderHighlightAnchor,
   resolveChapterTitleFromHtml,
   resolveReaderTocEntry,
   resolveTocTarget,
@@ -238,6 +240,60 @@ test('reader highlights resolve precise character anchors and legacy text matche
   assert.equal(legacy.find((segment) => segment.highlight)?.text, 'selection')
 })
 
+test('EPUB ranges combine co-located notes and underlines while hiding translations', () => {
+  const segments = getReaderTextSegments(
+    'Alpha beta gamma',
+    [
+      {
+        id: 'underline',
+        text: 'beta',
+        anchor: JSON.stringify({
+          chapterIndex: 0,
+          blockOffset: 2,
+          startOffset: 6,
+          endOffset: 10,
+          kind: 'highlight',
+        }),
+      },
+      {
+        id: 'note',
+        text: 'beta',
+        annotation: 'Note',
+        anchor: JSON.stringify({
+          chapterIndex: 0,
+          blockOffset: 2,
+          startOffset: 6,
+          endOffset: 10,
+          kind: 'note',
+        }),
+      },
+      {
+        id: 'translation',
+        text: 'beta',
+        annotation: '贝塔',
+        anchor: JSON.stringify({
+          chapterIndex: 0,
+          blockOffset: 2,
+          startOffset: 6,
+          endOffset: 10,
+          kind: 'translation',
+        }),
+      },
+    ],
+    0,
+    2,
+    'Chapter',
+  )
+
+  const marked = segments.find((segment) => segment.highlight)
+  assert.equal(marked?.text, 'beta')
+  assert.deepEqual(
+    marked?.highlights?.map((highlight) => highlight.id),
+    ['underline', 'note'],
+  )
+  assert.equal(marked?.highlight?.id, 'note')
+})
+
 test('PDF highlight anchors are not matched into EPUB paragraphs', () => {
   const segments = getReaderTextSegments(
     'PDF text',
@@ -253,6 +309,63 @@ test('PDF highlight anchors are not matched into EPUB paragraphs', () => {
     'Chapter',
   )
   assert.deepEqual(segments, [{ text: 'PDF text' }])
+})
+
+test('Anchor v2 restores PDF rectangles and EPUB character offsets for presentation', () => {
+  assert.deepEqual(
+    parseReaderHighlightAnchor(
+      JSON.stringify({
+        version: 2,
+        source: 'pdf',
+        positions: [
+          { source: 'pdf', pageNumber: 4, x: 0.1, y: 0.2, width: 0.3, height: 0.04 },
+        ],
+        highlighted: true,
+      }),
+    ),
+    {
+      source: 'pdf',
+      pageNumber: 4,
+      areas: [{ x: 0.1, y: 0.2, width: 0.3, height: 0.04 }],
+      highlighted: true,
+    },
+  )
+  assert.deepEqual(
+    parseReaderHighlightAnchor({
+      version: 2,
+      source: 'epub',
+      positions: [
+        {
+          source: 'epub',
+          chapterIndex: 2,
+          blockOffset: 5,
+          charStart: 7,
+          charEnd: 12,
+        },
+      ],
+      outlinePath: null,
+    } as any),
+    { source: 'epub', chapterIndex: 2, blockOffset: 5, startOffset: 7, endOffset: 12 },
+  )
+})
+
+test('Anchor v2 exposes every PDF page rectangle for cross-page overlays', () => {
+  assert.deepEqual(
+    getReaderHighlightPdfPageAreas(
+      JSON.stringify({
+        version: 2,
+        source: 'pdf',
+        positions: [
+          { source: 'pdf', pageNumber: 2, x: 0.2, y: 0.8, width: 0.5, height: 0.04 },
+          { source: 'pdf', pageNumber: 3, x: 0.1, y: 0.1, width: 0.4, height: 0.04 },
+        ],
+      }),
+    ),
+    [
+      { pageNumber: 2, areas: [{ x: 0.2, y: 0.8, width: 0.5, height: 0.04 }] },
+      { pageNumber: 3, areas: [{ x: 0.1, y: 0.1, width: 0.4, height: 0.04 }] },
+    ],
+  )
 })
 
 test('content clicks close drawers only when no text is selected', () => {

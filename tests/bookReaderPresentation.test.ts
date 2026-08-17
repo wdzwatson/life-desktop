@@ -4,8 +4,8 @@ import test from 'node:test'
 
 const booksSource = readFileSync(new URL('../src/views/Books.tsx', import.meta.url), 'utf8')
 const booksStyles = readFileSync(new URL('../src/views/Books.css', import.meta.url), 'utf8')
-const pdfOcrTextLayer = readFileSync(
-  new URL('../src/components/PdfOcrTextLayer.tsx', import.meta.url),
+const pdfAnnotationLayer = readFileSync(
+  new URL('../src/components/PdfAnnotationLayer.tsx', import.meta.url),
   'utf8',
 )
 const viteConfig = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8')
@@ -113,7 +113,7 @@ test('PDF width measurement uses the client area with scrollbar tolerance', () =
 
 test('saved highlights render on the source text and open their annotation', () => {
   assert.match(booksSource, /className=\{`book-reader__saved-highlight/)
-  assert.match(booksSource, /openSavedHighlight\(segment\.highlight\)/)
+  assert.match(booksSource, /openSavedHighlight\(primaryHighlight\)/)
   assert.match(booksSource, /data-reader-annotation-id=\{hl\.id\}/)
   assert.match(booksStyles, /\.book-reader__saved-highlight:hover/)
   assert.match(booksStyles, /\.book-reader__pdf-saved-highlight:hover/)
@@ -127,13 +127,15 @@ test('saved highlights render on the source text and open their annotation', () 
   assert.match(booksStyles, /\.book-reader__pdf-saved-highlight\.is-active/)
   assert.match(booksStyles, /\.book-reader__saved-highlight\.is-hovered/)
   assert.match(booksSource, /setReaderHighlightHoverState\(/)
-  assert.match(pdfOcrTextLayer, /onPointerEnter=\{\(\) => setHoveredHighlightId\(highlight\.id\)\}/)
+  assert.match(pdfAnnotationLayer, /onPointerEnter=\{\(\) => setHoveredHighlightId\(highlight\.id\)\}/)
   assert.match(booksSource, /data-reader-highlight-id/)
-  assert.match(pdfOcrTextLayer, /is-highlight-only/)
-  assert.match(pdfOcrTextLayer, /is-annotation-only/)
-  assert.match(pdfOcrTextLayer, /is-combined/)
-  assert.match(pdfOcrTextLayer, /title=\{highlight\.annotation \|\| t\('books\.mark_highlight'\)\}/)
-  assert.match(pdfOcrTextLayer, /onContextMenu=\{\(event\)/)
+  assert.match(pdfAnnotationLayer, /is-highlight-only/)
+  assert.match(pdfAnnotationLayer, /is-annotation-only/)
+  assert.match(pdfAnnotationLayer, /is-combined/)
+  assert.match(pdfAnnotationLayer, /title=\{highlight\.annotation \|\| t\('books\.mark_highlight'\)\}/)
+  assert.match(pdfAnnotationLayer, /onContextMenu=\{\(event\)/)
+  assert.match(pdfAnnotationLayer, /if \(kind === 'translation'\) return \[\]/)
+  assert.match(booksStyles, /\.book-reader__pdf-annotation-layer[\s\S]*?contain:\s*layout paint style/)
   assert.match(booksSource, /deleteReaderAnnotation/)
   assert.match(booksSource, /saveReaderAnnotation/)
   assert.match(booksSource, /selection_id/)
@@ -143,7 +145,7 @@ test('saved highlights render on the source text and open their annotation', () 
   assert.match(booksSource, /compareReaderHighlightsByDocumentPosition/)
   assert.match(booksSource, /locateSavedHighlight\(hl\)/)
   assert.match(booksSource, /handleDeleteSavedHighlight\(hl\)/)
-  assert.match(booksSource, /data-reader-highlight-id=\{segment\.highlight\.id\}/)
+  assert.match(booksSource, /data-reader-highlight-id=\{primaryHighlight\.id\}/)
   assert.match(booksSource, /reader_annotation_kind_\$\{kind\}/)
   assert.match(booksStyles, /\.book-reader__annotation-card\.is-translation/)
   assert.match(booksStyles, /\.book-reader__annotation-card\.is-highlight/)

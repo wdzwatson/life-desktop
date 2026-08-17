@@ -15,6 +15,8 @@ export type DocumentPosition = {
   charEnd?: number
   x?: number
   y?: number
+  width?: number
+  height?: number
 }
 
 export type OutlinePathSnapshotNode = {

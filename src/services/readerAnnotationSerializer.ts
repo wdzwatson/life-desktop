@@ -101,6 +101,20 @@ const normalizePosition = (value: unknown, fallbackSource: ReaderDocumentSource)
   }
   const x = value.x === undefined || value.x === null ? undefined : toNumberValue(value.x, 'position.x')
   const y = value.y === undefined || value.y === null ? undefined : toNumberValue(value.y, 'position.y')
+  const width =
+    value.width === undefined || value.width === null
+      ? undefined
+      : toNumberValue(value.width, 'position.width')
+  const height =
+    value.height === undefined || value.height === null
+      ? undefined
+      : toNumberValue(value.height, 'position.height')
+  if (width !== undefined && width <= 0) {
+    throw new ReaderAnnotationValidationError('position.width must be greater than 0.')
+  }
+  if (height !== undefined && height <= 0) {
+    throw new ReaderAnnotationValidationError('position.height must be greater than 0.')
+  }
 
   if (
     pageNumber === undefined &&
@@ -109,7 +123,9 @@ const normalizePosition = (value: unknown, fallbackSource: ReaderDocumentSource)
     charStart === undefined &&
     charEnd === undefined &&
     x === undefined &&
-    y === undefined
+    y === undefined &&
+    width === undefined &&
+    height === undefined
   ) {
     throw new ReaderAnnotationValidationError('Document position must include at least one location field.')
   }
@@ -123,6 +139,8 @@ const normalizePosition = (value: unknown, fallbackSource: ReaderDocumentSource)
     ...(charEnd !== undefined ? { charEnd } : {}),
     ...(x !== undefined ? { x } : {}),
     ...(y !== undefined ? { y } : {}),
+    ...(width !== undefined ? { width } : {}),
+    ...(height !== undefined ? { height } : {}),
   }
 }
 
@@ -218,7 +236,13 @@ const normalizeAnchorShape = (value: unknown): ReaderAnchorV2 => {
     throw new ReaderAnnotationValidationError('Anchor must be an object or a JSON string.')
   }
 
-  const source = normalizeSource(value.source ?? 'unknown')
+  const inferredSource =
+    value.pageNumber !== undefined || value.areas !== undefined
+      ? 'pdf'
+      : value.chapterIndex !== undefined || value.blockOffset !== undefined
+        ? 'epub'
+        : 'unknown'
+  const source = normalizeSource(value.source ?? inferredSource)
   const selectedText = String(value.selectedText ?? value.text ?? '').trim()
   const positions: DocumentPosition[] = []
   if (value.pageNumber !== undefined || value.areas !== undefined) {
@@ -236,6 +260,8 @@ const normalizeAnchorShape = (value: unknown): ReaderAnchorV2 => {
               pageNumber,
               x: area.x,
               y: area.y,
+              width: area.width,
+              height: area.height,
             },
             'pdf',
           ),

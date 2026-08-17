@@ -762,6 +762,8 @@
     "reader_annotation_kind_note": "笔记批注",
     "reader_annotation_page": "第 {{page}} 页",
     "reader_annotation_pending": "目录分析中",
+    "reader_annotation_anchor_invalid": "原文位置锚点已失效，仍可编辑和导出",
+    "reader_annotation_location_error": "章节定位失败，仍可编辑和导出",
     "reader_annotation_block": "第 {{chapter}} 章 · 第 {{block}} 块",
     "reader_annotation_location_unknown": "位置未记录",
     "locate_reader_annotation": "定位“{{text}}”的原文",

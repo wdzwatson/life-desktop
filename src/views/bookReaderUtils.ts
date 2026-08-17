@@ -78,6 +78,22 @@ export const mergePdfSelectionAreas = (areas: PdfSelectionArea[]): PdfSelectionA
 }
 
 export type ReaderHighlightAnchor = {
+  source?: 'pdf' | 'ocr' | 'epub' | 'unknown'
+  version?: 2
+  selectedText?: string
+  positions?: Array<{
+    source?: 'pdf' | 'ocr' | 'epub' | 'unknown'
+    pageNumber?: number
+    chapterIndex?: number
+    blockOffset?: number
+    charStart?: number
+    charEnd?: number
+    x?: number
+    y?: number
+    width?: number
+    height?: number
+  }>
+  outlinePath?: unknown
   chapter?: string
   chapterIndex?: number
   blockOffset?: number
@@ -93,6 +109,7 @@ export type ReaderHighlight = {
   id: string
   text: string
   annotation?: string
+  kind?: ReaderAnnotationKind | 'underline'
   anchor?: string | ReaderHighlightAnchor | null
   created_at?: string
 }
@@ -100,23 +117,110 @@ export type ReaderHighlight = {
 export type ReaderTextSegment = {
   text: string
   highlight?: ReaderHighlight
+  highlights?: ReaderHighlight[]
+}
+
+const normalizeParsedReaderHighlightAnchor = (value: unknown): ReaderHighlightAnchor | null => {
+  if (!value || typeof value !== 'object') return null
+  const parsed = value as Record<string, unknown>
+  if (parsed.version !== 2 || !Array.isArray(parsed.positions)) {
+    return parsed as ReaderHighlightAnchor
+  }
+  const positions = parsed.positions.filter(
+    (position): position is Record<string, unknown> =>
+      Boolean(position) && typeof position === 'object' && !Array.isArray(position),
+  )
+  const first = positions[0]
+  if (!first) return null
+  const pageNumber = Number.isInteger(first.pageNumber) ? Number(first.pageNumber) : undefined
+  const areas =
+    pageNumber === undefined
+      ? undefined
+      : positions
+          .filter((position) => position.pageNumber === pageNumber)
+          .flatMap((position) => {
+            const area = {
+              x: Number(position.x),
+              y: Number(position.y),
+              width: Number(position.width),
+              height: Number(position.height),
+            }
+            return Object.values(area).every(Number.isFinite) && area.width > 0 && area.height > 0
+              ? [area]
+              : []
+          })
+  return {
+    ...(typeof parsed.source === 'string'
+      ? { source: parsed.source as ReaderHighlightAnchor['source'] }
+      : {}),
+    ...(pageNumber !== undefined ? { pageNumber } : {}),
+    ...(areas?.length ? { areas } : {}),
+    ...(Number.isInteger(first.chapterIndex) ? { chapterIndex: Number(first.chapterIndex) } : {}),
+    ...(Number.isInteger(first.blockOffset) ? { blockOffset: Number(first.blockOffset) } : {}),
+    ...(Number.isInteger(first.charStart) ? { startOffset: Number(first.charStart) } : {}),
+    ...(Number.isInteger(first.charEnd) ? { endOffset: Number(first.charEnd) } : {}),
+    ...(parsed.highlighted === undefined ? {} : { highlighted: Boolean(parsed.highlighted) }),
+  }
+}
+
+const parseReaderHighlightAnchorValue = (anchor: ReaderHighlight['anchor']): unknown => {
+  if (typeof anchor !== 'string') return anchor
+  try {
+    return JSON.parse(anchor)
+  } catch {
+    return null
+  }
 }
 
 export const parseReaderHighlightAnchor = (anchor: ReaderHighlight['anchor']) => {
   if (!anchor) return null
-  if (typeof anchor !== 'string') return anchor
-  try {
-    const parsed = JSON.parse(anchor)
-    return parsed && typeof parsed === 'object' ? (parsed as ReaderHighlightAnchor) : null
-  } catch {
-    return null
+  return normalizeParsedReaderHighlightAnchor(parseReaderHighlightAnchorValue(anchor))
+}
+
+export const getReaderHighlightPdfPageAreas = (anchor: ReaderHighlight['anchor']) => {
+  const raw = parseReaderHighlightAnchorValue(anchor)
+  if (raw && typeof raw === 'object') {
+    const parsed = raw as Record<string, unknown>
+    if (parsed.version === 2 && Array.isArray(parsed.positions)) {
+      const byPage = new Map<number, PdfSelectionArea[]>()
+      parsed.positions.forEach((position) => {
+        if (!position || typeof position !== 'object' || Array.isArray(position)) return
+        const candidate = position as Record<string, unknown>
+        const pageNumber = Number(candidate.pageNumber)
+        const area = {
+          x: Number(candidate.x),
+          y: Number(candidate.y),
+          width: Number(candidate.width),
+          height: Number(candidate.height),
+        }
+        if (
+          !Number.isInteger(pageNumber) ||
+          pageNumber < 1 ||
+          !Object.values(area).every(Number.isFinite) ||
+          area.width <= 0 ||
+          area.height <= 0
+        ) {
+          return
+        }
+        const areas = byPage.get(pageNumber) || []
+        areas.push(area)
+        byPage.set(pageNumber, areas)
+      })
+      return Array.from(byPage, ([pageNumber, areas]) => ({ pageNumber, areas }))
+    }
   }
+  const legacy = normalizeParsedReaderHighlightAnchor(raw)
+  return Number.isInteger(legacy?.pageNumber) && legacy?.areas?.length
+    ? [{ pageNumber: legacy.pageNumber as number, areas: legacy.areas }]
+    : []
 }
 
 const isReaderAnnotationKind = (value: unknown): value is ReaderAnnotationKind =>
   value === 'translation' || value === 'highlight' || value === 'note'
 
 export const getReaderAnnotationKind = (highlight: ReaderHighlight): ReaderAnnotationKind => {
+  if (highlight.kind === 'underline') return 'highlight'
+  if (isReaderAnnotationKind(highlight.kind)) return highlight.kind
   const anchor = parseReaderHighlightAnchor(highlight.anchor)
   if (isReaderAnnotationKind(anchor?.kind)) return anchor.kind
 
@@ -176,6 +280,7 @@ export const getReaderTextSegments = (
   const ranges = highlights
     .flatMap((highlight) => {
       const anchor = parseReaderHighlightAnchor(highlight.anchor)
+      if (getReaderAnnotationKind(highlight) === 'translation') return []
       const isPreciseAnchor =
         anchor?.chapterIndex === chapterIndex &&
         anchor.blockOffset === blockOffset &&
@@ -194,15 +299,30 @@ export const getReaderTextSegments = (
     .sort((left, right) => left.start - right.start || right.end - left.end)
 
   if (ranges.length === 0) return [{ text }]
+  const boundaries = Array.from(
+    new Set([0, text.length, ...ranges.flatMap((range) => [range.start, range.end])]),
+  ).sort((left, right) => left - right)
   const segments: ReaderTextSegment[] = []
-  let cursor = 0
-  for (const range of ranges) {
-    if (range.start < cursor) continue
-    if (range.start > cursor) segments.push({ text: text.slice(cursor, range.start) })
-    segments.push({ text: text.slice(range.start, range.end), highlight: range.highlight })
-    cursor = range.end
+  for (let index = 0; index < boundaries.length - 1; index += 1) {
+    const start = boundaries[index]
+    const end = boundaries[index + 1]
+    if (end <= start) continue
+    const activeHighlights = ranges
+      .filter((range) => range.start <= start && range.end >= end)
+      .map((range) => range.highlight)
+    if (activeHighlights.length === 0) {
+      segments.push({ text: text.slice(start, end) })
+      continue
+    }
+    const primaryHighlight =
+      activeHighlights.find((highlight) => getReaderAnnotationKind(highlight) === 'note') ||
+      activeHighlights[0]
+    segments.push({
+      text: text.slice(start, end),
+      highlight: primaryHighlight,
+      highlights: activeHighlights,
+    })
   }
-  if (cursor < text.length) segments.push({ text: text.slice(cursor) })
   return segments
 }
 
