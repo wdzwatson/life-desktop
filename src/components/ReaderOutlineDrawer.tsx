@@ -12,12 +12,7 @@ export type ReaderOutlineNode = {
 }
 
 export type ReaderOutlineStatus =
-  | 'idle'
-  | 'cached'
-  | 'analyzing'
-  | 'partial'
-  | 'ready'
-  | 'failed'
+  'idle' | 'cached' | 'analyzing' | 'partial' | 'fallback' | 'ready' | 'failed'
 
 export type ReaderOutlineTreeModel = {
   nodes: ReaderOutlineNode[]
@@ -41,11 +36,12 @@ export const buildReaderOutlineTree = (input: ReaderOutlineNode[]): ReaderOutlin
       levelStack.pop()
     }
     const explicitParentId = String(candidate.parentId || '').trim()
-    const parentId = explicitParentId && knownIds.has(explicitParentId)
-      ? explicitParentId
-      : level > 0
-        ? levelStack[levelStack.length - 1]?.id || null
-        : null
+    const parentId =
+      explicitParentId && knownIds.has(explicitParentId)
+        ? explicitParentId
+        : level > 0
+          ? levelStack[levelStack.length - 1]?.id || null
+          : null
     const node = { ...candidate, id, level, parentId }
     nodes.push(node)
     knownIds.add(id)
@@ -243,6 +239,7 @@ export const ReaderOutlineDrawer = React.memo(function ReaderOutlineDrawer({
     status === 'cached' ||
     status === 'analyzing' ||
     status === 'partial' ||
+    status === 'fallback' ||
     status === 'failed'
   const statusLabel =
     statusMessage ||
@@ -250,9 +247,11 @@ export const ReaderOutlineDrawer = React.memo(function ReaderOutlineDrawer({
       ? t('books.outline_status_cached')
       : status === 'partial'
         ? t('books.outline_status_partial')
-        : status === 'failed'
-          ? t('books.outline_status_failed')
-          : t('books.outline_status_analyzing', { progress: percent }))
+        : status === 'fallback'
+          ? t('books.outline_status_fallback')
+          : status === 'failed'
+            ? t('books.outline_status_failed')
+            : t('books.outline_status_analyzing', { progress: percent }))
 
   return (
     <section className="reader-outline" aria-label={t('books.toc_title')}>
@@ -290,7 +289,7 @@ export const ReaderOutlineDrawer = React.memo(function ReaderOutlineDrawer({
           {(status === 'analyzing' || status === 'partial') && (
             <progress max={100} value={percent} aria-label={statusLabel} />
           )}
-          {status === 'failed' && onRetry ? (
+          {(status === 'failed' || status === 'fallback') && onRetry ? (
             <button type="button" onClick={onRetry}>
               <RefreshCw size={13} aria-hidden="true" />
               {t('books.outline_retry')}

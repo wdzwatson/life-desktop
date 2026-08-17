@@ -26,8 +26,14 @@ test('book shelf titles support two lines while preserving the full title as a t
 
 test('book shelf edit action remains distinct from the card surface on hover', () => {
   assert.match(booksSource, /className="btn sm book-shelf-card__edit-action"/)
-  assert.match(booksStyles, /\.book-shelf-card \.book-shelf-card__edit-action\s*\{[\s\S]*?background-color:\s*var\(--color-accent\)/)
-  assert.match(booksStyles, /\.book-shelf-card \.book-shelf-card__edit-action:hover:not\(:disabled\)\s*\{[\s\S]*?background-color:\s*var\(--color-accent-hover\)/)
+  assert.match(
+    booksStyles,
+    /\.book-shelf-card \.book-shelf-card__edit-action\s*\{[\s\S]*?background-color:\s*var\(--color-accent\)/,
+  )
+  assert.match(
+    booksStyles,
+    /\.book-shelf-card \.book-shelf-card__edit-action:hover:not\(:disabled\)\s*\{[\s\S]*?background-color:\s*var\(--color-accent-hover\)/,
+  )
 })
 
 test('reader header gives long titles a responsive, non-overlapping layout', () => {
@@ -39,23 +45,49 @@ test('reader header gives long titles a responsive, non-overlapping layout', () 
 })
 
 test('book library defaults to the to-read shelf', () => {
-  assert.match(
-    booksSource,
-    /useState<string>\(TO_READ_BOOK_SHELF_ID\)/,
-  )
+  assert.match(booksSource, /useState<string>\(TO_READ_BOOK_SHELF_ID\)/)
 })
 
 test('reader header top sensor matches the responsive control bar height', () => {
   assert.match(booksSource, /className="book-reader__header-sensor"/)
-  assert.match(booksStyles, /\.book-reader__header\s*\{[\s\S]*?opacity:\s*0[\s\S]*?transform:\s*translateY/)
+  assert.match(
+    booksStyles,
+    /\.book-reader__header\s*\{[\s\S]*?opacity:\s*0[\s\S]*?transform:\s*translateY/,
+  )
   assert.match(booksStyles, /\.book-reader__header-sensor\s*\{[\s\S]*?height:\s*44px/)
   assert.match(booksStyles, /\.book-reader__header-sensor:hover \+ \.book-reader__header/)
+  assert.match(booksSource, /data-toc-drawer-open=\{isTocDrawerOpen\}/)
+  assert.match(booksSource, /data-annotations-drawer-open=\{isAnnotationsDrawerOpen\}/)
+  assert.match(
+    booksStyles,
+    /\.book-reader-overlay\[data-toc-drawer-open='true'\][\s\S]*?left:\s*260px/,
+  )
+  assert.match(
+    booksStyles,
+    /\.book-reader-overlay\[data-annotations-drawer-open='true'\][\s\S]*?right:\s*320px/,
+  )
+})
+
+test('clicking the reading surface preserves both side drawers', () => {
+  const handler = booksSource.match(
+    /const handleReaderContentClick = \(\) => \{([\s\S]*?)\n {2}\}/,
+  )?.[1]
+  assert.ok(handler)
+  assert.match(handler, /setReaderContextMenu\(null\)/)
+  assert.doesNotMatch(handler, /setIsTocDrawerOpen/)
+  assert.doesNotMatch(handler, /setIsAnnotationsDrawerOpen/)
 })
 
 test('PDF continuous mode owns its scroll viewport and excludes page-flip mode', () => {
   assert.match(booksSource, /overflowY:\s*isPdf && pdfLayoutMode === 'scroll' \? 'hidden' : 'auto'/)
-  assert.match(booksStyles, /\.book-reader__reading-surface\.is-pdf\.is-scroll\s*\{[^}]*height:\s*100%/)
-  assert.match(booksSource, /onScroll=\{pdfLayoutMode === 'scroll' \? handlePdfScroll : undefined\}/)
+  assert.match(
+    booksStyles,
+    /\.book-reader__reading-surface\.is-pdf\.is-scroll\s*\{[^}]*height:\s*100%/,
+  )
+  assert.match(
+    booksSource,
+    /onScroll=\{pdfLayoutMode === 'scroll' \? handlePdfScroll : undefined\}/,
+  )
   assert.match(booksSource, /loadPdfOutline\(pdfDocument\)/)
   assert.match(readerOutlineDrawer, /scrollIntoView\(\{ block: 'nearest' \}\)/)
   assert.doesNotMatch(booksSource, /value="simulation"/)
@@ -84,14 +116,20 @@ test('reader annotations use a right-side icon control with a count badge', () =
   assert.match(booksSource, /className="book-reader__annotation-count"/)
   assert.match(booksStyles, /\.book-reader__annotation-count\s*\{/)
   assert.match(booksStyles, /\.book-reader__drawer-toggle\s*\{[\s\S]*?top:\s*56px/)
-  assert.match(booksStyles, /@media \(max-width: 720px\)[\s\S]*?\.book-reader__drawer-toggle\s*\{\s*top:\s*56px/)
+  assert.match(
+    booksStyles,
+    /@media \(max-width: 720px\)[\s\S]*?\.book-reader__drawer-toggle\s*\{\s*top:\s*56px/,
+  )
   assert.match(booksSource, /aria-controls="book-reader-annotations"/)
 })
 
 test('reader toolbar uses compact dropdowns and stable theme swatches', () => {
   assert.match(booksSource, /className="book-reader__layout-dropdown"/)
   assert.match(booksSource, /className=\{`book-reader__theme-swatch/)
-  assert.match(booksStyles, /\.book-reader__theme-swatch\s*\{[\s\S]*?flex:\s*0 0 20px[\s\S]*?padding:\s*0/)
+  assert.match(
+    booksStyles,
+    /\.book-reader__theme-swatch\s*\{[\s\S]*?flex:\s*0 0 20px[\s\S]*?padding:\s*0/,
+  )
   assert.match(
     booksStyles,
     /\.book-reader__layout-dropdown \.dropdown__control--is-focused\s*\{\s*box-shadow:\s*none/,
@@ -104,13 +142,19 @@ test('reader selection actions are presented in a contextual menu', () => {
   assert.match(booksSource, /mark_highlight/)
   assert.match(booksSource, /add_annotation_action/)
   assert.match(booksSource, /translate_selected_text/)
-  assert.doesNotMatch(booksSource, /className="btn sm"\s+onClick=\{\(\) => void handleTranslateSelection\(\)\}/)
+  assert.doesNotMatch(
+    booksSource,
+    /className="btn sm"\s+onClick=\{\(\) => void handleTranslateSelection\(\)\}/,
+  )
 })
 
 test('reader content expands while preserving navigation gutters', () => {
   assert.match(booksSource, /className="book-reader__main"/)
   assert.match(booksSource, /className=\{`book-reader__reading-surface/)
-  assert.match(booksStyles, /\.book-reader__reading-surface\s*\{[\s\S]*?width:\s*min\(100%, 1180px\)/)
+  assert.match(
+    booksStyles,
+    /\.book-reader__reading-surface\s*\{[\s\S]*?width:\s*min\(100%, 1180px\)/,
+  )
   assert.match(booksSource, /padding:\s*'32px 56px'/)
 })
 
@@ -135,15 +179,24 @@ test('saved highlights render on the source text and open their annotation', () 
   assert.match(booksStyles, /\.book-reader__pdf-saved-highlight\.is-active/)
   assert.match(booksStyles, /\.book-reader__saved-highlight\.is-hovered/)
   assert.match(booksSource, /setReaderHighlightHoverState\(/)
-  assert.match(pdfAnnotationLayer, /onPointerEnter=\{\(\) => setHoveredHighlightId\(highlight\.id\)\}/)
+  assert.match(
+    pdfAnnotationLayer,
+    /onPointerEnter=\{\(\) => setHoveredHighlightId\(highlight\.id\)\}/,
+  )
   assert.match(booksSource, /data-reader-highlight-id/)
   assert.match(pdfAnnotationLayer, /is-highlight-only/)
   assert.match(pdfAnnotationLayer, /is-annotation-only/)
   assert.match(pdfAnnotationLayer, /is-combined/)
-  assert.match(pdfAnnotationLayer, /title=\{highlight\.annotation \|\| t\('books\.mark_highlight'\)\}/)
+  assert.match(
+    pdfAnnotationLayer,
+    /title=\{highlight\.annotation \|\| t\('books\.mark_highlight'\)\}/,
+  )
   assert.match(pdfAnnotationLayer, /onContextMenu=\{\(event\)/)
   assert.match(pdfAnnotationLayer, /if \(kind === 'translation'\) return \[\]/)
-  assert.match(booksStyles, /\.book-reader__pdf-annotation-layer[\s\S]*?contain:\s*layout paint style/)
+  assert.match(
+    booksStyles,
+    /\.book-reader__pdf-annotation-layer[\s\S]*?contain:\s*layout paint style/,
+  )
   assert.match(booksSource, /deleteReaderAnnotation/)
   assert.match(booksSource, /saveReaderAnnotation/)
   assert.match(booksSource, /selection_id/)
@@ -168,7 +221,10 @@ test('PDF reader provides PDF.js with bundled WASM decoder files through a stabl
   assert.match(booksSource, /import\.meta\.env\.DEV/)
   assert.match(booksSource, /\$\{window\.location\.origin\}\/pdfjs\/wasm\//)
   assert.match(booksSource, /new URL\('pdfjs\/wasm\/', document\.baseURI\)/)
-  assert.match(booksSource, /const pdfDocumentOptions = useMemo\(\(\) => \(\{ wasmUrl: pdfWasmUrl \}\), \[\]\)/)
+  assert.match(
+    booksSource,
+    /const pdfDocumentOptions = useMemo\(\(\) => \(\{ wasmUrl: pdfWasmUrl \}\), \[\]\)/,
+  )
   assert.match(booksSource, /options=\{pdfDocumentOptions\}/)
   assert.match(viteConfig, /\['openjpeg\.wasm', 'qcms_bg\.wasm'\]/)
   assert.match(viteConfig, /dist', 'pdfjs', 'wasm'/)
@@ -186,6 +242,10 @@ test('PDF outline loads asynchronously after PDF render success and falls back c
   assert.match(booksSource, /reconcileSavedSelectionLocation/)
   assert.match(booksSource, /reader_annotation_pending/)
   assert.match(booksSource, /pdf_outline_loading/)
+  assert.match(booksSource, /analyzePdfOutlineWithOcr/)
+  assert.match(booksSource, /PDF_OUTLINE_OCR_PAGE_LIMIT/)
+  assert.match(booksSource, /outline_ocr_progress/)
+  assert.match(readerOutlineDrawer, /status === 'fallback'/)
 })
 
 test('reader outline lazily renders deep branches and keeps PDF document ownership stable', () => {
@@ -206,7 +266,10 @@ test('reader annotation panel filters semantic kinds and paginates large lists',
   assert.match(readerAnnotationsPanel, /aria-pressed=\{filter === id\}/)
   assert.match(readerAnnotationsPanel, /READER_ANNOTATION_PAGE_SIZE = 80/)
   assert.match(readerAnnotationsPanel, /getReaderAnnotationPage\(filteredItems, visibleCount\)/)
-  assert.match(readerAnnotationsPanel, /setVisibleCount\(\(current\) => Math\.max\(current, requiredCount\)\)/)
+  assert.match(
+    readerAnnotationsPanel,
+    /setVisibleCount\(\(current\) => Math\.max\(current, requiredCount\)\)/,
+  )
   assert.match(readerAnnotationsPanel, /previous\.item\.content === next\.item\.content/)
   assert.match(readerAnnotationsPanel, /data-reader-annotation-id=\{item\.id\}/)
   assert.match(readerAnnotationsPanel, /reader_annotation_created_at/)

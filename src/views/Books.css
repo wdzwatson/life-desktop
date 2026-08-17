@@ -117,7 +117,9 @@
   transform: translateY(calc(-100% - 8px));
   transition:
     opacity 220ms ease,
-    transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    left 180ms ease,
+    right 180ms ease;
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   box-shadow: 0 10px 26px color-mix(in srgb, #000 9%, transparent);
@@ -142,11 +144,25 @@
   left: 0;
   z-index: 49;
   height: 44px;
+  transition:
+    left 180ms ease,
+    right 180ms ease;
+}
+
+.book-reader-overlay[data-toc-drawer-open='true']
+  :is(.book-reader__header, .book-reader__header-sensor) {
+  left: 260px;
+}
+
+.book-reader-overlay[data-annotations-drawer-open='true']
+  :is(.book-reader__header, .book-reader__header-sensor) {
+  right: 320px;
 }
 
 .book-reader__content {
   grid-row: 1;
-  transition: grid-template-columns var(--drawer-panel-exit-duration) var(--drawer-panel-motion-ease);
+  transition: grid-template-columns var(--drawer-panel-exit-duration)
+    var(--drawer-panel-motion-ease);
 }
 
 .book-reader__content.has-open-drawer {
@@ -284,6 +300,11 @@
 .reader-outline__status.is-failed {
   border-left-color: var(--color-danger, #dc2626);
   background: color-mix(in srgb, #dc2626 7%, transparent);
+}
+
+.reader-outline__status.is-fallback {
+  border-left-color: var(--color-warning, #b7791f);
+  background: color-mix(in srgb, #b7791f 7%, transparent);
 }
 
 .reader-outline__status progress {

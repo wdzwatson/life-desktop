@@ -51,13 +51,11 @@ export const mergePdfSelectionAreas = (areas: PdfSelectionArea[]): PdfSelectionA
     const centerY = area.y + area.height / 2
     const row = rows[rows.length - 1]
     const verticalOverlap = row
-      ? Math.min(row.area.y + row.area.height, area.y + area.height) -
-        Math.max(row.area.y, area.y)
+      ? Math.min(row.area.y + row.area.height, area.y + area.height) - Math.max(row.area.y, area.y)
       : 0
     const overlapRatio = row ? verticalOverlap / Math.min(row.area.height, area.height) : 0
     const sameLine =
-      row &&
-      (Math.abs(row.centerY - centerY) <= lineTolerance || overlapRatio >= 0.55)
+      row && (Math.abs(row.centerY - centerY) <= lineTolerance || overlapRatio >= 0.55)
 
     if (!row || !sameLine) {
       rows.push({ area, centerY, count: 1 })
@@ -386,10 +384,6 @@ export const getPdfPageIndexAtOffset = (
 }
 
 export const getAnnotationEditorFocusOptions = () => ({ preventScroll: true })
-
-export const shouldCloseReaderDrawersOnContentClick = (selectedText: string) => {
-  return selectedText.trim().length === 0
-}
 
 export type TocSourceEntry = {
   title: string

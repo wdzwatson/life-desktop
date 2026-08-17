@@ -40,15 +40,9 @@ import {
   type ReaderOutlineNode,
   type ReaderOutlineStatus,
 } from '../components/ReaderOutlineDrawer'
-import {
-  PdfAnnotationLayer,
-  type SavedPdfHighlight,
-} from '../components/PdfAnnotationLayer'
+import { PdfAnnotationLayer, type SavedPdfHighlight } from '../components/PdfAnnotationLayer'
 import { PdfOcrOverlay } from '../components/PdfOcrOverlay'
-import {
-  PdfOcrTextLayer,
-  type PdfOcrSelectionArea,
-} from '../components/PdfOcrTextLayer'
+import { PdfOcrTextLayer, type PdfOcrSelectionArea } from '../components/PdfOcrTextLayer'
 import { useDrawerPanelTransition } from '../components/useDrawerTransition'
 import { ViewportPortal } from '../components/ViewportPortal'
 import { getConfiguredLocales } from '../localeRegistry'
@@ -66,7 +60,20 @@ import {
   TO_READ_BOOK_SHELF_ID,
 } from './bookCategorySidebarUtils'
 import { getBookCoverUrl } from './bookCoverUtils'
-import { loadPdfOutline, type PdfOutlineEntry, type PdfOutlineLoadResult } from '../services/pdfOutlineAdapter'
+import {
+  loadPdfOutline,
+  type PdfOutlineEntry,
+  type PdfOutlineLoadResult,
+} from '../services/pdfOutlineAdapter'
+import {
+  buildOcrPdfOutlineEntries,
+  extractOcrOutlineCandidates,
+  getActivePdfOutlineNodeId,
+  groupOcrWordsIntoLines,
+  hasBrokenPdfOutlineGlyph,
+  repairPdfOutlineTitle,
+  type OcrOutlineCandidate,
+} from '../services/pdfOutlineEnhancements'
 import { resolveSelectionOutlineLocation } from '../services/selectionOutlineResolver'
 import {
   compareReaderHighlightsByDocumentPosition,
@@ -88,7 +95,6 @@ import {
   normalizeTocTitle,
   parseReaderHighlightAnchor,
   resolveReaderTocEntry,
-  shouldCloseReaderDrawersOnContentClick,
   shouldShowEpubToc,
   type PdfLayoutMode,
   type ReaderAnnotationKind as ReaderUiAnnotationKind,
@@ -119,7 +125,7 @@ type BookBatchQueueItem = {
   coverWarning?: string
 }
 
-type PdfOutlineUiStatus = PdfOutlineLoadResult['status'] | 'loading'
+type PdfOutlineUiStatus = PdfOutlineLoadResult['status'] | 'loading' | 'fallback'
 
 const DEFAULT_READER_SHORTCUTS = {
   readerTranslate: 'Alt+T',
@@ -128,6 +134,7 @@ const DEFAULT_READER_SHORTCUTS = {
 }
 
 const PDF_OCR_ENGINE_VERSION = 'tesseract-v3'
+const PDF_OUTLINE_OCR_PAGE_LIMIT = 12
 const PDF_DEFAULT_PAGE_ASPECT_RATIO = 1.414
 const PDF_CONTINUOUS_OVERSCAN = 4
 const PDF_AUTOPLAY_PREFETCH_MARGIN = 2
@@ -398,6 +405,7 @@ type ReaderHighlightRecordLike = ReaderHighlight & {
 type ReaderOutlineViewNode = ReaderOutlineNode & {
   chapterIndex?: number
   paragraphOffset?: number
+  y?: number | null
 }
 
 const normalizeHighlightAnnotation = (value: unknown) => {
@@ -507,6 +515,7 @@ export const Books: React.FC = () => {
   const [pdfOutlineAnalysisMessage, setPdfOutlineAnalysisMessage] = useState<string | null>(null)
   const [pdfOutlineProgress, setPdfOutlineProgress] = useState(0)
   const [pdfOutlineCacheStatus, setPdfOutlineCacheStatus] = useState<'hit' | 'miss' | null>(null)
+  const [selectedPdfOutlineNodeId, setSelectedPdfOutlineNodeId] = useState<string | null>(null)
   const [isLoadingReader, setIsLoadingReader] = useState(false)
   const [pdfLayoutMode, setPdfLayoutMode] = useState<PdfLayoutMode>('single')
   const [isPdfTransitioning, setIsPdfTransitioning] = useState(false)
@@ -551,6 +560,7 @@ export const Books: React.FC = () => {
   const [isAutoPlaying, setIsAutoPlaying] = useState(false)
   const [autoPlaySpeed, setAutoPlaySpeed] = useState(10) // seconds per page
   const pdfInitializedRef = useRef(false)
+  const pdfDocumentRef = useRef<PDFDocumentProxy | null>(null)
   const readerContentRef = useRef<HTMLDivElement | null>(null)
   const readerMainRef = useRef<HTMLElement | null>(null)
   const pdfScrollRef = useRef<HTMLDivElement | null>(null)
@@ -746,13 +756,14 @@ export const Books: React.FC = () => {
       setPdfOutlineStatus('loading')
       setPdfOutlineProgress(0)
       setPdfOutlineCacheStatus(null)
-      setPdfOutlineAnalysisMessage(t('books.pdf_outline_loading') || '目录分析中…')
+      setPdfOutlineAnalysisMessage(t('books.pdf_outline_loading'))
 
       if (!api?.analyzeReaderOutline) {
-        setPdfOutlineStatus('error')
+        setPdfOutlineStatus('fallback')
         setPdfOutlineEntries((current) =>
           current?.length ? current : buildPageOnlyPdfOutlineEntries(pageCount),
         )
+        setPdfOutlineAnalysisMessage(t('books.outline_status_fallback'))
         return
       }
 
@@ -769,15 +780,24 @@ export const Books: React.FC = () => {
           setPdfOutlineCacheStatus(result.cacheStatus || null)
           setPdfOutlineProgress(1)
           if (result.status === 'ready') {
+            const isPageOnly =
+              result.source === 'page-only' ||
+              result.entries.every((entry: PdfOutlineEntry) => entry.analysisSource === 'page-only')
+            if (isPageOnly) {
+              setPdfOutlineStatus('fallback')
+              setPdfOutlineEntries(buildPageOnlyPdfOutlineEntries(pageCount))
+              setPdfOutlineAnalysisMessage(t('books.outline_status_fallback'))
+              return
+            }
             setPdfOutlineStatus('ready')
             setPdfOutlineEntries(result.entries)
             setPdfOutlineAnalysisMessage(null)
             return
           }
           if (result.status === 'empty') {
-            setPdfOutlineStatus('ready')
+            setPdfOutlineStatus('fallback')
             setPdfOutlineEntries(buildPageOnlyPdfOutlineEntries(pageCount))
-            setPdfOutlineAnalysisMessage(null)
+            setPdfOutlineAnalysisMessage(t('books.outline_status_fallback'))
             return
           }
           if (result.status === 'cancelled') return
@@ -786,13 +806,11 @@ export const Books: React.FC = () => {
         // The compact status surface below keeps retry available.
       }
 
-      setPdfOutlineStatus('error')
+      setPdfOutlineStatus('fallback')
       setPdfOutlineEntries((current) =>
         current?.length ? current : buildPageOnlyPdfOutlineEntries(pageCount),
       )
-      setPdfOutlineAnalysisMessage(
-        t('books.pdf_outline_failed') || '目录读取失败，已回退到页码目录',
-      )
+      setPdfOutlineAnalysisMessage(t('books.pdf_outline_failed'))
     },
     [api, buildPageOnlyPdfOutlineEntries, readingBook, t],
   )
@@ -916,22 +934,24 @@ export const Books: React.FC = () => {
 
   useEffect(() => {
     if (!api?.onReaderOutlineProgress) return
-    return api.onReaderOutlineProgress((event: {
-      bookId: number
-      state: 'idle' | 'queued' | 'running' | 'completed' | 'cancelled' | 'failed'
-      phase: string
-      progress: number
-      message: string
-      cacheStatus?: 'hit' | 'miss'
-    }) => {
-      if (activeOutlineBookIdRef.current !== event.bookId) return
-      setPdfOutlineAnalysisMessage(event.message)
-      setPdfOutlineProgress(Math.max(0, Math.min(1, Number(event.progress) || 0)))
-      setPdfOutlineCacheStatus(event.cacheStatus || null)
-      if (event.state === 'queued' || event.state === 'running') {
-        setPdfOutlineStatus('loading')
-      }
-    })
+    return api.onReaderOutlineProgress(
+      (event: {
+        bookId: number
+        state: 'idle' | 'queued' | 'running' | 'completed' | 'cancelled' | 'failed'
+        phase: string
+        progress: number
+        message: string
+        cacheStatus?: 'hit' | 'miss'
+      }) => {
+        if (activeOutlineBookIdRef.current !== event.bookId) return
+        setPdfOutlineAnalysisMessage(event.message)
+        setPdfOutlineProgress(Math.max(0, Math.min(1, Number(event.progress) || 0)))
+        setPdfOutlineCacheStatus(event.cacheStatus || null)
+        if (event.state === 'queued' || event.state === 'running') {
+          setPdfOutlineStatus('loading')
+        }
+      },
+    )
   }, [api])
 
   const createCategory = async (name: string, parentId: BookShelf['id'] | null) => {
@@ -1683,6 +1703,8 @@ export const Books: React.FC = () => {
     setPdfPageAspectRatios({})
     setPdfOutlineEntries(null)
     setPdfOutlineStatus('empty')
+    setSelectedPdfOutlineNodeId(null)
+    pdfDocumentRef.current = null
     resumeAutoPlayAfterResizeRef.current = false
     pdfInitializedRef.current = false
 
@@ -1832,6 +1854,8 @@ export const Books: React.FC = () => {
     setPdfPageAspectRatios({})
     setPdfOutlineEntries(null)
     setPdfOutlineStatus('empty')
+    setSelectedPdfOutlineNodeId(null)
+    pdfDocumentRef.current = null
     resumeAutoPlayAfterResizeRef.current = false
     setCurrentPageIndex(0)
     setSelectedHighlightText('')
@@ -2058,7 +2082,15 @@ export const Books: React.FC = () => {
                 const top = Math.max(rect.top, bounds.top)
                 const right = Math.min(rect.right, bounds.right)
                 const bottom = Math.min(rect.bottom, bounds.bottom)
-                return { element, bounds, left, top, right, bottom, overlap: (right - left) * (bottom - top) }
+                return {
+                  element,
+                  bounds,
+                  left,
+                  top,
+                  right,
+                  bottom,
+                  overlap: (right - left) * (bottom - top),
+                }
               })
               .filter((candidate) => candidate.overlap > 0)
               .sort((left, right) => right.overlap - left.overlap)[0]
@@ -2329,6 +2361,237 @@ export const Books: React.FC = () => {
     }
   }
 
+  const recognizePdfDocumentPage = useCallback(
+    async (
+      pageNumber: number,
+      signal: AbortSignal,
+      priority: 'background' | 'user',
+      onProgress?: (status: string, progress?: number) => void,
+    ): Promise<PdfOcrPage> => {
+      if (!readingBook || !pdfDocumentRef.current) throw new Error('PDF document is unavailable.')
+      if (signal.aborted) throw new DOMException('OCR request was cancelled.', 'AbortError')
+
+      const cached = await api?.dbQuery(
+        'books',
+        'SELECT payload FROM pdf_ocr_pages WHERE book_id = ? AND page_number = ? AND engine_version = ?',
+        [readingBook.id, pageNumber, PDF_OCR_ENGINE_VERSION],
+      )
+      const cachedPayload = cached?.success && cached.data?.[0]?.payload
+      if (typeof cachedPayload === 'string') {
+        const parsed = JSON.parse(cachedPayload) as PdfOcrPage
+        if (Array.isArray(parsed.words)) return parsed
+      }
+
+      const page = await pdfDocumentRef.current.getPage(pageNumber)
+      const baseViewport = page.getViewport({ scale: 1 })
+      const scale = Math.min(1.6, Math.max(0.8, 1400 / Math.max(1, baseViewport.width)))
+      const viewport = page.getViewport({ scale })
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.ceil(viewport.width))
+      canvas.height = Math.max(1, Math.ceil(viewport.height))
+      const renderTask = page.render({ canvas, viewport })
+      const cancelRender = () => renderTask.cancel()
+      signal.addEventListener('abort', cancelRender, { once: true })
+      try {
+        await renderTask.promise
+        if (signal.aborted) throw new DOMException('OCR request was cancelled.', 'AbortError')
+        const result = await recognizePdfPage(
+          canvas.toDataURL('image/jpeg', 0.9),
+          onProgress || (() => {}),
+          {
+            priority,
+            signal,
+          },
+        )
+        const normalized: PdfOcrPage = {
+          text: result.text,
+          words: result.words.map((word) => ({
+            ...word,
+            x: word.x / canvas.width,
+            y: word.y / canvas.height,
+            width: word.width / canvas.width,
+            height: word.height / canvas.height,
+          })),
+        }
+        await api?.dbQuery(
+          'books',
+          'INSERT OR REPLACE INTO pdf_ocr_pages (book_id, page_number, engine_version, payload) VALUES (?, ?, ?, ?)',
+          [readingBook.id, pageNumber, PDF_OCR_ENGINE_VERSION, JSON.stringify(normalized)],
+        )
+        return normalized
+      } finally {
+        signal.removeEventListener('abort', cancelRender)
+        canvas.width = 1
+        canvas.height = 1
+      }
+    },
+    [api, readingBook],
+  )
+
+  const repairNativePdfOutlineTitles = useCallback(
+    async (entries: PdfOutlineEntry[], sessionId: number) => {
+      const brokenEntries = entries.filter(
+        (entry) => Number.isInteger(entry.pageNumber) && hasBrokenPdfOutlineGlyph(entry.title),
+      )
+      if (brokenEntries.length === 0 || !pdfDocumentRef.current) return entries
+
+      const abortController = new AbortController()
+      pdfOcrAbortControllersRef.current.add(abortController)
+      const candidatesByPage = new Map<number, string[]>()
+      try {
+        for (const pageNumber of [
+          ...new Set(brokenEntries.map((entry) => entry.pageNumber as number)),
+        ]) {
+          if (abortController.signal.aborted || sessionId !== readerSessionRef.current)
+            return entries
+          const page = await pdfDocumentRef.current.getPage(pageNumber)
+          const content = await page.getTextContent()
+          const lines = new Map<number, Array<{ x: number; text: string }>>()
+          for (const item of content.items as Array<{ str?: string; transform?: number[] }>) {
+            const text = String(item.str || '').trim()
+            if (!text) continue
+            const y = Math.round(Number(item.transform?.[5] || 0) / 2) * 2
+            const line = lines.get(y) || []
+            line.push({ x: Number(item.transform?.[4] || 0), text })
+            lines.set(y, line)
+          }
+          candidatesByPage.set(
+            pageNumber,
+            [...lines.values()].map((line) =>
+              line
+                .sort((left, right) => left.x - right.x)
+                .map((item) => item.text)
+                .join(' '),
+            ),
+          )
+        }
+
+        let repaired = entries.map((entry) => ({
+          ...entry,
+          title: Number.isInteger(entry.pageNumber)
+            ? repairPdfOutlineTitle(
+                entry.title,
+                candidatesByPage.get(entry.pageNumber as number) || [],
+              )
+            : entry.title,
+        }))
+        const unresolvedPages = [
+          ...new Set(
+            repaired
+              .filter(
+                (entry) =>
+                  Number.isInteger(entry.pageNumber) && hasBrokenPdfOutlineGlyph(entry.title),
+              )
+              .map((entry) => entry.pageNumber as number),
+          ),
+        ].slice(0, 2)
+
+        for (const [index, pageNumber] of unresolvedPages.entries()) {
+          if (abortController.signal.aborted || sessionId !== readerSessionRef.current)
+            return entries
+          setPdfOutlineAnalysisMessage(
+            t('books.outline_correcting_title', {
+              current: index + 1,
+              total: unresolvedPages.length,
+            }),
+          )
+          const ocrPage = await recognizePdfDocumentPage(
+            pageNumber,
+            abortController.signal,
+            'background',
+          )
+          candidatesByPage.set(
+            pageNumber,
+            groupOcrWordsIntoLines(ocrPage.words).map((line) => line.text),
+          )
+        }
+        repaired = repaired.map((entry) => ({
+          ...entry,
+          title: Number.isInteger(entry.pageNumber)
+            ? repairPdfOutlineTitle(
+                entry.title,
+                candidatesByPage.get(entry.pageNumber as number) || [],
+              )
+            : entry.title,
+        }))
+        return repaired
+      } catch (error) {
+        if ((error as { name?: string })?.name !== 'AbortError')
+          console.warn('PDF outline title correction failed:', error)
+        return entries
+      } finally {
+        pdfOcrAbortControllersRef.current.delete(abortController)
+      }
+    },
+    [recognizePdfDocumentPage, t],
+  )
+
+  const analyzePdfOutlineWithOcr = useCallback(async () => {
+    if (!readingBook || !pdfDocumentRef.current || pdfNumPages <= 0) return
+    const sessionId = readerSessionRef.current
+    const abortController = new AbortController()
+    pdfOcrAbortControllersRef.current.add(abortController)
+    setPdfOutlineStatus('loading')
+    setPdfOutlineProgress(0)
+    setPdfOutlineCacheStatus(null)
+
+    const candidates: OcrOutlineCandidate[] = []
+    const pageLimit = Math.min(pdfNumPages, PDF_OUTLINE_OCR_PAGE_LIMIT)
+    let lastCandidatePage = 0
+    let lastReportedPercent = -1
+    try {
+      for (let pageNumber = 1; pageNumber <= pageLimit; pageNumber += 1) {
+        if (abortController.signal.aborted || sessionId !== readerSessionRef.current) return
+        setPdfOutlineAnalysisMessage(
+          t('books.outline_ocr_progress', { current: pageNumber, total: pageLimit }),
+        )
+        const ocrPage = await recognizePdfDocumentPage(
+          pageNumber,
+          abortController.signal,
+          'user',
+          (_status, progress = 0) => {
+            if (sessionId !== readerSessionRef.current) return
+            const totalProgress = (pageNumber - 1 + progress) / pageLimit
+            const percent = Math.round(totalProgress * 100)
+            if (percent === lastReportedPercent) return
+            lastReportedPercent = percent
+            setPdfOutlineProgress(totalProgress)
+          },
+        )
+        if (sessionId !== readerSessionRef.current) return
+        const pageCandidates = extractOcrOutlineCandidates(ocrPage.words, pageNumber, pdfNumPages)
+        if (pageCandidates.length > 0) {
+          candidates.push(...pageCandidates)
+          lastCandidatePage = pageNumber
+        }
+        setPdfOutlineProgress(pageNumber / pageLimit)
+        if (candidates.length >= 3 && pageNumber - lastCandidatePage >= 2) break
+      }
+
+      const entries = buildOcrPdfOutlineEntries(candidates)
+      if (entries.length > 0) {
+        setPdfOutlineEntries(entries)
+        setPdfOutlineStatus('ready')
+        setPdfOutlineProgress(1)
+        setPdfOutlineAnalysisMessage(null)
+        return
+      }
+      setPdfOutlineEntries(buildPageOnlyPdfOutlineEntries(pdfNumPages))
+      setPdfOutlineStatus('fallback')
+      setPdfOutlineAnalysisMessage(t('books.outline_ocr_empty'))
+    } catch (error) {
+      if ((error as { name?: string })?.name === 'AbortError') return
+      console.warn('Scanned PDF outline OCR failed:', error)
+      setPdfOutlineEntries((current) =>
+        current?.length ? current : buildPageOnlyPdfOutlineEntries(pdfNumPages),
+      )
+      setPdfOutlineStatus('fallback')
+      setPdfOutlineAnalysisMessage(t('books.outline_ocr_failed'))
+    } finally {
+      pdfOcrAbortControllersRef.current.delete(abortController)
+    }
+  }, [buildPageOnlyPdfOutlineEntries, pdfNumPages, readingBook, recognizePdfDocumentPage, t])
+
   const handlePdfOcrAreasSelected = (
     pageNumber: number,
     areas: PdfOcrSelectionArea[],
@@ -2371,15 +2634,11 @@ export const Books: React.FC = () => {
 
   const handleReaderContentClick = () => {
     setReaderContextMenu(null)
-    const selectedText = window.getSelection()?.toString() || ''
-    if (!shouldCloseReaderDrawersOnContentClick(selectedText)) return
-
-    setIsTocDrawerOpen(false)
-    setIsAnnotationsDrawerOpen(false)
   }
 
   const handlePdfLoadSuccess = async (pdfDocument: PDFDocumentProxy) => {
     const { numPages } = pdfDocument
+    pdfDocumentRef.current = pdfDocument
     if (!readingBook) {
       setPdfNumPages(numPages)
       return
@@ -2420,16 +2679,24 @@ export const Books: React.FC = () => {
     void loadPdfOutline(pdfDocument).then(async (outlineResult) => {
       if (sessionId !== readerSessionRef.current) return
       if (outlineResult.status === 'ready' && outlineResult.entries.length > 0) {
-        setPdfOutlineStatus('ready')
-        setPdfOutlineEntries(
-          outlineResult.entries.map((entry) => ({
-            ...entry,
-            analysisSource: 'native' as const,
-          })),
-        )
-        setPdfOutlineAnalysisMessage(null)
+        const nativeEntries = outlineResult.entries.map((entry) => ({
+          ...entry,
+          analysisSource: 'native' as const,
+        }))
+        setPdfOutlineEntries(nativeEntries)
         setPdfOutlineProgress(1)
         setPdfOutlineCacheStatus(null)
+        if (nativeEntries.some((entry) => hasBrokenPdfOutlineGlyph(entry.title))) {
+          setPdfOutlineStatus('loading')
+          setPdfOutlineAnalysisMessage(
+            t('books.outline_correcting_title', { current: 1, total: 1 }),
+          )
+          const repairedEntries = await repairNativePdfOutlineTitles(nativeEntries, sessionId)
+          if (sessionId !== readerSessionRef.current) return
+          setPdfOutlineEntries(repairedEntries)
+        }
+        setPdfOutlineStatus('ready')
+        setPdfOutlineAnalysisMessage(null)
         return
       }
 
@@ -3187,26 +3454,28 @@ export const Books: React.FC = () => {
   const pdfHighlightsByPage = useMemo(() => {
     const byPage = new Map<number, any[]>()
     highlights.forEach((highlight) => {
-      getReaderHighlightPdfPageAreas(highlight.anchor).forEach(({ pageNumber, areas: rawAreas }) => {
-        const areas = mergePdfSelectionAreas(
-          rawAreas.map((area) => ({
-            x: Math.max(0, Math.min(1, Number(area?.x))),
-            y: Math.max(0, Math.min(1, Number(area?.y))),
-            width: Math.max(0, Math.min(1, Number(area?.width))),
-            height: Math.max(0, Math.min(1, Number(area?.height))),
-          })),
-        )
-        if (areas.length === 0) return
-        const pageHighlights = byPage.get(pageNumber) || []
-        pageHighlights.push({
-          ...highlight,
-          annotation: normalizeHighlightAnnotation(highlight.annotation),
-          highlighted: parseReaderHighlightAnchor(highlight.anchor)?.highlighted !== false,
-          kind: getReaderAnnotationKind(highlight),
-          areas,
-        })
-        byPage.set(pageNumber, pageHighlights)
-      })
+      getReaderHighlightPdfPageAreas(highlight.anchor).forEach(
+        ({ pageNumber, areas: rawAreas }) => {
+          const areas = mergePdfSelectionAreas(
+            rawAreas.map((area) => ({
+              x: Math.max(0, Math.min(1, Number(area?.x))),
+              y: Math.max(0, Math.min(1, Number(area?.y))),
+              width: Math.max(0, Math.min(1, Number(area?.width))),
+              height: Math.max(0, Math.min(1, Number(area?.height))),
+            })),
+          )
+          if (areas.length === 0) return
+          const pageHighlights = byPage.get(pageNumber) || []
+          pageHighlights.push({
+            ...highlight,
+            annotation: normalizeHighlightAnnotation(highlight.annotation),
+            highlighted: parseReaderHighlightAnchor(highlight.anchor)?.highlighted !== false,
+            kind: getReaderAnnotationKind(highlight),
+            areas,
+          })
+          byPage.set(pageNumber, pageHighlights)
+        },
+      )
     })
     return byPage
   }, [highlights])
@@ -3216,26 +3485,32 @@ export const Books: React.FC = () => {
     [highlights],
   )
 
-  const getReaderAnnotationLocationLabel = useCallback((highlight: ReaderHighlight) => {
-    const locationStatus = String((highlight as any).location_status || (highlight as any).locationStatus || '').trim()
-    if (locationStatus === 'pending') return t('books.reader_annotation_pending')
-    const anchor = parseReaderHighlightAnchor(highlight.anchor)
-    if (!anchor) return t('books.reader_annotation_anchor_invalid')
-    if (locationStatus === 'error') return t('books.reader_annotation_location_error')
-    const outlinePath = parseOutlinePathSnapshot((highlight as any).outline_path_json)
-    const outlineTitles = outlinePath?.nodes?.map((node) => String(node.title || '').trim()).filter(Boolean) || []
-    if (outlineTitles.length > 0) return outlineTitles.join(' · ')
-    if (Number.isInteger(anchor?.pageNumber)) {
-      return t('books.reader_annotation_page', { page: anchor?.pageNumber })
-    }
-    if (Number.isInteger(anchor?.chapterIndex)) {
-      return t('books.reader_annotation_block', {
-        chapter: (anchor?.chapterIndex as number) + 1,
-        block: Number.isInteger(anchor?.blockOffset) ? (anchor?.blockOffset as number) + 1 : 1,
-      })
-    }
-    return anchor?.chapter || t('books.reader_annotation_location_unknown')
-  }, [t])
+  const getReaderAnnotationLocationLabel = useCallback(
+    (highlight: ReaderHighlight) => {
+      const locationStatus = String(
+        (highlight as any).location_status || (highlight as any).locationStatus || '',
+      ).trim()
+      if (locationStatus === 'pending') return t('books.reader_annotation_pending')
+      const anchor = parseReaderHighlightAnchor(highlight.anchor)
+      if (!anchor) return t('books.reader_annotation_anchor_invalid')
+      if (locationStatus === 'error') return t('books.reader_annotation_location_error')
+      const outlinePath = parseOutlinePathSnapshot((highlight as any).outline_path_json)
+      const outlineTitles =
+        outlinePath?.nodes?.map((node) => String(node.title || '').trim()).filter(Boolean) || []
+      if (outlineTitles.length > 0) return outlineTitles.join(' · ')
+      if (Number.isInteger(anchor?.pageNumber)) {
+        return t('books.reader_annotation_page', { page: anchor?.pageNumber })
+      }
+      if (Number.isInteger(anchor?.chapterIndex)) {
+        return t('books.reader_annotation_block', {
+          chapter: (anchor?.chapterIndex as number) + 1,
+          block: Number.isInteger(anchor?.blockOffset) ? (anchor?.blockOffset as number) + 1 : 1,
+        })
+      }
+      return anchor?.chapter || t('books.reader_annotation_location_unknown')
+    },
+    [t],
+  )
   const readerAnnotationPanelItems = useMemo<ReaderAnnotationPanelItem[]>(
     () =>
       sortedHighlights.map((highlight) => ({
@@ -3297,11 +3572,9 @@ export const Books: React.FC = () => {
           const listResult = await api.listReaderAnnotations({ bookId: readingBook.id })
           if (listResult?.success && Array.isArray(listResult.data)) return listResult.data
         }
-        const fallbackResult = await api.dbQuery(
-          'books',
-          READER_HIGHLIGHTS_WITH_STATUS_QUERY,
-          [readingBook.id],
-        )
+        const fallbackResult = await api.dbQuery('books', READER_HIGHLIGHTS_WITH_STATUS_QUERY, [
+          readingBook.id,
+        ])
         if (fallbackResult?.success && Array.isArray(fallbackResult.data)) {
           return fallbackResult.data
         }
@@ -3309,11 +3582,9 @@ export const Books: React.FC = () => {
       }
       const [annotationRows, checkNote] = await Promise.all([
         loadExportRows(),
-        api.dbQuery(
-          'notes',
-          'SELECT id, content FROM notes WHERE title = ? ORDER BY id LIMIT 1',
-          [noteTitle],
-        ),
+        api.dbQuery('notes', 'SELECT id, content FROM notes WHERE title = ? ORDER BY id LIMIT 1', [
+          noteTitle,
+        ]),
       ])
       if (!checkNote?.success || !Array.isArray(checkNote.data)) {
         throw new Error('Reading note could not be loaded for synchronization.')
@@ -3349,9 +3620,7 @@ export const Books: React.FC = () => {
           },
         },
       })
-      const existingNote = checkNote.data[0] as
-        | { id: number; content?: string | null }
-        | undefined
+      const existingNote = checkNote.data[0] as { id: number; content?: string | null } | undefined
       const nextContent = mergeReaderAnnotationsManagedMarkdown(
         String(existingNote?.content ?? ''),
         managedContent,
@@ -3561,10 +3830,16 @@ export const Books: React.FC = () => {
                 }
                 aria-label={`${segment.text}: ${normalizeHighlightAnnotation(noteHighlight?.annotation) || t('books.no_annotation')}`}
                 onPointerEnter={(event) =>
-                  setReaderHighlightHoverState(event.currentTarget.dataset.readerHighlightId || '', true)
+                  setReaderHighlightHoverState(
+                    event.currentTarget.dataset.readerHighlightId || '',
+                    true,
+                  )
                 }
                 onPointerLeave={(event) =>
-                  setReaderHighlightHoverState(event.currentTarget.dataset.readerHighlightId || '', false)
+                  setReaderHighlightHoverState(
+                    event.currentTarget.dataset.readerHighlightId || '',
+                    false,
+                  )
                 }
                 onClick={(e) => {
                   e.stopPropagation()
@@ -3664,6 +3939,7 @@ export const Books: React.FC = () => {
         level: entry.level,
         parentId: entry.parentPathKey ? idByPathKey.get(entry.parentPathKey) || null : null,
         pageNumber: entry.pageNumber,
+        y: entry.y,
         disabled: !Number.isInteger(entry.pageNumber),
       }))
     }
@@ -3692,23 +3968,11 @@ export const Books: React.FC = () => {
   const activeReaderOutlineNodeId = useMemo(() => {
     if (readerOutlineNodes.length === 0) return null
     if (isPdf) {
-      const activeNode = readerOutlineNodes.reduce<ReaderOutlineViewNode | null>((current, node) => {
-        if (
-          !Number.isInteger(node.pageNumber) ||
-          (node.pageNumber as number) > currentPageIndex + 1
-        ) {
-          return current
-        }
-        if (
-          !current ||
-          (node.pageNumber as number) > (current.pageNumber as number) ||
-          ((node.pageNumber as number) === current.pageNumber && node.level >= current.level)
-        ) {
-          return node
-        }
-        return current
-      }, null)
-      return activeNode?.id || readerOutlineNodes[0].id
+      return getActivePdfOutlineNodeId(
+        readerOutlineNodes,
+        currentPageIndex + 1,
+        selectedPdfOutlineNodeId,
+      )
     }
 
     const resolvedEntries = readerOutlineNodes.map((node) => ({
@@ -3723,7 +3987,19 @@ export const Books: React.FC = () => {
       currentParagraphOffset,
     )
     return readerOutlineNodes[activeIndex]?.id || readerOutlineNodes[0].id
-  }, [currentChapterIndex, currentPageIndex, currentParagraphOffset, isPdf, readerOutlineNodes])
+  }, [
+    currentChapterIndex,
+    currentPageIndex,
+    currentParagraphOffset,
+    isPdf,
+    readerOutlineNodes,
+    selectedPdfOutlineNodeId,
+  ])
+  useEffect(() => {
+    if (!selectedPdfOutlineNodeId) return
+    const selectedNode = readerOutlineNodes.find((node) => node.id === selectedPdfOutlineNodeId)
+    if (selectedNode?.pageNumber !== currentPageIndex + 1) setSelectedPdfOutlineNodeId(null)
+  }, [currentPageIndex, readerOutlineNodes, selectedPdfOutlineNodeId])
   const readerOutlineStatus: ReaderOutlineStatus = isPdf
     ? pdfOutlineStatus === 'loading'
       ? pdfOutlineEntries?.length
@@ -3731,14 +4007,17 @@ export const Books: React.FC = () => {
         : 'analyzing'
       : pdfOutlineStatus === 'error'
         ? 'failed'
-        : pdfOutlineCacheStatus === 'hit'
-          ? 'cached'
-          : 'ready'
+        : pdfOutlineStatus === 'fallback'
+          ? 'fallback'
+          : pdfOutlineCacheStatus === 'hit'
+            ? 'cached'
+            : 'ready'
     : 'ready'
   const handleReaderOutlineSelect = useCallback(
     (node: ReaderOutlineNode) => {
       if (isPdf) {
         if (!Number.isInteger(node.pageNumber)) return
+        setSelectedPdfOutlineNodeId(node.id)
         const pageIndex = Math.max(0, Math.min(pdfNumPages - 1, (node.pageNumber as number) - 1))
         setCurrentPageIndex(pageIndex)
         setReadingProgress(Math.round((pageIndex / (pdfNumPages - 1 || 1)) * 100))
@@ -3768,7 +4047,8 @@ export const Books: React.FC = () => {
 
   useEffect(() => {
     const pending = pendingReaderDeepLink
-    if (!pending || !readingBook || Number(readingBook.id) !== pending.bookId || isLoadingReader) return
+    if (!pending || !readingBook || Number(readingBook.id) !== pending.bookId || isLoadingReader)
+      return
 
     if (pending.annotationId) {
       const highlight = highlights.find((item) => item.id === pending.annotationId)
@@ -3813,8 +4093,12 @@ export const Books: React.FC = () => {
   ])
 
   const handleRetryPdfOutline = useCallback(() => {
+    if (pdfDocumentRef.current) {
+      void analyzePdfOutlineWithOcr()
+      return
+    }
     void analyzePdfOutlineFallback(pdfNumPages)
-  }, [analyzePdfOutlineFallback, pdfNumPages])
+  }, [analyzePdfOutlineFallback, analyzePdfOutlineWithOcr, pdfNumPages])
 
   useEffect(() => {
     currentPdfPageIndexRef.current = currentPageIndex
@@ -4288,6 +4572,8 @@ export const Books: React.FC = () => {
         <ViewportPortal>
           <div
             className="book-reader-overlay"
+            data-toc-drawer-open={isTocDrawerOpen}
+            data-annotations-drawer-open={isAnnotationsDrawerOpen}
             style={{
               position: 'fixed',
               top: 0,
@@ -4739,9 +5025,7 @@ export const Books: React.FC = () => {
                           activeNodeId={activeReaderOutlineNodeId}
                           storageKey={`reader:outline:expanded:${readingBook.id}`}
                           status={readerOutlineStatus}
-                          statusMessage={
-                            readerOutlineStatus === 'failed' ? pdfOutlineAnalysisMessage : null
-                          }
+                          statusMessage={isPdf ? pdfOutlineAnalysisMessage : null}
                           progress={pdfOutlineProgress}
                           onSelect={handleReaderOutlineSelect}
                           onRetry={isPdf ? handleRetryPdfOutline : undefined}
@@ -5145,12 +5429,7 @@ export const Books: React.FC = () => {
                                             text,
                                             highlight,
                                           }) =>
-                                            openReaderContextMenu(
-                                              clientX,
-                                              clientY,
-                                              text,
-                                              highlight,
-                                            )
+                                            openReaderContextMenu(clientX, clientY, text, highlight)
                                           }
                                         />
                                       )}

@@ -23,7 +23,6 @@ import {
   resolveChapterTitleFromHtml,
   resolveReaderTocEntry,
   resolveTocTarget,
-  shouldCloseReaderDrawersOnContentClick,
   shouldShowEpubToc,
   type ReadingBlock,
   type TocEntry,
@@ -317,9 +316,7 @@ test('Anchor v2 restores PDF rectangles and EPUB character offsets for presentat
       JSON.stringify({
         version: 2,
         source: 'pdf',
-        positions: [
-          { source: 'pdf', pageNumber: 4, x: 0.1, y: 0.2, width: 0.3, height: 0.04 },
-        ],
+        positions: [{ source: 'pdf', pageNumber: 4, x: 0.1, y: 0.2, width: 0.3, height: 0.04 }],
         highlighted: true,
       }),
     ),
@@ -366,12 +363,6 @@ test('Anchor v2 exposes every PDF page rectangle for cross-page overlays', () =>
       { pageNumber: 3, areas: [{ x: 0.1, y: 0.1, width: 0.4, height: 0.04 }] },
     ],
   )
-})
-
-test('content clicks close drawers only when no text is selected', () => {
-  assert.equal(shouldCloseReaderDrawersOnContentClick(''), true)
-  assert.equal(shouldCloseReaderDrawersOnContentClick('   '), true)
-  assert.equal(shouldCloseReaderDrawersOnContentClick('selected text'), false)
 })
 
 test('active TOC can distinguish secondary headings on the same rendered page', () => {

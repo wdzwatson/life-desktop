@@ -23,15 +23,24 @@ const chatWorkspaceSource = readFileSync(
   'utf8',
 )
 const aiStyles = readFileSync(new URL('../src/views/ai/AIChat.css', import.meta.url), 'utf8')
-const dialogSource = readFileSync(new URL('../src/components/AccessibleDialog.tsx', import.meta.url), 'utf8')
-const statusbarSource = readFileSync(new URL('../src/components/Statusbar.tsx', import.meta.url), 'utf8')
+const dialogSource = readFileSync(
+  new URL('../src/components/AccessibleDialog.tsx', import.meta.url),
+  'utf8',
+)
+const statusbarSource = readFileSync(
+  new URL('../src/components/Statusbar.tsx', import.meta.url),
+  'utf8',
+)
 const globalStyles = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8')
 const toolboxSource = readFileSync(new URL('../src/views/Toolbox.tsx', import.meta.url), 'utf8')
 const appStoreSource = readFileSync(new URL('../src/store/useAppStore.ts', import.meta.url), 'utf8')
 
 test('notes export dropdown closes from document events without a fixed backdrop', () => {
   const exportStart = notesSource.indexOf('{/* Export Button & Dropdown */}')
-  const exportEnd = notesSource.indexOf('onClick={() => handleDeleteNote(activeNoteId)}', exportStart)
+  const exportEnd = notesSource.indexOf(
+    'onClick={() => handleDeleteNote(activeNoteId)}',
+    exportStart,
+  )
   const exportSource = notesSource.slice(exportStart, exportEnd)
 
   assert.notEqual(exportStart, -1)
@@ -59,7 +68,10 @@ test('overlay drawers share the video GSAP enter and exit timeline', () => {
   assert.match(drawerMotionSource, /overlayExitDuration:\s*0\.42/)
   assert.match(drawerMotionSource, /overlayExitDelay:\s*0\.06/)
   assert.match(drawerMotionSource, /xPercent:\s*direction === 'right' \? 100 : -100/)
-  assert.match(drawerMotionSource, /setIsDrawerMounted\(false\)[\s\S]*onExitCompleteRef\.current\(\)/)
+  assert.match(
+    drawerMotionSource,
+    /setIsDrawerMounted\(false\)[\s\S]*onExitCompleteRef\.current\(\)/,
+  )
   assert.match(drawerSource, /ref=\{drawerOverlayRef\}/)
   assert.match(drawerSource, /ref=\{drawerPanelRef\}/)
   assert.match(tasksSource, /drawerMode && isTaskDrawerMounted/)
@@ -69,7 +81,10 @@ test('overlay drawers share the video GSAP enter and exit timeline', () => {
   assert.match(tasksSource, /ref=\{taskDrawerPanelRef\}/)
   assert.match(tasksSource, /drawer-motion-overlay task-drawer-backdrop/)
   assert.match(videosSource, /className="drawer-motion-overlay"/)
-  assert.match(globalStyles, /\.drawer-motion-overlay\s*\{[\s\S]*var\(--overlay-drawer-bg\)[\s\S]*var\(--overlay-drawer-blur\)/)
+  assert.match(
+    globalStyles,
+    /\.drawer-motion-overlay\s*\{[\s\S]*var\(--overlay-drawer-bg\)[\s\S]*var\(--overlay-drawer-blur\)/,
+  )
   assert.doesNotMatch(tasksStyles, /transition:\s*opacity var\(--drawer/)
   aiDrawerSources.forEach((source) => {
     assert.match(source, /useDrawerTransition\(/)
@@ -88,7 +103,10 @@ test('docked drawers reuse the shared directional panel transition', () => {
   assert.match(booksSource, /useDrawerPanelTransition\(isAnnotationsDrawerOpen\)/)
   assert.match(booksSource, /ref=\{tocDrawerPanelRef\}/)
   assert.match(booksSource, /ref=\{annotationsDrawerPanelRef\}/)
-  assert.match(booksStyles, /grid-template-columns var\(--drawer-panel-exit-duration\) var\(--drawer-panel-motion-ease\)/)
+  assert.match(
+    booksStyles,
+    /grid-template-columns var\(--drawer-panel-exit-duration\)\s+var\(--drawer-panel-motion-ease\)/,
+  )
   assert.match(chatWorkspaceSource, /useDrawerPanelTransition\(showRunInspector\)/)
   assert.match(chatWorkspaceSource, /ref=\{runInspectorPanelRef\}/)
   assert.match(globalStyles, /--drawer-panel-enter-duration:\s*580ms/)

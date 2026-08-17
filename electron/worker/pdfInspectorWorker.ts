@@ -187,7 +187,12 @@ const buildPageOnlyEntries = (pageCount) => {
     const pageCount = normalizePageCount(classification.pageCount)
 
     emit('tagged', 0.35, '正在检查 Tagged PDF 结构...')
-    const taggedEntries = buildTaggedEntries(buffer)
+    let taggedEntries = []
+    try {
+      taggedEntries = buildTaggedEntries(buffer)
+    } catch {
+      taggedEntries = []
+    }
     if (taggedEntries.length > 0) {
       parentPort.postMessage({
         type: 'result',
@@ -202,7 +207,12 @@ const buildPageOnlyEntries = (pageCount) => {
     }
 
     emit('inferred', 0.7, '正在推断 Markdown 标题...')
-    const inferredEntries = await buildMarkdownEntries(buffer)
+    let inferredEntries = []
+    try {
+      inferredEntries = await buildMarkdownEntries(buffer)
+    } catch {
+      inferredEntries = []
+    }
     if (inferredEntries.length > 0) {
       parentPort.postMessage({
         type: 'result',
