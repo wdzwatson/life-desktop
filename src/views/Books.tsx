@@ -18,7 +18,6 @@ import {
   GripVertical,
   Highlighter,
   Languages,
-  LocateFixed,
   MessageSquareText,
   PanelLeftClose,
   PanelLeftOpen,
@@ -32,6 +31,10 @@ import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../components/AccessibleDialog'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import { Dropdown } from '../components/Dropdown'
+import {
+  ReaderAnnotationsPanel,
+  type ReaderAnnotationPanelItem,
+} from '../components/ReaderAnnotationsPanel'
 import {
   ReaderOutlineDrawer,
   type ReaderOutlineNode,
@@ -394,6 +397,19 @@ type ReaderOutlineViewNode = ReaderOutlineNode & {
 const normalizeHighlightAnnotation = (value: unknown) => {
   const annotation = String(value ?? '').trim()
   return annotation === '无批注记录' || annotation === 'No annotations' ? '' : annotation
+}
+
+const parseOutlinePathSnapshot = (value: unknown) => {
+  if (!value) return null
+  if (typeof value !== 'string') return value as { nodes?: Array<{ title?: string }> } | null
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object'
+      ? (parsed as { nodes?: Array<{ title?: string }> })
+      : null
+  } catch {
+    return null
+  }
 }
 
 const getReaderAnnotationKind = (highlight: ReaderHighlightRecordLike): ReaderUiAnnotationKind =>
@@ -3189,18 +3205,7 @@ export const Books: React.FC = () => {
     [highlights],
   )
 
-  const parseOutlinePathSnapshot = (value: unknown) => {
-    if (!value) return null
-    if (typeof value !== 'string') return value as { nodes?: Array<{ title?: string }> } | null
-    try {
-      const parsed = JSON.parse(value)
-      return parsed && typeof parsed === 'object' ? (parsed as { nodes?: Array<{ title?: string }> }) : null
-    } catch {
-      return null
-    }
-  }
-
-  const getReaderAnnotationLocationLabel = (highlight: ReaderHighlight) => {
+  const getReaderAnnotationLocationLabel = useCallback((highlight: ReaderHighlight) => {
     const locationStatus = String((highlight as any).location_status || (highlight as any).locationStatus || '').trim()
     if (locationStatus === 'pending') return t('books.reader_annotation_pending')
     const anchor = parseReaderHighlightAnchor(highlight.anchor)
@@ -3219,7 +3224,53 @@ export const Books: React.FC = () => {
       })
     }
     return anchor?.chapter || t('books.reader_annotation_location_unknown')
+  }, [t])
+  const readerAnnotationPanelItems = useMemo<ReaderAnnotationPanelItem[]>(
+    () =>
+      sortedHighlights.map((highlight) => ({
+        id: highlight.id,
+        kind: getReaderAnnotationKind(highlight),
+        text: highlight.text,
+        content: normalizeHighlightAnnotation(highlight.annotation),
+        locationLabel: getReaderAnnotationLocationLabel(highlight),
+        createdAt: highlight.created_at || null,
+      })),
+    [getReaderAnnotationLocationLabel, sortedHighlights],
+  )
+  const readerAnnotationsById = useMemo(
+    () => new Map(sortedHighlights.map((highlight) => [highlight.id, highlight])),
+    [sortedHighlights],
+  )
+  const readerAnnotationPanelActionsRef = useRef({
+    records: readerAnnotationsById,
+    locate: locateSavedHighlight,
+    edit: openHighlightAnnotationEditor,
+    delete: handleDeleteSavedHighlight,
+  })
+  readerAnnotationPanelActionsRef.current = {
+    records: readerAnnotationsById,
+    locate: locateSavedHighlight,
+    edit: openHighlightAnnotationEditor,
+    delete: handleDeleteSavedHighlight,
   }
+  const handleAnnotationPanelActivate = useCallback((id: string) => {
+    const { records, locate } = readerAnnotationPanelActionsRef.current
+    const highlight = records.get(id)
+    if (highlight) locate(highlight)
+  }, [])
+  const handleAnnotationPanelEdit = useCallback((id: string) => {
+    const { records, edit } = readerAnnotationPanelActionsRef.current
+    const highlight = records.get(id)
+    if (highlight) edit(highlight as ReaderAnnotationRecord)
+  }, [])
+  const handleAnnotationPanelDelete = useCallback((id: string) => {
+    const { records, delete: deleteHighlight } = readerAnnotationPanelActionsRef.current
+    const highlight = records.get(id)
+    if (highlight) void deleteHighlight(highlight as ReaderAnnotationRecord)
+  }, [])
+  const handleAnnotationPanelClose = useCallback(() => {
+    setIsAnnotationsDrawerOpen(false)
+  }, [])
 
   // Export highlights to Notes Module as Markdown (Incremental Sync)
   const handleExportHighlights = async () => {
@@ -5292,7 +5343,7 @@ export const Books: React.FC = () => {
                     }}
                   >
                     {/* Inline editor inside right sidebar instead of overlay popover to prevent shifting */}
-                    {selectedHighlightText && isSelectionEditorOpen && (
+                    {isAnnotationsDrawerOpen && selectedHighlightText && isSelectionEditorOpen && (
                       <div
                         style={{
                           padding: '12px',
@@ -5418,118 +5469,16 @@ export const Books: React.FC = () => {
                       </div>
                     )}
 
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '8px',
-                        marginBottom: '10px',
-                      }}
-                    >
-                      <h4
-                        style={{
-                          fontSize: '11px',
-                          color: isDarkReader ? '#888' : 'var(--text-muted)',
-                          textTransform: 'uppercase',
-                          fontWeight: 600,
-                          margin: 0,
-                        }}
-                      >
-                        {t('books.highlights_annotations_title')} ({sortedHighlights.length})
-                      </h4>
-                      <button
-                        type="button"
-                        className="btn sm"
-                        onClick={() => setIsAnnotationsDrawerOpen(false)}
-                        aria-label={t('books.hide_annotations') || '收起批注'}
-                        title={t('books.hide_annotations') || '收起批注'}
-                        style={{
-                          width: '28px',
-                          height: '28px',
-                          padding: 0,
-                          display: 'grid',
-                          placeItems: 'center',
-                        }}
-                      >
-                        <PanelRightClose size={13} />
-                      </button>
-                    </div>
-                    <div className="book-reader__annotation-list">
-                      {sortedHighlights.map((hl) => {
-                        const kind = getReaderAnnotationKind(hl)
-                        const KindIcon =
-                          kind === 'translation'
-                            ? Languages
-                            : kind === 'highlight'
-                              ? Highlighter
-                              : MessageSquareText
-                        const content = normalizeHighlightAnnotation(hl.annotation)
-                        return (
-                          <article
-                            key={hl.id}
-                            data-reader-annotation-id={hl.id}
-                            className={`book-reader__annotation-card is-${kind} ${activeHighlightId === hl.id ? 'is-active' : ''}`}
-                          >
-                            <header className="book-reader__annotation-card-header">
-                              <span className="book-reader__annotation-kind">
-                                <KindIcon size={12} aria-hidden="true" />
-                                {t(`books.reader_annotation_kind_${kind}`)}
-                              </span>
-                              <div className="book-reader__annotation-actions">
-                                {kind !== 'highlight' && (
-                                  <button
-                                    type="button"
-                                    className="book-reader__annotation-action"
-                                    onClick={() => openHighlightAnnotationEditor(hl)}
-                                    aria-label={t('common.edit')}
-                                    title={t('common.edit')}
-                                  >
-                                    <Edit3 size={14} />
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  className="book-reader__annotation-action"
-                                  onClick={() => locateSavedHighlight(hl)}
-                                  aria-label={t('books.locate_reader_annotation', {
-                                    text: hl.text,
-                                  })}
-                                  title={t('books.locate_reader_annotation', { text: hl.text })}
-                                >
-                                  <LocateFixed size={14} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="book-reader__annotation-action is-danger"
-                                  onClick={() => void handleDeleteSavedHighlight(hl)}
-                                  aria-label={t('books.delete_reader_annotation', {
-                                    text: hl.text,
-                                  })}
-                                  title={t('books.delete_reader_annotation', { text: hl.text })}
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </header>
-                            <span className="book-reader__annotation-location">
-                              {getReaderAnnotationLocationLabel(hl)}
-                            </span>
-                            <blockquote className="book-reader__annotation-source">
-                              {hl.text}
-                            </blockquote>
-                            {kind === 'translation' && content && (
-                              <p className="book-reader__annotation-content is-translation">
-                                {content}
-                              </p>
-                            )}
-                            {kind === 'note' && content && (
-                              <p className="book-reader__annotation-content is-note">{content}</p>
-                            )}
-                          </article>
-                        )
-                      })}
-                    </div>
+                    {isAnnotationsDrawerOpen ? (
+                      <ReaderAnnotationsPanel
+                        items={readerAnnotationPanelItems}
+                        activeItemId={activeHighlightId}
+                        onActivate={handleAnnotationPanelActivate}
+                        onEdit={handleAnnotationPanelEdit}
+                        onDelete={handleAnnotationPanelDelete}
+                        onClose={handleAnnotationPanelClose}
+                      />
+                    ) : null}
                   </aside>
                 </>
               )}

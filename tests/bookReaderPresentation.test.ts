@@ -12,6 +12,10 @@ const readerOutlineDrawer = readFileSync(
   new URL('../src/components/ReaderOutlineDrawer.tsx', import.meta.url),
   'utf8',
 )
+const readerAnnotationsPanel = readFileSync(
+  new URL('../src/components/ReaderAnnotationsPanel.tsx', import.meta.url),
+  'utf8',
+)
 const viteConfig = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8')
 
 test('book shelf titles support two lines while preserving the full title as a tooltip', () => {
@@ -118,7 +122,7 @@ test('PDF width measurement uses the client area with scrollbar tolerance', () =
 test('saved highlights render on the source text and open their annotation', () => {
   assert.match(booksSource, /className=\{`book-reader__saved-highlight/)
   assert.match(booksSource, /openSavedHighlight\(primaryHighlight\)/)
-  assert.match(booksSource, /data-reader-annotation-id=\{hl\.id\}/)
+  assert.match(readerAnnotationsPanel, /data-reader-annotation-id=\{item\.id\}/)
   assert.match(booksStyles, /\.book-reader__saved-highlight:hover/)
   assert.match(booksStyles, /\.book-reader__pdf-saved-highlight:hover/)
   assert.match(booksSource, /prev\.pdfHighlightsByPage !== next\.pdfHighlightsByPage/)
@@ -147,10 +151,12 @@ test('saved highlights render on the source text and open their annotation', () 
   assert.match(booksSource, /kind:\s*getReaderAnnotationKind\(highlight\)/)
   assert.match(booksSource, /sortedHighlights\.map/)
   assert.match(booksSource, /compareReaderHighlightsByDocumentPosition/)
-  assert.match(booksSource, /locateSavedHighlight\(hl\)/)
-  assert.match(booksSource, /handleDeleteSavedHighlight\(hl\)/)
+  assert.match(booksSource, /locate:\s*locateSavedHighlight/)
+  assert.match(booksSource, /delete:\s*handleDeleteSavedHighlight/)
+  assert.match(booksSource, /handleAnnotationPanelActivate/)
+  assert.match(booksSource, /handleAnnotationPanelDelete/)
   assert.match(booksSource, /data-reader-highlight-id=\{primaryHighlight\.id\}/)
-  assert.match(booksSource, /reader_annotation_kind_\$\{kind\}/)
+  assert.match(readerAnnotationsPanel, /reader_annotation_kind_\$\{item\.kind\}/)
   assert.match(booksStyles, /\.book-reader__annotation-card\.is-translation/)
   assert.match(booksStyles, /\.book-reader__annotation-card\.is-highlight/)
   assert.match(booksStyles, /\.book-reader__annotation-card\.is-note/)
@@ -192,4 +198,17 @@ test('reader outline lazily renders deep branches and keeps PDF document ownersh
   assert.match(readerOutlineDrawer, /outline_status_partial/)
   assert.match(readerOutlineDrawer, /outline_status_failed/)
   assert.equal((booksSource.match(/<Document/g) || []).length, 1)
+})
+
+test('reader annotation panel filters semantic kinds and paginates large lists', () => {
+  assert.match(booksSource, /<ReaderAnnotationsPanel/)
+  assert.match(readerAnnotationsPanel, /ReaderAnnotationPanelFilter/)
+  assert.match(readerAnnotationsPanel, /aria-pressed=\{filter === id\}/)
+  assert.match(readerAnnotationsPanel, /READER_ANNOTATION_PAGE_SIZE = 80/)
+  assert.match(readerAnnotationsPanel, /getReaderAnnotationPage\(filteredItems, visibleCount\)/)
+  assert.match(readerAnnotationsPanel, /setVisibleCount\(\(current\) => Math\.max\(current, requiredCount\)\)/)
+  assert.match(readerAnnotationsPanel, /previous\.item\.content === next\.item\.content/)
+  assert.match(readerAnnotationsPanel, /data-reader-annotation-id=\{item\.id\}/)
+  assert.match(readerAnnotationsPanel, /reader_annotation_created_at/)
+  assert.match(readerAnnotationsPanel, /onKeyDown=\{\(event\)/)
 })
