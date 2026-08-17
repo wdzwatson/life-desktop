@@ -85,6 +85,7 @@ import {
   getReadingProgressForLocation,
   isReadingBlockHeading,
   mergePdfSelectionAreas,
+  normalizeTocTitle,
   parseReaderHighlightAnchor,
   resolveReaderTocEntry,
   shouldCloseReaderDrawersOnContentClick,
@@ -716,6 +717,12 @@ export const Books: React.FC = () => {
   }
   const [isTocDrawerOpen, setIsTocDrawerOpen] = useState(false)
   const [isAnnotationsDrawerOpen, setIsAnnotationsDrawerOpen] = useState(false)
+  const [pendingReaderDeepLink, setPendingReaderDeepLink] = useState<{
+    bookId: number
+    annotationId?: string
+    chapter?: string
+  } | null>(null)
+  const readerOpenForDeepLinkRef = useRef<((book: any) => Promise<void>) | null>(null)
   const tocDrawerPanelRef = useDrawerPanelTransition(isTocDrawerOpen, 'left')
   const annotationsDrawerPanelRef = useDrawerPanelTransition(isAnnotationsDrawerOpen)
   const [readerMainWidth, setReaderMainWidth] = useState(0)
@@ -905,38 +912,7 @@ export const Books: React.FC = () => {
 
   useEffect(() => {
     loadData()
-
-    // Listen to deep linking events from Notes view
-    const handleOpenBookEvent = async (e: Event) => {
-      const { bookId, chapter } = (e as CustomEvent).detail
-      if (!api) return
-
-      const res = await api.dbQuery('books', 'SELECT * FROM books WHERE id = ?', [bookId])
-      if (res?.success && res.data.length > 0) {
-        const book = res.data[0]
-        readerSessionRef.current += 1
-        cancelPdfOcrRequests()
-        if (readingBook && readingBook.id !== book.id && api?.cancelReaderOutlineAnalysis) {
-          void api.cancelReaderOutlineAnalysis(readingBook.id)
-        }
-        activeOutlineBookIdRef.current = book.id
-        setPdfOutlineAnalysisMessage(null)
-        setPdfOutlineProgress(0)
-        setPdfOutlineCacheStatus(null)
-        setReadingBook(book)
-        setReadingProgress(Math.round(book.progress || 0))
-        if (chapter) setCurrentChapter(decodeURIComponent(chapter))
-
-        // Load highlights for this book
-        setHighlights(await loadReaderHighlights(bookId))
-      }
-    }
-
-    window.addEventListener('lifeos:open-book', handleOpenBookEvent)
-    return () => {
-      window.removeEventListener('lifeos:open-book', handleOpenBookEvent)
-    }
-  }, [userId, loadReaderHighlights])
+  }, [userId])
 
   useEffect(() => {
     if (!api?.onReaderOutlineProgress) return
@@ -1795,6 +1771,34 @@ export const Books: React.FC = () => {
     }
     setIsLoadingReader(false)
   }
+
+  readerOpenForDeepLinkRef.current = handleOpenReader
+
+  useEffect(() => {
+    const handleOpenBookEvent = async (event: Event) => {
+      const detail = (event as CustomEvent).detail as {
+        bookId?: number
+        chapter?: string
+        annotationId?: string
+      }
+      if (!api || !Number.isInteger(detail.bookId) || !readerOpenForDeepLinkRef.current) return
+      const res = await api.dbQuery('books', 'SELECT * FROM books WHERE id = ?', [detail.bookId])
+      const book = res?.success && Array.isArray(res.data) ? res.data[0] : null
+      if (!book) {
+        showToast(t('books.reader_deep_link_not_found'))
+        return
+      }
+      await readerOpenForDeepLinkRef.current(book)
+      setPendingReaderDeepLink({
+        bookId: book.id,
+        annotationId: detail.annotationId,
+        chapter: detail.chapter,
+      })
+    }
+
+    window.addEventListener('lifeos:open-book', handleOpenBookEvent)
+    return () => window.removeEventListener('lifeos:open-book', handleOpenBookEvent)
+  }, [api, showToast, t])
 
   // Close reader and save final progress percentage if changed
   const handleCloseReader = async () => {
@@ -3761,6 +3765,53 @@ export const Books: React.FC = () => {
     },
     [bookChapters, isPdf, pdfLayoutMode, pdfNumPages, scrollPdfToPage],
   )
+
+  useEffect(() => {
+    const pending = pendingReaderDeepLink
+    if (!pending || !readingBook || Number(readingBook.id) !== pending.bookId || isLoadingReader) return
+
+    if (pending.annotationId) {
+      const highlight = highlights.find((item) => item.id === pending.annotationId)
+      if (!highlight) {
+        showToast(t('books.reader_deep_link_annotation_not_found'))
+        setPendingReaderDeepLink(null)
+        return
+      }
+      if (isPdf ? pdfNumPages <= 0 : !bookChapters) return
+      readerAnnotationPanelActionsRef.current.locate(highlight)
+      setPendingReaderDeepLink(null)
+      return
+    }
+
+    if (!pending.chapter) {
+      setPendingReaderDeepLink(null)
+      return
+    }
+    const chapterTitle = normalizeTocTitle(pending.chapter)
+    const target = readerOutlineNodes.find((node) => normalizeTocTitle(node.title) === chapterTitle)
+    if (!target) {
+      if (isPdf && pdfOutlineStatus === 'loading') return
+      showToast(t('books.reader_deep_link_chapter_not_found'))
+      setPendingReaderDeepLink(null)
+      return
+    }
+    handleReaderOutlineSelect(target)
+    setPendingReaderDeepLink(null)
+  }, [
+    bookChapters,
+    handleReaderOutlineSelect,
+    highlights,
+    isLoadingReader,
+    isPdf,
+    pendingReaderDeepLink,
+    pdfNumPages,
+    pdfOutlineStatus,
+    readerOutlineNodes,
+    readingBook,
+    showToast,
+    t,
+  ])
+
   const handleRetryPdfOutline = useCallback(() => {
     void analyzePdfOutlineFallback(pdfNumPages)
   }, [analyzePdfOutlineFallback, pdfNumPages])

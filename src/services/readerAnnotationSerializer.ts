@@ -602,6 +602,7 @@ const renderExportAnnotationRecord = (
     : labels.notAvailable
   return [
     markers.start,
+    `<!-- life-os:reader-annotation-kind:${record.kind} -->`,
     `- **${escapeMarkdownInline(labels.type)}**: ${escapeMarkdownInline(labels.kinds[record.kind])}`,
     `  - **${escapeMarkdownInline(labels.originalText)}**: ${escapeMarkdownInline(record.text)}`,
     `  - **${escapeMarkdownInline(labels.body)}**: ${escapeMarkdownInline(record.body || labels.notAvailable)}`,
@@ -657,6 +658,12 @@ export const renderReaderAnnotationsManagedMarkdown = (
         `**${escapeMarkdownInline(options.labels.fullChapterPath)}**: ${escapeMarkdownInline(titles.join(' > '))}`,
         '',
       )
+      if (titles.length > 4) {
+        titles.slice(4).forEach((title, index) => {
+          output.push(`${'    '.repeat(index)}- ${escapeMarkdownInline(title)}`)
+        })
+        output.push('')
+      }
     }
     group.records.forEach((record) => {
       output.push(renderExportAnnotationRecord(record, options), '')
@@ -690,4 +697,26 @@ export const mergeReaderAnnotationsManagedMarkdown = (
       ? '\n'
       : '\n\n'
   return `${existingContent}${separator}${managedContent}`
+}
+
+const getReaderAnnotationExportIcon = (kind: ReaderAnnotationKind) => {
+  switch (kind) {
+    case 'translation':
+      return 'T'
+    case 'underline':
+      return 'U'
+    default:
+      return 'N'
+  }
+}
+
+export const decorateReaderAnnotationExportHtml = (html: string) => {
+  const startPattern =
+    /<!--\s*life-os:reader-annotation:([^:>]+):start\s*-->\s*<!--\s*life-os:reader-annotation-kind:(translation|underline|note)\s*-->/g
+  const endPattern = /<!--\s*life-os:reader-annotation:[^:>]+:end\s*-->/g
+  const withSections = html.replace(startPattern, (_match, id: string, kind: ReaderAnnotationKind) => {
+    const icon = getReaderAnnotationExportIcon(kind)
+    return `<article class="reader-export-annotation is-${kind}" data-reader-annotation-id="${id}" data-reader-annotation-kind="${kind}"><span class="reader-export-annotation__icon" aria-hidden="true">${icon}</span>`
+  })
+  return withSections.replace(endPattern, '</article>')
 }

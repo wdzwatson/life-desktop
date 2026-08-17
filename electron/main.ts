@@ -41,6 +41,7 @@ import {
   resolveTocTarget,
 } from '../src/views/bookReaderUtils'
 import { handleBookCoverProtocolRequest } from './bookCoverProtocol'
+import { buildNoteExportHtml } from './noteExport'
 import {
   handleLandingPosterProtocolRequest,
   isLandingPosterExtension,
@@ -4542,8 +4543,9 @@ ipcMain.handle('note:export', async (event, { title, content, htmlContent, forma
         filters = [{ name: 'HTML File', extensions: ['html'] }]
         break
       case 'doc':
-        defaultExtension = 'doc'
-        filters = [{ name: 'Word Document', extensions: ['doc'] }]
+      case 'docx':
+        defaultExtension = 'docx'
+        filters = [{ name: 'Word Document', extensions: ['docx'] }]
         break
       case 'pdf':
         defaultExtension = 'pdf'
@@ -4575,83 +4577,7 @@ ipcMain.handle('note:export', async (event, { title, content, htmlContent, forma
       return { success: false, error: 'Canceled' }
     }
 
-    // Prepare full HTML wrapper with some styling for HTML/PDF/DOC formats
-    const styledHtml = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>${title}</title>
-        <style>
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 40px 20px;
-          }
-          h1, h2, h3, h4, h5, h6 {
-            color: #111;
-            margin-top: 24px;
-            margin-bottom: 16px;
-            font-weight: 600;
-            line-height: 1.25;
-          }
-          h1 { font-size: 2.5em; border-bottom: 1px solid #eaecef; padding-bottom: 0.3em; }
-          h2 { font-size: 1.8em; border-bottom: 1px solid #eaecef; padding-bottom: 0.3em; }
-          h3 { font-size: 1.4em; }
-          h4 { font-size: 1.1em; }
-          p, blockquote, ul, ol, dl, table, pre { margin-top: 0; margin-bottom: 16px; }
-          code {
-            padding: 0.2em 0.4em;
-            margin: 0;
-            font-size: 85%;
-            background-color: rgba(27,31,35,0.05);
-            border-radius: 3px;
-            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
-          }
-          pre {
-            padding: 16px;
-            overflow: auto;
-            font-size: 85%;
-            line-height: 1.45;
-            background-color: #f6f8fa;
-            border-radius: 3px;
-          }
-          pre code {
-            background-color: transparent;
-            padding: 0;
-          }
-          blockquote {
-            padding: 0 1em;
-            color: #6a737d;
-            border-left: 0.25em solid #dfe2e5;
-          }
-          table {
-            border-collapse: collapse;
-            width: 100%;
-            margin-bottom: 16px;
-          }
-          table th, table td {
-            padding: 6px 13px;
-            border: 1px solid #dfe2e5;
-          }
-          table tr:nth-child(even) {
-            background-color: #f6f8fa;
-          }
-          img {
-            max-width: 100%;
-            box-sizing: content-box;
-          }
-        </style>
-      </head>
-      <body>
-        <h1>${title}</h1>
-        <div>${htmlContent || ''}</div>
-      </body>
-      </html>
-    `
+    const styledHtml = buildNoteExportHtml(String(title || ''), String(htmlContent || ''))
 
     if (format === 'md') {
       await fs.promises.writeFile(filePath, content, 'utf-8')
@@ -4660,55 +4586,25 @@ ipcMain.handle('note:export', async (event, { title, content, htmlContent, forma
       await fs.promises.writeFile(filePath, content, 'utf-8')
     } else if (format === 'html') {
       await fs.promises.writeFile(filePath, styledHtml, 'utf-8')
-    } else if (format === 'doc') {
-      // Microsoft Word can read HTML files containing images and tables directly if named with .doc
-      // Add MS Word specific XML namespaces/metadata so it fits standard page settings
-      const docHtml = `
-        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-        <head>
-          <xml>
-            <w:WordDocument>
-              <w:View>Print</w:View>
-              <w:Zoom>100</w:Zoom>
-            </w:WordDocument>
-          </xml>
-          <style>
-            @page Section1 {
-              size: 8.5in 11.0in;
-              margin: 1.0in 1.25in 1.0in 1.25in;
-              mso-header-margin: .5in;
-              mso-footer-margin: .5in;
-              mso-paper-source: 0;
-            }
-            div.Section1 {
-              page: Section1;
-            }
-            body {
-              font-family: "Calibri", "Arial", sans-serif;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="Section1">
-            <h1>${title}</h1>
-            <div>${htmlContent || ''}</div>
-          </div>
-        </body>
-        </html>
-      `
-      await fs.promises.writeFile(filePath, docHtml, 'utf-8')
+    } else if (format === 'doc' || format === 'docx') {
+      const { buildNoteExportDocx } = await import('./noteDocxExport')
+      const docxBuffer = await buildNoteExportDocx(String(title || ''), styledHtml)
+      await fs.promises.writeFile(filePath, docxBuffer)
     } else if (format === 'pdf') {
       const win = new BrowserWindow({ show: false })
-      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(styledHtml))
-      const pdfBuffer = await win.webContents.printToPDF({
-        printBackground: true,
-        pageSize: 'A4',
-        margins: {
-          marginType: 'default',
-        },
-      })
-      await fs.promises.writeFile(filePath, pdfBuffer)
-      win.destroy()
+      try {
+        await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(styledHtml))
+        const pdfBuffer = await win.webContents.printToPDF({
+          printBackground: true,
+          pageSize: 'A4',
+          margins: {
+            marginType: 'default',
+          },
+        })
+        await fs.promises.writeFile(filePath, pdfBuffer)
+      } finally {
+        if (!win.isDestroyed()) win.destroy()
+      }
     }
 
     return { success: true, filePath }

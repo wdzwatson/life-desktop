@@ -38,6 +38,8 @@ import {
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { getConfiguredLocales } from '../localeRegistry'
+import { parseReaderBookDeepLink } from '../services/readerDeepLink'
+import { decorateReaderAnnotationExportHtml } from '../services/readerAnnotationSerializer'
 import { ViewportPortal } from '../components/ViewportPortal'
 import { NotebookSidebar } from './NotebookSidebar'
 import {
@@ -106,6 +108,12 @@ const readFileAsDataUrl = (file: File) =>
   })
 
 const escapeMarkdownLabel = (value: string) => value.replace(/([\\[\\]])/g, '\\$1')
+const escapeHtmlAttribute = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 
 interface ElectronAPI {
   dbQuery: (dbName: string, sql: string, params?: unknown[]) => Promise<DBResponse>
@@ -761,7 +769,7 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
     setDeleteConfirmTarget(null)
   }
 
-  const handleExportNote = async (format: 'md' | 'html' | 'doc' | 'pdf' | 'txt') => {
+  const handleExportNote = async (format: 'md' | 'html' | 'docx' | 'pdf' | 'txt') => {
     if (!api || !activeNoteId) return
     setIsExporting(true)
 
@@ -993,17 +1001,28 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
   const handleDeepLinkClick = useCallback(
     (link: string) => {
       // 1. E-book Link format: book:BookID#ChapterTitle
-      if (link.startsWith('book:')) {
-        const cleaned = link.replace('book:', '')
-        const [bookId, chapter] = cleaned.split('#')
-
-        showToast(t('notes.toast_navigating_shelf', { bookId, chapter: chapter || 'Default' }))
+      const readerTarget = parseReaderBookDeepLink(link)
+      if (readerTarget) {
+        if (readerTarget.target === 'annotation') {
+          showToast(t('notes.toast_navigating_annotation', { bookId: readerTarget.bookId }))
+        } else {
+          showToast(
+            t('notes.toast_navigating_shelf', {
+              bookId: readerTarget.bookId,
+              chapter: readerTarget.target === 'chapter' ? readerTarget.chapter : 'Default',
+            }),
+          )
+        }
         setActiveScreen('books')
 
-        // We pass state in localSession or trigger ebook loader in React window
         setTimeout(() => {
           const event = new CustomEvent('lifeos:open-book', {
-            detail: { bookId: parseInt(bookId), chapter },
+            detail: {
+              bookId: readerTarget.bookId,
+              chapter: readerTarget.target === 'chapter' ? readerTarget.chapter : undefined,
+              annotationId:
+                readerTarget.target === 'annotation' ? readerTarget.annotationId : undefined,
+            },
           })
           window.dispatchEvent(event)
         }, 200)
@@ -1129,14 +1148,19 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
     const mdWithLinks = md.replace(doubleLinkRegex, (_, inner) => {
       const isBook = inner.startsWith('book:')
       const bookLabel = t('notes.book_ref_label', { id: inner.replace('book:', '') })
-      return `<button class="deep-link-btn" data-link="${inner}" style="color: var(--color-accent); font-weight: bold; background: none; border: none; cursor: pointer; text-decoration: underline; display: inline-flex; align-items: center; gap: 4px;"><span style="font-size: 11px;">🔗</span>${isBook ? bookLabel : inner}</button>`
+      const safeLink = escapeHtmlAttribute(inner)
+      const content = `<span style="font-size: 11px;">🔗</span>${isBook ? bookLabel : inner}`
+      const style = 'color: var(--color-accent); font-weight: bold; background: none; border: none; cursor: pointer; text-decoration: underline; display: inline-flex; align-items: center; gap: 4px;'
+      return isBook
+        ? `<a class="deep-link-btn" data-link="${safeLink}" href="${safeLink}" style="${style}">${content}</a>`
+        : `<button class="deep-link-btn" data-link="${safeLink}" style="${style}">${content}</button>`
     })
 
     // 2. Parse Markdown to HTML using marked
-    const rawHtml = marked.parse(renderSizedNoteImages(mdWithLinks), {
+    const rawHtml = decorateReaderAnnotationExportHtml(marked.parse(renderSizedNoteImages(mdWithLinks), {
       gfm: true,
       breaks: true,
-    }) as string
+    }) as string)
 
     // 3. Sanitize HTML using DOMPurify to prevent XSS but allow our custom buttons and style/class attributes.
     const cleanHtml = DOMPurify.sanitize(addNoteImageResizeFrames(rawHtml), {
@@ -1151,7 +1175,7 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
         'class',
       ],
       ALLOWED_URI_REGEXP:
-        /^(?:(?:https?|mailto|tel|life-note-asset):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
+        /^(?:(?:https?|mailto|tel|life-note-asset|book):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
     })
 
     return cleanHtml
@@ -1320,6 +1344,7 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
       if (!(target instanceof Element)) return
       const deepLinkButton = target.closest<HTMLElement>('.deep-link-btn')
       if (deepLinkButton) {
+        event.preventDefault()
         const link = deepLinkButton.getAttribute('data-link')
         if (link) handleDeepLinkClick(link)
         return
@@ -2200,7 +2225,7 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
                           alignItems: 'center',
                           gap: '6px',
                         }}
-                        onClick={() => handleExportNote('doc')}
+                        onClick={() => handleExportNote('docx')}
                         onMouseEnter={(e) =>
                           (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
                         }
@@ -2208,7 +2233,7 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
                           (e.currentTarget.style.backgroundColor = 'transparent')
                         }
                       >
-                        📝 Word Doc (.doc)
+                        📝 Word Document (.docx)
                       </button>
                       <button
                         style={{

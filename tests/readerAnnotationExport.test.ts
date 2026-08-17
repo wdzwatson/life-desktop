@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { marked } from 'marked'
 import {
   buildExportAnnotationRecords,
+  decorateReaderAnnotationExportHtml,
   getReaderAnnotationsManagedMarkers,
   groupExportAnnotationRecords,
   mergeReaderAnnotationsManagedMarkdown,
@@ -166,6 +168,12 @@ test('managed Markdown preserves paths deeper than H6 and page-only locations', 
   assert.match(markdown, /\*\*Pages\*\*: 21/)
   assert.match(markdown, /\[\[book:7#annotation:deep\]\]/)
   assert.match(markdown, /life-os:reader-annotation:deep:start/)
+
+  const html = decorateReaderAnnotationExportHtml(marked.parse(markdown) as string)
+  assert.match(html, /class="reader-export-annotation is-translation"/)
+  assert.match(html, /data-reader-annotation-kind="translation"/)
+  assert.match(html, /<span class="reader-export-annotation__icon" aria-hidden="true">T<\/span>/)
+  assert.match(html, /<li>L5\s*<ul>\s*<li>L6\s*<ul>\s*<li>L7\s*<ul>\s*<li>L8/)
 })
 
 test('managed Notes synchronization is repeatable and preserves handwritten regions', () => {
