@@ -151,48 +151,83 @@ export function createOutlineIndex(
   }
 
   const childrenDrafts = new Map<string | null, OutlineIndexNode[]>()
+  const effectiveParentById = new Map<string, string | null>()
   for (const node of nodesById.values()) {
     const parentId = node.parentId && nodesById.has(node.parentId) ? node.parentId : null
+    effectiveParentById.set(node.id, parentId)
+  }
+
+  const resolvedParentChains = new Set<string>()
+  for (const node of nodesById.values()) {
+    if (resolvedParentChains.has(node.id)) continue
+    const chain: string[] = []
+    const chainIndexes = new Map<string, number>()
+    let currentId: string | null = node.id
+    while (currentId && !resolvedParentChains.has(currentId)) {
+      const cycleIndex = chainIndexes.get(currentId)
+      if (cycleIndex !== undefined) {
+        effectiveParentById.set(chain[cycleIndex], null)
+        break
+      }
+      chainIndexes.set(currentId, chain.length)
+      chain.push(currentId)
+      currentId = effectiveParentById.get(currentId) || null
+    }
+    chain.forEach((id) => resolvedParentChains.add(id))
+  }
+
+  for (const node of nodesById.values()) {
+    const parentId = effectiveParentById.get(node.id) || null
+    node.parentId = parentId
     const siblings = childrenDrafts.get(parentId) || []
     siblings.push(node)
     childrenDrafts.set(parentId, siblings)
   }
 
-  const assignTree = (
-    parentId: string | null,
-    parentPathNodes: OutlinePathSnapshotNode[],
-    parentPathKey: string | null,
-  ): OutlineIndexNode[] => {
-    const siblings = [...(childrenDrafts.get(parentId) || [])].sort(compareNodesByLayout)
-    const resolvedChildren: OutlineIndexNode[] = []
-    siblings.forEach((node, index) => {
-      const segment = `${index + 1}-${slugifySegment(node.title)}`
-      const pathKey = node.pathKey || (parentPathKey ? `${parentPathKey}/${segment}` : segment)
-      node.pathKey = pathKey
-      node.childrenCount = (childrenDrafts.get(node.id) || []).length
-      const pathNodes = [
-        ...parentPathNodes,
-        {
-          id: node.id,
-          title: node.title,
-          level: node.level,
-          pathKey,
-        },
-      ]
-      pathSnapshotsById.set(node.id, {
-        source: node.source,
-        pathKey,
-        nodes: pathNodes,
-      })
-      const childNodes = assignTree(node.id, pathNodes, pathKey)
-      childrenByParent.set(node.id, childNodes)
-      resolvedChildren.push(node)
-    })
-    childrenByParent.set(parentId, resolvedChildren)
-    return resolvedChildren
+  for (const [parentId, children] of childrenDrafts) {
+    childrenByParent.set(parentId, [...children].sort(compareNodesByLayout))
   }
 
-  const rootNodes = assignTree(null, [], null)
+  const rootNodes = childrenByParent.get(null) || []
+  const stack = rootNodes
+    .map((node, index) => ({
+      node,
+      siblingIndex: index,
+      parentPathNodes: [] as OutlinePathSnapshotNode[],
+      parentPathKey: null as string | null,
+    }))
+    .reverse()
+  while (stack.length > 0) {
+    const current = stack.pop()!
+    const { node, siblingIndex, parentPathNodes, parentPathKey } = current
+    const segment = `${siblingIndex + 1}-${slugifySegment(node.title)}`
+    const pathKey = node.pathKey || (parentPathKey ? `${parentPathKey}/${segment}` : segment)
+    node.pathKey = pathKey
+    const childNodes = childrenByParent.get(node.id) || []
+    node.childrenCount = childNodes.length
+    const pathNodes = [
+      ...parentPathNodes,
+      {
+        id: node.id,
+        title: node.title,
+        level: node.level,
+        pathKey,
+      },
+    ]
+    pathSnapshotsById.set(node.id, {
+      source: node.source,
+      pathKey,
+      nodes: pathNodes,
+    })
+    for (let index = childNodes.length - 1; index >= 0; index -= 1) {
+      stack.push({
+        node: childNodes[index],
+        siblingIndex: index,
+        parentPathNodes: pathNodes,
+        parentPathKey: pathKey,
+      })
+    }
+  }
 
   const flatIndex = [...nodesById.values()].sort(compareNodesByLayout)
 

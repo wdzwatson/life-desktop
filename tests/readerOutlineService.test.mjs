@@ -136,6 +136,13 @@ function createFakeWorker(bufferText) {
   return worker
 }
 
+function createErrorWorker(message = 'Invalid PDF structure') {
+  const worker = new EventEmitter()
+  worker.terminate = async () => 0
+  queueMicrotask(() => worker.emit('message', { type: 'error', error: message }))
+  return worker
+}
+
 test('worker source uses pdf-inspector classification and markdown extraction', () => {
   const source = createPdfInspectorWorkerSource()
   assert.match(source, /classifyPdfAsync/)
@@ -175,6 +182,8 @@ test('outline service falls back tagged -> inferred -> page-only and caches comp
     })
     assert.equal(taggedCached.status, 'ready')
     assert.equal(taggedCached.cacheStatus, 'hit')
+    assert.equal(taggedCached.source, 'tagged')
+    assert.equal(taggedCached.entries[0]?.analysisSource, 'tagged')
     assert.equal(workerCount, 1)
 
     const inferred = await service.analyze({
@@ -196,6 +205,46 @@ test('outline service falls back tagged -> inferred -> page-only and caches comp
     assert.equal(pageOnly.status, 'ready')
     assert.equal(pageOnly.source, 'page-only')
     assert.equal(pageOnly.entries[0]?.analysisSource, 'page-only')
+  } finally {
+    db.close()
+  }
+})
+
+test('outline service exposes parser failures, marks pending locations, and allows retry', async () => {
+  const db = createDatabase()
+  let shouldFail = true
+  let markedErrors = 0
+  const service = new ReaderOutlineService({
+    getDb: () => db,
+    readFile: async () => Buffer.from('retryable-pdf', 'utf8'),
+    createWorker: () =>
+      shouldFail ? createErrorWorker() : createFakeWorker('tagged-retry'),
+    markSelectionsError: () => {
+      markedErrors += 1
+    },
+  })
+
+  try {
+    const failed = await service.analyze({
+      bookId: 1,
+      source: 'pdf',
+      filePath: 'broken-sample',
+      pageCount: 4,
+    })
+    assert.equal(failed.status, 'error')
+    assert.match(failed.error, /Invalid PDF structure/)
+    assert.equal(markedErrors, 1)
+
+    shouldFail = false
+    const retried = await service.analyze({
+      bookId: 1,
+      source: 'pdf',
+      filePath: 'broken-sample',
+      pageCount: 4,
+    })
+    assert.equal(retried.status, 'ready')
+    assert.equal(retried.cacheStatus, 'miss')
+    assert.equal(retried.source, 'tagged')
   } finally {
     db.close()
   }

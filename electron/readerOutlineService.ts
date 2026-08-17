@@ -4,6 +4,7 @@ import { Worker } from 'node:worker_threads'
 import type Database from 'better-sqlite3'
 import { createPdfInspectorWorkerSource } from './worker/pdfInspectorWorker'
 import {
+  getOutlineRunByKey,
   listOutlineNodesForRun,
   replaceOutlineNodesForRun,
   upsertOutlineRun,
@@ -110,6 +111,7 @@ type OutlineNodeRow = {
   page_end: number | null
   y_start: number | null
   y_end: number | null
+  locator_json: string | null
   source: ReaderDocumentSource
 }
 
@@ -122,6 +124,7 @@ export type ReaderOutlineServiceDependencies = {
     contentHash: string
   }) => ReaderOutlineWorkerLike
   reconcileSelections?: (bookId: number, source: ReaderDocumentSource) => void
+  markSelectionsError?: (bookId: number, source: ReaderDocumentSource) => void
 }
 
 export type ReaderOutlineServiceIpcProgressListener = (event: ReaderOutlineAnalysisProgress) => void
@@ -214,7 +217,14 @@ export class ReaderOutlineService {
 
     if (existingTask) existingTask.cancel()
 
-    const runId = `outline-${request.bookId}-${crypto.randomUUID()}`
+    const existingRun = getOutlineRunByKey(db, {
+      bookId: request.bookId,
+      source: request.source,
+      parserVersion,
+      contentHash,
+      pageCount,
+    })
+    const runId = existingRun?.id ?? `outline-${request.bookId}-${crypto.randomUUID()}`
     const startedAt = new Date().toISOString()
     const listeners = new Set<(event: ReaderOutlineAnalysisProgress) => void>()
     if (onProgress) listeners.add(onProgress)
@@ -263,6 +273,14 @@ export class ReaderOutlineService {
       return result
     }
 
+    const markSelectionsError = () => {
+      try {
+        this.dependencies.markSelectionsError?.(request.bookId, request.source)
+      } catch {
+        // Outline failure reporting must not hide the original parser error.
+      }
+    }
+
     let settled = false
     let cancelTask: (() => void) | null = null
 
@@ -274,6 +292,7 @@ export class ReaderOutlineService {
       }
 
       worker.once('error', (error) => {
+        markSelectionsError()
         persistRun('failed', 1, error instanceof Error ? error.message : String(error), new Date().toISOString())
         notify({
           bookId: request.bookId,
@@ -297,6 +316,7 @@ export class ReaderOutlineService {
       })
       worker.once('exit', (code) => {
         if (code === 0 || settled) return
+        markSelectionsError()
         const error = `pdf-inspector worker exited with code ${code}.`
         persistRun('failed', 1, error, new Date().toISOString())
         notify({
@@ -401,6 +421,7 @@ export class ReaderOutlineService {
           return
         }
         if (payload.type === 'error') {
+          markSelectionsError()
           const errorMessage = String(payload.error || 'Outline analysis failed.')
           persistRun('failed', 1, errorMessage, new Date().toISOString())
           settle({
@@ -485,14 +506,15 @@ export class ReaderOutlineService {
     if (!run) return null
     const nodeRows = listOutlineNodesForRun(db, run.id)
     if (nodeRows.length === 0) return null
+    const entries = mapNodeRowsToEntries(nodeRows)
     return {
       status: 'ready' as const,
       cacheStatus: 'hit' as const,
-      source: nodeRows[0]?.source === 'pdf' ? 'native' : 'page-only',
+      source: entries[0]?.analysisSource ?? 'page-only',
       pageCount: run.page_count,
       parserVersion: run.parser_version,
       contentHash: run.content_hash,
-      entries: mapNodeRowsToEntries(nodeRows),
+      entries,
       runId: run.id,
     }
   }

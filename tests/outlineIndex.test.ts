@@ -132,3 +132,31 @@ test('outline index keeps page-only fallbacks stable and tolerates empty trees',
     isCrossChapter: false,
   })
 })
+
+test('outline index handles very deep and cyclic parent chains without overflowing', () => {
+  const deepNodes = Array.from({ length: 5_000 }, (_, index) => ({
+    id: `level-${index}`,
+    title: `Level ${index}`,
+    level: index,
+    parentId: index === 0 ? null : `level-${index - 1}`,
+    pageStart: index + 1,
+    source: 'pdf' as const,
+  }))
+  const deepIndex = createOutlineIndex(deepNodes)
+
+  assert.equal(deepIndex.flatIndex.length, 5_000)
+  assert.equal(deepIndex.getPathSnapshot('level-4999')?.nodes.length, 5_000)
+
+  const cyclicIndex = createOutlineIndex([
+    { id: 'a', title: 'A', parentId: 'b', source: 'pdf' },
+    { id: 'b', title: 'B', parentId: 'a', source: 'pdf' },
+    { id: 'child', title: 'Child', parentId: 'b', source: 'pdf' },
+  ])
+  assert.equal(cyclicIndex.rootNodes.length, 1)
+  assert.equal(cyclicIndex.pathSnapshotsById.size, 3)
+  assert.deepEqual(cyclicIndex.getPathSnapshot('child')?.nodes.map((node) => node.title), [
+    'A',
+    'B',
+    'Child',
+  ])
+})

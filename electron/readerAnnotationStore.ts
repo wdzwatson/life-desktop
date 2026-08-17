@@ -582,6 +582,21 @@ export function listPendingReaderSelectionsByBook(
   }>
 }
 
+export function markPendingReaderSelectionsError(
+  db: Database.Database,
+  input: { bookId: number; source?: ReaderDocumentSource },
+) {
+  const sourceClause = input.source ? ' AND source = ?' : ''
+  const params = input.source ? [input.bookId, input.source] : [input.bookId]
+  return db
+    .prepare(
+      `UPDATE reader_selections
+       SET location_status = 'error', updated_at = CURRENT_TIMESTAMP
+       WHERE book_id = ? AND location_status = 'pending'${sourceClause}`,
+    )
+    .run(...params).changes
+}
+
 export function getOutlineRunByKey(
   db: Database.Database,
   input: {

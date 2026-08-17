@@ -3,6 +3,7 @@ import {
   getLatestCompletedOutlineRunForBook,
   listOutlineNodesForRun,
   listPendingReaderSelectionsByBook,
+  markPendingReaderSelectionsError,
   updateReaderSelectionOutlineLocation,
 } from './readerAnnotationStore'
 import { normalizeReaderAnchorV2 } from '../src/services/readerAnnotationSerializer'
@@ -23,6 +24,10 @@ export type ReaderSelectionServiceDependencies = {
 
 export class ReaderSelectionService {
   constructor(private readonly dependencies: ReaderSelectionServiceDependencies) {}
+
+  markBookSelectionsError(bookId: number, source?: ReaderDocumentSource) {
+    return markPendingReaderSelectionsError(this.dependencies.getDb(), { bookId, source })
+  }
 
   reconcileBookSelections(bookId: number, source?: ReaderDocumentSource) {
     const db = this.dependencies.getDb()

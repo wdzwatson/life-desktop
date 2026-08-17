@@ -1,86 +1,92 @@
 {
-  "version": 1,
+  "version": 2,
   "scenarios": [
-    {
-      "id": "pdf-first-screen",
-      "format": "pdf",
-      "interaction": "first-screen",
-      "blocking": false
-    },
-    {
-      "id": "epub-first-screen",
-      "format": "epub",
-      "interaction": "first-screen",
-      "blocking": false
-    },
-    {
-      "id": "pdf-text-selection",
-      "format": "pdf",
-      "interaction": "text-selection",
-      "blocking": false
-    },
-    {
-      "id": "pdf-page-turn",
-      "format": "pdf",
-      "interaction": "page-turn",
-      "blocking": false
-    },
-    {
-      "id": "pdf-scroll",
-      "format": "pdf",
-      "interaction": "scroll",
-      "blocking": false
-    },
-    {
-      "id": "pdf-ocr-page",
-      "format": "pdf",
-      "interaction": "ocr-page",
-      "blocking": false
-    }
+    { "id": "pdf-first-screen", "format": "pdf", "interaction": "first-screen", "blocking": false },
+    { "id": "epub-first-screen", "format": "epub", "interaction": "first-screen", "blocking": false },
+    { "id": "pdf-text-selection", "format": "pdf", "interaction": "text-selection", "blocking": false },
+    { "id": "pdf-page-turn", "format": "pdf", "interaction": "page-turn", "blocking": false },
+    { "id": "pdf-scroll", "format": "pdf", "interaction": "scroll", "blocking": false },
+    { "id": "pdf-window-resize", "format": "pdf", "interaction": "window-resize", "blocking": false },
+    { "id": "pdf-ocr-page", "format": "pdf", "interaction": "ocr-page", "blocking": false },
+    { "id": "annotation-export", "format": "pdf", "interaction": "background-export", "blocking": false }
   ],
   "samples": [
     {
-      "id": "pdf-no-outline",
+      "id": "pdf-plain-no-outline",
       "format": "pdf",
       "outline": "none",
-      "pageCount": 12,
+      "pageCount": 2,
       "selectionMode": "text",
-      "description": "Plain text PDF without any directory data."
+      "expectedStatus": "page-only",
+      "fixture": "../../../docs/archive/qa/assets/d05/d05-reader-sample.pdf",
+      "description": "Plain text PDF without directory data."
     },
     {
-      "id": "pdf-with-outline",
+      "id": "pdf-multicolumn-deep-outline",
       "format": "pdf",
       "outline": "native",
-      "pageCount": 36,
+      "pageCount": 8,
       "selectionMode": "text",
-      "description": "Regular PDF with a native outline tree and nested sections."
-    },
-    {
-      "id": "pdf-large",
-      "format": "pdf",
-      "outline": "native",
-      "pageCount": 320,
-      "selectionMode": "text",
-      "description": "Long PDF used to guard scroll, page turn, and selection responsiveness."
+      "expectedStatus": "resolved",
+      "fixture": "../../../docs/archive/qa/assets/reader-at15/at15-multicolumn-deep-outline.pdf",
+      "description": "Two-column text PDF with an eight-level native outline."
     },
     {
       "id": "pdf-scanned",
       "format": "pdf",
       "outline": "none",
-      "pageCount": 48,
+      "pageCount": 1,
       "selectionMode": "ocr",
-      "description": "Scan-first PDF that depends on OCR page handling."
+      "expectedStatus": "page-only",
+      "fixture": "../../../docs/archive/qa/assets/reader-at15/at15-scanned.pdf",
+      "description": "Image-only PDF with one OCR-required page."
+    },
+    {
+      "id": "pdf-mixed",
+      "format": "pdf",
+      "outline": "none",
+      "pageCount": 2,
+      "selectionMode": "mixed",
+      "expectedStatus": "page-only",
+      "fixture": "../../../docs/archive/qa/assets/reader-at15/at15-mixed.pdf",
+      "description": "Native text first page followed by one OCR-required scan page."
+    },
+    {
+      "id": "pdf-corrupt",
+      "format": "pdf",
+      "outline": "none",
+      "pageCount": 0,
+      "selectionMode": "unavailable",
+      "expectedStatus": "error",
+      "fixture": "../../../docs/archive/qa/assets/reader-at15/at15-corrupt.pdf",
+      "description": "Intentionally truncated PDF used for retryable error handling."
+    },
+    {
+      "id": "epub-deep-outline",
+      "format": "epub",
+      "outline": "native",
+      "pageCount": 8,
+      "selectionMode": "reflow",
+      "expectedStatus": "resolved",
+      "fixture": "../../../docs/archive/qa/assets/reader-at15/at15-deep-outline.epub",
+      "description": "EPUB3 book with an eight-level nested navigation tree."
+    },
+    {
+      "id": "pdf-large-synthetic",
+      "format": "pdf",
+      "outline": "native",
+      "pageCount": 320,
+      "selectionMode": "text",
+      "expectedStatus": "resolved",
+      "fixture": null,
+      "description": "Synthetic 320-page contract used to guard rendering window and paging behavior."
     }
   ],
   "contracts": {
-    "rendererOutlineAnalysis": {
-      "blocking": false,
-      "phase": "background"
-    },
-    "selectionWaitsForOutline": {
-      "blocking": false,
-      "phase": "immediate"
-    }
+    "rendererOutlineAnalysis": { "blocking": false, "phase": "background" },
+    "selectionWaitsForOutline": { "blocking": false, "phase": "immediate" },
+    "windowResizeWaitsForOutline": { "blocking": false, "phase": "immediate" },
+    "outlineWorker": { "blocking": false, "phase": "worker" }
   },
   "budgetsMs": {
     "pdfFirstScreen": 1600,
@@ -88,6 +94,9 @@
     "selectionAck": 120,
     "pageTurn": 16,
     "scrollFrame": 16,
-    "ocrInlineStatus": 250
+    "ocrInlineStatus": 250,
+    "outlineIndex5000": 2000,
+    "outlineTree5000": 1000,
+    "annotationSort10000": 2000
   }
 }

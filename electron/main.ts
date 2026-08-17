@@ -212,6 +212,7 @@ const readerSelectionService = createReaderSelectionService({ getDb: () => getUs
 const readerOutlineService = createReaderOutlineService({
   getDb: () => getUserDb('books'),
   reconcileSelections: (bookId, source) => readerSelectionService.reconcileBookSelections(bookId, source),
+  markSelectionsError: (bookId, source) => readerSelectionService.markBookSelectionsError(bookId, source),
 })
 const bookBatchImportSessions = new Map<string, { userId: string; items: BatchImportItem[] }>()
 const unlockedPrivateNoteKeys = new Map<string, Buffer>()
