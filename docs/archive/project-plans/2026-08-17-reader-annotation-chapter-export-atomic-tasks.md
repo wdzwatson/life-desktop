@@ -2,7 +2,7 @@
 
 日期：2026-08-17
 
-状态：执行中（AT-01 至 AT-11 已完成）
+状态：已完成（AT-01 至 AT-15 已完成）
 
 方案基线：`docs/archive/project-plans/2026-08-17-reader-annotation-chapter-export-plan.md`
 
@@ -32,8 +32,8 @@
 | AT-11 | 多级目录抽屉、懒渲染与状态反馈 | C | AT-07 | 已完成 |
 | AT-12 | 批注栏分类、颜色、跳转和虚拟列表 | C | AT-09、AT-10 | 已完成 |
 | AT-13 | 完整章节路径 Markdown/Notes 导出 | D | AT-09、AT-12 | 已完成 |
-| AT-14 | HTML/DOCX/PDF 导出适配和深链接 | D | AT-13 | 待开始 |
-| AT-15 | 迁移、目录深度、性能和跨格式验收 | E | AT-01 至 AT-14 | 待开始 |
+| AT-14 | HTML/DOCX/PDF 导出适配和深链接 | D | AT-13 | 已完成 |
+| AT-15 | 迁移、目录深度、性能和跨格式验收 | E | AT-01 至 AT-14 | 已完成 |
 
 ## 三、原子任务详情
 
@@ -469,6 +469,16 @@
 - `npm test`、`npm run lint`、`npm run build`、`git diff --check` 通过。
 - 首屏、选择、滚动、翻页和窗口调整不等待或被目录解析阻塞。
 - 失败路径保留 page-only/error 状态，用户仍可编辑和导出，不出现数据丢失。
+
+完成记录：
+
+- 完成日期：2026-08-17
+- 提交：`2dc20c8`
+- 结果：新增可复现的双栏深目录、扫描、混合、损坏 PDF 和 8 级 EPUB 样本，使用真实 `pdf-inspector`、PDF.js 和 EPUB 包检查覆盖分类、OCR 页、原生目录与损坏容错。目录索引改为迭代构建，可处理 5,000 层父链并安全断开循环；缓存命中保留 tagged/inferred/page-only 来源。目录 worker 失败会把同源 pending 选区标记为 error，但保留 Anchor、正文和批注；失败运行可复用稳定 run ID 重试，不会因外键错误悬挂。
+- 验证：新增迁移幂等、8 级章节来源、跨页 Anchor、page-only/error 编辑、三类批注 Markdown/HTML/DOCX、Notes 重复同步与删除保持测试；`npm test`、`npm run lint`、`npx tsc -b --pretty false`、`npm run build`、`git diff --check` 通过。应用内 Browser 在 1280 x 720 和 Electron 最小宽度 800 x 720 下完成书库→笔记→书库交互，页面无水平溢出、错误覆盖层或控制台告警。
+- 性能：5,000 层目录索引最终全量运行约 191 ms，5,000 节点目录树和 10,000 条批注排序均在既定预算内；renderer 仍不直接运行目录分析，首屏、选择、翻页、滚动、OCR 请求和窗口调整保持独立。
+- QA 归档：`docs/archive/qa/2026-08-17-reader-annotation-chapter-export-validation.md`
+- 风险/后续：`npm audit --omit=dev` 报告 5 项现有生产依赖漏洞（2 moderate、3 high）；自动修复会跨功能更新 14 个传递依赖并影响仓库本地 override，因此未混入 AT-15。普通浏览器不覆盖 Electron 系统文件选择/保存对话框；旧 `highlights` 表按兼容计划继续保留。
 
 ## 四、推荐执行顺序
 
