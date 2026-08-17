@@ -8,6 +8,10 @@ const pdfAnnotationLayer = readFileSync(
   new URL('../src/components/PdfAnnotationLayer.tsx', import.meta.url),
   'utf8',
 )
+const readerOutlineDrawer = readFileSync(
+  new URL('../src/components/ReaderOutlineDrawer.tsx', import.meta.url),
+  'utf8',
+)
 const viteConfig = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8')
 
 test('book shelf titles support two lines while preserving the full title as a tooltip', () => {
@@ -49,7 +53,7 @@ test('PDF continuous mode owns its scroll viewport and excludes page-flip mode',
   assert.match(booksStyles, /\.book-reader__reading-surface\.is-pdf\.is-scroll\s*\{[^}]*height:\s*100%/)
   assert.match(booksSource, /onScroll=\{pdfLayoutMode === 'scroll' \? handlePdfScroll : undefined\}/)
   assert.match(booksSource, /loadPdfOutline\(pdfDocument\)/)
-  assert.match(booksSource, /drawer\.scrollTo\(\{ top: buttonBottom - drawer\.clientHeight \}\)/)
+  assert.match(readerOutlineDrawer, /scrollIntoView\(\{ block: 'nearest' \}\)/)
   assert.doesNotMatch(booksSource, /value="simulation"/)
   assert.doesNotMatch(booksSource, /pdf-flip-page/)
 })
@@ -176,4 +180,16 @@ test('PDF outline loads asynchronously after PDF render success and falls back c
   assert.match(booksSource, /reconcileSavedSelectionLocation/)
   assert.match(booksSource, /reader_annotation_pending/)
   assert.match(booksSource, /pdf_outline_loading/)
+})
+
+test('reader outline lazily renders deep branches and keeps PDF document ownership stable', () => {
+  assert.match(booksSource, /<ReaderOutlineDrawer/)
+  assert.match(booksSource, /storageKey=\{`reader:outline:expanded:\$\{readingBook\.id\}`\}/)
+  assert.match(booksSource, /handleRetryPdfOutline/)
+  assert.match(readerOutlineDrawer, /const OutlineBranch = React\.memo/)
+  assert.match(readerOutlineDrawer, /\{isExpanded \? \(/)
+  assert.match(readerOutlineDrawer, /window\.localStorage\.setItem/)
+  assert.match(readerOutlineDrawer, /outline_status_partial/)
+  assert.match(readerOutlineDrawer, /outline_status_failed/)
+  assert.equal((booksSource.match(/<Document/g) || []).length, 1)
 })
