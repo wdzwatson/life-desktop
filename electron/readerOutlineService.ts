@@ -121,6 +121,7 @@ export type ReaderOutlineServiceDependencies = {
     parserVersion: string
     contentHash: string
   }) => ReaderOutlineWorkerLike
+  reconcileSelections?: (bookId: number, source: ReaderDocumentSource) => void
 }
 
 export type ReaderOutlineServiceIpcProgressListener = (event: ReaderOutlineAnalysisProgress) => void
@@ -152,6 +153,16 @@ const mapNodeRowsToEntries = (rows: OutlineNodeRow[]) => {
     childrenCount.set(row.parent_id, (childrenCount.get(row.parent_id) || 0) + 1)
   }
   return rows.map<PdfOutlineEntry>((row) => ({
+    analysisSource: (() => {
+      try {
+        const locator = row.locator_json
+          ? (JSON.parse(row.locator_json) as { analysisSource?: PdfOutlineEntrySource })
+          : null
+        return locator?.analysisSource ?? (row.source === 'pdf' ? 'native' : 'page-only')
+      } catch {
+        return row.source === 'pdf' ? 'native' : 'page-only'
+      }
+    })(),
     id: row.id,
     title: row.title,
     level: row.level,
@@ -162,7 +173,6 @@ const mapNodeRowsToEntries = (rows: OutlineNodeRow[]) => {
     destination: row.page_start ? `page:${row.page_start}` : null,
     resolved: row.page_start !== null,
     childrenCount: childrenCount.get(row.id) || 0,
-    analysisSource: row.source === 'pdf' ? 'native' : 'page-only',
   }))
 }
 
@@ -184,6 +194,7 @@ export class ReaderOutlineService {
     const cacheKey = buildCacheKey(request.bookId, request.source, parserVersion, contentHash, pageCount)
     const cached = this.readCachedOutline(db, request.bookId, request.source, parserVersion, contentHash, pageCount)
     if (cached) {
+      this.dependencies.reconcileSelections?.(request.bookId, request.source)
       onProgress?.({
         bookId: request.bookId,
         state: 'completed',
@@ -374,8 +385,9 @@ export class ReaderOutlineService {
                   : entry.analysisSource === 'inferred'
                     ? 0.84
                     : 0.6,
-            })),
+              })),
           )
+          this.dependencies.reconcileSelections?.(request.bookId, request.source)
           settle({
             status: 'ready',
             cacheStatus: 'miss',

@@ -501,6 +501,87 @@ export function listOutlineNodesForRun(db: Database.Database, runId: string) {
     .all(runId) as ReaderOutlineNodeRow[]
 }
 
+export function getLatestCompletedOutlineRunForBook(
+  db: Database.Database,
+  input: { bookId: number; source: ReaderDocumentSource },
+) {
+  return db
+    .prepare(
+      `SELECT id
+       FROM book_outline_runs
+       WHERE book_id = ? AND source = ? AND state = 'completed'
+       ORDER BY updated_at DESC, id DESC
+       LIMIT 1`,
+    )
+    .get(input.bookId, input.source) as { id: string } | undefined
+}
+
+export function updateReaderSelectionOutlineLocation(
+  db: Database.Database,
+  input: {
+    selectionId: string
+    bookId: number
+    outlinePath: OutlinePathSnapshot | null
+    locationStatus: ReaderSelection['locationStatus']
+    pathKey?: string | null
+    startOutlineNodeId?: string | null
+    endOutlineNodeId?: string | null
+    startPage?: number | null
+    endPage?: number | null
+    startY?: number | null
+    endY?: number | null
+  },
+) {
+  db.prepare(
+    `UPDATE reader_selections
+     SET outline_path_json = ?,
+         path_key = ?,
+         start_outline_node_id = ?,
+         end_outline_node_id = ?,
+         start_page = ?,
+         end_page = ?,
+         start_y = ?,
+         end_y = ?,
+         location_status = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ? AND book_id = ?`,
+  ).run(
+    jsonOrNull(input.outlinePath),
+    input.pathKey ?? getPathKey(input.outlinePath),
+    input.startOutlineNodeId ?? null,
+    input.endOutlineNodeId ?? null,
+    input.startPage ?? null,
+    input.endPage ?? null,
+    input.startY ?? null,
+    input.endY ?? null,
+    input.locationStatus,
+    input.selectionId,
+    input.bookId,
+  )
+}
+
+export function listPendingReaderSelectionsByBook(
+  db: Database.Database,
+  bookId: number,
+) {
+  return db
+    .prepare(
+      `SELECT id, book_id, source, selected_text, anchor_json, outline_path_json, location_status
+       FROM reader_selections
+       WHERE book_id = ? AND location_status = 'pending'
+       ORDER BY created_at, id`,
+    )
+    .all(bookId) as Array<{
+    id: string
+    book_id: number
+    source: ReaderDocumentSource
+    selected_text: string
+    anchor_json: string
+    outline_path_json: string | null
+    location_status: ReaderSelection['locationStatus']
+  }>
+}
+
 export function getOutlineRunByKey(
   db: Database.Database,
   input: {

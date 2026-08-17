@@ -169,5 +169,7 @@ test('PDF outline loads asynchronously after PDF render success and falls back c
   assert.match(booksSource, /cancelReaderOutlineAnalysis/)
   assert.match(booksSource, /onReaderOutlineProgress/)
   assert.match(booksSource, /buildPageOnlyPdfOutlineEntries/)
+  assert.match(booksSource, /reconcileSavedSelectionLocation/)
+  assert.match(booksSource, /reader_annotation_pending/)
   assert.match(booksSource, /pdf_outline_loading/)
 })

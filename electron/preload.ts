@@ -400,6 +400,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('reader:outline:progress', subscription)
     return () => ipcRenderer.removeListener('reader:outline:progress', subscription)
   },
+  reconcileReaderSelectionLocations: (input: {
+    bookId: number
+    source?: 'pdf' | 'ocr' | 'epub' | 'unknown'
+  }) => ipcRenderer.invoke('reader:selection:reconcile', input),
 
   // Video parsing & downloading
   checkVideoTools: () => ipcRenderer.invoke('video:checkTools'),

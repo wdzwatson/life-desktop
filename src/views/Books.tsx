@@ -56,6 +56,7 @@ import {
 } from './bookCategorySidebarUtils'
 import { getBookCoverUrl } from './bookCoverUtils'
 import { loadPdfOutline, type PdfOutlineEntry, type PdfOutlineLoadResult } from '../services/pdfOutlineAdapter'
+import { resolveSelectionOutlineLocation } from '../services/selectionOutlineResolver'
 import {
   compareReaderHighlightsByDocumentPosition,
   getActiveTocIndex,
@@ -84,6 +85,7 @@ import {
   type TocEntry,
 } from './bookReaderUtils'
 import { recognizePdfPage, type PdfOcrPage } from './pdfOcrService'
+import { normalizeReaderAnchorV2 } from '../services/readerAnnotationSerializer'
 
 type BookBatchQueueItem = {
   id: string
@@ -112,6 +114,35 @@ const PDF_CONTINUOUS_OVERSCAN = 4
 const PDF_AUTOPLAY_PREFETCH_MARGIN = 2
 // Keep rendered pages inside the client area when a native vertical scrollbar is present.
 const PDF_SCROLLBAR_WIDTH_TOLERANCE = 16
+const READER_HIGHLIGHTS_WITH_STATUS_QUERY = `
+  SELECT
+    items.id AS id,
+    items.book_id AS book_id,
+    items.text AS text,
+    COALESCE(items.body, '') AS annotation,
+    selections.anchor_json AS anchor,
+    items.created_at AS created_at,
+    selections.location_status AS location_status,
+    selections.outline_path_json AS outline_path_json
+  FROM reader_annotation_items items
+  JOIN reader_selections selections ON selections.id = items.selection_id
+  WHERE items.book_id = ?
+  ORDER BY COALESCE(selections.start_page, 0), COALESCE(selections.start_y, 0), items.created_at, items.id
+`
+const UPDATE_READER_SELECTION_LOCATION_QUERY = `
+  UPDATE reader_selections
+  SET outline_path_json = ?,
+      path_key = ?,
+      start_outline_node_id = ?,
+      end_outline_node_id = ?,
+      start_page = ?,
+      end_page = ?,
+      start_y = ?,
+      end_y = ?,
+      location_status = ?,
+      updated_at = CURRENT_TIMESTAMP
+  WHERE id = ? AND book_id = ?
+`
 
 // Keep a small, bounded render window during auto-play. The window advances
 // ahead of the active page instead of mounting a large speed-dependent range.
@@ -622,6 +653,92 @@ export const Books: React.FC = () => {
 
   const api = (window as any).electronAPI
   const pdfDocumentOptions = useMemo(() => ({ wasmUrl: pdfWasmUrl }), [])
+  const loadReaderHighlights = useCallback(
+    async (bookId: number) => {
+      if (!api) return []
+      const joinedRes = await api.dbQuery('books', READER_HIGHLIGHTS_WITH_STATUS_QUERY, [bookId])
+      if (joinedRes?.success) return joinedRes.data
+      const compatRes = await api.dbQuery(
+        'books',
+        'SELECT * FROM reader_highlights_compat WHERE book_id = ? ORDER BY created_at, id',
+        [bookId],
+      )
+      return compatRes?.success ? compatRes.data : []
+    },
+    [api],
+  )
+
+  const buildCurrentOutlineNodes = useCallback(() => {
+    if (pdfOutlineEntries && pdfOutlineEntries.length > 0) {
+      return pdfOutlineEntries.map((entry, index) => ({
+        id: entry.id,
+        title: entry.title,
+        level: entry.level,
+        parentId: entry.parentPathKey,
+        pathKey: entry.pathKey,
+        sortOrder: index,
+        pageStart: entry.pageNumber,
+        pageEnd: entry.pageNumber,
+        yStart: entry.y,
+        yEnd: entry.y,
+        source: 'pdf' as const,
+        analysisSource: entry.analysisSource ?? 'native',
+      }))
+    }
+
+    if (bookChapters && bookChapters.length > 0) {
+      return bookChapters.map((chapter, index) => ({
+        id: `chapter-${index + 1}`,
+        title: chapter.title || `Chapter ${index + 1}`,
+        level: 0,
+        parentId: null,
+        pathKey: `chapter-${index + 1}`,
+        sortOrder: index,
+        pageStart: null,
+        pageEnd: null,
+        yStart: null,
+        yEnd: null,
+        source: 'epub' as const,
+      }))
+    }
+
+    return []
+  }, [bookChapters, pdfOutlineEntries])
+
+  const reconcileSavedSelectionLocation = useCallback(
+    async (selectionId: string, anchor: unknown) => {
+      if (!api || !readingBook) return false
+      const outlineNodes = buildCurrentOutlineNodes()
+      const parsedAnchor = normalizeReaderAnchorV2(anchor)
+      const hasEpubChapter = Boolean(
+        parsedAnchor?.positions.some((position) => Number.isInteger(position.chapterIndex)),
+      )
+      const hasOutlinePath = Boolean(parsedAnchor?.outlinePath?.nodes?.length)
+      if (outlineNodes.length === 0 && !hasEpubChapter && !hasOutlinePath) {
+        return false
+      }
+      const resolved = resolveSelectionOutlineLocation({
+        anchor,
+        outlineNodes,
+      })
+      if (resolved.locationStatus === 'pending') return false
+      const result = await api.dbQuery('books', UPDATE_READER_SELECTION_LOCATION_QUERY, [
+        resolved.outlinePath ? JSON.stringify(resolved.outlinePath) : null,
+        resolved.pathKey,
+        resolved.startOutlineNodeId,
+        resolved.endOutlineNodeId,
+        resolved.startPage,
+        resolved.endPage,
+        resolved.startY,
+        resolved.endY,
+        resolved.locationStatus,
+        selectionId,
+        readingBook.id,
+      ])
+      return Boolean(result?.success)
+    },
+    [api, buildCurrentOutlineNodes, readingBook],
+  )
 
   const loadData = async () => {
     if (!api) return
@@ -669,10 +786,7 @@ export const Books: React.FC = () => {
         if (chapter) setCurrentChapter(decodeURIComponent(chapter))
 
         // Load highlights for this book
-        const hlRes = await api.dbQuery('books', 'SELECT * FROM reader_highlights_compat WHERE book_id = ?', [
-          bookId,
-        ])
-        if (hlRes?.success) setHighlights(hlRes.data)
+        setHighlights(await loadReaderHighlights(bookId))
       }
     }
 
@@ -680,7 +794,7 @@ export const Books: React.FC = () => {
     return () => {
       window.removeEventListener('lifeos:open-book', handleOpenBookEvent)
     }
-  }, [userId])
+  }, [userId, loadReaderHighlights])
 
   useEffect(() => {
     if (!api?.onReaderOutlineProgress) return
@@ -1458,10 +1572,7 @@ export const Books: React.FC = () => {
 
     // Load highlights
     if (api) {
-      const hlRes = await api.dbQuery('books', 'SELECT * FROM reader_highlights_compat WHERE book_id = ?', [
-        book.id,
-      ])
-      if (hlRes?.success) setHighlights(hlRes.data)
+      setHighlights(await loadReaderHighlights(book.id))
     }
 
     setIsLoadingReader(true)
@@ -2165,6 +2276,42 @@ export const Books: React.FC = () => {
     })
   }
 
+  useEffect(() => {
+    if (!readingBook || !api) return
+    const outlineNodes = buildCurrentOutlineNodes()
+    if (outlineNodes.length === 0) return
+    const pendingHighlights = (highlights as Array<any>).filter(
+      (highlight) => highlight.location_status === 'pending',
+    )
+    if (pendingHighlights.length === 0) return
+
+    let cancelled = false
+    const reconcile = async () => {
+      for (const highlight of pendingHighlights) {
+        if (cancelled) return
+        const anchor = parseReaderHighlightAnchor(highlight.anchor)
+        if (!anchor) continue
+        const updated = await reconcileSavedSelectionLocation(highlight.id, anchor)
+        if (!updated) continue
+      }
+      void api.reconcileReaderSelectionLocations?.({ bookId: readingBook.id })
+      if (cancelled) return
+      setHighlights(await loadReaderHighlights(readingBook.id))
+    }
+
+    void reconcile()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    api,
+    buildCurrentOutlineNodes,
+    highlights,
+    loadReaderHighlights,
+    readingBook,
+    reconcileSavedSelectionLocation,
+  ])
+
   const handlePdfPageAspectRatioLoaded = (pageNumber: number, ratio: number) => {
     setPdfPageAspectRatios((current) => {
       const previous = current[pageNumber]
@@ -2660,6 +2807,7 @@ export const Books: React.FC = () => {
     }
 
     const isEditing = Boolean(editingHighlightId) && !forceCreate
+    const highlightId = isEditing ? (editingHighlightId as string) : `hl_${Date.now()}`
     const query = isEditing
       ? 'UPDATE highlights SET text = ?, annotation = ?, anchor = ? WHERE id = ? AND book_id = ?'
       : `
@@ -2671,11 +2819,11 @@ export const Books: React.FC = () => {
           highlightText,
           annotation,
           JSON.stringify(storedAnchor),
-          editingHighlightId,
+          highlightId,
           readingBook.id,
         ]
       : [
-          `hl_${Date.now()}`,
+          highlightId,
           readingBook.id,
           highlightText,
           annotation,
@@ -2699,11 +2847,11 @@ export const Books: React.FC = () => {
       setAiTranslation('')
       setReaderContextMenu(null)
 
+      await reconcileSavedSelectionLocation(highlightId, storedAnchor)
+      void api.reconcileReaderSelectionLocations?.({ bookId: readingBook.id })
+
       // Reload highlights
-      const hlRes = await api.dbQuery('books', 'SELECT * FROM reader_highlights_compat WHERE book_id = ?', [
-        readingBook.id,
-      ])
-      if (hlRes?.success) setHighlights(hlRes.data)
+      setHighlights(await loadReaderHighlights(readingBook.id))
     }
   }
 
@@ -2748,10 +2896,7 @@ export const Books: React.FC = () => {
             [JSON.stringify(updatedAnchor), highlight.id, readingBook.id],
           )
     if (res?.success) {
-    const hlRes = await api.dbQuery('books', 'SELECT * FROM reader_highlights_compat WHERE book_id = ?', [
-        readingBook.id,
-      ])
-      if (hlRes?.success) setHighlights(hlRes.data)
+    setHighlights(await loadReaderHighlights(readingBook.id))
       setReaderContextMenu(null)
       showToast(
         t('books.toast_reader_annotation_saved', {
@@ -2917,8 +3062,24 @@ export const Books: React.FC = () => {
     [highlights],
   )
 
+  const parseOutlinePathSnapshot = (value: unknown) => {
+    if (!value) return null
+    if (typeof value !== 'string') return value as { nodes?: Array<{ title?: string }> } | null
+    try {
+      const parsed = JSON.parse(value)
+      return parsed && typeof parsed === 'object' ? (parsed as { nodes?: Array<{ title?: string }> }) : null
+    } catch {
+      return null
+    }
+  }
+
   const getReaderAnnotationLocationLabel = (highlight: ReaderHighlight) => {
+    const locationStatus = String((highlight as any).location_status || (highlight as any).locationStatus || '').trim()
+    if (locationStatus === 'pending') return t('books.reader_annotation_pending')
     const anchor = parseReaderHighlightAnchor(highlight.anchor)
+    const outlinePath = parseOutlinePathSnapshot((highlight as any).outline_path_json)
+    const outlineTitles = outlinePath?.nodes?.map((node) => String(node.title || '').trim()).filter(Boolean) || []
+    if (outlineTitles.length > 0) return outlineTitles.join(' · ')
     if (Number.isInteger(anchor?.pageNumber)) {
       return t('books.reader_annotation_page', { page: anchor?.pageNumber })
     }

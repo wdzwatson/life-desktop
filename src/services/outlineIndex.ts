@@ -12,6 +12,7 @@ export type OutlineIndexInputNode = {
   yStart?: number | null
   yEnd?: number | null
   source?: ReaderDocumentSource
+  analysisSource?: 'native' | 'tagged' | 'inferred' | 'page-only'
 }
 
 export type OutlineIndexNode = {
@@ -26,6 +27,7 @@ export type OutlineIndexNode = {
   yStart: number | null
   yEnd: number | null
   source: ReaderDocumentSource
+  analysisSource: 'native' | 'tagged' | 'inferred' | 'page-only' | null
   childrenCount: number
 }
 
@@ -114,6 +116,7 @@ const normalizeInputNode = (node: OutlineIndexInputNode, defaultSource: ReaderDo
     yStart: normalizeNullableNumber(node.yStart),
     yEnd: normalizeNullableNumber(node.yEnd),
     source: node.source ?? defaultSource,
+    analysisSource: node.analysisSource ?? null,
   }
 }
 
@@ -141,6 +144,7 @@ export function createOutlineIndex(
       yStart: node.yStart,
       yEnd: node.yEnd,
       source: node.source,
+      analysisSource: node.analysisSource ?? null,
       childrenCount: 0,
     }
     nodesById.set(outlineNode.id, outlineNode)

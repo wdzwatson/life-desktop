@@ -761,6 +761,7 @@
     "reader_annotation_kind_highlight": "Highlight",
     "reader_annotation_kind_note": "Note",
     "reader_annotation_page": "Page {{page}}",
+    "reader_annotation_pending": "Analyzing outline",
     "reader_annotation_block": "Chapter {{chapter}} · Block {{block}}",
     "reader_annotation_location_unknown": "Location unavailable",
     "locate_reader_annotation": "Locate source text for “{{text}}”",
