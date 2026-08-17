@@ -67,7 +67,7 @@ import {
   getPdfPageIndexAtOffset,
   getPdfPageRenderWidth,
   getReaderContentGridColumns,
-  getReaderAnnotationKind,
+  getReaderAnnotationKind as getReaderAnnotationKindLegacy,
   getReaderTextSegments,
   getReadingBlockText,
   getReadingProgressForLocation,
@@ -78,7 +78,7 @@ import {
   shouldCloseReaderDrawersOnContentClick,
   shouldShowEpubToc,
   type PdfLayoutMode,
-  type ReaderAnnotationKind,
+  type ReaderAnnotationKind as ReaderUiAnnotationKind,
   type ReaderHighlight,
   type ReaderHighlightAnchor,
   type ReadingBlock,
@@ -86,6 +86,7 @@ import {
 } from './bookReaderUtils'
 import { recognizePdfPage, type PdfOcrPage } from './pdfOcrService'
 import { normalizeReaderAnchorV2 } from '../services/readerAnnotationSerializer'
+import type { ReaderAnnotationKind as ReaderStoredAnnotationKind } from '../types/readerAnnotation'
 
 type BookBatchQueueItem = {
   id: string
@@ -118,8 +119,12 @@ const READER_HIGHLIGHTS_WITH_STATUS_QUERY = `
   SELECT
     items.id AS id,
     items.book_id AS book_id,
+    items.selection_id AS selection_id,
+    items.kind AS kind,
     items.text AS text,
     COALESCE(items.body, '') AS annotation,
+    items.translation_language AS translation_language,
+    items.style_token AS style_token,
     selections.anchor_json AS anchor,
     items.created_at AS created_at,
     selections.location_status AS location_status,
@@ -349,14 +354,27 @@ type ReaderContextMenuState = {
 }
 
 type ReaderAnnotationRecord = ReaderHighlight & {
+  selection_id?: string
+  kind?: ReaderStoredAnnotationKind | ReaderUiAnnotationKind
+  translation_language?: string | null
+  style_token?: string
   highlighted?: boolean
   areas?: PdfOcrSelectionArea[]
+}
+
+type ReaderHighlightRecordLike = ReaderHighlight & {
+  kind?: ReaderStoredAnnotationKind | ReaderUiAnnotationKind
 }
 
 const normalizeHighlightAnnotation = (value: unknown) => {
   const annotation = String(value ?? '').trim()
   return annotation === '无批注记录' || annotation === 'No annotations' ? '' : annotation
 }
+
+const getReaderAnnotationKind = (highlight: ReaderHighlightRecordLike): ReaderUiAnnotationKind =>
+  highlight.kind === 'underline'
+    ? 'highlight'
+    : (highlight.kind ?? getReaderAnnotationKindLegacy(highlight))
 
 export const Books: React.FC = () => {
   const { t, i18n } = useTranslation()
@@ -611,6 +629,9 @@ export const Books: React.FC = () => {
   const [selectedHighlightText, setSelectedHighlightText] = useState('')
   const [selectedHighlightAnchor, setSelectedHighlightAnchor] =
     useState<ReaderHighlightAnchor | null>(null)
+  const selectedSelectionIdRef = useRef<string | null>(null)
+  const editingAnnotationKindRef = useRef<ReaderUiAnnotationKind | null>(null)
+  const selectedTranslationLanguageRef = useRef<string | null>(null)
   // Keep the latest selection anchor available synchronously. PDF OCR selection
   // and the context-menu action can happen across adjacent React events, so a
   // state read alone can still observe the previous anchor.
@@ -656,6 +677,10 @@ export const Books: React.FC = () => {
   const loadReaderHighlights = useCallback(
     async (bookId: number) => {
       if (!api) return []
+      if (api.listReaderAnnotations) {
+        const listRes = await api.listReaderAnnotations({ bookId })
+        if (listRes?.success) return listRes.data
+      }
       const joinedRes = await api.dbQuery('books', READER_HIGHLIGHTS_WITH_STATUS_QUERY, [bookId])
       if (joinedRes?.success) return joinedRes.data
       const compatRes = await api.dbQuery(
@@ -1685,6 +1710,9 @@ export const Books: React.FC = () => {
     setSelectedHighlightText('')
     selectedHighlightAnchorRef.current = null
     setSelectedHighlightAnchor(null)
+    selectedSelectionIdRef.current = null
+    editingAnnotationKindRef.current = null
+    selectedTranslationLanguageRef.current = null
     setEditingHighlightId(null)
     setSelectedHighlightIncludesMark(true)
     setNewAnnotation('')
@@ -1874,6 +1902,13 @@ export const Books: React.FC = () => {
     if (selection) {
       const selectedText = selection.toString().trim()
       if (selectedText) {
+        if (selectedHighlightText !== selectedText) {
+          selectedSelectionIdRef.current = crypto.randomUUID()
+          editingAnnotationKindRef.current = null
+          selectedTranslationLanguageRef.current = null
+        } else if (!selectedSelectionIdRef.current) {
+          selectedSelectionIdRef.current = crypto.randomUUID()
+        }
         const isPdf =
           readingBook?.cover === 'PDF' || readingBook?.path.toLowerCase().endsWith('.pdf')
         setSelectedHighlightText(selectedText)
@@ -1956,6 +1991,11 @@ export const Books: React.FC = () => {
     const menuHeight = highlight ? 260 : 188
     setSelectedHighlightText(text)
     setEditingHighlightId(null)
+    editingAnnotationKindRef.current = null
+    if (highlight) {
+      const record = highlight as ReaderAnnotationRecord
+      selectedSelectionIdRef.current = record.selection_id || record.id
+    }
     setSelectedHighlightIncludesMark(true)
     setIsSelectionEditorOpen(false)
     setAiTranslation('')
@@ -2004,6 +2044,7 @@ export const Books: React.FC = () => {
     setIsAnnotationsDrawerOpen(true)
     setIsSelectionEditorOpen(true)
     setIsTranslatingSelection(true)
+    selectedTranslationLanguageRef.current = i18n.language
     setAiTranslation('')
     try {
       const result = await api?.translateReaderText?.({ text, targetLanguage: i18n.language })
@@ -2028,6 +2069,9 @@ export const Books: React.FC = () => {
 
   const handlePdfOcrRecognized = (text: string) => {
     setSelectedHighlightText(text)
+    selectedSelectionIdRef.current = crypto.randomUUID()
+    editingAnnotationKindRef.current = null
+    selectedTranslationLanguageRef.current = null
     setEditingHighlightId(null)
     setSelectedHighlightIncludesMark(true)
     setIsSelectionEditorOpen(false)
@@ -2462,6 +2506,7 @@ export const Books: React.FC = () => {
       if (matchesShortcut(e, readerShortcuts.readerTranslate)) {
         e.preventDefault()
         setEditingHighlightId(null)
+        editingAnnotationKindRef.current = null
         setSelectedHighlightIncludesMark(false)
         void handleTranslateSelection()
       } else if (matchesShortcut(e, readerShortcuts.readerAnnotate)) {
@@ -2473,6 +2518,7 @@ export const Books: React.FC = () => {
         e.preventDefault()
         setSelectedHighlightText(text)
         setEditingHighlightId(null)
+        editingAnnotationKindRef.current = null
         setSelectedHighlightIncludesMark(false)
         setAiTranslation('')
         setIsAnnotationsDrawerOpen(true)
@@ -2788,7 +2834,7 @@ export const Books: React.FC = () => {
     textOverride?: string,
     annotationOverride?: string,
     includesMarkOverride?: boolean,
-    kindOverride?: ReaderAnnotationKind,
+    kindOverride?: ReaderUiAnnotationKind,
     forceCreate = false,
   ) => {
     const highlightText = textOverride || selectedHighlightText
@@ -2796,6 +2842,7 @@ export const Books: React.FC = () => {
     const annotation = normalizeHighlightAnnotation(annotationOverride ?? newAnnotation)
     const kind = kindOverride || (annotation ? 'note' : 'highlight')
     if ((kind === 'note' || kind === 'translation') && !annotation) return
+    const storedKind = kind === 'highlight' ? 'underline' : kind
     const anchor = selectedHighlightAnchorRef.current ||
       selectedHighlightAnchor || { chapter: currentChapter, chapterIndex: currentChapterIndex }
     const includesMark =
@@ -2806,32 +2853,29 @@ export const Books: React.FC = () => {
       kind,
     }
 
-    const isEditing = Boolean(editingHighlightId) && !forceCreate
-    const highlightId = isEditing ? (editingHighlightId as string) : `hl_${Date.now()}`
-    const query = isEditing
-      ? 'UPDATE highlights SET text = ?, annotation = ?, anchor = ? WHERE id = ? AND book_id = ?'
-      : `
-          INSERT INTO highlights (id, book_id, text, annotation, anchor)
-          VALUES (?, ?, ?, ?, ?)
-        `
-    const params = isEditing
-      ? [
-          highlightText,
-          annotation,
-          JSON.stringify(storedAnchor),
-          highlightId,
-          readingBook.id,
-        ]
-      : [
-          highlightId,
-          readingBook.id,
-          highlightText,
-          annotation,
-          JSON.stringify(storedAnchor),
-        ]
-    const res = await api.dbQuery('books', query, params)
+    const itemId =
+      Boolean(editingHighlightId) && editingAnnotationKindRef.current === kind && !forceCreate
+        ? (editingHighlightId as string)
+        : undefined
+    const selectionId = selectedSelectionIdRef.current || undefined
+    const saveRes = await api.saveReaderAnnotation?.({
+      bookId: readingBook.id,
+      kind: storedKind,
+      text: highlightText,
+      anchor: storedAnchor,
+      selectionId,
+      itemId,
+      body: storedKind === 'translation' || storedKind === 'note' ? annotation : undefined,
+      translationLanguage:
+        storedKind === 'translation'
+          ? selectedTranslationLanguageRef.current || i18n.language
+          : undefined,
+    })
 
-    if (res?.success) {
+    if (saveRes?.success) {
+      const savedSelectionId =
+        saveRes.data?.selectionId || selectionId || selectedSelectionIdRef.current
+      if (savedSelectionId) selectedSelectionIdRef.current = savedSelectionId
       showToast(
         t('books.toast_reader_annotation_saved', {
           type: t(`books.reader_annotation_kind_${kind}`),
@@ -2840,6 +2884,9 @@ export const Books: React.FC = () => {
       setSelectedHighlightText('')
       selectedHighlightAnchorRef.current = null
       setSelectedHighlightAnchor(null)
+      selectedSelectionIdRef.current = null
+      editingAnnotationKindRef.current = null
+      selectedTranslationLanguageRef.current = null
       setEditingHighlightId(null)
       setSelectedHighlightIncludesMark(true)
       setIsSelectionEditorOpen(false)
@@ -2847,7 +2894,10 @@ export const Books: React.FC = () => {
       setAiTranslation('')
       setReaderContextMenu(null)
 
-      await reconcileSavedSelectionLocation(highlightId, storedAnchor)
+      await reconcileSavedSelectionLocation(
+        savedSelectionId || itemId || highlightText,
+        storedAnchor,
+      )
       void api.reconcileReaderSelectionLocations?.({ bookId: readingBook.id })
 
       // Reload highlights
@@ -2855,7 +2905,10 @@ export const Books: React.FC = () => {
     }
   }
 
-  const openHighlightAnnotationEditor = (highlight: ReaderAnnotationRecord) => {
+  const openHighlightAnnotationEditor = (
+    highlight: ReaderAnnotationRecord,
+    mode: 'edit' | 'add-note' = 'edit',
+  ) => {
     const anchor = parseReaderHighlightAnchor(highlight.anchor)
     const kind = getReaderAnnotationKind(highlight)
     const isMarked =
@@ -2863,9 +2916,22 @@ export const Books: React.FC = () => {
     setSelectedHighlightText(highlight.text)
     setSelectedHighlightAnchor(anchor)
     selectedHighlightAnchorRef.current = anchor
-    setEditingHighlightId(kind === 'translation' ? null : highlight.id)
+    selectedSelectionIdRef.current = highlight.selection_id || highlight.id
+    editingAnnotationKindRef.current = mode === 'edit' ? kind : null
+    selectedTranslationLanguageRef.current =
+      mode === 'edit' && kind === 'translation'
+        ? highlight.translation_language || i18n.language
+        : null
+    setEditingHighlightId(mode === 'edit' ? highlight.id : null)
     setSelectedHighlightIncludesMark(kind === 'translation' ? false : isMarked)
-    setNewAnnotation(kind === 'note' ? normalizeHighlightAnnotation(highlight.annotation) : '')
+    setNewAnnotation(
+      mode === 'edit' && kind === 'note' ? normalizeHighlightAnnotation(highlight.annotation) : '',
+    )
+    setAiTranslation(
+      mode === 'edit' && kind === 'translation'
+        ? normalizeHighlightAnnotation(highlight.annotation)
+        : '',
+    )
     setReaderContextMenu(null)
     setIsAnnotationsDrawerOpen(true)
     setIsSelectionEditorOpen(true)
@@ -2875,61 +2941,34 @@ export const Books: React.FC = () => {
     if (!readingBook || !api) return
     const anchor = parseReaderHighlightAnchor((highlight as any).anchor)
     if (!anchor) return
-    const kind = getReaderAnnotationKind(highlight as ReaderHighlight)
-    const updatedAnchor = { ...anchor, highlighted: true, kind }
-    const res =
-      kind === 'translation'
-        ? await api.dbQuery(
-            'books',
-            'INSERT INTO highlights (id, book_id, text, annotation, anchor) VALUES (?, ?, ?, ?, ?)',
-            [
-              `hl_${Date.now()}`,
-              readingBook.id,
-              highlight.text,
-              '',
-              JSON.stringify({ ...anchor, highlighted: true, kind: 'highlight' }),
-            ],
-          )
-        : await api.dbQuery(
-            'books',
-            'UPDATE highlights SET anchor = ? WHERE id = ? AND book_id = ?',
-            [JSON.stringify(updatedAnchor), highlight.id, readingBook.id],
-          )
-    if (res?.success) {
-    setHighlights(await loadReaderHighlights(readingBook.id))
-      setReaderContextMenu(null)
-      showToast(
-        t('books.toast_reader_annotation_saved', {
-          type: t('books.reader_annotation_kind_highlight'),
-        }),
-      )
-    }
+    selectedSelectionIdRef.current =
+      (highlight as ReaderAnnotationRecord).selection_id || highlight.id
+    selectedHighlightAnchorRef.current = anchor
+    setSelectedHighlightAnchor(anchor)
+    setSelectedHighlightText(highlight.text)
+    setEditingHighlightId(null)
+    editingAnnotationKindRef.current = null
+    setSelectedHighlightIncludesMark(true)
+    setNewAnnotation('')
+    await handleAddHighlight(highlight.text, '', true, 'highlight', true)
   }
 
   const handleDeleteSavedHighlight = async (highlight: ReaderAnnotationRecord) => {
     if (!readingBook || !api) return
     setReaderContextMenu(null)
     const kind = getReaderAnnotationKind(highlight)
-    const anchor = parseReaderHighlightAnchor(highlight.anchor)
-    const hasAnnotation = Boolean(normalizeHighlightAnnotation(highlight.annotation))
-    const isMarked =
-      highlight.highlighted !== undefined ? highlight.highlighted : anchor?.highlighted !== false
     const actionKey =
       kind === 'translation'
         ? 'books.delete_translation_action'
-        : hasAnnotation && isMarked
-          ? 'books.delete_combined_action'
-          : hasAnnotation
-            ? 'books.delete_annotation_action'
-            : 'books.delete_highlight_action'
+        : kind === 'note'
+          ? 'books.delete_annotation_action'
+          : 'books.delete_highlight_action'
     const descriptionKey =
       kind === 'translation'
         ? 'books.delete_translation_desc'
-        : hasAnnotation && isMarked
-          ? 'books.delete_combined_desc'
-          : hasAnnotation
-            ? 'books.delete_annotation_desc'
-            : 'books.delete_highlight_desc'
+        : kind === 'note'
+          ? 'books.delete_annotation_desc'
+          : 'books.delete_highlight_desc'
     const allowed = await confirm({
       title: t(actionKey),
       description: t(descriptionKey, { text: highlight.text }),
@@ -2937,10 +2976,7 @@ export const Books: React.FC = () => {
       tone: 'danger',
     })
     if (!allowed) return
-    const res = await api.dbQuery('books', 'DELETE FROM highlights WHERE id = ? AND book_id = ?', [
-      highlight.id,
-      readingBook.id,
-    ])
+    const res = await api.deleteReaderAnnotation?.({ bookId: readingBook.id, itemId: highlight.id })
     if (res?.success) {
       setHighlights((current) => current.filter((item) => item.id !== highlight.id))
       setActiveHighlightId((current) => (current === highlight.id ? null : current))
@@ -2950,6 +2986,9 @@ export const Books: React.FC = () => {
         setSelectedHighlightText('')
         selectedHighlightAnchorRef.current = null
         setSelectedHighlightAnchor(null)
+        selectedSelectionIdRef.current = null
+        editingAnnotationKindRef.current = null
+        selectedTranslationLanguageRef.current = null
         setNewAnnotation('')
       }
       setReaderContextMenu(null)
@@ -4137,26 +4176,25 @@ export const Books: React.FC = () => {
                     <Highlighter size={14} /> {t('books.mark_highlight')}
                   </button>
                 )}
-                {(!contextHighlight || contextHighlightKind !== 'note') && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      if (contextHighlight) {
-                        openHighlightAnnotationEditor(contextHighlight)
-                        return
-                      }
-                      setReaderContextMenu(null)
-                      setEditingHighlightId(null)
-                      setSelectedHighlightIncludesMark(false)
-                      setNewAnnotation('')
-                      setIsAnnotationsDrawerOpen(true)
-                      setIsSelectionEditorOpen(true)
-                    }}
-                  >
-                    <MessageSquareText size={14} /> {t('books.add_annotation_action')}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    if (contextHighlight) {
+                      openHighlightAnnotationEditor(contextHighlight, 'add-note')
+                      return
+                    }
+                    setReaderContextMenu(null)
+                    setEditingHighlightId(null)
+                    editingAnnotationKindRef.current = null
+                    setSelectedHighlightIncludesMark(false)
+                    setNewAnnotation('')
+                    setIsAnnotationsDrawerOpen(true)
+                    setIsSelectionEditorOpen(true)
+                  }}
+                >
+                  <MessageSquareText size={14} /> {t('books.add_annotation_action')}
+                </button>
                 <button
                   type="button"
                   role="menuitem"
@@ -4166,11 +4204,16 @@ export const Books: React.FC = () => {
                       selectedHighlightAnchorRef.current = anchor
                       setSelectedHighlightAnchor(anchor)
                       setSelectedHighlightText(contextHighlight.text)
+                      selectedSelectionIdRef.current =
+                        (contextHighlight as ReaderAnnotationRecord).selection_id ||
+                        contextHighlight.id
                       setEditingHighlightId(null)
+                      editingAnnotationKindRef.current = null
                       setSelectedHighlightIncludesMark(false)
                       setNewAnnotation('')
                     } else {
                       setEditingHighlightId(null)
+                      editingAnnotationKindRef.current = null
                       setSelectedHighlightIncludesMark(false)
                     }
                     setReaderContextMenu(null)
@@ -5243,9 +5286,15 @@ export const Books: React.FC = () => {
                         </div>
                         {aiTranslation && (
                           <div className="book-reader__translation-result">
-                            <div>
-                              <strong>{t('books.ai_translation_label')}：</strong> {aiTranslation}
-                            </div>
+                            <label>
+                              <strong>{t('books.ai_translation_label')}：</strong>
+                              <textarea
+                                className="form-field"
+                                value={aiTranslation}
+                                onChange={(event) => setAiTranslation(event.target.value)}
+                                rows={3}
+                              />
+                            </label>
                             <button
                               className="btn sm"
                               type="button"
@@ -5255,9 +5304,9 @@ export const Books: React.FC = () => {
                                   aiTranslation,
                                   false,
                                   'translation',
-                                  true,
                                 )
                               }
+                              disabled={!aiTranslation.trim()}
                             >
                               <Save size={11} /> {t('books.save_translation')}
                             </button>
@@ -5284,6 +5333,9 @@ export const Books: React.FC = () => {
                               setSelectedHighlightText('')
                               selectedHighlightAnchorRef.current = null
                               setSelectedHighlightAnchor(null)
+                              selectedSelectionIdRef.current = null
+                              editingAnnotationKindRef.current = null
+                              selectedTranslationLanguageRef.current = null
                               setEditingHighlightId(null)
                               setSelectedHighlightIncludesMark(true)
                               setIsSelectionEditorOpen(false)
@@ -5367,6 +5419,17 @@ export const Books: React.FC = () => {
                                 {t(`books.reader_annotation_kind_${kind}`)}
                               </span>
                               <div className="book-reader__annotation-actions">
+                                {kind !== 'highlight' && (
+                                  <button
+                                    type="button"
+                                    className="book-reader__annotation-action"
+                                    onClick={() => openHighlightAnnotationEditor(hl)}
+                                    aria-label={t('common.edit')}
+                                    title={t('common.edit')}
+                                  >
+                                    <Edit3 size={14} />
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   className="book-reader__annotation-action"

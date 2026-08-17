@@ -150,6 +150,8 @@ import { BrowserControlService } from './browserControl/service'
 import { registerBrowserControlIpc } from './browserControl/ipc'
 import { createReaderOutlineService } from './readerOutlineService'
 import { registerReaderOutlineIpc } from './readerOutlineIpc'
+import { createReaderAnnotationService } from './readerAnnotationService'
+import { registerReaderAnnotationIpc } from './readerAnnotationIpc'
 import { createReaderSelectionService } from './readerSelectionService'
 import { registerReaderSelectionIpc } from './readerSelectionIpc'
 import {
@@ -204,6 +206,7 @@ const aiImageControllers = new Set<AbortController>()
 const aiVideoControllers = new Set<AbortController>()
 let aiRecoveryController: AbortController | null = null
 const browserControlService = new BrowserControlService()
+const readerAnnotationService = createReaderAnnotationService({ getDb: () => getUserDb('books') })
 const readerSelectionService = createReaderSelectionService({ getDb: () => getUserDb('books') })
 const readerOutlineService = createReaderOutlineService({
   getDb: () => getUserDb('books'),
@@ -2763,6 +2766,11 @@ registerBrowserControlIpc(
 registerReaderOutlineIpc(
   { handle: (channel, handler) => ipcMain.handle(channel, handler) },
   { getService: () => readerOutlineService },
+)
+
+registerReaderAnnotationIpc(
+  { handle: (channel, handler) => ipcMain.handle(channel, handler) },
+  { getService: () => readerAnnotationService },
 )
 
 registerReaderSelectionIpc(

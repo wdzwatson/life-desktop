@@ -404,6 +404,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     bookId: number
     source?: 'pdf' | 'ocr' | 'epub' | 'unknown'
   }) => ipcRenderer.invoke('reader:selection:reconcile', input),
+  listReaderAnnotations: (input: { bookId: number }) =>
+    ipcRenderer.invoke('reader:annotation:list', input),
+  saveReaderAnnotation: (input: {
+    bookId: number
+    kind: 'translation' | 'underline' | 'note'
+    text: string
+    anchor: unknown
+    selectionId?: string
+    itemId?: string
+    body?: string
+    translationLanguage?: string
+    locationStatus?: 'pending' | 'resolved' | 'page-only' | 'error'
+  }) => ipcRenderer.invoke('reader:annotation:save', input),
+  deleteReaderAnnotation: (input: { bookId: number; itemId: string }) =>
+    ipcRenderer.invoke('reader:annotation:delete', input),
 
   // Video parsing & downloading
   checkVideoTools: () => ipcRenderer.invoke('video:checkTools'),
