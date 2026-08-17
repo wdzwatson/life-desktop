@@ -216,6 +216,19 @@ const normalizeOutlinePathSnapshot = (value: unknown, fallbackSource: ReaderDocu
   return { source, pathKey, nodes }
 }
 
+const normalizeStoredOutlinePathSnapshot = (
+  value: unknown,
+  fallbackSource: ReaderDocumentSource,
+) => {
+  if (typeof value !== 'string') return normalizeOutlinePathSnapshot(value, fallbackSource)
+  try {
+    return normalizeOutlinePathSnapshot(JSON.parse(value), fallbackSource)
+  } catch (error) {
+    if (error instanceof ReaderAnnotationValidationError) throw error
+    throw new ReaderAnnotationValidationError('Outline path snapshot JSON is invalid.')
+  }
+}
+
 const normalizeAnchorShape = (value: unknown): ReaderAnchorV2 => {
   const raw = isRecord(value) && value.version === 2 ? value : null
   const fallbackSource = raw ? normalizeSource(raw.source) : 'unknown'
@@ -324,7 +337,13 @@ export const normalizeReaderAnchorV2 = (value: unknown): ReaderAnchorV2 => {
 
 export const normalizeReaderSelection = (value: unknown): ReaderSelection => {
   if (!isRecord(value)) throw new ReaderAnnotationValidationError('Selection must be an object.')
-  const anchor = normalizeReaderAnchorV2(value.anchor)
+  const normalizedAnchor = normalizeReaderAnchorV2(value.anchor)
+  const storedOutlinePath = value.outlinePath ?? value.outline_path_json
+  const outlinePath =
+    storedOutlinePath === undefined
+      ? normalizedAnchor.outlinePath
+      : normalizeStoredOutlinePathSnapshot(storedOutlinePath, normalizedAnchor.source)
+  const anchor = { ...normalizedAnchor, outlinePath }
   const selectedText = toStringValue(value.selectedText ?? anchor.selectedText, 'selection.selectedText')
   return {
     id: toStringValue(value.id, 'selection.id'),
@@ -336,7 +355,7 @@ export const normalizeReaderSelection = (value: unknown): ReaderSelection => {
       selectedText,
     },
     outlinePath: anchor.outlinePath,
-    locationStatus: normalizeLegacySelectionStatus(value.locationStatus),
+    locationStatus: normalizeLegacySelectionStatus(value.locationStatus ?? value.location_status),
     createdAt: toStringValue(value.createdAt ?? value.created_at, 'selection.createdAt'),
     updatedAt: toStringValue(value.updatedAt ?? value.updated_at, 'selection.updatedAt'),
   }
@@ -345,9 +364,15 @@ export const normalizeReaderSelection = (value: unknown): ReaderSelection => {
 export const normalizeReaderAnnotationItem = (value: unknown): ReaderAnnotationItem => {
   if (!isRecord(value)) throw new ReaderAnnotationValidationError('Annotation item must be an object.')
   const kind = normalizeKind(value.kind)
-  const anchor = normalizeReaderAnchorV2(value.anchor)
+  const normalizedAnchor = normalizeReaderAnchorV2(value.anchor)
+  const storedOutlinePath = value.outlinePath ?? value.outline_path_json
+  const outlinePath =
+    storedOutlinePath === undefined
+      ? normalizedAnchor.outlinePath
+      : normalizeStoredOutlinePathSnapshot(storedOutlinePath, normalizedAnchor.source)
+  const anchor = { ...normalizedAnchor, outlinePath }
   const text = toStringValue(value.text ?? anchor.selectedText, 'annotation.text')
-  const body = toOptionalStringValue(value.body)
+  const body = toOptionalStringValue(value.body ?? value.annotation)
   const translationLanguage = toOptionalStringValue(value.translationLanguage ?? value.translation_language)
   if (kind === 'translation') {
     if (!translationLanguage) {
@@ -377,8 +402,8 @@ export const normalizeReaderAnnotationItem = (value: unknown): ReaderAnnotationI
       ...anchor,
       selectedText: text,
     },
-    outlinePath: anchor.outlinePath,
-    locationStatus: normalizeLegacySelectionStatus(value.locationStatus),
+    outlinePath,
+    locationStatus: normalizeLegacySelectionStatus(value.locationStatus ?? value.location_status),
     createdAt: toStringValue(value.createdAt ?? value.created_at, 'annotation.createdAt'),
     updatedAt: toStringValue(value.updatedAt ?? value.updated_at, 'annotation.updatedAt'),
   }
@@ -442,4 +467,227 @@ export const buildExportAnnotationRecord = (value: ReaderAnnotationItem): Export
     locationStatus: value.locationStatus,
     createdAt: value.createdAt,
   }
+}
+
+const getFirstDocumentPosition = (record: ExportAnnotationRecord) => record.anchor.positions[0]
+
+export const compareExportAnnotationRecords = (
+  left: ExportAnnotationRecord,
+  right: ExportAnnotationRecord,
+) => {
+  const positionDelta = compareDocumentPositions(
+    getFirstDocumentPosition(left),
+    getFirstDocumentPosition(right),
+  )
+  if (positionDelta !== 0) return positionDelta
+  const pathDelta = left.outlinePathKey.localeCompare(right.outlinePathKey)
+  if (pathDelta !== 0) return pathDelta
+  const timeDelta = left.createdAt.localeCompare(right.createdAt)
+  if (timeDelta !== 0) return timeDelta
+  return left.id.localeCompare(right.id)
+}
+
+export const buildExportAnnotationRecords = (values: unknown[]) =>
+  values
+    .map((value) => buildExportAnnotationRecord(normalizeReaderAnnotationItem(value)))
+    .sort(compareExportAnnotationRecords)
+
+export type ExportAnnotationGroup = {
+  key: string
+  outlinePathTitles: string[]
+  records: ExportAnnotationRecord[]
+}
+
+export const groupExportAnnotationRecords = (
+  records: ExportAnnotationRecord[],
+): ExportAnnotationGroup[] => {
+  const groups = new Map<string, ExportAnnotationGroup>()
+  records.slice().sort(compareExportAnnotationRecords).forEach((record) => {
+    const key = record.outlinePathKey || '__unresolved__'
+    const existing = groups.get(key)
+    if (existing) {
+      existing.records.push(record)
+      return
+    }
+    groups.set(key, {
+      key,
+      outlinePathTitles: record.outlinePathTitles,
+      records: [record],
+    })
+  })
+  return Array.from(groups.values())
+}
+
+export type ReaderAnnotationMarkdownLabels = {
+  author: string
+  syncTime: string
+  progress: string
+  annotationsHeading: string
+  unknownChapter: string
+  fullChapterPath: string
+  type: string
+  originalText: string
+  body: string
+  pages: string
+  createdAt: string
+  deepLink: string
+  notAvailable: string
+  empty: string
+  kinds: Record<ReaderAnnotationKind, string>
+}
+
+export type ReaderAnnotationMarkdownOptions = {
+  bookId: string | number
+  title: string
+  author: string
+  progress: number
+  syncedAt: string
+  locale: string
+  labels: ReaderAnnotationMarkdownLabels
+}
+
+const escapeMarkdownInline = (value: unknown) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/([\\`*_])/g, '\\$1')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/\r?\n/g, '<br>')
+
+const formatExportDateTime = (value: string, locale: string) => {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return value
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(date)
+  } catch {
+    return date.toISOString()
+  }
+}
+
+const getManagedMarkerBookId = (bookId: string | number) => encodeURIComponent(String(bookId))
+const getManagedMarkerAnnotationId = (annotationId: string) => encodeURIComponent(annotationId)
+
+export const getReaderAnnotationsManagedMarkers = (bookId: string | number) => {
+  const markerBookId = getManagedMarkerBookId(bookId)
+  return {
+    start: `<!-- life-os:reader-annotations:book:${markerBookId}:start -->`,
+    end: `<!-- life-os:reader-annotations:book:${markerBookId}:end -->`,
+  }
+}
+
+const getReaderAnnotationItemMarkers = (annotationId: string) => {
+  const markerAnnotationId = getManagedMarkerAnnotationId(annotationId)
+  return {
+    start: `<!-- life-os:reader-annotation:${markerAnnotationId}:start -->`,
+    end: `<!-- life-os:reader-annotation:${markerAnnotationId}:end -->`,
+  }
+}
+
+const renderExportAnnotationRecord = (
+  record: ExportAnnotationRecord,
+  options: ReaderAnnotationMarkdownOptions,
+) => {
+  const { labels } = options
+  const markers = getReaderAnnotationItemMarkers(record.id)
+  const fullPath = record.outlinePathTitles.length
+    ? record.outlinePathTitles.join(' > ')
+    : labels.unknownChapter
+  const pageLabel = record.pageNumbers.length
+    ? record.pageNumbers.join(', ')
+    : labels.notAvailable
+  return [
+    markers.start,
+    `- **${escapeMarkdownInline(labels.type)}**: ${escapeMarkdownInline(labels.kinds[record.kind])}`,
+    `  - **${escapeMarkdownInline(labels.originalText)}**: ${escapeMarkdownInline(record.text)}`,
+    `  - **${escapeMarkdownInline(labels.body)}**: ${escapeMarkdownInline(record.body || labels.notAvailable)}`,
+    `  - **${escapeMarkdownInline(labels.fullChapterPath)}**: ${escapeMarkdownInline(fullPath)}`,
+    `  - **${escapeMarkdownInline(labels.pages)}**: ${escapeMarkdownInline(pageLabel)}`,
+    `  - **${escapeMarkdownInline(labels.createdAt)}**: ${escapeMarkdownInline(formatExportDateTime(record.createdAt, options.locale))}`,
+    `  - **${escapeMarkdownInline(labels.deepLink)}**: [[${record.deepLink}]]`,
+    markers.end,
+  ].join('\n')
+}
+
+const getCommonPathDepth = (left: string[], right: string[]) => {
+  const maxDepth = Math.min(left.length, right.length)
+  let depth = 0
+  while (depth < maxDepth && left[depth] === right[depth]) depth += 1
+  return depth
+}
+
+export const renderReaderAnnotationsManagedMarkdown = (
+  records: ExportAnnotationRecord[],
+  options: ReaderAnnotationMarkdownOptions,
+) => {
+  const markers = getReaderAnnotationsManagedMarkers(options.bookId)
+  const groups = groupExportAnnotationRecords(records)
+  const output = [
+    markers.start,
+    `# ${escapeMarkdownInline(options.title)}`,
+    '',
+    `> **${escapeMarkdownInline(options.labels.author)}**: ${escapeMarkdownInline(options.author)}`,
+    `> **${escapeMarkdownInline(options.labels.syncTime)}**: ${escapeMarkdownInline(options.syncedAt)}`,
+    `> **${escapeMarkdownInline(options.labels.progress)}**: ${escapeMarkdownInline(options.progress)}%`,
+    '',
+    `## ${escapeMarkdownInline(options.labels.annotationsHeading)}`,
+    '',
+  ]
+
+  if (groups.length === 0) {
+    output.push(options.labels.empty, '', markers.end)
+    return output.join('\n')
+  }
+
+  let previousPath: string[] = []
+  groups.forEach((group) => {
+    const titles = group.outlinePathTitles
+    if (titles.length === 0) {
+      output.push(`### ${escapeMarkdownInline(options.labels.unknownChapter)}`, '')
+    } else {
+      const commonDepth = getCommonPathDepth(previousPath, titles)
+      for (let index = commonDepth; index < Math.min(titles.length, 4); index += 1) {
+        output.push(`${'#'.repeat(index + 3)} ${escapeMarkdownInline(titles[index])}`, '')
+      }
+      output.push(
+        `**${escapeMarkdownInline(options.labels.fullChapterPath)}**: ${escapeMarkdownInline(titles.join(' > '))}`,
+        '',
+      )
+    }
+    group.records.forEach((record) => {
+      output.push(renderExportAnnotationRecord(record, options), '')
+    })
+    previousPath = titles
+  })
+
+  output.push(markers.end)
+  return output.join('\n')
+}
+
+export const mergeReaderAnnotationsManagedMarkdown = (
+  existingContent: string,
+  managedContent: string,
+  bookId: string | number,
+) => {
+  const markers = getReaderAnnotationsManagedMarkers(bookId)
+  const startIndex = existingContent.indexOf(markers.start)
+  const endIndex = existingContent.indexOf(markers.end)
+  if ((startIndex < 0) !== (endIndex < 0) || (startIndex >= 0 && endIndex < startIndex)) {
+    throw new ReaderAnnotationValidationError('Managed reader annotation markers are incomplete.')
+  }
+  if (startIndex >= 0) {
+    const suffixStart = endIndex + markers.end.length
+    return `${existingContent.slice(0, startIndex)}${managedContent}${existingContent.slice(suffixStart)}`
+  }
+  if (!existingContent) return managedContent
+  const separator = existingContent.endsWith('\n\n')
+    ? ''
+    : existingContent.endsWith('\n')
+      ? '\n'
+      : '\n\n'
+  return `${existingContent}${separator}${managedContent}`
 }

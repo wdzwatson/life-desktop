@@ -97,7 +97,12 @@ import {
   type TocEntry,
 } from './bookReaderUtils'
 import { recognizePdfPage, type PdfOcrPage } from './pdfOcrService'
-import { normalizeReaderAnchorV2 } from '../services/readerAnnotationSerializer'
+import {
+  buildExportAnnotationRecords,
+  mergeReaderAnnotationsManagedMarkdown,
+  normalizeReaderAnchorV2,
+  renderReaderAnnotationsManagedMarkdown,
+} from '../services/readerAnnotationSerializer'
 import type { ReaderAnnotationKind as ReaderStoredAnnotationKind } from '../types/readerAnnotation'
 
 type BookBatchQueueItem = {
@@ -693,6 +698,8 @@ export const Books: React.FC = () => {
   const [isSelectionEditorOpen, setIsSelectionEditorOpen] = useState(false)
   const [aiTranslation, setAiTranslation] = useState('')
   const [isTranslatingSelection, setIsTranslatingSelection] = useState(false)
+  const [isExportingAnnotations, setIsExportingAnnotations] = useState(false)
+  const annotationExportPendingRef = useRef(false)
   const translationRequestRef = useRef(0)
   const [readerShortcuts, setReaderShortcuts] = useState(DEFAULT_READER_SHORTCUTS)
   const [pdfOcrImageDataUrl, setPdfOcrImageDataUrl] = useState<string | null>(null)
@@ -3275,51 +3282,102 @@ export const Books: React.FC = () => {
   // Export highlights to Notes Module as Markdown (Incremental Sync)
   const handleExportHighlights = async () => {
     if (!readingBook || !api) return
+    if (annotationExportPendingRef.current) return
+    annotationExportPendingRef.current = true
+    setIsExportingAnnotations(true)
 
     const noteTitle = t('books.note_title_template', { title: readingBook.title })
+    try {
+      const loadExportRows = async () => {
+        if (api.listReaderAnnotations) {
+          const listResult = await api.listReaderAnnotations({ bookId: readingBook.id })
+          if (listResult?.success && Array.isArray(listResult.data)) return listResult.data
+        }
+        const fallbackResult = await api.dbQuery(
+          'books',
+          READER_HIGHLIGHTS_WITH_STATUS_QUERY,
+          [readingBook.id],
+        )
+        if (fallbackResult?.success && Array.isArray(fallbackResult.data)) {
+          return fallbackResult.data
+        }
+        throw new Error('Reader annotations could not be loaded for export.')
+      }
+      const [annotationRows, checkNote] = await Promise.all([
+        loadExportRows(),
+        api.dbQuery(
+          'notes',
+          'SELECT id, content FROM notes WHERE title = ? ORDER BY id LIMIT 1',
+          [noteTitle],
+        ),
+      ])
+      if (!checkNote?.success || !Array.isArray(checkNote.data)) {
+        throw new Error('Reading note could not be loaded for synchronization.')
+      }
 
-    // Check if the Note already exists
-    const checkNote = await api.dbQuery('notes', 'SELECT * FROM notes WHERE title = ?', [noteTitle])
-    // Format highlights to Markdown
-    let mdContent = t('books.note_md_title', { title: readingBook.title })
-    mdContent += t('books.note_md_author', {
-      author: readingBook.author || t('books.unknown_author'),
-    })
-    mdContent += t('books.note_md_sync_time', { time: new Date().toLocaleString() })
-    mdContent += t('books.note_md_progress', { progress: readingBook.progress })
-    mdContent += t('books.note_md_highlights_header')
-
-    highlights.forEach((hl, idx) => {
-      mdContent += t('books.note_md_highlight_item_title', { idx: idx + 1 })
-      mdContent += `> ${hl.text}\n\n`
-      mdContent += t('books.note_md_highlight_annotation', {
-        annotation: normalizeHighlightAnnotation(hl.annotation) || t('books.no_annotation'),
+      const exportRecords = buildExportAnnotationRecords(annotationRows)
+      const managedContent = renderReaderAnnotationsManagedMarkdown(exportRecords, {
+        bookId: readingBook.id,
+        title: noteTitle,
+        author: readingBook.author || t('books.unknown_author'),
+        progress: Number(readingBook.progress) || 0,
+        syncedAt: new Date().toLocaleString(i18n.language),
+        locale: i18n.language,
+        labels: {
+          author: t('books.note_export_author_label'),
+          syncTime: t('books.note_export_sync_time_label'),
+          progress: t('books.progress_label'),
+          annotationsHeading: t('books.note_export_annotations_heading'),
+          unknownChapter: t('books.note_export_unknown_chapter'),
+          fullChapterPath: t('books.note_export_full_path'),
+          type: t('books.note_export_type'),
+          originalText: t('books.note_export_original_text'),
+          body: t('books.note_export_content'),
+          pages: t('books.note_export_pages'),
+          createdAt: t('books.note_export_created_at'),
+          deepLink: t('books.note_export_source_link'),
+          notAvailable: t('books.note_export_not_available'),
+          empty: t('books.note_export_empty'),
+          kinds: {
+            translation: t('books.reader_annotation_kind_translation'),
+            underline: t('books.reader_annotation_kind_highlight'),
+            note: t('books.reader_annotation_kind_note'),
+          },
+        },
       })
-      mdContent += t('books.note_md_highlight_deep_link', {
-        id: readingBook.id,
-        chapter: encodeURIComponent(currentChapter),
-      })
-    })
-
-    if (checkNote?.success && checkNote.data.length > 0) {
-      const noteId = checkNote.data[0].id
-      // Update
-      await api.dbQuery(
-        'notes',
-        'UPDATE notes SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [mdContent, noteId],
+      const existingNote = checkNote.data[0] as
+        | { id: number; content?: string | null }
+        | undefined
+      const nextContent = mergeReaderAnnotationsManagedMarkdown(
+        String(existingNote?.content ?? ''),
+        managedContent,
+        readingBook.id,
       )
-      showToast(t('books.toast_note_updated'))
-    } else {
-      // Create new
-      const createRes = await api.dbQuery(
+
+      if (existingNote) {
+        const updateResult = await api.dbQuery(
+          'notes',
+          'UPDATE notes SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+          [nextContent, existingNote.id],
+        )
+        if (!updateResult?.success) throw new Error('Reading note update failed.')
+        showToast(t('books.toast_note_updated'))
+        return
+      }
+
+      const createResult = await api.dbQuery(
         'notes',
         "INSERT INTO notes (title, content, note_type) VALUES (?, ?, 'markdown')",
-        [noteTitle, mdContent],
+        [noteTitle, nextContent],
       )
-      if (createRes?.success) {
-        showToast(t('books.toast_note_synced'))
-      }
+      if (!createResult?.success) throw new Error('Reading note creation failed.')
+      showToast(t('books.toast_note_synced'))
+    } catch (error) {
+      console.error('Failed to synchronize reader annotations to Notes:', error)
+      showToast(t('books.toast_note_sync_failed'))
+    } finally {
+      annotationExportPendingRef.current = false
+      setIsExportingAnnotations(false)
     }
   }
 
@@ -4257,8 +4315,16 @@ export const Books: React.FC = () => {
                     <Languages size={12} /> {t('books.ocr_extract')}
                   </button>
                 )}
-                <button className="btn sm" onClick={() => handleExportHighlights()}>
-                  <ExternalLink size={12} /> {t('books.export_notes_btn')}
+                <button
+                  className="btn sm"
+                  onClick={() => handleExportHighlights()}
+                  disabled={isExportingAnnotations}
+                  aria-busy={isExportingAnnotations}
+                >
+                  <ExternalLink size={12} />
+                  {isExportingAnnotations
+                    ? t('books.note_export_syncing')
+                    : t('books.export_notes_btn')}
                 </button>
                 <div
                   style={{

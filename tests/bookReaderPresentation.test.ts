@@ -212,3 +212,18 @@ test('reader annotation panel filters semantic kinds and paginates large lists',
   assert.match(readerAnnotationsPanel, /reader_annotation_created_at/)
   assert.match(readerAnnotationsPanel, /onKeyDown=\{\(event\)/)
 })
+
+test('Notes export rebuilds annotation records from storage without using the active chapter', () => {
+  const exportHandler = booksSource.match(
+    /const handleExportHighlights = async \(\) => \{([\s\S]*?)\n {2}\}\n\n {2}\/\/ Check if a book's category/,
+  )?.[1]
+  assert.ok(exportHandler)
+  assert.match(exportHandler, /listReaderAnnotations/)
+  assert.match(exportHandler, /buildExportAnnotationRecords\(annotationRows\)/)
+  assert.match(exportHandler, /renderReaderAnnotationsManagedMarkdown/)
+  assert.match(exportHandler, /mergeReaderAnnotationsManagedMarkdown/)
+  assert.match(exportHandler, /SELECT id, content FROM notes/)
+  assert.match(exportHandler, /annotationExportPendingRef\.current/)
+  assert.doesNotMatch(exportHandler, /currentChapter/)
+  assert.match(booksSource, /aria-busy=\{isExportingAnnotations\}/)
+})
