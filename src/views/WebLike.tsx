@@ -3,8 +3,10 @@ import { useTranslation } from 'react-i18next'
 import {
   CheckCircle2,
   CircleAlert,
+  CircleHelp,
   FolderOpen,
   Globe2,
+  ListChecks,
   Link2,
   LoaderCircle,
   Play,
@@ -232,6 +234,62 @@ export function WebLike() {
           </div>
         </div>
       )}
+
+      <section className="web-like__guides" aria-label={t('toolbox.web_like_guides_label')}>
+        <details className="web-like__guide" open>
+          <summary>
+            <ListChecks size={17} aria-hidden="true" />
+            <span>
+              <strong>{t('toolbox.web_like_first_use_title')}</strong>
+              <small>{t('toolbox.web_like_first_use_summary')}</small>
+            </span>
+          </summary>
+          <ol className="web-like__steps">
+            <li>{t('toolbox.web_like_first_use_step_1')}</li>
+            <li>{t('toolbox.web_like_first_use_step_2')}</li>
+            <li>{t('toolbox.web_like_first_use_step_3')}</li>
+            <li>{t('toolbox.web_like_first_use_step_4')}</li>
+          </ol>
+          <p className="web-like__guide-note">
+            <CircleHelp size={15} aria-hidden="true" />
+            <span>{t('toolbox.web_like_first_use_note')}</span>
+          </p>
+        </details>
+
+        <details className="web-like__guide">
+          <summary>
+            <CircleAlert size={17} aria-hidden="true" />
+            <span>
+              <strong>{t('toolbox.web_like_debug_title')}</strong>
+              <small>{t('toolbox.web_like_debug_summary')}</small>
+            </span>
+          </summary>
+          <div className="web-like__debug-status" aria-label={t('toolbox.web_like_connection_status')}>
+            <div className="web-like__debug-row">
+              <span className={`web-like__debug-dot ${status?.bridgeReady ? 'is-ready' : ''}`} aria-hidden="true" />
+              <span><strong>{t('toolbox.web_like_bridge')}</strong><small>{t('toolbox.web_like_debug_bridge')}</small></span>
+            </div>
+            <div className="web-like__debug-row">
+              <span className={`web-like__debug-dot ${registered ? 'is-ready' : ''}`} aria-hidden="true" />
+              <span><strong>{t('toolbox.web_like_native_host')}</strong><small>{t('toolbox.web_like_debug_native_host')}</small></span>
+            </div>
+            <div className="web-like__debug-row">
+              <span className={`web-like__debug-dot ${status?.extensionConnected ? 'is-ready' : ''}`} aria-hidden="true" />
+              <span><strong>{t('toolbox.web_like_extension')}</strong><small>{t('toolbox.web_like_debug_extension')}</small></span>
+            </div>
+          </div>
+          <ul className="web-like__debug-list">
+            <li>{t('toolbox.web_like_debug_check_1')}</li>
+            <li>{t('toolbox.web_like_debug_check_2')}</li>
+            <li>{t('toolbox.web_like_debug_check_3')}</li>
+            <li>{t('toolbox.web_like_debug_check_4')}</li>
+          </ul>
+          <p className="web-like__guide-note">
+            <CircleHelp size={15} aria-hidden="true" />
+            <span>{t('toolbox.web_like_debug_note')}</span>
+          </p>
+        </details>
+      </section>
     </section>
   )
 }
