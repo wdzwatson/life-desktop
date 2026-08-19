@@ -12,7 +12,9 @@ import {
 import './Dashboard.css'
 import { getBookCoverUrl } from './bookCoverUtils'
 import {
+  buildAggregateTaskMutation,
   buildCompleteTaskTreeMutation,
+  buildCloseTaskTreeMutation,
   buildReopenTaskTreeMutation,
 } from '../taskTreeMutation'
 
@@ -121,11 +123,31 @@ export const Dashboard: React.FC = () => {
     const api = (window as any).electronAPI
     if (api) {
       const nextDone = currentDone ? 0 : 1
+      const childResult: any = nextDone
+        ? await api.dbQuery('tasks', 'SELECT id FROM tasks WHERE parent_id = ? LIMIT 1', [id])
+        : null
       const mutation = nextDone
-        ? buildCompleteTaskTreeMutation(id)
+        ? childResult?.data?.length
+          ? buildCloseTaskTreeMutation(id)
+          : buildCompleteTaskTreeMutation(id)
         : buildReopenTaskTreeMutation(id)
       const result = await api.dbQuery('tasks', mutation.sql, mutation.params)
       if (!result?.success) return
+      let currentId: number | null = id
+      const visited = new Set<number>()
+      while (currentId && !visited.has(currentId)) {
+        visited.add(currentId)
+        const parentResult: any = await api.dbQuery(
+          'tasks',
+          'SELECT parent_id FROM tasks WHERE id = ?',
+          [currentId],
+        )
+        const parentId = parentResult?.data?.[0]?.parent_id
+        if (!parentId) break
+        const aggregate = buildAggregateTaskMutation(Number(parentId))
+        await api.dbQuery('tasks', aggregate.sql, aggregate.params)
+        currentId = Number(parentId)
+      }
       showToast(nextDone ? t('dashboard.toast_task_completed') : t('dashboard.toast_task_reopened'))
 
       // Refresh list

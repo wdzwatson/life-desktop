@@ -138,8 +138,13 @@ export const DesktopTaskNote: React.FC = () => {
 
   const toggleTask = async (task: DesktopTaskRecord) => {
     const nextDone = task.is_completed === 1 ? 0 : 1
+    const childResult: any = nextDone
+      ? await api?.dbQuery('tasks', 'SELECT id FROM tasks WHERE parent_id = ? LIMIT 1', [task.id])
+      : null
     const mutation = nextDone
-      ? buildCompleteTaskTreeMutation(task.id)
+      ? childResult?.data?.length
+        ? buildCloseTaskTreeMutation(task.id)
+        : buildCompleteTaskTreeMutation(task.id)
       : buildReopenTaskTreeMutation(task.id)
     const result = await api?.dbQuery('tasks', mutation.sql, mutation.params)
     if (result?.success) {
