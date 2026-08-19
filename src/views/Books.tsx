@@ -157,6 +157,22 @@ const PDF_OCR_ENGINE_VERSION = 'tesseract-v3'
 const PDF_OUTLINE_OCR_PAGE_LIMIT = 12
 const PDF_DEFAULT_PAGE_ASPECT_RATIO = 1.414
 const PDF_CONTINUOUS_OVERSCAN = 4
+const PAGED_WHEEL_THRESHOLD = 180
+const PAGED_WHEEL_LINE_THRESHOLD = 96
+const PAGED_WHEEL_FINE_THRESHOLD = 150
+const PAGED_WHEEL_IDLE_MS = 220
+const PAGED_WHEEL_LOCK_MS = 450
+const PAGED_WHEEL_FINE_LOCK_MS = 600
+const READER_WHEEL_SENSITIVITY_STORAGE_KEY = 'lifeos.reader.wheel-sensitivity'
+type ReaderWheelSensitivity = 'low' | 'balanced' | 'high'
+const READER_WHEEL_SENSITIVITY_SCALE: Record<
+  ReaderWheelSensitivity,
+  { threshold: number; lock: number }
+> = {
+  low: { threshold: 1.3, lock: 1.15 },
+  balanced: { threshold: 1, lock: 1 },
+  high: { threshold: 0.78, lock: 0.86 },
+}
 const PDF_AUTOPLAY_PREFETCH_MARGIN = 2
 // Keep rendered pages inside the client area when a native vertical scrollbar is present.
 const PDF_SCROLLBAR_WIDTH_TOLERANCE = 16
@@ -679,6 +695,17 @@ export const Books: React.FC = () => {
   const currentPdfPageIndexRef = useRef(0)
   const pdfScrollEndTimerRef = useRef<number | null>(null)
   const pdfAutoScrollRafRef = useRef<number | null>(null)
+  const pagedWheelAccumulatorRef = useRef(0)
+  const pagedWheelDirectionRef = useRef(0)
+  const pagedWheelLockUntilRef = useRef(0)
+  const pagedWheelLandingRef = useRef<'top' | 'bottom' | null>(null)
+  const pagedWheelLandingTimerRef = useRef<number | null>(null)
+  const pagedWheelLastEventTimeRef = useRef(0)
+  const pagedWheelGestureTimerRef = useRef<number | null>(null)
+  const pagedWheelEdgeHintTimerRef = useRef<number | null>(null)
+  const pagedWheelGestureConsumedRef = useRef(false)
+  const pagedWheelBoundaryNotifiedRef = useRef(false)
+  const pagedWheelHandlerRef = useRef<(event: WheelEvent) => void>(() => undefined)
   // Guard to skip ResizeObserver measurement for a short window after drawer toggle
   const drawerMeasureGuardRef = useRef(0)
   // Tracks last time we pushed page index to React state during auto-play (to throttle)
@@ -801,6 +828,21 @@ export const Books: React.FC = () => {
 
   const [fontSize, setFontSize] = useState(15)
   const [readerBg, setReaderBg] = useState('#FDFBF7') // Sepia default
+  const [readerWheelSensitivity, setReaderWheelSensitivity] = useState<ReaderWheelSensitivity>(() => {
+    try {
+      const stored = window.localStorage.getItem(READER_WHEEL_SENSITIVITY_STORAGE_KEY)
+      return stored === 'low' || stored === 'high' ? stored : 'balanced'
+    } catch {
+      return 'balanced'
+    }
+  })
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(READER_WHEEL_SENSITIVITY_STORAGE_KEY, readerWheelSensitivity)
+    } catch {
+      // Reader preferences are best-effort when storage is unavailable.
+    }
+  }, [readerWheelSensitivity])
   const [highlights, setHighlights] = useState<any[]>([])
   const [newAnnotation, setNewAnnotation] = useState('')
   const [selectedHighlightText, setSelectedHighlightText] = useState('')
@@ -2021,7 +2063,7 @@ export const Books: React.FC = () => {
     container.scrollTo({ top: (target as HTMLElement).offsetTop, behavior })
   }, [])
 
-  const handleNextPage = () => {
+  const handleNextPage = (): boolean => {
     const isPdf =
       readingBook &&
       (readingBook.cover === 'PDF' || readingBook.path.toLowerCase().endsWith('.pdf'))
@@ -2032,13 +2074,14 @@ export const Books: React.FC = () => {
         setCurrentPageIndex(newPage)
         setReadingProgress(Math.round((newPage / (pdfNumPages - 1 || 1)) * 100))
         if (pdfLayoutMode === 'scroll') scrollPdfToPage(newPage, 'smooth')
+        return true
       } else {
         showToast(t('books.toast_last_page') || '已是本书最后一页')
       }
-      return
+      return false
     }
 
-    const goNextChapter = () => {
+    const goNextChapter = (): boolean => {
       if (bookChapters && currentChapterIndex < bookChapters.length - 1) {
         const nextIdx = currentChapterIndex + 1
         setCurrentChapterIndex(nextIdx)
@@ -2049,15 +2092,16 @@ export const Books: React.FC = () => {
           t('books.toast_next_chapter', { name: bookChapters[nextIdx].title }) ||
             `进入下一章: ${bookChapters[nextIdx].title}`,
         )
+        return true
       } else {
         showToast(t('books.toast_last_page') || '已是本书最后一页')
       }
+      return false
     }
 
     // Scroll mode renders the whole chapter continuously, so paging jumps chapters.
     if (epubLayoutMode === 'scroll') {
-      goNextChapter()
-      return
+      return goNextChapter()
     }
 
     const activeParas = getActiveParagraphs()
@@ -2067,12 +2111,13 @@ export const Books: React.FC = () => {
       const newPage = currentPageIndex + step
       setCurrentPageIndex(newPage)
       setCurrentParagraphOffset(getParagraphOffsetOfPage(activeParas, newPage))
+      return true
     } else {
-      goNextChapter()
+      return goNextChapter()
     }
   }
 
-  const handlePrevPage = () => {
+  const handlePrevPage = (): boolean => {
     const isPdf =
       readingBook &&
       (readingBook.cover === 'PDF' || readingBook.path.toLowerCase().endsWith('.pdf'))
@@ -2083,13 +2128,14 @@ export const Books: React.FC = () => {
         setCurrentPageIndex(newPage)
         setReadingProgress(Math.round((newPage / (pdfNumPages - 1 || 1)) * 100))
         if (pdfLayoutMode === 'scroll') scrollPdfToPage(newPage, 'smooth')
+        return true
       } else {
         showToast(t('books.toast_first_page') || '已是本书第一页')
       }
-      return
+      return false
     }
 
-    const goPrevChapter = (landOnLastPage: boolean) => {
+    const goPrevChapter = (landOnLastPage: boolean): boolean => {
       if (bookChapters && currentChapterIndex > 0) {
         const prevIdx = currentChapterIndex - 1
         const prevCh = bookChapters[prevIdx]
@@ -2112,14 +2158,15 @@ export const Books: React.FC = () => {
         showToast(
           t('books.toast_prev_chapter', { name: prevCh.title }) || `回到上一章: ${prevCh.title}`,
         )
+        return true
       } else {
         showToast(t('books.toast_first_page') || '已是本书第一页')
       }
+      return false
     }
 
     if (epubLayoutMode === 'scroll') {
-      goPrevChapter(false)
-      return
+      return goPrevChapter(false)
     }
 
     const step = epubLayoutMode === 'dual' ? 2 : 1
@@ -2127,8 +2174,9 @@ export const Books: React.FC = () => {
       const newPage = Math.max(0, currentPageIndex - step)
       setCurrentPageIndex(newPage)
       setCurrentParagraphOffset(getParagraphOffsetOfPage(getActiveParagraphs(), newPage))
+      return true
     } else {
-      goPrevChapter(true)
+      return goPrevChapter(true)
     }
   }
 
@@ -3058,21 +3106,167 @@ export const Books: React.FC = () => {
     })
   }
 
-  const handlePdfWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (pdfLayoutMode === 'scroll') return
+  const handlePagedReaderWheel = (e: WheelEvent) => {
+    const isPagedPdf = Boolean(isPdf && pdfLayoutMode !== 'scroll')
+    const isPagedEpub = Boolean(!isPdf && epubLayoutMode !== 'scroll')
+    const resetGesture = () => {
+      pagedWheelAccumulatorRef.current = 0
+      pagedWheelDirectionRef.current = 0
+      pagedWheelGestureConsumedRef.current = false
+      pagedWheelBoundaryNotifiedRef.current = false
+      const currentContainer = readerMainRef.current
+      if (currentContainer) delete currentContainer.dataset.wheelEdge
+      if (pagedWheelEdgeHintTimerRef.current !== null) {
+        window.clearTimeout(pagedWheelEdgeHintTimerRef.current)
+        pagedWheelEdgeHintTimerRef.current = null
+      }
+    }
+    if (
+      (!isPagedPdf && !isPagedEpub) ||
+      Math.abs(e.deltaY) < 0.1 ||
+      e.ctrlKey ||
+      e.metaKey ||
+      e.shiftKey ||
+      Math.abs(e.deltaX) > Math.abs(e.deltaY) * 1.2
+    ) {
+      resetGesture()
+      return
+    }
 
-    if (Math.abs(e.deltaY) < 60) return
+    const container = readerMainRef.current
+    if (!container) return
+    const eventTime = e.timeStamp
+    if (!Number.isFinite(eventTime)) return
+    const lastEventTime = pagedWheelLastEventTimeRef.current
+    if (lastEventTime > 0 && eventTime - lastEventTime > PAGED_WHEEL_IDLE_MS) {
+      resetGesture()
+    }
+    pagedWheelLastEventTimeRef.current = eventTime
+    if (pagedWheelGestureTimerRef.current !== null) {
+      window.clearTimeout(pagedWheelGestureTimerRef.current)
+    }
+    pagedWheelGestureTimerRef.current = window.setTimeout(() => {
+      resetGesture()
+      pagedWheelGestureTimerRef.current = null
+    }, PAGED_WHEEL_IDLE_MS)
 
-    const container = e.currentTarget
-    const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 8
-    const isAtTop = container.scrollTop <= 8
+    const direction = e.deltaY > 0 ? 1 : -1
+    const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight)
+    const isAtBoundary = direction > 0
+      ? container.scrollTop >= maxScrollTop - 8
+      : container.scrollTop <= 8
 
-    if (e.deltaY > 0 && isAtBottom) {
-      handleNextPage()
-    } else if (e.deltaY < 0 && isAtTop) {
-      handlePrevPage()
+    // Let ordinary wheel input scroll within the current page. Only accumulate
+    // input when it is already at the edge in the direction of travel.
+    if (!isAtBoundary) {
+      resetGesture()
+      return
+    }
+
+    if (pagedWheelDirectionRef.current !== direction) {
+      resetGesture()
+      pagedWheelDirectionRef.current = direction
+    }
+
+    if (pagedWheelGestureConsumedRef.current) {
+      e.preventDefault()
+      return
+    }
+
+    const viewportScale = Math.max(1, container.clientHeight)
+    const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * viewportScale : e.deltaY
+    pagedWheelAccumulatorRef.current += delta
+
+    if (eventTime < pagedWheelLockUntilRef.current) {
+      // Consume inertia during the lock window instead of carrying it into the
+      // next page turn.
+      pagedWheelAccumulatorRef.current = 0
+      pagedWheelDirectionRef.current = 0
+      e.preventDefault()
+      return
+    }
+
+    const isFineGrainedInput = e.deltaMode === 0 && Math.abs(e.deltaY) < 24
+    const sensitivityScale = READER_WHEEL_SENSITIVITY_SCALE[readerWheelSensitivity]
+    const baseThreshold = e.deltaMode === 1
+      ? PAGED_WHEEL_LINE_THRESHOLD
+      : isFineGrainedInput
+        ? PAGED_WHEEL_FINE_THRESHOLD
+        : PAGED_WHEEL_THRESHOLD
+    const threshold = Math.max(48, Math.round(baseThreshold * sensitivityScale.threshold))
+    if (Math.abs(pagedWheelAccumulatorRef.current) >= threshold * 0.4) {
+      container.dataset.wheelEdge = direction > 0 ? 'next' : 'prev'
+      if (pagedWheelEdgeHintTimerRef.current !== null) {
+        window.clearTimeout(pagedWheelEdgeHintTimerRef.current)
+      }
+      pagedWheelEdgeHintTimerRef.current = window.setTimeout(() => {
+        delete container.dataset.wheelEdge
+        pagedWheelEdgeHintTimerRef.current = null
+      }, 700)
+    }
+    if (Math.abs(pagedWheelAccumulatorRef.current) < threshold) return
+
+    e.preventDefault()
+    if (pagedWheelBoundaryNotifiedRef.current) return
+
+    const landing = direction > 0 ? 'top' : 'bottom'
+    const baseLockMs = isFineGrainedInput ? PAGED_WHEEL_FINE_LOCK_MS : PAGED_WHEEL_LOCK_MS
+    const lockMs = Math.round(baseLockMs * sensitivityScale.lock)
+    pagedWheelLandingRef.current = landing
+    if (pagedWheelLandingTimerRef.current !== null) {
+      window.clearTimeout(pagedWheelLandingTimerRef.current)
+    }
+    pagedWheelLandingTimerRef.current = window.setTimeout(() => {
+      if (pagedWheelLandingRef.current === landing) pagedWheelLandingRef.current = null
+      pagedWheelLandingTimerRef.current = null
+    }, lockMs + 300)
+    pagedWheelLockUntilRef.current = eventTime + lockMs
+    pagedWheelAccumulatorRef.current = 0
+    pagedWheelDirectionRef.current = 0
+    const didAdvance = direction > 0 ? handleNextPageRef.current() : handlePrevPageRef.current()
+    pagedWheelGestureConsumedRef.current = true
+    delete container.dataset.wheelEdge
+    if (pagedWheelEdgeHintTimerRef.current !== null) {
+      window.clearTimeout(pagedWheelEdgeHintTimerRef.current)
+      pagedWheelEdgeHintTimerRef.current = null
+    }
+    if (!didAdvance) {
+      pagedWheelBoundaryNotifiedRef.current = true
+      pagedWheelLandingRef.current = null
+      if (pagedWheelLandingTimerRef.current !== null) {
+        window.clearTimeout(pagedWheelLandingTimerRef.current)
+        pagedWheelLandingTimerRef.current = null
+      }
     }
   }
+
+  // React's delegated wheel listener may be passive in some browsers. Register
+  // the paging handler natively so edge paging can cancel the browser scroll.
+  pagedWheelHandlerRef.current = handlePagedReaderWheel
+  useEffect(() => {
+    const container = readerMainRef.current
+    if (!container) return
+
+    const handleWheel = (event: WheelEvent) => pagedWheelHandlerRef.current(event)
+    container.addEventListener('wheel', handleWheel, { passive: false })
+    return () => {
+      container.removeEventListener('wheel', handleWheel)
+      if (pagedWheelGestureTimerRef.current !== null) {
+        window.clearTimeout(pagedWheelGestureTimerRef.current)
+        pagedWheelGestureTimerRef.current = null
+      }
+      if (pagedWheelEdgeHintTimerRef.current !== null) {
+        window.clearTimeout(pagedWheelEdgeHintTimerRef.current)
+        pagedWheelEdgeHintTimerRef.current = null
+      }
+      pagedWheelLastEventTimeRef.current = 0
+      pagedWheelAccumulatorRef.current = 0
+      pagedWheelDirectionRef.current = 0
+      pagedWheelGestureConsumedRef.current = false
+      pagedWheelBoundaryNotifiedRef.current = false
+      delete container.dataset.wheelEdge
+    }
+  }, [isLoadingReader, readingBook?.id])
 
   // PDF scroll handler with delayed state update (方案3) to eliminate jitter during slow scrolling.
   // We update the ref immediately for internal logic, but only commit to React state after the user stops scrolling for a short period.
@@ -3251,6 +3445,8 @@ export const Books: React.FC = () => {
   // torn down / reset on every page change (which previously stopped it from firing).
   const handleNextPageRef = useRef(handleNextPage)
   handleNextPageRef.current = handleNextPage
+  const handlePrevPageRef = useRef(handlePrevPage)
+  handlePrevPageRef.current = handlePrevPage
 
   useEffect(() => {
     if (!isAutoPlaying || !readingBook) {
@@ -3377,15 +3573,30 @@ export const Books: React.FC = () => {
       skipNextEpubAlignRef.current = false
       return
     }
+    const landing = pagedWheelLandingRef.current
     const raf = requestAnimationFrame(() => {
       isProgrammaticScrollRef.current = true
       const target = readerMainRef.current?.querySelector(
         `[data-epub-chapter-index="${currentChapterIndex}"][data-epub-block-offset="${currentParagraphOffset}"]`,
       )
-      if (target) {
-        ;(target as HTMLElement).scrollIntoView({ block: 'start', behavior: 'auto' })
+      if (landing === 'bottom') {
+        const container = readerMainRef.current
+        container?.scrollTo({
+          top: Math.max(0, (container?.scrollHeight || 0) - (container?.clientHeight || 0)),
+          behavior: 'auto',
+        })
+      } else if (target) {
+        ;(target as HTMLElement).scrollIntoView({
+          block: 'start',
+          behavior: 'auto',
+        })
       } else {
         readerMainRef.current?.scrollTo({ top: 0, behavior: 'auto' })
+      }
+      pagedWheelLandingRef.current = null
+      if (pagedWheelLandingTimerRef.current !== null) {
+        window.clearTimeout(pagedWheelLandingTimerRef.current)
+        pagedWheelLandingTimerRef.current = null
       }
       window.setTimeout(() => {
         isProgrammaticScrollRef.current = false
@@ -3393,6 +3604,30 @@ export const Books: React.FC = () => {
     })
     return () => cancelAnimationFrame(raf)
   }, [currentChapterIndex, currentPageIndex, currentParagraphOffset, epubLayoutMode])
+
+  useEffect(() => {
+    const isPdfBook = Boolean(
+      readingBook &&
+      (readingBook.cover === 'PDF' || readingBook.path.toLowerCase().endsWith('.pdf')),
+    )
+    if (!isPdfBook || pdfLayoutMode === 'scroll' || !pagedWheelLandingRef.current) return
+    const landing = pagedWheelLandingRef.current
+    const raf = requestAnimationFrame(() => {
+      const container = readerMainRef.current
+      if (container) {
+        container.scrollTo({
+          top: landing === 'bottom' ? Math.max(0, container.scrollHeight - container.clientHeight) : 0,
+          behavior: 'auto',
+        })
+      }
+      pagedWheelLandingRef.current = null
+      if (pagedWheelLandingTimerRef.current !== null) {
+        window.clearTimeout(pagedWheelLandingTimerRef.current)
+        pagedWheelLandingTimerRef.current = null
+      }
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [currentPageIndex, pdfLayoutMode, readingBook])
 
   // On entering scroll mode (or once pages are known), align the scroll position to
   // the current page so content shows immediately instead of requiring a manual scroll.
@@ -4587,6 +4822,7 @@ export const Books: React.FC = () => {
 
           {/* Grid Shelf Layout */}
           <div
+            className="book-library-layout"
             style={{
               flexGrow: 1,
               minHeight: 0,
@@ -4624,6 +4860,7 @@ export const Books: React.FC = () => {
 
             {/* Right bookshelf grid */}
             <section
+              className="book-library-grid"
               style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
@@ -5117,6 +5354,33 @@ export const Books: React.FC = () => {
                     )}
                   </>
                 )}
+                {((isPdf && pdfLayoutMode !== 'scroll') || (!isPdf && epubLayoutMode !== 'scroll')) && (
+                  <>
+                    <div
+                      style={{
+                        borderRight: `1px solid ${readerBorderColor}`,
+                        height: '20px',
+                        margin: '0 4px',
+                      }}
+                    />
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      {t('books.wheel_sensitivity_label')}:
+                    </span>
+                    <Dropdown
+                      className="book-reader__wheel-sensitivity-dropdown"
+                      value={readerWheelSensitivity}
+                      onChange={(e) =>
+                        setReaderWheelSensitivity(e.target.value as ReaderWheelSensitivity)
+                      }
+                      controlHeight={28}
+                      searchable={false}
+                    >
+                      <option value="low">{t('books.wheel_sensitivity_low')}</option>
+                      <option value="balanced">{t('books.wheel_sensitivity_balanced')}</option>
+                      <option value="high">{t('books.wheel_sensitivity_high')}</option>
+                    </Dropdown>
+                  </>
+                )}
                 <div
                   style={{
                     borderRight: `1px solid ${readerBorderColor}`,
@@ -5442,7 +5706,6 @@ export const Books: React.FC = () => {
                           ref={pdfScrollRef}
                           onScroll={pdfLayoutMode === 'scroll' ? handlePdfScroll : undefined}
                           onMouseUp={handleTextSelection}
-                          onWheel={pdfLayoutMode !== 'scroll' ? handlePdfWheel : undefined}
                           style={
                             pdfLayoutMode === 'scroll'
                               ? {

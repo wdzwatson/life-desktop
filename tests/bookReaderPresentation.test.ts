@@ -52,6 +52,19 @@ test('book library defaults to the to-read shelf', () => {
   assert.match(booksSource, /useState<string>\(TO_READ_BOOK_SHELF_ID\)/)
 })
 
+test('book library collapses to one column on narrow windows', () => {
+  assert.match(booksSource, /className="book-library-layout"/)
+  assert.match(booksSource, /className="book-library-grid"/)
+  assert.match(
+    booksStyles,
+    /@media \(max-width: 720px\)[\s\S]*?\.book-library-layout\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) !important/,
+  )
+  assert.match(
+    booksStyles,
+    /\.book-library-grid\s*\{[\s\S]*?overflow-x:\s*hidden !important/,
+  )
+})
+
 test('reader header top sensor matches the responsive control bar height', () => {
   assert.match(booksSource, /className="book-reader__header-sensor"/)
   assert.match(
@@ -97,6 +110,43 @@ test('PDF continuous mode owns its scroll viewport and excludes page-flip mode',
   assert.match(readerOutlineDrawer, /scrollIntoView\(\{ block: 'nearest' \}\)/)
   assert.doesNotMatch(booksSource, /value="simulation"/)
   assert.doesNotMatch(booksSource, /pdf-flip-page/)
+})
+
+test('paged EPUB and PDF readers share edge-gated, throttled wheel paging', () => {
+  assert.match(booksSource, /const PAGED_WHEEL_THRESHOLD = 180/)
+  assert.match(booksSource, /const PAGED_WHEEL_LINE_THRESHOLD = 96/)
+  assert.match(booksSource, /const PAGED_WHEEL_FINE_THRESHOLD = 150/)
+  assert.match(booksSource, /const PAGED_WHEEL_IDLE_MS = 220/)
+  assert.match(booksSource, /const PAGED_WHEEL_LOCK_MS = 450/)
+  assert.match(booksSource, /const PAGED_WHEEL_FINE_LOCK_MS = 600/)
+  assert.match(booksSource, /READER_WHEEL_SENSITIVITY_STORAGE_KEY/)
+  assert.match(booksSource, /READER_WHEEL_SENSITIVITY_SCALE/)
+  assert.match(booksSource, /wheel_sensitivity_label/)
+  assert.match(booksSource, /localStorage\.setItem\(READER_WHEEL_SENSITIVITY_STORAGE_KEY/)
+  assert.match(booksSource, /const handleNextPage = \(\): boolean =>/)
+  assert.match(booksSource, /const handlePrevPage = \(\): boolean =>/)
+  assert.match(booksSource, /const handlePagedReaderWheel = \(e: WheelEvent\)/)
+  assert.match(booksSource, /if \(!isAtBoundary\)/)
+  assert.match(booksSource, /pagedWheelAccumulatorRef\.current \+= delta/)
+  assert.match(booksSource, /e\.ctrlKey/)
+  assert.match(booksSource, /e\.metaKey/)
+  assert.match(booksSource, /e\.shiftKey/)
+  assert.match(booksSource, /Math\.abs\(e\.deltaX\) > Math\.abs\(e\.deltaY\) \* 1\.2/)
+  assert.match(booksSource, /pagedWheelGestureConsumedRef\.current/)
+  assert.match(booksSource, /dataset\.wheelEdge/)
+  assert.match(booksSource, /threshold \* 0\.4/)
+  assert.match(booksSource, /pagedWheelBoundaryNotifiedRef\.current/)
+  assert.match(booksSource, /const didAdvance = direction > 0 \? handleNextPageRef\.current\(\) : handlePrevPageRef\.current\(\)/)
+  assert.match(booksSource, /e\.preventDefault\(\)/)
+  assert.match(booksSource, /addEventListener\('wheel', handleWheel, \{ passive: false \}\)/)
+  assert.match(booksSource, /removeEventListener\('wheel', handleWheel\)/)
+  assert.doesNotMatch(booksSource, /onWheel=\{handlePagedReaderWheel\}/)
+  assert.doesNotMatch(booksSource, /onWheel=\{pdfLayoutMode !== 'scroll' \? handlePdfWheel : undefined\}/)
+  assert.match(booksSource, /if \(landing === 'bottom'\)/)
+  assert.match(booksSource, /container\?\.scrollTo\(\{/)
+  assert.match(booksStyles, /\.book-reader__main\s*\{[^}]*overscroll-behavior:\s*contain/)
+  assert.match(booksStyles, /\.book-reader__main\[data-wheel-edge='next'\]/)
+  assert.match(booksStyles, /\.book-reader__main\[data-wheel-edge='prev'\]/)
 })
 
 test('PDF continuous scrolling avoids full-document layout scans and unstable loading slots', () => {
