@@ -43,7 +43,11 @@ test('book category schema adds parent ids without losing legacy shelves', () =>
       migratedDb.close()
     }
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 })
+    } catch {
+      // Windows may keep SQLite WAL handles briefly after Electron closes a test database.
+    }
   }
 })
 
@@ -162,7 +166,11 @@ test('task schema migrates legacy recurring task columns before creating recurre
       migratedDb.close()
     }
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 })
+    } catch {
+      // Windows may keep SQLite WAL handles briefly after Electron closes a test database.
+    }
   }
 })
 
@@ -267,6 +275,10 @@ test('task schema creates template scheduling and step columns on a fresh databa
           "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recurring_rule_occurrence_exceptions'",
         )
         .get()
+      const recurringInstanceColumns = db
+        .prepare('PRAGMA table_info(recurring_instances)')
+        .all()
+        .map((column) => column.name)
 
       assert.ok(taskColumns.includes('instance_key'))
       assert.ok(taskColumns.includes('closed_from_status'))
@@ -285,6 +297,7 @@ test('task schema creates template scheduling and step columns on a fresh databa
       assert.ok(stepColumns.includes('rule_id'))
       assert.ok(stepColumns.includes('sort_order'))
       assert.equal(exceptionTable?.name, 'recurring_rule_occurrence_exceptions')
+      assert.deepEqual(recurringInstanceColumns.slice(0, 3), ['id', 'recur_rule_id', 'date_key'])
     } finally {
       db.close()
     }
@@ -337,6 +350,61 @@ test('task schema prevents duplicate root instances for the same template occurr
       )
     } finally {
       db.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('task schema migrates same-day legacy time roots into one recurring parent', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'life-task-schema-legacy-recurring-'))
+  try {
+    const dbPath = path.join(dir, 'tasks.db')
+    const db = new Database(dbPath)
+    db.exec(`
+      CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT,
+        priority TEXT DEFAULT 'mid',
+        status TEXT NOT NULL DEFAULT '待处理',
+        due_date TEXT,
+        due_time TEXT,
+        recur_rule_id INTEGER,
+        instance_key TEXT,
+        recur_instance_root INTEGER NOT NULL DEFAULT 0,
+        parent_id INTEGER,
+        progress INTEGER DEFAULT 0,
+        associated_note_id INTEGER,
+        is_completed INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE recurring_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, frequency TEXT DEFAULT 'daily', start_date TEXT, start_time TEXT DEFAULT '09:00', end_condition TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+      CREATE TABLE translations (entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, locale TEXT NOT NULL, translation TEXT NOT NULL, PRIMARY KEY (entity_type, entity_id, locale));
+      INSERT INTO recurring_rules (title, frequency, start_date, start_time) VALUES ('刷牙', 'daily', '2026-08-18', '09:00');
+      INSERT INTO tasks (title, status, due_date, due_time, recur_rule_id, instance_key, recur_instance_root, is_completed) VALUES
+        ('刷牙', '已关闭', '2026-08-18', '09:00:00', 1, '2026-08-18T09:00', 1, 1),
+        ('刷牙', '已逾期', '2026-08-18', '23:59:59', 1, '2026-08-18T23:59', 1, 0);
+    `)
+    db.close()
+
+    initializeUserDatabase(dir)
+    const migratedDb = new Database(dbPath)
+    try {
+      assert.equal(migratedDb.prepare('SELECT COUNT(*) AS count FROM recurring_instances').get().count, 1)
+      assert.equal(migratedDb.prepare('SELECT COUNT(*) AS count FROM tasks WHERE recur_instance_root = 1').get().count, 1)
+      assert.deepEqual(
+        migratedDb
+          .prepare('SELECT instance_key, parent_id FROM tasks WHERE recur_instance_root = 0 ORDER BY instance_key')
+          .all(),
+        [
+          { instance_key: '2026-08-18T09:00', parent_id: 3 },
+          { instance_key: '2026-08-18T23:59', parent_id: 3 },
+        ],
+      )
+    } finally {
+      migratedDb.close()
     }
   } finally {
     rmSync(dir, { recursive: true, force: true })

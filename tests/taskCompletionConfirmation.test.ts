@@ -39,6 +39,14 @@ test('task completion follows the review requirement before closing a task', () 
   assert.match(tasksView, /reviewTask\(task, true\)/)
 })
 
+test('saving a task at 100 percent uses the descendant completion mutation', () => {
+  const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
+
+  assert.match(tasksView, /const isCompletingTask = isCompleted === 1 && activeTask\?\.is_completed !== 1/)
+  assert.match(tasksView, /const mutation = buildCompleteTaskTreeMutation\(selectedTaskId\)/)
+  assert.match(tasksView, /api\.dbTransaction\('tasks'/)
+})
+
 test('overdue task review action is available only when review is required', () => {
   const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
 

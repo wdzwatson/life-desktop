@@ -1,74 +1,141 @@
 import { getDueTemplateOccurrences } from '../src/views/taskScheduleUtils'
 import { getAutomaticTaskStatus, TASK_STATUS } from '../src/taskWorkflow'
 
+type Occurrence = { dateKey: string; time: string; instanceKey: string }
+
+const groupOccurrencesByDate = (occurrences: Occurrence[]) => {
+  const grouped = new Map<string, Occurrence[]>()
+  for (const occurrence of occurrences) {
+    const items = grouped.get(occurrence.dateKey) || []
+    items.push(occurrence)
+    grouped.set(occurrence.dateKey, items)
+  }
+  return grouped
+}
+
 export function runTaskSchedulerCore(db: any, now = new Date()) {
   const generatedTasks: { title: string }[] = []
   const overdueTasks: { id: number; title: string }[] = []
 
   for (const rule of db.prepare('SELECT * FROM recurring_rules').all() as any[]) {
-    const occurrences = getDueTemplateOccurrences(rule, now, { ignoreStartTime: true })
-    for (const occurrence of occurrences) {
-      if (
-        db
-          .prepare(
-            'SELECT 1 FROM recurring_rule_occurrence_exceptions WHERE recur_rule_id = ? AND instance_key = ? LIMIT 1',
-          )
-          .get(rule.id, occurrence.instanceKey)
+    const occurrences = getDueTemplateOccurrences(rule, now, { ignoreStartTime: true }) as Occurrence[]
+    const groups = groupOccurrencesByDate(occurrences)
+    const runDate = db.transaction((dateKey: string, dateOccurrences: Occurrence[]) => {
+      const available = dateOccurrences.filter(
+        (occurrence) =>
+          !db
+            .prepare(
+              'SELECT 1 FROM recurring_rule_occurrence_exceptions WHERE recur_rule_id = ? AND instance_key = ? LIMIT 1',
+            )
+            .get(rule.id, occurrence.instanceKey),
       )
-        continue
-      if (
-        db
-          .prepare(
-            'SELECT id FROM tasks WHERE recur_rule_id = ? AND instance_key = ? AND recur_instance_root = 1 LIMIT 1',
-          )
-          .get(rule.id, occurrence.instanceKey)
-      )
-        continue
+      if (available.length === 0) return 0
 
-      const inserted = db
+      db.prepare(
+        'INSERT OR IGNORE INTO recurring_instances (recur_rule_id, date_key) VALUES (?, ?)',
+      ).run(rule.id, dateKey)
+      const instance = db
+        .prepare('SELECT id FROM recurring_instances WHERE recur_rule_id = ? AND date_key = ?')
+        .get(rule.id, dateKey) as { id: number }
+      if (!instance) return 0
+
+      let parent = db
         .prepare(
-          `INSERT INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, recur_rule_id, template_id, template_version, instance_key, recur_instance_root, parent_id, progress) VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, '23:59:59', ?, ?, ?, ?, 1, ?, 0)`,
+          'SELECT * FROM tasks WHERE recurring_instance_id = ? AND recur_instance_root = 1 LIMIT 1',
         )
-        .run(
+        .get(instance.id) as any
+      if (!parent) {
+        const inserted = db
+          .prepare(
+            `INSERT INTO tasks
+              (title, description, priority, status, requires_review, start_date, start_time,
+               due_date, due_time, recur_rule_id, template_id, template_version,
+               recurring_instance_id, instance_key, recur_instance_root, parent_id, progress)
+             VALUES (?, ?, ?, '待处理', ?, ?, '00:00:00', ?, '23:59:59', ?, ?, ?, ?, NULL, 1, ?, 0)`,
+          )
+          .run(
+            rule.title,
+            rule.description || '',
+            rule.priority || 'mid',
+            rule.requires_review ? 1 : 0,
+            dateKey,
+            dateKey,
+            rule.id,
+            rule.template_id || null,
+            rule.template_version || null,
+            instance.id,
+            rule.parent_id || null,
+          )
+        parent = { id: Number(inserted.lastInsertRowid) }
+        generatedTasks.push({ title: rule.title })
+      }
+
+      const insertChild = db.prepare(
+        `INSERT INTO tasks
+          (title, description, priority, status, requires_review, start_date, start_time,
+           due_date, due_time, recur_rule_id, template_id, template_version,
+           recurring_instance_id, instance_key, recur_instance_root, parent_id, progress)
+         VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)`,
+      )
+      let added = 0
+      for (const occurrence of available) {
+        const existing = db
+          .prepare(
+            'SELECT id FROM tasks WHERE recurring_instance_id = ? AND instance_key = ? AND parent_id = ? LIMIT 1',
+          )
+          .get(instance.id, occurrence.instanceKey, parent.id)
+        if (existing) continue
+        const childResult = insertChild.run(
           rule.title,
           rule.description || '',
           rule.priority || 'mid',
           rule.requires_review ? 1 : 0,
-          occurrence.dateKey,
+          dateKey,
           occurrence.time,
-          occurrence.dateKey,
+          dateKey,
+          `${occurrence.time}:00`,
           rule.id,
           rule.template_id || null,
           rule.template_version || null,
+          instance.id,
           occurrence.instanceKey,
-          rule.parent_id || null,
+          parent.id,
         )
-      const parentId = Number(inserted.lastInsertRowid)
-      const insertStep = db.prepare(
-        `INSERT INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, recur_rule_id, template_id, template_version, instance_key, parent_id, progress) VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, '23:59:59', ?, ?, ?, ?, ?, 0)`,
-      )
-      for (const step of db
-        .prepare(
-          'SELECT * FROM recurring_rule_steps WHERE rule_id = ? ORDER BY sort_order ASC, id ASC',
+        const childId = Number(childResult.lastInsertRowid)
+        const steps = db
+          .prepare('SELECT * FROM recurring_rule_steps WHERE rule_id = ? ORDER BY sort_order ASC, id ASC')
+          .all(rule.id) as any[]
+        const insertStep = db.prepare(
+          `INSERT INTO tasks
+            (title, description, priority, status, requires_review, start_date, start_time,
+             due_date, due_time, recur_rule_id, template_id, template_version,
+             recurring_instance_id, instance_key, parent_id, progress)
+           VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
         )
-        .all(rule.id) as any[]) {
-        insertStep.run(
-          step.title,
-          step.description || '',
-          step.priority || rule.priority || 'mid',
-          rule.requires_review ? 1 : 0,
-          occurrence.dateKey,
-          occurrence.time,
-          occurrence.dateKey,
-          rule.id,
-          rule.template_id || null,
-          rule.template_version || null,
-          occurrence.instanceKey,
-          parentId,
-        )
+        for (const step of steps) {
+          insertStep.run(
+            step.title,
+            step.description || '',
+            step.priority || rule.priority || 'mid',
+            rule.requires_review ? 1 : 0,
+            dateKey,
+            occurrence.time,
+            dateKey,
+            `${occurrence.time}:00`,
+            rule.id,
+            rule.template_id || null,
+            rule.template_version || null,
+            instance.id,
+            occurrence.instanceKey,
+            childId,
+          )
+        }
+        added += 1
       }
-      generatedTasks.push({ title: rule.title })
-    }
+      return added
+    })
+
+    for (const [dateKey, dateOccurrences] of groups) runDate(dateKey, dateOccurrences)
     if (occurrences.length > 0)
       db.prepare('UPDATE recurring_rules SET last_trigger_time = ? WHERE id = ?').run(
         now.toISOString(),

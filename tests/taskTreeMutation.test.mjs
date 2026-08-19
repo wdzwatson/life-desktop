@@ -3,6 +3,7 @@ import test from 'node:test'
 import Database from 'better-sqlite3'
 import {
   buildCloseTaskTreeMutation,
+  buildAggregateTaskMutation,
   buildCompleteTaskTreeMutation,
   buildReopenTaskTreeMutation,
   buildResolveTaskTreeMutation,
@@ -69,6 +70,25 @@ test('a parent without review closes descendants even when a child requires revi
   }
 })
 
+test('completing a parent leaves already completed descendants unchanged', () => {
+  const db = createTaskTree()
+  try {
+    db.prepare("UPDATE tasks SET status = '已关闭', is_completed = 1, progress = 100 WHERE id = 2").run()
+    runMutation(db, buildCompleteTaskTreeMutation(1))
+    assert.deepEqual(
+      db.prepare('SELECT id, status, is_completed, progress FROM tasks WHERE id <= 4 ORDER BY id').all(),
+      [
+        { id: 1, status: '待审核', is_completed: 1, progress: 100 },
+        { id: 2, status: '已关闭', is_completed: 1, progress: 100 },
+        { id: 3, status: '待审核', is_completed: 1, progress: 100 },
+        { id: 4, status: '待审核', is_completed: 1, progress: 100 },
+      ],
+    )
+  } finally {
+    db.close()
+  }
+})
+
 test('approving a parent closes every descendant without separate reviews', () => {
   const db = createTaskTree()
   try {
@@ -120,6 +140,37 @@ test('explicitly closing a parent preserves and closes the complete tree', () =>
         closed_from_status: '待处理',
       })),
     )
+  } finally {
+    db.close()
+  }
+})
+
+test('aggregating the last closed child closes the parent without crossing sibling instances', () => {
+  const db = createTaskTree()
+  try {
+    db.prepare("UPDATE tasks SET status = '已关闭', is_completed = 1, progress = 100 WHERE id IN (2, 3)").run()
+    runMutation(db, buildAggregateTaskMutation(1, new Date(2026, 7, 18, 12, 0)))
+    assert.deepEqual(db.prepare('SELECT status, is_completed, progress FROM tasks WHERE id = 1').get(), {
+      status: '已关闭',
+      is_completed: 1,
+      progress: 100,
+    })
+  } finally {
+    db.close()
+  }
+})
+
+test('aggregating completed children keeps a review parent in awaiting review', () => {
+  const db = createTaskTree()
+  try {
+    db.prepare("UPDATE tasks SET status = '已关闭', is_completed = 1, progress = 100 WHERE id = 2").run()
+    db.prepare("UPDATE tasks SET status = '待审核', is_completed = 1, progress = 100 WHERE id = 3").run()
+    runMutation(db, buildAggregateTaskMutation(1, new Date(2026, 7, 18, 12, 0)))
+    assert.deepEqual(db.prepare('SELECT status, is_completed, progress FROM tasks WHERE id = 1').get(), {
+      status: '待审核',
+      is_completed: 1,
+      progress: 100,
+    })
   } finally {
     db.close()
   }

@@ -71,6 +71,7 @@ export function initializeUserDatabase(userDbDir: string) {
       recur_rule_id INTEGER,
       template_id INTEGER,
       template_version INTEGER,
+      recurring_instance_id INTEGER,
       instance_key TEXT,
       recur_instance_root INTEGER NOT NULL DEFAULT 0,
       parent_id INTEGER,
@@ -117,6 +118,15 @@ export function initializeUserDatabase(userDbDir: string) {
       sort_order INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (rule_id) REFERENCES recurring_rules(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS recurring_instances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recur_rule_id INTEGER NOT NULL,
+      date_key TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (recur_rule_id, date_key),
+      FOREIGN KEY (recur_rule_id) REFERENCES recurring_rules(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS task_templates (
@@ -172,6 +182,9 @@ export function initializeUserDatabase(userDbDir: string) {
     }
     if (!taskColumnNames.has('template_version')) {
       tasksDb.exec('ALTER TABLE tasks ADD COLUMN template_version INTEGER')
+    }
+    if (!taskColumnNames.has('recurring_instance_id')) {
+      tasksDb.exec('ALTER TABLE tasks ADD COLUMN recurring_instance_id INTEGER')
     }
     if (!taskColumnNames.has('closed_from_status')) {
       tasksDb.exec('ALTER TABLE tasks ADD COLUMN closed_from_status TEXT')
@@ -299,11 +312,33 @@ export function initializeUserDatabase(userDbDir: string) {
         FOREIGN KEY (recur_rule_id) REFERENCES recurring_rules(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS recurring_instances (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recur_rule_id INTEGER NOT NULL,
+        date_key TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (recur_rule_id, date_key),
+        FOREIGN KEY (recur_rule_id) REFERENCES recurring_rules(id) ON DELETE CASCADE
+      );
+
       DROP INDEX IF EXISTS tasks_recur_instance_parent_idx;
 
       CREATE UNIQUE INDEX tasks_recur_instance_parent_idx
+        ON tasks (recurring_instance_id)
+        WHERE recurring_instance_id IS NOT NULL AND recur_instance_root = 1;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS tasks_legacy_recur_instance_idx
         ON tasks (recur_rule_id, instance_key)
-        WHERE recur_rule_id IS NOT NULL AND instance_key IS NOT NULL AND recur_instance_root = 1;
+        WHERE recur_rule_id IS NOT NULL AND instance_key IS NOT NULL
+          AND recur_instance_root = 1 AND recurring_instance_id IS NULL;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS tasks_recur_instance_child_idx
+        ON tasks (recurring_instance_id, instance_key, parent_id)
+        WHERE recurring_instance_id IS NOT NULL AND instance_key IS NOT NULL;
+
+      CREATE INDEX IF NOT EXISTS tasks_recurring_instance_id_idx ON tasks (recurring_instance_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS recurring_instances_rule_date_idx
+        ON recurring_instances (recur_rule_id, date_key);
 
       CREATE INDEX IF NOT EXISTS tasks_parent_id_idx ON tasks (parent_id);
 
@@ -392,6 +427,114 @@ export function initializeUserDatabase(userDbDir: string) {
         DELETE FROM task_peer_links WHERE task_id = OLD.id OR peer_task_id = OLD.id;
       END;
     `)
+
+    // Convert the former one-root-per-time representation into one date-level
+    // parent with time-specific children. This is intentionally idempotent:
+    // migrated tasks receive recurring_instance_id and are ignored thereafter.
+    const legacyGroups = tasksDb
+      .prepare(
+        `SELECT recur_rule_id, COALESCE(due_date, substr(instance_key, 1, 10)) AS date_key,
+                MIN(id) AS first_id
+         FROM tasks
+         WHERE recur_rule_id IS NOT NULL
+           AND recur_instance_root = 1
+           AND recurring_instance_id IS NULL
+           AND (instance_key IS NOT NULL OR due_date IS NOT NULL)
+         GROUP BY recur_rule_id, date_key
+         ORDER BY date_key, recur_rule_id`,
+      )
+      .all() as { recur_rule_id: number; date_key: string; first_id: number }[]
+
+    const migrateRecurringGroup = tasksDb.transaction(
+      (group: { recur_rule_id: number; date_key: string; first_id: number }) => {
+        tasksDb
+          .prepare(
+            'INSERT OR IGNORE INTO recurring_instances (recur_rule_id, date_key) VALUES (?, ?)',
+          )
+          .run(group.recur_rule_id, group.date_key)
+        const instance = tasksDb
+          .prepare('SELECT id FROM recurring_instances WHERE recur_rule_id = ? AND date_key = ?')
+          .get(group.recur_rule_id, group.date_key) as { id: number }
+        if (!instance) return
+        const root = tasksDb.prepare('SELECT * FROM tasks WHERE id = ?').get(group.first_id) as any
+        if (!root) return
+
+        const parentInsert = tasksDb.prepare(
+          `INSERT INTO tasks
+            (title, description, priority, status, closed_from_status, requires_review,
+             start_date, start_time, due_date, due_time, recur_rule_id, template_id,
+             template_version, recurring_instance_id, instance_key, recur_instance_root,
+             parent_id, progress, associated_note_id, is_completed)
+           VALUES (?, ?, ?, ?, ?, ?, ?, '00:00:00', ?, '23:59:59', ?, ?, ?, ?, NULL, 1, ?, ?, ?, ?)`,
+        )
+        const rule = tasksDb
+          .prepare('SELECT parent_id FROM recurring_rules WHERE id = ?')
+          .get(group.recur_rule_id) as { parent_id: number | null } | undefined
+        const parent = parentInsert.run(
+          root.title,
+          root.description || '',
+          root.priority || 'mid',
+          root.status,
+          root.closed_from_status || null,
+          root.requires_review ? 1 : 0,
+          group.date_key,
+          group.date_key,
+          group.recur_rule_id,
+          root.template_id || null,
+          root.template_version || null,
+          instance.id,
+          rule?.parent_id || null,
+          root.progress || 0,
+          root.associated_note_id || null,
+          root.is_completed ? 1 : 0,
+        )
+        const parentId = Number(parent.lastInsertRowid)
+        const roots = tasksDb
+          .prepare(
+            `SELECT id FROM tasks
+             WHERE recur_rule_id = ? AND recur_instance_root = 1
+               AND recurring_instance_id IS NULL
+               AND COALESCE(due_date, substr(instance_key, 1, 10)) = ?`,
+          )
+          .all(group.recur_rule_id, group.date_key) as { id: number }[]
+        for (const legacyRoot of roots) {
+          tasksDb
+            .prepare(
+              'UPDATE tasks SET parent_id = ?, recurring_instance_id = ?, recur_instance_root = 0 WHERE id = ?',
+            )
+            .run(parentId, instance.id, legacyRoot.id)
+          tasksDb
+            .prepare(
+              `WITH RECURSIVE descendants(id) AS (
+                 SELECT id FROM tasks WHERE id = ?
+                 UNION ALL SELECT tasks.id FROM tasks INNER JOIN descendants ON tasks.parent_id = descendants.id
+               )
+               UPDATE tasks SET recurring_instance_id = ? WHERE id IN (SELECT id FROM descendants)`,
+            )
+            .run(legacyRoot.id, instance.id)
+        }
+        tasksDb
+          .prepare(
+            `UPDATE tasks AS parent
+             SET progress = COALESCE((SELECT ROUND(AVG(child.progress)) FROM tasks AS child WHERE child.parent_id = parent.id), 0),
+                 is_completed = CASE WHEN NOT EXISTS (
+                   SELECT 1 FROM tasks AS child WHERE child.parent_id = parent.id AND child.is_completed = 0
+                 ) THEN 1 ELSE 0 END,
+                 status = CASE
+                   WHEN NOT EXISTS (SELECT 1 FROM tasks AS child WHERE child.parent_id = parent.id AND child.is_completed = 0)
+                    AND EXISTS (SELECT 1 FROM tasks AS child WHERE child.parent_id = parent.id AND child.status = '待审核') THEN '待审核'
+                   WHEN NOT EXISTS (SELECT 1 FROM tasks AS child WHERE child.parent_id = parent.id AND child.is_completed = 0) THEN '已关闭'
+                   ELSE '进行中'
+                 END
+             WHERE parent.id = ?`,
+          )
+          .run(parentId)
+        tasksDb
+          .prepare('UPDATE tasks SET recurring_instance_id = ? WHERE id = ?')
+          .run(instance.id, parentId)
+      },
+    )
+    for (const group of legacyGroups) migrateRecurringGroup(group)
   } catch (err) {
     console.error('Failed to migrate task template schema:', err)
   }

@@ -9,9 +9,11 @@ import {
 } from './taskDesktopUtils'
 import { getTaskDuePresentation } from './taskDuePresentationUtils'
 import './DesktopTaskNote.css'
+import { SystemMonitor } from '../components/SystemMonitor'
 import {
   buildCloseTaskTreeMutation,
   buildCompleteTaskTreeMutation,
+  buildAggregateTaskMutation,
   buildReopenTaskTreeMutation,
 } from '../taskTreeMutation'
 
@@ -141,9 +143,24 @@ export const DesktopTaskNote: React.FC = () => {
       : buildReopenTaskTreeMutation(task.id)
     const result = await api?.dbQuery('tasks', mutation.sql, mutation.params)
     if (result?.success) {
+      await refreshAncestors(task.id)
       await loadTasks()
     } else {
       setError('任务状态更新失败，请稍后重试。')
+    }
+  }
+
+  const refreshAncestors = async (taskId: number) => {
+    let currentId: number | null = taskId
+    const visited = new Set<number>()
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId)
+      const parentResult: any = await api?.dbQuery('tasks', 'SELECT parent_id FROM tasks WHERE id = ?', [currentId])
+      const parentId: number | null | undefined = parentResult?.data?.[0]?.parent_id
+      if (!parentId) break
+      const mutation = buildAggregateTaskMutation(Number(parentId))
+      await api?.dbQuery('tasks', mutation.sql, mutation.params)
+      currentId = Number(parentId)
     }
   }
 
@@ -152,6 +169,7 @@ export const DesktopTaskNote: React.FC = () => {
     const mutation = buildCloseTaskTreeMutation(taskToClose.id)
     const result = await api?.dbQuery('tasks', mutation.sql, mutation.params)
     if (result?.success) {
+      await refreshAncestors(taskToClose.id)
       await loadTasks()
       setTaskToClose(null)
     } else {
@@ -289,6 +307,8 @@ export const DesktopTaskNote: React.FC = () => {
           </button>
         </div>
       </header>
+
+      <SystemMonitor placement="note" />
 
       {error && (
         <p className="desktop-task-note__error" role="alert">

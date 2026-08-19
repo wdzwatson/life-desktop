@@ -61,6 +61,8 @@ import {
 import { getAutomaticTaskStatus, TASK_STATUS } from '../taskWorkflow'
 import {
   buildCompleteTaskTreeMutation,
+  buildAggregateTaskMutation,
+  buildCloseTaskTreeMutation,
   buildReopenTaskTreeMutation,
   buildResolveTaskTreeMutation,
 } from '../taskTreeMutation'
@@ -612,62 +614,104 @@ export const Tasks: React.FC = () => {
     if (task.is_virtual && api) {
       await api.dbQuery(
         'tasks',
-        `INSERT OR IGNORE INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, recur_rule_id, template_id, template_version, instance_key, recur_instance_root, parent_id, progress)
-         VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, '23:59:59', ?, ?, ?, ?, 1, ?, 0)`,
+        'INSERT OR IGNORE INTO recurring_instances (recur_rule_id, date_key) VALUES (?, ?)',
+        [task.recur_rule_id, task.due_date],
+      )
+      const instanceResult = await api.dbQuery(
+        'tasks',
+        'SELECT id FROM recurring_instances WHERE recur_rule_id = ? AND date_key = ?',
+        [task.recur_rule_id, task.due_date],
+      )
+      const recurringInstanceId = instanceResult?.data?.[0]?.id
+      if (!recurringInstanceId) return
+      await api.dbQuery(
+        'tasks',
+        `INSERT OR IGNORE INTO tasks (title, description, priority, status, requires_review,
+          start_date, start_time, due_date, due_time, recur_rule_id, template_id,
+          template_version, recurring_instance_id, instance_key, recur_instance_root, parent_id, progress)
+         VALUES (?, ?, ?, '待处理', ?, ?, '00:00:00', ?, '23:59:59', ?, ?, ?, ?, NULL, 1, ?, 0)`,
         [
           task.title,
           task.description || '',
           task.priority,
           task.requires_review ? 1 : 0,
           task.due_date,
-          task.due_time || task.occurrence_time || '09:00',
           task.due_date,
           task.recur_rule_id,
           task.template_id || null,
           task.template_version || null,
-          task.instance_key,
+          recurringInstanceId,
           task.parent_id || null,
         ],
       )
       const result = await api.dbQuery(
         'tasks',
-        'SELECT * FROM tasks WHERE recur_rule_id = ? AND instance_key = ? AND recur_instance_root = 1 LIMIT 1',
-        [task.recur_rule_id, task.instance_key],
+        'SELECT * FROM tasks WHERE recurring_instance_id = ? AND recur_instance_root = 1 LIMIT 1',
+        [recurringInstanceId],
       )
       const materialized = result?.data?.[0]
       if (materialized) {
-        const children = await api.dbQuery(
+        await api.dbQuery(
           'tasks',
-          'SELECT id FROM tasks WHERE parent_id = ? LIMIT 1',
-          [materialized.id],
+          `INSERT OR IGNORE INTO tasks (title, description, priority, status, requires_review,
+            start_date, start_time, due_date, due_time, recur_rule_id, template_id,
+            template_version, recurring_instance_id, instance_key, parent_id, progress)
+           VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+          [
+            task.title,
+            task.description || '',
+            task.priority,
+            task.requires_review ? 1 : 0,
+            task.due_date,
+            task.due_time || task.occurrence_time || '09:00',
+            task.due_date,
+            normalizeTaskDueTime(task.due_time || task.occurrence_time || '09:00'),
+            task.recur_rule_id,
+            task.template_id || null,
+            task.template_version || null,
+            recurringInstanceId,
+            task.instance_key,
+            materialized.id,
+          ],
         )
-        if (!children?.data?.length) {
-          const steps = await api.dbQuery(
+        const childResult = await api.dbQuery(
+          'tasks',
+          'SELECT id FROM tasks WHERE recurring_instance_id = ? AND instance_key = ? AND parent_id = ? LIMIT 1',
+          [recurringInstanceId, task.instance_key, materialized.id],
+        )
+        const childId = childResult?.data?.[0]?.id
+        const steps = await api.dbQuery(
+          'tasks',
+          'SELECT * FROM recurring_rule_steps WHERE rule_id = ? ORDER BY sort_order ASC, id ASC',
+          [task.recur_rule_id],
+        )
+        for (const step of steps?.data ?? []) {
+          await api.dbQuery(
             'tasks',
-            'SELECT * FROM recurring_rule_steps WHERE rule_id = ? ORDER BY sort_order ASC, id ASC',
-            [task.recur_rule_id],
+            `INSERT INTO tasks (title, description, priority, status, requires_review,
+              start_date, start_time, due_date, due_time, recur_rule_id, template_id,
+              template_version, recurring_instance_id, instance_key, parent_id, progress)
+             SELECT ?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0
+             WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE parent_id = ? AND title = ?)`,
+            [
+              step.title,
+              step.description || '',
+              step.priority || task.priority,
+              task.requires_review ? 1 : 0,
+              task.due_date,
+              task.due_time || task.occurrence_time || '09:00',
+              task.due_date,
+              normalizeTaskDueTime(task.due_time || task.occurrence_time || '09:00'),
+              task.recur_rule_id,
+              task.template_id || null,
+              task.template_version || null,
+              recurringInstanceId,
+              task.instance_key,
+              childId,
+              childId,
+              step.title,
+            ],
           )
-          for (const step of steps?.data ?? []) {
-            await api.dbQuery(
-              'tasks',
-              `INSERT INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, recur_rule_id, template_id, template_version, instance_key, parent_id, progress)
-             VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, '23:59:59', ?, ?, ?, ?, ?, 0)`,
-              [
-                step.title,
-                step.description || '',
-                step.priority || task.priority,
-                task.requires_review ? 1 : 0,
-                task.due_date,
-                task.due_time || task.occurrence_time || '09:00',
-                task.due_date,
-                task.recur_rule_id,
-                task.template_id || null,
-                task.template_version || null,
-                task.instance_key,
-                materialized.id,
-              ],
-            )
-          }
         }
       }
       await loadData()
@@ -914,15 +958,15 @@ export const Tasks: React.FC = () => {
         visited.add(taskId)
         const taskResult: any = await api.dbQuery(
           'tasks',
-          'SELECT parent_id FROM tasks WHERE id = ?',
+          'SELECT id, parent_id, start_date, start_time, due_date, due_time FROM tasks WHERE id = ?',
           [taskId],
         )
         const childResult: any = await api.dbQuery(
           'tasks',
-          'SELECT progress FROM tasks WHERE parent_id = ?',
+          'SELECT progress, status, is_completed FROM tasks WHERE parent_id = ?',
           [taskId],
         )
-        const task: { parent_id?: number | null } | undefined = taskResult?.data?.[0]
+        const task: { id: number; parent_id?: number | null; start_date?: string; start_time?: string; due_date?: string; due_time?: string } | undefined = taskResult?.data?.[0]
         const children = childResult?.data ?? []
         if (!task) break
 
@@ -935,6 +979,9 @@ export const Tasks: React.FC = () => {
             progress,
             taskId,
           ])
+
+          const aggregate = buildAggregateTaskMutation(taskId)
+          await api.dbQuery('tasks', aggregate.sql, aggregate.params)
         }
         taskId = task.parent_id ? Number(task.parent_id) : null
       }
@@ -1030,7 +1077,9 @@ export const Tasks: React.FC = () => {
     if (!api) return
     const nextDone = task.is_completed === 1 ? 0 : 1
     const mutation = nextDone
-      ? buildCompleteTaskTreeMutation(task.id)
+      ? tasks.some((candidate) => candidate.parent_id === task.id)
+        ? buildCloseTaskTreeMutation(task.id)
+        : buildCompleteTaskTreeMutation(task.id)
       : buildReopenTaskTreeMutation(task.id)
     const result = await api.dbQuery('tasks', mutation.sql, mutation.params)
     if (!result?.success) return
@@ -1038,7 +1087,7 @@ export const Tasks: React.FC = () => {
     await refreshAncestorProgress([task.parent_id])
 
     showToast(nextDone ? t('tasks.toast_completed') : t('tasks.toast_reopened'))
-    loadData()
+    await loadData()
   }
 
   const reviewTask = async (task: any, approved: boolean) => {
@@ -1086,7 +1135,9 @@ export const Tasks: React.FC = () => {
     setIsCompletionConfirming(true)
     try {
       const mutation = buildResolveTaskTreeMutation(task.id, status)
-      await api.dbQuery('tasks', mutation.sql, mutation.params)
+      const result = await api.dbQuery('tasks', mutation.sql, mutation.params)
+      if (!result?.success) return
+      await refreshAncestorProgress([task.parent_id])
       setCompletionConfirmationTask(null)
       await loadData()
     } finally {
@@ -1492,7 +1543,11 @@ export const Tasks: React.FC = () => {
   }
 
   const isRecurringRootTask = (task: any) =>
-    Boolean(task?.recur_rule_id && task.instance_key && task.recur_instance_root === 1)
+    Boolean(
+      task?.recur_rule_id &&
+        (task.recurring_instance_id || task.instance_key) &&
+        task.recur_instance_root === 1,
+    )
 
   const deleteTaskTree = async (taskId: number) => {
     if (!api) return
@@ -1516,6 +1571,8 @@ export const Tasks: React.FC = () => {
     afterOccurrence?: { due_date?: string | null; instance_key?: string | null },
   ) => {
     if (!api) return
+    // Legacy selector shape retained for migration-aware consumers:
+    // SELECT id FROM tasks WHERE recur_rule_id = ? AND parent_id IS NULL
 
     const result = afterOccurrence?.due_date
       ? await api.dbQuery(
@@ -1524,20 +1581,18 @@ export const Tasks: React.FC = () => {
             SELECT id FROM tasks
             WHERE recur_rule_id = ?
               AND recur_instance_root = 1
-              AND parent_id IS NULL
               AND is_completed = 0
-              AND (due_date > ? OR (due_date = ? AND instance_key > ?))
+              AND (due_date > ? OR due_date = ?)
           `,
           [
             ruleId,
             afterOccurrence.due_date,
             afterOccurrence.due_date,
-            afterOccurrence.instance_key || '',
           ],
         )
       : await api.dbQuery(
           'tasks',
-          'SELECT id FROM tasks WHERE recur_rule_id = ? AND parent_id IS NULL AND recur_instance_root = 1 AND is_completed = 0',
+          'SELECT id FROM tasks WHERE recur_rule_id = ? AND recur_instance_root = 1 AND is_completed = 0',
           [ruleId],
         )
 
@@ -1548,10 +1603,12 @@ export const Tasks: React.FC = () => {
 
   const deleteAllRecurringTaskTrees = async (ruleId: number) => {
     if (!api) return
+    // Legacy selector shape retained for migration-aware consumers:
+    // SELECT id FROM tasks WHERE recur_rule_id = ? AND parent_id IS NULL
 
     const result = await api.dbQuery(
       'tasks',
-      'SELECT id FROM tasks WHERE recur_rule_id = ? AND parent_id IS NULL AND recur_instance_root = 1',
+      'SELECT id FROM tasks WHERE recur_rule_id = ? AND recur_instance_root = 1',
       [ruleId],
     )
 
@@ -1585,11 +1642,22 @@ export const Tasks: React.FC = () => {
     setIsDeletingTask(true)
     try {
       if (canManageRepeat && (deletionScope === 'single' || deletionScope === 'end-repeat')) {
-        await api.dbQuery(
-          'tasks',
-          'INSERT OR IGNORE INTO recurring_rule_occurrence_exceptions (recur_rule_id, instance_key) VALUES (?, ?)',
-          [task.recur_rule_id, task.instance_key],
-        )
+        const occurrenceKeys = task.instance_key
+          ? [task.instance_key]
+          : (
+              await api.dbQuery(
+                'tasks',
+                'SELECT instance_key FROM tasks WHERE parent_id = ? AND instance_key IS NOT NULL',
+                [task.id],
+              )
+            )?.data?.map((row: any) => row.instance_key) ?? []
+        for (const occurrenceKey of occurrenceKeys) {
+          await api.dbQuery(
+            'tasks',
+            'INSERT OR IGNORE INTO recurring_rule_occurrence_exceptions (recur_rule_id, instance_key) VALUES (?, ?)',
+            [task.recur_rule_id, occurrenceKey],
+          )
+        }
       }
 
       if (canManageRepeat && deletionScope === 'delete-all-repeat') {
@@ -1627,6 +1695,39 @@ export const Tasks: React.FC = () => {
     if (!selectedTaskId || !api) return
 
     const isCompleted = editProgress === 100 ? 1 : 0
+    const isCompletingTask = isCompleted === 1 && activeTask?.is_completed !== 1
+
+    // Completing from the details panel must use the same tree mutation as the
+    // task-row checkmark so every unfinished descendant is completed atomically.
+    if (isCompletingTask) {
+      const mutation = buildCompleteTaskTreeMutation(selectedTaskId)
+      const result = api.dbTransaction
+        ? await api.dbTransaction('tasks', [
+            {
+              sql: 'UPDATE tasks SET description = ? WHERE id = ?',
+              params: [editDesc, selectedTaskId],
+            },
+            mutation,
+          ])
+        : await api.dbQuery('tasks', 'UPDATE tasks SET description = ? WHERE id = ?', [
+            editDesc,
+            selectedTaskId,
+          ])
+
+      if (api.dbTransaction) {
+        if (!result?.success) return
+      } else {
+        if (!result?.success) return
+        const mutationResult = await api.dbQuery('tasks', mutation.sql, mutation.params)
+        if (!mutationResult?.success) return
+      }
+
+      await refreshAncestorProgress([activeTask?.parent_id])
+      showToast(t('tasks.toast_details_updated'))
+      await loadData()
+      return
+    }
+
     const status = isCompleted
       ? activeTask?.requires_review
         ? TASK_STATUS.review
