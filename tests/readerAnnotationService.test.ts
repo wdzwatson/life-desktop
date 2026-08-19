@@ -223,3 +223,29 @@ test('annotation IPC rejects unsupported location status before calling the serv
   )
   assert.equal(saveCalls, 0)
 })
+
+test('annotation service saves a visual OCR underline without recognized text', () => {
+  const { db, service } = createService()
+  try {
+    service.saveBookAnnotation({
+      bookId: 1,
+      kind: 'underline',
+      text: '',
+      anchor: {
+        version: 2,
+        source: 'ocr',
+        selectedText: '',
+        positions: [{ source: 'ocr', pageNumber: 1, x: 0.1, y: 0.2, width: 0.5, height: 0.03 }],
+        outlinePath: null,
+        recognition: { status: 'error', engineVersion: 'tesseract-v3' },
+      },
+    })
+
+    const rows = service.listBookAnnotations(1)
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0]?.text, '')
+    assert.equal(JSON.parse(rows[0]?.anchor || '{}').recognition.status, 'error')
+  } finally {
+    db.close()
+  }
+})

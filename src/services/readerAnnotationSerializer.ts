@@ -39,20 +39,25 @@ const normalizeBookId = (value: unknown, field: string): string | number => {
 
 const toNumberValue = (value: unknown, field: string) => {
   const parsed = typeof value === 'number' ? value : Number(value)
-  if (!Number.isFinite(parsed)) throw new ReaderAnnotationValidationError(`${field} must be numeric.`)
+  if (!Number.isFinite(parsed))
+    throw new ReaderAnnotationValidationError(`${field} must be numeric.`)
   return parsed
 }
 
 const toIntegerValue = (value: unknown, field: string, min = 0) => {
   const parsed = toNumberValue(value, field)
   if (!Number.isInteger(parsed) || parsed < min) {
-    throw new ReaderAnnotationValidationError(`${field} must be an integer greater than or equal to ${min}.`)
+    throw new ReaderAnnotationValidationError(
+      `${field} must be an integer greater than or equal to ${min}.`,
+    )
   }
   return parsed
 }
 
 const normalizeSource = (value: unknown): ReaderDocumentSource => {
-  const source = String(value ?? '').trim().toLowerCase()
+  const source = String(value ?? '')
+    .trim()
+    .toLowerCase()
   if (source === 'pdf' || source === 'ocr' || source === 'epub') return source
   return 'unknown'
 }
@@ -65,13 +70,48 @@ const normalizeKind = (value: unknown): ReaderAnnotationKind => {
 
 const normalizeStatus = (value: unknown): ReaderOutlineResolutionStatus => {
   const status = String(value ?? '').trim()
-  if (status === 'pending' || status === 'resolved' || status === 'page-only' || status === 'error') {
+  if (
+    status === 'pending' ||
+    status === 'resolved' ||
+    status === 'page-only' ||
+    status === 'error'
+  ) {
     return status
   }
   return 'pending'
 }
 
-const normalizePosition = (value: unknown, fallbackSource: ReaderDocumentSource): DocumentPosition => {
+const normalizeRecognition = (value: unknown) => {
+  if (!isRecord(value)) return undefined
+  const status = String(value.status ?? '').trim()
+  if (status !== 'pending' && status !== 'ready' && status !== 'error') return undefined
+  const engineVersion = toOptionalStringValue(value.engineVersion)
+  const confidence =
+    value.confidence === undefined || value.confidence === null
+      ? undefined
+      : Math.max(0, Math.min(100, toNumberValue(value.confidence, 'recognition.confidence')))
+  return {
+    status,
+    ...(engineVersion ? { engineVersion } : {}),
+    ...(confidence !== undefined ? { confidence } : {}),
+  } as const
+}
+
+const isVisualOcrAnchor = (anchor: ReaderAnchorV2) =>
+  anchor.source === 'ocr' &&
+  anchor.positions.some(
+    (position) =>
+      position.pageNumber !== undefined &&
+      position.x !== undefined &&
+      position.y !== undefined &&
+      position.width !== undefined &&
+      position.height !== undefined,
+  )
+
+const normalizePosition = (
+  value: unknown,
+  fallbackSource: ReaderDocumentSource,
+): DocumentPosition => {
   if (!isRecord(value)) {
     throw new ReaderAnnotationValidationError('Document position must be an object.')
   }
@@ -97,10 +137,14 @@ const normalizePosition = (value: unknown, fallbackSource: ReaderDocumentSource)
       ? undefined
       : toIntegerValue(value.charEnd, 'position.charEnd', 0)
   if (charStart !== undefined && charEnd !== undefined && charEnd < charStart) {
-    throw new ReaderAnnotationValidationError('position.charEnd must be greater than or equal to position.charStart.')
+    throw new ReaderAnnotationValidationError(
+      'position.charEnd must be greater than or equal to position.charStart.',
+    )
   }
-  const x = value.x === undefined || value.x === null ? undefined : toNumberValue(value.x, 'position.x')
-  const y = value.y === undefined || value.y === null ? undefined : toNumberValue(value.y, 'position.y')
+  const x =
+    value.x === undefined || value.x === null ? undefined : toNumberValue(value.x, 'position.x')
+  const y =
+    value.y === undefined || value.y === null ? undefined : toNumberValue(value.y, 'position.y')
   const width =
     value.width === undefined || value.width === null
       ? undefined
@@ -127,7 +171,9 @@ const normalizePosition = (value: unknown, fallbackSource: ReaderDocumentSource)
     width === undefined &&
     height === undefined
   ) {
-    throw new ReaderAnnotationValidationError('Document position must include at least one location field.')
+    throw new ReaderAnnotationValidationError(
+      'Document position must include at least one location field.',
+    )
   }
 
   return {
@@ -184,7 +230,9 @@ const normalizePositions = (value: unknown, fallbackSource: ReaderDocumentSource
   if (!Array.isArray(value) || value.length === 0) {
     throw new ReaderAnnotationValidationError('Anchor positions must be a non-empty array.')
   }
-  return value.map((position) => normalizePosition(position, fallbackSource)).sort(compareDocumentPositions)
+  return value
+    .map((position) => normalizePosition(position, fallbackSource))
+    .sort(compareDocumentPositions)
 }
 
 const normalizeOutlinePathNode = (value: unknown): OutlinePathSnapshotNode => {
@@ -235,6 +283,7 @@ const normalizeAnchorShape = (value: unknown): ReaderAnchorV2 => {
 
   if (raw && Array.isArray(raw.positions)) {
     const outlinePath = normalizeOutlinePathSnapshot(raw.outlinePath, fallbackSource)
+    const recognition = normalizeRecognition(raw.recognition)
     return {
       version: 2,
       source: normalizeSource(raw.source),
@@ -242,6 +291,7 @@ const normalizeAnchorShape = (value: unknown): ReaderAnchorV2 => {
       positions: normalizePositions(raw.positions, fallbackSource),
       outlinePath,
       ...(raw.highlighted === undefined ? {} : { highlighted: Boolean(raw.highlighted) }),
+      ...(recognition ? { recognition } : {}),
     }
   }
 
@@ -257,6 +307,7 @@ const normalizeAnchorShape = (value: unknown): ReaderAnchorV2 => {
         : 'unknown'
   const source = normalizeSource(value.source ?? inferredSource)
   const selectedText = String(value.selectedText ?? value.text ?? '').trim()
+  const recognition = normalizeRecognition(value.recognition)
   const positions: DocumentPosition[] = []
   if (value.pageNumber !== undefined || value.areas !== undefined) {
     const pageNumber = toIntegerValue(value.pageNumber, 'anchor.pageNumber', 1)
@@ -307,14 +358,23 @@ const normalizeAnchorShape = (value: unknown): ReaderAnchorV2 => {
     source,
     selectedText,
     positions: positions.sort(compareDocumentPositions),
-    outlinePath: normalizeOutlinePathSnapshot((value as Record<string, unknown>).outlinePath ?? null, source),
+    outlinePath: normalizeOutlinePathSnapshot(
+      (value as Record<string, unknown>).outlinePath ?? null,
+      source,
+    ),
     ...(value.highlighted === undefined ? {} : { highlighted: Boolean(value.highlighted) }),
+    ...(recognition ? { recognition } : {}),
   }
 }
 
 const normalizeLegacySelectionStatus = (value: unknown): ReaderOutlineResolutionStatus => {
   const status = normalizeStatus(value)
-  if (status === 'pending' || status === 'resolved' || status === 'page-only' || status === 'error') {
+  if (
+    status === 'pending' ||
+    status === 'resolved' ||
+    status === 'page-only' ||
+    status === 'error'
+  ) {
     return status
   }
   return 'pending'
@@ -344,7 +404,10 @@ export const normalizeReaderSelection = (value: unknown): ReaderSelection => {
       ? normalizedAnchor.outlinePath
       : normalizeStoredOutlinePathSnapshot(storedOutlinePath, normalizedAnchor.source)
   const anchor = { ...normalizedAnchor, outlinePath }
-  const selectedText = toStringValue(value.selectedText ?? anchor.selectedText, 'selection.selectedText')
+  const selectedText = String(value.selectedText ?? anchor.selectedText ?? '').trim()
+  if (!selectedText && !isVisualOcrAnchor(anchor)) {
+    throw new ReaderAnnotationValidationError('selection.selectedText is required.')
+  }
   return {
     id: toStringValue(value.id, 'selection.id'),
     bookId: normalizeBookId(value.bookId ?? value.book_id, 'selection.bookId'),
@@ -362,7 +425,8 @@ export const normalizeReaderSelection = (value: unknown): ReaderSelection => {
 }
 
 export const normalizeReaderAnnotationItem = (value: unknown): ReaderAnnotationItem => {
-  if (!isRecord(value)) throw new ReaderAnnotationValidationError('Annotation item must be an object.')
+  if (!isRecord(value))
+    throw new ReaderAnnotationValidationError('Annotation item must be an object.')
   const kind = normalizeKind(value.kind)
   const normalizedAnchor = normalizeReaderAnchorV2(value.anchor)
   const storedOutlinePath = value.outlinePath ?? value.outline_path_json
@@ -371,12 +435,19 @@ export const normalizeReaderAnnotationItem = (value: unknown): ReaderAnnotationI
       ? normalizedAnchor.outlinePath
       : normalizeStoredOutlinePathSnapshot(storedOutlinePath, normalizedAnchor.source)
   const anchor = { ...normalizedAnchor, outlinePath }
-  const text = toStringValue(value.text ?? anchor.selectedText, 'annotation.text')
+  const text = String(value.text ?? anchor.selectedText ?? '').trim()
+  if (!text && (kind === 'translation' || !isVisualOcrAnchor(anchor))) {
+    throw new ReaderAnnotationValidationError('annotation.text is required.')
+  }
   const body = toOptionalStringValue(value.body ?? value.annotation)
-  const translationLanguage = toOptionalStringValue(value.translationLanguage ?? value.translation_language)
+  const translationLanguage = toOptionalStringValue(
+    value.translationLanguage ?? value.translation_language,
+  )
   if (kind === 'translation') {
     if (!translationLanguage) {
-      throw new ReaderAnnotationValidationError('translation annotations require translationLanguage.')
+      throw new ReaderAnnotationValidationError(
+        'translation annotations require translationLanguage.',
+      )
     }
     if (!body) {
       throw new ReaderAnnotationValidationError('translation annotations require body text.')
@@ -422,7 +493,10 @@ export const deserializeReaderAnnotationItem = (value: string) => {
   }
 }
 
-export const compareReaderAnnotationItems = (left: ReaderAnnotationItem, right: ReaderAnnotationItem) => {
+export const compareReaderAnnotationItems = (
+  left: ReaderAnnotationItem,
+  right: ReaderAnnotationItem,
+) => {
   const leftPosition = left.anchor.positions[0]
   const rightPosition = right.anchor.positions[0]
   const positionDelta = compareDocumentPositions(leftPosition, rightPosition)
@@ -447,7 +521,9 @@ const getPageNumbers = (anchor: ReaderAnchorV2) =>
 const getOutlinePathKey = (outlinePath: OutlinePathSnapshot | null) =>
   outlinePath?.pathKey || outlinePath?.nodes.map((node) => node.pathKey).join('>') || ''
 
-export const buildExportAnnotationRecord = (value: ReaderAnnotationItem): ExportAnnotationRecord => {
+export const buildExportAnnotationRecord = (
+  value: ReaderAnnotationItem,
+): ExportAnnotationRecord => {
   const outlinePath = value.outlinePath ?? value.anchor.outlinePath ?? null
   return {
     id: value.id,
@@ -502,19 +578,22 @@ export const groupExportAnnotationRecords = (
   records: ExportAnnotationRecord[],
 ): ExportAnnotationGroup[] => {
   const groups = new Map<string, ExportAnnotationGroup>()
-  records.slice().sort(compareExportAnnotationRecords).forEach((record) => {
-    const key = record.outlinePathKey || '__unresolved__'
-    const existing = groups.get(key)
-    if (existing) {
-      existing.records.push(record)
-      return
-    }
-    groups.set(key, {
-      key,
-      outlinePathTitles: record.outlinePathTitles,
-      records: [record],
+  records
+    .slice()
+    .sort(compareExportAnnotationRecords)
+    .forEach((record) => {
+      const key = record.outlinePathKey || '__unresolved__'
+      const existing = groups.get(key)
+      if (existing) {
+        existing.records.push(record)
+        return
+      }
+      groups.set(key, {
+        key,
+        outlinePathTitles: record.outlinePathTitles,
+        records: [record],
+      })
     })
-  })
   return Array.from(groups.values())
 }
 
@@ -597,14 +676,12 @@ const renderExportAnnotationRecord = (
   const fullPath = record.outlinePathTitles.length
     ? record.outlinePathTitles.join(' > ')
     : labels.unknownChapter
-  const pageLabel = record.pageNumbers.length
-    ? record.pageNumbers.join(', ')
-    : labels.notAvailable
+  const pageLabel = record.pageNumbers.length ? record.pageNumbers.join(', ') : labels.notAvailable
   return [
     markers.start,
     `<!-- life-os:reader-annotation-kind:${record.kind} -->`,
     `- **${escapeMarkdownInline(labels.type)}**: ${escapeMarkdownInline(labels.kinds[record.kind])}`,
-    `  - **${escapeMarkdownInline(labels.originalText)}**: ${escapeMarkdownInline(record.text)}`,
+    `  - **${escapeMarkdownInline(labels.originalText)}**: ${escapeMarkdownInline(record.text || labels.notAvailable)}`,
     `  - **${escapeMarkdownInline(labels.body)}**: ${escapeMarkdownInline(record.body || labels.notAvailable)}`,
     `  - **${escapeMarkdownInline(labels.fullChapterPath)}**: ${escapeMarkdownInline(fullPath)}`,
     `  - **${escapeMarkdownInline(labels.pages)}**: ${escapeMarkdownInline(pageLabel)}`,
@@ -683,7 +760,7 @@ export const mergeReaderAnnotationsManagedMarkdown = (
   const markers = getReaderAnnotationsManagedMarkers(bookId)
   const startIndex = existingContent.indexOf(markers.start)
   const endIndex = existingContent.indexOf(markers.end)
-  if ((startIndex < 0) !== (endIndex < 0) || (startIndex >= 0 && endIndex < startIndex)) {
+  if (startIndex < 0 !== endIndex < 0 || (startIndex >= 0 && endIndex < startIndex)) {
     throw new ReaderAnnotationValidationError('Managed reader annotation markers are incomplete.')
   }
   if (startIndex >= 0) {
@@ -714,9 +791,12 @@ export const decorateReaderAnnotationExportHtml = (html: string) => {
   const startPattern =
     /<!--\s*life-os:reader-annotation:([^:>]+):start\s*-->\s*<!--\s*life-os:reader-annotation-kind:(translation|underline|note)\s*-->/g
   const endPattern = /<!--\s*life-os:reader-annotation:[^:>]+:end\s*-->/g
-  const withSections = html.replace(startPattern, (_match, id: string, kind: ReaderAnnotationKind) => {
-    const icon = getReaderAnnotationExportIcon(kind)
-    return `<article class="reader-export-annotation is-${kind}" data-reader-annotation-id="${id}" data-reader-annotation-kind="${kind}"><span class="reader-export-annotation__icon" aria-hidden="true">${icon}</span>`
-  })
+  const withSections = html.replace(
+    startPattern,
+    (_match, id: string, kind: ReaderAnnotationKind) => {
+      const icon = getReaderAnnotationExportIcon(kind)
+      return `<article class="reader-export-annotation is-${kind}" data-reader-annotation-id="${id}" data-reader-annotation-kind="${kind}"><span class="reader-export-annotation__icon" aria-hidden="true">${icon}</span>`
+    },
+  )
   return withSections.replace(endPattern, '</article>')
 }

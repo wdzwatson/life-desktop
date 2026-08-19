@@ -4,7 +4,16 @@ export type ReaderAnnotationKind = 'translation' | 'underline' | 'note'
 
 export type ReaderOutlineResolutionStatus = 'pending' | 'resolved' | 'page-only' | 'error'
 
-export type ReaderOutlineRunState = 'idle' | 'queued' | 'running' | 'completed' | 'cancelled' | 'failed'
+export type ReaderOutlineRunState =
+  'idle' | 'queued' | 'running' | 'completed' | 'cancelled' | 'failed'
+
+export type ReaderRecognitionState = 'pending' | 'ready' | 'error'
+
+export type ReaderRecognition = {
+  status: ReaderRecognitionState
+  engineVersion?: string
+  confidence?: number
+}
 
 export type DocumentPosition = {
   source: ReaderDocumentSource
@@ -39,6 +48,7 @@ export type ReaderAnchorV2 = {
   positions: DocumentPosition[]
   outlinePath: OutlinePathSnapshot | null
   highlighted?: boolean
+  recognition?: ReaderRecognition
 }
 
 export type ReaderSelection = {

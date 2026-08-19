@@ -62,9 +62,25 @@ const requireBookId = (value: unknown) => {
   return Number(value)
 }
 
-const requireText = (value: unknown) => {
+const normalizeAnnotationText = (
+  value: unknown,
+  kind: ReaderAnnotationKind,
+  anchor: ReturnType<typeof normalizeReaderAnchorV2>,
+) => {
   const text = String(value ?? '').trim()
-  if (!text) throw new Error('Annotation text is required.')
+  const hasVisualOcrAnchor =
+    anchor.source === 'ocr' &&
+    anchor.positions.some(
+      (position) =>
+        position.pageNumber !== undefined &&
+        position.x !== undefined &&
+        position.y !== undefined &&
+        position.width !== undefined &&
+        position.height !== undefined,
+    )
+  if (!text && (kind === 'translation' || !hasVisualOcrAnchor)) {
+    throw new Error('Annotation text is required.')
+  }
   return text
 }
 
@@ -145,7 +161,7 @@ export class ReaderAnnotationService {
     const bookId = requireBookId(input.bookId)
     const kind = normalizeKind(input.kind)
     const anchor = normalizeReaderAnchorV2(input.anchor)
-    const text = requireText(input.text)
+    const text = normalizeAnnotationText(input.text, kind, anchor)
     const { selectionId, existingItem } = this.resolveSaveIdentity(db, {
       bookId,
       kind,

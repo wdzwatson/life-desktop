@@ -136,6 +136,38 @@ test('annotation items require the right body fields by kind', () => {
   )
 })
 
+test('visual OCR underlines may persist while recognition text is unavailable', () => {
+  const item = normalizeReaderAnnotationItem({
+    id: 'visual-ocr',
+    bookId: 1,
+    selectionId: 'visual-selection',
+    kind: 'underline',
+    text: '',
+    anchor: {
+      version: 2,
+      source: 'ocr',
+      selectedText: '',
+      positions: [{ source: 'ocr', pageNumber: 2, x: 0.2, y: 0.3, width: 0.4, height: 0.03 }],
+      outlinePath: null,
+      recognition: { status: 'error', engineVersion: 'tesseract-v3' },
+    },
+    locationStatus: 'page-only',
+    createdAt: '2026-08-17T00:00:00.000Z',
+    updatedAt: '2026-08-17T00:00:00.000Z',
+  })
+
+  assert.equal(item.text, '')
+  assert.equal(item.anchor.recognition?.status, 'error')
+  assert.throws(() =>
+    normalizeReaderAnnotationItem({
+      ...item,
+      kind: 'translation',
+      body: 'translation',
+      translationLanguage: 'en-US',
+    }),
+  )
+})
+
 test('anchors round-trip single-page, cross-page, epub, and page-only positions', () => {
   const pdfAnchor = normalizeReaderAnchorV2({
     version: 2,
@@ -148,7 +180,10 @@ test('anchors round-trip single-page, cross-page, epub, and page-only positions'
     outlinePath: null,
   })
   assert.equal(pdfAnchor.positions.length, 2)
-  assert.deepEqual(pdfAnchor.positions.map((position) => position.pageNumber), [3, 4])
+  assert.deepEqual(
+    pdfAnchor.positions.map((position) => position.pageNumber),
+    [3, 4],
+  )
 
   const epubAnchor = normalizeReaderAnchorV2({
     chapterIndex: 7,
@@ -182,7 +217,10 @@ test('anchors round-trip single-page, cross-page, epub, and page-only positions'
   assert.equal(pageOnlyAnchor.positions[0].height, 0.05)
 
   const roundTrip = deserializeReaderAnnotationItem(serializeReaderAnnotationItem(baseItem))
-  assert.deepEqual(roundTrip.anchor.positions.map((position) => position.pageNumber), [12, 13])
+  assert.deepEqual(
+    roundTrip.anchor.positions.map((position) => position.pageNumber),
+    [12, 13],
+  )
   assert.equal(roundTrip.anchor.outlinePath?.pathKey, 'part-1>chapter-2>section-3')
 })
 
