@@ -23,6 +23,22 @@
     "show_password": "显示密码",
     "hide_password": "隐藏密码"
   },
+  "system_monitor": {
+    "memory": "内存",
+    "network": "网络",
+    "aria_label": "系统资源监测",
+    "open_details": "打开 {{metric}} 资源明细",
+    "live_resources": "实时资源",
+    "top_eight": "{{metric}} 占用 Top 8",
+    "close": "关闭资源明细",
+    "loading": "正在读取资源…",
+    "unavailable": "资源明细暂不可用",
+    "empty": "暂无活动资源",
+    "process_count": "{{count}} 个进程",
+    "online": "在线",
+    "offline": "未连接",
+    "network_note": "网络明细按网卡展示；按应用归属流量需要额外的系统权限。"
+  },
   "sidebar": {
     "launchpad": "启动中枢",
     "dashboard": "仪表盘",
@@ -849,6 +865,10 @@
     "view_single": "单页视图",
     "view_dual": "双页视图",
     "view_scroll": "单页连续",
+    "wheel_sensitivity_label": "滚轮灵敏度",
+    "wheel_sensitivity_low": "低（更稳）",
+    "wheel_sensitivity_balanced": "标准",
+    "wheel_sensitivity_high": "高（更快）",
     "auto_play": "自动翻页",
     "auto_play_stop": "停止翻页",
     "auto_play_speed": "{{sec}}s/页",

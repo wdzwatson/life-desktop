@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { AlertCircle, CheckCircle2, Info, Trash2 } from 'lucide-react'
+import { SystemMonitor } from './SystemMonitor'
 
 export const Statusbar: React.FC = () => {
   const { t } = useTranslation()
@@ -95,7 +96,8 @@ export const Statusbar: React.FC = () => {
       </span>
 
       {/* Dynamic database statistics */}
-      <div style={{ display: 'flex', gap: '16px' }}>
+      <div className="status-bar__stats">
+        <SystemMonitor />
         <span>
           Tasks: <strong>{taskCount}</strong>
         </span>

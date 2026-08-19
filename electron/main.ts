@@ -14,6 +14,7 @@ import {
   desktopCapturer,
   globalShortcut,
   session,
+  webContents,
   systemPreferences,
 } from 'electron'
 import path from 'path'
@@ -171,6 +172,7 @@ import {
   installConsoleFileLogging,
   normalizeLogSource,
 } from './logging/service'
+import { systemMonitorService } from './systemMonitor'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const execFile = promisify(execFileCallback)
@@ -240,6 +242,57 @@ let activeBurstSession: {
   pausedAt: number | null
   pausedDuration: number
 } | null = null
+
+const systemMonitorDetailSubscriptions = new Map<string, Map<string, () => void>>()
+const systemMonitorOverviewSubscriptions = new Map<string, () => void>()
+
+const getSystemMonitorWindowKey = (webContentsId: number) => String(webContentsId)
+
+const registerSystemMonitorWindow = (webContentsId: number, metric: 'cpu' | 'memory' | 'network') => {
+  const windowKey = getSystemMonitorWindowKey(webContentsId)
+  const metrics = systemMonitorDetailSubscriptions.get(windowKey) ?? new Map<string, () => void>()
+  if (metrics.has(metric)) return
+  const unsubscribe = systemMonitorService.subscribeDetails(metric, (details) => {
+    const contents = webContents.fromId(webContentsId)
+    const target = contents ? BrowserWindow.fromWebContents(contents) : null
+    if (target && !target.isDestroyed()) target.webContents.send(`systemMonitor:details:${metric}`, details)
+  })
+  metrics.set(metric, unsubscribe)
+  systemMonitorDetailSubscriptions.set(windowKey, metrics)
+}
+
+const unregisterSystemMonitorWindow = (webContentsId: number, metric: 'cpu' | 'memory' | 'network') => {
+  const windowKey = getSystemMonitorWindowKey(webContentsId)
+  const metrics = systemMonitorDetailSubscriptions.get(windowKey)
+  metrics?.get(metric)?.()
+  metrics?.delete(metric)
+  if (metrics && metrics.size === 0) systemMonitorDetailSubscriptions.delete(windowKey)
+}
+
+const unregisterAllSystemMonitorWindow = (webContentsId: number) => {
+  const windowKey = getSystemMonitorWindowKey(webContentsId)
+  systemMonitorOverviewSubscriptions.get(windowKey)?.()
+  systemMonitorOverviewSubscriptions.delete(windowKey)
+  const metrics = systemMonitorDetailSubscriptions.get(windowKey)
+  for (const unsubscribe of metrics?.values() || []) unsubscribe()
+  systemMonitorDetailSubscriptions.delete(windowKey)
+}
+
+const registerSystemMonitorOverview = (webContentsId: number) => {
+  const windowKey = getSystemMonitorWindowKey(webContentsId)
+  if (systemMonitorOverviewSubscriptions.has(windowKey)) return
+  const unsubscribe = systemMonitorService.subscribe((snapshot) => {
+    const contents = webContents.fromId(webContentsId)
+    if (contents && !contents.isDestroyed()) contents.send('systemMonitor:snapshot', snapshot)
+  })
+  systemMonitorOverviewSubscriptions.set(windowKey, unsubscribe)
+}
+
+const unregisterSystemMonitorOverview = (webContentsId: number) => {
+  const windowKey = getSystemMonitorWindowKey(webContentsId)
+  systemMonitorOverviewSubscriptions.get(windowKey)?.()
+  systemMonitorOverviewSubscriptions.delete(windowKey)
+}
 
 const DEFAULT_SHORTCUTS = {
   screenshot: 'CommandOrControl+Shift+S',
@@ -2552,7 +2605,9 @@ function createWindow() {
     emitVideoEngineStatus()
   })
 
+  const mainWindowWebContentsId = mainWindow.webContents.id
   mainWindow.on('closed', () => {
+    unregisterAllSystemMonitorWindow(mainWindowWebContentsId)
     closeDouyinReaderView()
     mainWindow = null
   })
@@ -2676,7 +2731,9 @@ function createDesktopTaskNoteWindow() {
     })
   }
 
+  const desktopTaskNoteWebContentsId = desktopTaskNoteWindow.webContents.id
   desktopTaskNoteWindow.on('closed', () => {
+    unregisterAllSystemMonitorWindow(desktopTaskNoteWebContentsId)
     if (desktopTaskNoteSaveTimer) clearTimeout(desktopTaskNoteSaveTimer)
     desktopTaskNoteWindow = null
   })
@@ -4674,6 +4731,20 @@ ipcMain.handle('tasks:runScheduler', async () => {
 })
 
 ipcMain.handle('desktopTaskNote:getSettings', async () => getDesktopTaskNoteSettings())
+
+ipcMain.handle('systemMonitor:getSnapshot', async () => systemMonitorService.getSnapshot())
+ipcMain.on('systemMonitor:subscribe', (event) => registerSystemMonitorOverview(event.sender.id))
+ipcMain.on('systemMonitor:unsubscribe', (event) => unregisterSystemMonitorOverview(event.sender.id))
+ipcMain.on('systemMonitor:details:subscribe', (event, metric: 'cpu' | 'memory' | 'network') => {
+  if (metric === 'cpu' || metric === 'memory' || metric === 'network') {
+    registerSystemMonitorWindow(event.sender.id, metric)
+  }
+})
+ipcMain.on('systemMonitor:details:unsubscribe', (event, metric: 'cpu' | 'memory' | 'network') => {
+  if (metric === 'cpu' || metric === 'memory' || metric === 'network') {
+    unregisterSystemMonitorWindow(event.sender.id, metric)
+  }
+})
 
 ipcMain.handle('desktopTaskNote:show', async () => {
   createDesktopTaskNoteWindow().show()

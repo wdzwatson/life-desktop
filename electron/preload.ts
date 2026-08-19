@@ -141,6 +141,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showDesktopTaskNote: () => ipcRenderer.invoke('desktopTaskNote:show'),
   hideDesktopTaskNote: () => ipcRenderer.invoke('desktopTaskNote:hide'),
   openMainWindow: () => ipcRenderer.invoke('desktopTaskNote:openMainWindow'),
+  getSystemMonitorSnapshot: () => ipcRenderer.invoke('systemMonitor:getSnapshot'),
+  subscribeSystemMonitor: (callback: (snapshot: unknown) => void) => {
+    const subscription = (_event: unknown, snapshot: unknown) => callback(snapshot)
+    ipcRenderer.on('systemMonitor:snapshot', subscription)
+    ipcRenderer.send('systemMonitor:subscribe')
+    return () => {
+      ipcRenderer.removeListener('systemMonitor:snapshot', subscription)
+      ipcRenderer.send('systemMonitor:unsubscribe')
+    }
+  },
+  subscribeSystemMonitorDetails: (metric: 'cpu' | 'memory' | 'network', callback: (details: unknown) => void) => {
+    const channel = `systemMonitor:details:${metric}`
+    const subscription = (_event: unknown, details: unknown) => callback(details)
+    ipcRenderer.on(channel, subscription)
+    ipcRenderer.send('systemMonitor:details:subscribe', metric)
+    return () => {
+      ipcRenderer.removeListener(channel, subscription)
+      ipcRenderer.send('systemMonitor:details:unsubscribe', metric)
+    }
+  },
 
   // AI configuration. Full credentials remain in the main process.
   listAIProviders: (filters?: unknown) => ipcRenderer.invoke('ai:providers:list', filters),

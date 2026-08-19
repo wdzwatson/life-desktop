@@ -761,6 +761,14 @@ body.theme-dense .nav-item.active {
   padding: 0 16px;
 }
 
+.status-bar__stats {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 24px;
+  line-height: 1;
+}
+
 .toast-notification {
   position: fixed;
   right: 24px;

@@ -23,6 +23,22 @@
     "show_password": "Show password",
     "hide_password": "Hide password"
   },
+  "system_monitor": {
+    "memory": "Memory",
+    "network": "Network",
+    "aria_label": "System resource monitor",
+    "open_details": "Open {{metric}} resource details",
+    "live_resources": "Live resources",
+    "top_eight": "{{metric}} Top 8",
+    "close": "Close resource details",
+    "loading": "Reading resources…",
+    "unavailable": "Resource details are unavailable",
+    "empty": "No active resources",
+    "process_count": "{{count}} processes",
+    "online": "Online",
+    "offline": "Disconnected",
+    "network_note": "Network detail is shown per interface. Per-application attribution requires additional OS privileges."
+  },
   "sidebar": {
     "launchpad": "Launchpad",
     "dashboard": "Dashboard",
@@ -849,6 +865,10 @@
     "view_single": "Single Page",
     "view_dual": "Two Pages",
     "view_scroll": "Continuous Scroll",
+    "wheel_sensitivity_label": "Wheel sensitivity",
+    "wheel_sensitivity_low": "Low (steady)",
+    "wheel_sensitivity_balanced": "Balanced",
+    "wheel_sensitivity_high": "High (faster)",
     "auto_play": "Auto Flip",
     "auto_play_stop": "Stop Flip",
     "auto_play_speed": "{{sec}}s/page",

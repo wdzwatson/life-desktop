@@ -5,8 +5,11 @@ body:has(.desktop-task-note) #root {
 }
 
 .desktop-task-note {
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  min-height: 100%;
+  height: 100vh;
+  min-height: 0;
   padding: 16px;
   border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
   border-radius: 16px;
@@ -58,9 +61,11 @@ body:has(.desktop-task-note) #root {
 }
 
 .desktop-task-note__content {
-  max-height: calc(100vh - 86px);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   display: grid;
+  align-content: start;
   gap: 18px;
 }
 

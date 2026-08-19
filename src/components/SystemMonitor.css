@@ -1,0 +1,313 @@
+.system-monitor {
+  position: relative;
+  min-width: 0;
+  font-family: var(--font-sans);
+}
+
+.system-monitor__metrics {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.system-monitor__metric {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 24px;
+  gap: 5px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font: 500 10px/1 var(--font-mono);
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease;
+}
+
+.system-monitor__metric:hover,
+.system-monitor__metric.is-active {
+  color: var(--text-main);
+  background: color-mix(in srgb, var(--color-accent) 9%, transparent);
+}
+
+.system-monitor__metric.is-active {
+  color: var(--color-accent);
+}
+
+.system-monitor__metric:focus-visible,
+.system-monitor__close:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.system-monitor__metric > svg {
+  flex: 0 0 auto;
+}
+
+.system-monitor__metric strong {
+  min-width: 32px;
+  color: inherit;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-align: left;
+}
+
+.system-monitor__network-value {
+  display: inline-flex;
+  min-width: 130px !important;
+  gap: 8px;
+}
+
+.system-monitor__network-value span {
+  min-width: 58px;
+  text-align: left;
+}
+
+.system-monitor__popover {
+  position: absolute;
+  z-index: 120;
+  width: min(390px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-main);
+  box-shadow: 0 16px 36px color-mix(in srgb, #000 18%, transparent);
+}
+
+.system-monitor--statusbar .system-monitor__popover {
+  right: 0;
+  bottom: calc(100% + 8px);
+}
+
+.system-monitor--note .system-monitor__popover {
+  top: calc(100% + 7px);
+  right: 0;
+  left: 0;
+  width: 100%;
+}
+
+.system-monitor__popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 46px;
+  padding: 9px 10px 8px 13px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.system-monitor__popover-header h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.system-monitor__popover-kicker {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.system-monitor__close {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.system-monitor__close:hover {
+  background: var(--bg-app);
+  color: var(--text-main);
+}
+
+.system-monitor__note,
+.system-monitor__loading {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.system-monitor__note {
+  padding: 8px 13px;
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-accent) 4%, var(--bg-surface));
+}
+
+.system-monitor__loading {
+  padding: 22px 13px;
+  text-align: center;
+}
+
+.system-monitor__rows {
+  max-height: min(340px, calc(100vh - 130px));
+  overflow-y: auto;
+  margin: 0;
+  padding: 5px;
+  list-style: none;
+}
+
+.system-monitor__row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 39px;
+  gap: 7px;
+  padding: 5px 8px 5px 5px;
+  border-radius: 5px;
+}
+
+.system-monitor__row:hover {
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+}
+
+.system-monitor__rank {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--bg-app);
+  color: var(--text-muted);
+  font: 600 9px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.system-monitor__row-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.system-monitor__row-copy strong {
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.system-monitor__row-copy small,
+.system-monitor__row-value small {
+  color: var(--text-muted);
+  font-size: 9.5px;
+  line-height: 1.2;
+}
+
+.system-monitor__row-value {
+  color: var(--text-main);
+  font: 650 10.5px/1.2 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.system-monitor__network-row-value {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.system-monitor__network-row-value > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.system-monitor--note {
+  margin: 0 -4px 12px;
+  padding: 7px 4px;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
+}
+
+.system-monitor--note .system-monitor__metrics {
+  display: grid;
+  grid-template-columns: 0.78fr 0.9fr 1.5fr;
+  gap: 2px;
+}
+
+.system-monitor--note .system-monitor__metric {
+  width: 100%;
+  height: 30px;
+  gap: 3px;
+  padding: 0 2px;
+  font-size: 9.5px;
+}
+
+.system-monitor--note .system-monitor__metric strong {
+  min-width: 27px;
+}
+
+.system-monitor--note .system-monitor__metric-label {
+  display: none;
+}
+
+.system-monitor--note .system-monitor__network-value {
+  display: grid;
+  min-width: 0 !important;
+  gap: 1px;
+}
+
+.system-monitor--note .system-monitor__network-value span {
+  min-width: 0;
+  font-size: 8.5px;
+}
+
+.system-monitor--note .system-monitor__rows {
+  max-height: min(310px, calc(100vh - 190px));
+}
+
+@media (max-width: 1040px) {
+  .system-monitor--statusbar .system-monitor__metric-label {
+    display: none;
+  }
+
+  .system-monitor--statusbar .system-monitor__network-value {
+    min-width: 118px !important;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 860px) {
+  .system-monitor--statusbar .system-monitor__metric {
+    padding-inline: 4px;
+  }
+
+  .system-monitor--statusbar .system-monitor__metric > svg {
+    display: none;
+  }
+
+  .system-monitor--statusbar .system-monitor__network-value span:last-child {
+    display: none;
+  }
+
+  .system-monitor--statusbar .system-monitor__network-value {
+    min-width: 58px !important;
+  }
+}
