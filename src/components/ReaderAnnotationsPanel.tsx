@@ -95,17 +95,15 @@ const AnnotationCard = React.memo(function AnnotationCard({
           {t(`books.reader_annotation_kind_${item.kind}`)}
         </span>
         <div className="book-reader__annotation-actions">
-          {item.kind !== 'highlight' ? (
-            <button
-              type="button"
-              className="book-reader__annotation-action"
-              onClick={() => onEdit(item.id)}
-              aria-label={t('common.edit')}
-              title={t('common.edit')}
-            >
-              <Edit3 size={14} aria-hidden="true" />
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="book-reader__annotation-action"
+            onClick={() => onEdit(item.id)}
+            aria-label={t('common.edit')}
+            title={t('common.edit')}
+          >
+            <Edit3 size={14} aria-hidden="true" />
+          </button>
           <button
             type="button"
             className="book-reader__annotation-action"

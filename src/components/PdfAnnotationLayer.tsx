@@ -51,9 +51,7 @@ export const getPdfAnnotationRects = (highlights: SavedPdfHighlight[]): PdfAnnot
         : 'is-highlight-only'
     return highlight.areas.flatMap((candidate, index) => {
       const area = normalizeArea(candidate)
-      return area
-        ? [{ key: `${highlight.id}-${index}`, highlight, area, visualState }]
-        : []
+      return area ? [{ key: `${highlight.id}-${index}`, highlight, area, visualState }] : []
     })
   })
 
@@ -90,7 +88,7 @@ export const PdfAnnotationLayer = React.memo(function PdfAnnotationLayer({
           type="button"
           className={`book-reader__pdf-saved-highlight is-${highlight.kind || 'highlight'} ${visualState} ${hoveredHighlightId === highlight.id || activeHighlightId === highlight.id ? 'is-active' : ''}`}
           data-reader-highlight-id={highlight.id}
-          aria-label={`${highlight.text}: ${highlight.annotation || t('books.mark_highlight')}`}
+          aria-label={`${highlight.text || t('books.ocr_unrecognized_selection')}: ${highlight.annotation || t('books.mark_highlight')}`}
           title={highlight.annotation || t('books.mark_highlight')}
           onPointerEnter={() => setHoveredHighlightId(highlight.id)}
           onPointerDown={(event) => event.stopPropagation()}

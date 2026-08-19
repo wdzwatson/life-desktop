@@ -8,6 +8,10 @@ const pdfAnnotationLayer = readFileSync(
   new URL('../src/components/PdfAnnotationLayer.tsx', import.meta.url),
   'utf8',
 )
+const pdfInkSelectionLayer = readFileSync(
+  new URL('../src/components/PdfInkSelectionLayer.tsx', import.meta.url),
+  'utf8',
+)
 const readerOutlineDrawer = readFileSync(
   new URL('../src/components/ReaderOutlineDrawer.tsx', import.meta.url),
   'utf8',
@@ -74,6 +78,7 @@ test('clicking the reading surface preserves both side drawers', () => {
   )?.[1]
   assert.ok(handler)
   assert.match(handler, /setReaderContextMenu\(null\)/)
+  assert.doesNotMatch(handler, /setPdfInkDraft\(null\)/)
   assert.doesNotMatch(handler, /setIsTocDrawerOpen/)
   assert.doesNotMatch(handler, /setIsAnnotationsDrawerOpen/)
 })
@@ -109,6 +114,41 @@ test('PDF OCR runs on demand instead of starting after every page render', () =>
   assert.match(booksSource, /void ensurePdfOcrPage\(pageNumber\)/)
   assert.doesNotMatch(booksSource, /handlePdfPageRendered/)
   assert.doesNotMatch(booksSource, /onRenderSuccess=\{\(\) => handlePdfPageRendered/)
+})
+
+test('scanned PDF pages enable direct ink selection and merge strokes for 1.5 seconds', () => {
+  assert.match(booksSource, /type PdfPageTextMode = 'unknown' \| 'text' \| 'scanned'/)
+  assert.match(booksSource, /page\.getTextContent\(\)/)
+  assert.match(
+    booksSource,
+    /enabled=\{\s*pdfPageTextModes\[currentPageIndex \+ 1\] === 'scanned'/,
+  )
+  assert.match(booksSource, /enabled=\{pdfPageTextModes\[idx \+ 1\] === 'scanned'\}/)
+  assert.doesNotMatch(booksSource, /pdfInkMode/)
+  assert.match(pdfInkSelectionLayer, /const INK_MERGE_WINDOW_MS = 1500/)
+  assert.match(pdfInkSelectionLayer, /flushTimerRef\.current !== null \|\| isRecognizing/)
+  assert.doesNotMatch(pdfInkSelectionLayer, /\}, 2000\)/)
+  assert.match(pdfInkSelectionLayer, /const isClick = Math\.hypot/)
+  assert.match(pdfInkSelectionLayer, /const renderStraightLineTo = \(point: PdfInkPoint\)/)
+  assert.match(pdfInkSelectionLayer, /pointsRef\.current = \[[\s\S]*lineY[\s\S]*point\.x, y: lineY/)
+  assert.match(pdfInkSelectionLayer, /if \(!insideSelection\) clearPendingSelection\(\)/)
+  assert.match(pdfInkSelectionLayer, /onContextMenu=\{\(event\) => \{/)
+  assert.match(pdfInkSelectionLayer, /onOpenContextMenu\(\{ clientX:/)
+  assert.match(
+    booksStyles,
+    /\.book-reader__pdf-ink-layer\s*\{[\s\S]*?cursor:\s*default/,
+  )
+  assert.match(booksSource, /handlePdfOcrRecognized\(text, stroke, false\)/)
+  assert.doesNotMatch(booksSource, /openReaderContextMenu\(stroke\.clientX/)
+  assert.doesNotMatch(booksSource, /ocr_expand_paragraph|handleExpandPdfOcrParagraph|canExpandPdfOcrParagraph/)
+})
+
+test('PDF annotation locations can be replaced with an outline chapter or manual title', () => {
+  assert.match(booksSource, /buildPdfOutlinePathSnapshot/)
+  assert.match(booksSource, /reader_location_page_auto/)
+  assert.match(booksSource, /reader_location_chapter_placeholder/)
+  assert.match(booksSource, /manualTitle: event\.target\.value/)
+  assert.doesNotMatch(readerAnnotationsPanel, /item\.kind !== 'highlight'/)
 })
 
 test('reader annotations use a right-side icon control with a count badge', () => {

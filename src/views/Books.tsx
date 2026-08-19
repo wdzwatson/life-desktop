@@ -1,4 +1,4 @@
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url'
 import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
@@ -41,6 +41,7 @@ import {
   type ReaderOutlineStatus,
 } from '../components/ReaderOutlineDrawer'
 import { PdfAnnotationLayer, type SavedPdfHighlight } from '../components/PdfAnnotationLayer'
+import { PdfInkSelectionLayer } from '../components/PdfInkSelectionLayer'
 import { PdfOcrOverlay } from '../components/PdfOcrOverlay'
 import { PdfOcrTextLayer, type PdfOcrSelectionArea } from '../components/PdfOcrTextLayer'
 import { useDrawerPanelTransition } from '../components/useDrawerTransition'
@@ -71,7 +72,9 @@ import {
   getActivePdfOutlineNodeId,
   groupOcrWordsIntoLines,
   hasBrokenPdfOutlineGlyph,
+  normalizePdfOutlineText,
   repairPdfOutlineTitle,
+  resolveOcrOutlineCandidatesWithPageLabels,
   type OcrOutlineCandidate,
 } from '../services/pdfOutlineEnhancements'
 import { resolveSelectionOutlineLocation } from '../services/selectionOutlineResolver'
@@ -103,14 +106,31 @@ import {
   type ReadingBlock,
   type TocEntry,
 } from './bookReaderUtils'
-import { recognizePdfPage, type PdfOcrPage } from './pdfOcrService'
+import {
+  getPdfOcrRegionCacheKey,
+  normalizePdfOcrPageGeometry,
+  PdfOcrRegionCache,
+  recognizePdfCanvasRegion,
+  recognizePdfPage,
+  type PdfOcrPage,
+} from './pdfOcrService'
+import {
+  createPdfInkSelectionPlans,
+  getPdfInkCropArea,
+  isPdfOcrSelectionAvailable,
+  selectPdfOcrWordsForInk,
+  type PdfInkStroke,
+} from './pdfInkSelection'
 import {
   buildExportAnnotationRecords,
   mergeReaderAnnotationsManagedMarkdown,
   normalizeReaderAnchorV2,
   renderReaderAnnotationsManagedMarkdown,
 } from '../services/readerAnnotationSerializer'
-import type { ReaderAnnotationKind as ReaderStoredAnnotationKind } from '../types/readerAnnotation'
+import type {
+  OutlinePathSnapshot,
+  ReaderAnnotationKind as ReaderStoredAnnotationKind,
+} from '../types/readerAnnotation'
 
 type BookBatchQueueItem = {
   id: string
@@ -140,6 +160,46 @@ const PDF_CONTINUOUS_OVERSCAN = 4
 const PDF_AUTOPLAY_PREFETCH_MARGIN = 2
 // Keep rendered pages inside the client area when a native vertical scrollbar is present.
 const PDF_SCROLLBAR_WIDTH_TOLERANCE = 16
+
+const buildPdfOutlinePathSnapshot = (
+  entries: PdfOutlineEntry[] | null,
+  entryId: string,
+  manualTitle = '',
+): OutlinePathSnapshot | null => {
+  if (!entryId && manualTitle.trim()) {
+    const title = manualTitle.trim()
+    const slug =
+      title.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').slice(0, 72) || 'chapter'
+    const pathKey = `manual-${slug}`
+    return {
+      source: 'pdf',
+      pathKey,
+      nodes: [{ id: pathKey, title, level: 0, pathKey }],
+    }
+  }
+  if (!entries?.length || !entryId) return null
+  const selected = entries.find((entry) => entry.id === entryId)
+  if (!selected) return null
+  const byPathKey = new Map(entries.map((entry) => [entry.pathKey, entry]))
+  const nodes: PdfOutlineEntry[] = []
+  const visited = new Set<string>()
+  let current: PdfOutlineEntry | undefined = selected
+  while (current && !visited.has(current.pathKey)) {
+    visited.add(current.pathKey)
+    nodes.unshift(current)
+    current = current.parentPathKey ? byPathKey.get(current.parentPathKey) : undefined
+  }
+  return {
+    source: 'pdf',
+    pathKey: selected.pathKey,
+    nodes: nodes.map((node) => ({
+      id: node.id,
+      title: node.title,
+      level: node.level,
+      pathKey: node.pathKey,
+    })),
+  }
+}
 const READER_HIGHLIGHTS_WITH_STATUS_QUERY = `
   SELECT
     items.id AS id,
@@ -218,9 +278,15 @@ type PdfContinuousScrollListProps = {
   pdfPageAspectRatio: number
   pdfPageAspectRatios: Record<number, number>
   onPageAspectRatioLoaded?: (pageNumber: number, ratio: number) => void
+  onPageTextModeDetected?: (pageNumber: number, page: PDFPageProxy) => void
   pdfOcrPages: Record<number, PdfOcrPageState>
   pdfHighlightsByPage: Map<number, any[]>
   activeHighlightId: string | null
+  pdfPageTextModes: Record<number, PdfPageTextMode>
+  pdfInkDraft: PdfInkDraft | null
+  handlePdfInkStroke: (page: number, stroke: PdfInkStroke) => Promise<void>
+  onClearInkSelection: () => void
+  onOpenInkContextMenu: (position: { clientX: number; clientY: number }) => void
   handlePdfOcrAreasSelected: (page: number, areas: any[], selectedText: string) => void
   openReaderContextMenu: (
     clientX: number,
@@ -250,6 +316,11 @@ const PdfContinuousScrollList = React.memo(
       pdfOcrPages,
       pdfHighlightsByPage,
       activeHighlightId,
+      pdfPageTextModes,
+      pdfInkDraft,
+      handlePdfInkStroke,
+      onClearInkSelection,
+      onOpenInkContextMenu,
       handlePdfOcrAreasSelected,
       openReaderContextMenu,
       ensurePdfOcrPage,
@@ -303,8 +374,10 @@ const PdfContinuousScrollList = React.memo(
                 width={pdfPageRenderWidth || undefined}
                 onLoadSuccess={(page) => {
                   const ratio = page.height / page.width
-                  if (!Number.isFinite(ratio) || ratio <= 0) return
-                  props.onPageAspectRatioLoaded?.(idx + 1, ratio)
+                  if (Number.isFinite(ratio) && ratio > 0) {
+                    props.onPageAspectRatioLoaded?.(idx + 1, ratio)
+                  }
+                  props.onPageTextModeDetected?.(idx + 1, page)
                 }}
                 onRenderSuccess={() => {
                   props.onFirstVisiblePageRendered?.()
@@ -333,6 +406,13 @@ const PdfContinuousScrollList = React.memo(
                   onFallback={handleOpenPdfOcrFallback}
                 />
               )}
+              <PdfInkSelectionLayer
+                enabled={pdfPageTextModes[idx + 1] === 'scanned'}
+                draft={pdfInkDraft?.pageNumber === idx + 1 ? pdfInkDraft : null}
+                onStroke={(stroke) => handlePdfInkStroke(idx + 1, stroke)}
+                onClearSelection={onClearInkSelection}
+                onOpenContextMenu={onOpenInkContextMenu}
+              />
               {pdfHighlightsByPage.has(idx + 1) && (
                 <PdfAnnotationLayer
                   highlights={pdfHighlightsByPage.get(idx + 1) || EMPTY_PDF_HIGHLIGHTS}
@@ -361,6 +441,8 @@ const PdfContinuousScrollList = React.memo(
     if (prev.pdfOcrPages !== next.pdfOcrPages) return false
     if (prev.pdfHighlightsByPage !== next.pdfHighlightsByPage) return false
     if (prev.activeHighlightId !== next.activeHighlightId) return false
+    if (prev.pdfPageTextModes !== next.pdfPageTextModes) return false
+    if (prev.pdfInkDraft !== next.pdfInkDraft) return false
 
     // During auto-play, only care about renderWindowCenter changes
     // so the virtual window can advance and pre-render subsequent pages.
@@ -382,11 +464,20 @@ type PdfOcrPageState = {
   progressLabel?: string
 }
 
+type PdfPageTextMode = 'unknown' | 'text' | 'scanned'
+
+type PdfInkDraft = {
+  pageNumber: number
+  areas: PdfOcrSelectionArea[]
+  status: 'recognizing' | 'ready' | 'error'
+}
+
 type ReaderContextMenuState = {
   left: number
   top: number
   text: string
   highlight?: SavedPdfHighlight
+  canCorrectPdfOcrText?: boolean
 }
 
 type ReaderAnnotationRecord = ReaderHighlight & {
@@ -415,11 +506,18 @@ const normalizeHighlightAnnotation = (value: unknown) => {
 
 const parseOutlinePathSnapshot = (value: unknown) => {
   if (!value) return null
-  if (typeof value !== 'string') return value as { nodes?: Array<{ title?: string }> } | null
+  if (typeof value !== 'string')
+    return value as {
+      nodes?: Array<{ id?: string; title?: string; pathKey?: string }>
+      pathKey?: string
+    } | null
   try {
     const parsed = JSON.parse(value)
     return parsed && typeof parsed === 'object'
-      ? (parsed as { nodes?: Array<{ title?: string }> })
+      ? (parsed as {
+          nodes?: Array<{ id?: string; title?: string; pathKey?: string }>
+          pathKey?: string
+        })
       : null
   } catch {
     return null
@@ -438,6 +536,18 @@ const getPersistedReaderHighlightAnchor = (highlight: ReaderHighlight) => {
     return parseReaderHighlightAnchor(highlight.anchor)
   }
 }
+
+const isVisualOcrAnchor = (anchor: ReaderHighlightAnchor | null | undefined) =>
+  anchor?.source === 'ocr' &&
+  (anchor.areas?.some((area) => area.width > 0 && area.height > 0) ||
+    anchor.positions?.some(
+      (position) =>
+        position.pageNumber !== undefined &&
+        position.x !== undefined &&
+        position.y !== undefined &&
+        position.width !== undefined &&
+        position.height !== undefined,
+    ))
 
 export const Books: React.FC = () => {
   const { t, i18n } = useTranslation()
@@ -704,6 +814,7 @@ export const Books: React.FC = () => {
   // state read alone can still observe the previous anchor.
   const selectedHighlightAnchorRef = useRef<ReaderHighlightAnchor | null>(null)
   const [editingHighlightId, setEditingHighlightId] = useState<string | null>(null)
+  const [isCorrectingPdfOcrText, setIsCorrectingPdfOcrText] = useState(false)
   const [selectedHighlightIncludesMark, setSelectedHighlightIncludesMark] = useState(true)
   const [activeHighlightId, setActiveHighlightId] = useState<string | null>(null)
   const [isSelectionEditorOpen, setIsSelectionEditorOpen] = useState(false)
@@ -715,14 +826,25 @@ export const Books: React.FC = () => {
   const [readerShortcuts, setReaderShortcuts] = useState(DEFAULT_READER_SHORTCUTS)
   const [pdfOcrImageDataUrl, setPdfOcrImageDataUrl] = useState<string | null>(null)
   const [pdfOcrPages, setPdfOcrPages] = useState<Record<number, PdfOcrPageState>>({})
+  const [pdfPageTextModes, setPdfPageTextModes] = useState<
+    Record<number, PdfPageTextMode>
+  >({})
+  const [pdfInkDraft, setPdfInkDraft] = useState<PdfInkDraft | null>(null)
+  const [pdfLocationOverride, setPdfLocationOverride] = useState<{
+    active: boolean
+    entryId: string
+    manualTitle: string
+  }>({ active: false, entryId: '', manualTitle: '' })
   const pdfOcrInFlightRef = useRef(new Set<number>())
   const pdfOcrAbortControllersRef = useRef(new Set<AbortController>())
+  const pdfOcrRegionCacheRef = useRef(new PdfOcrRegionCache())
   const readerSessionRef = useRef(0)
 
   const cancelPdfOcrRequests = () => {
     pdfOcrAbortControllersRef.current.forEach((controller) => controller.abort())
     pdfOcrAbortControllersRef.current.clear()
     pdfOcrInFlightRef.current.clear()
+    pdfOcrRegionCacheRef.current.clear()
     setPdfOcrPages({})
   }
   const [isTocDrawerOpen, setIsTocDrawerOpen] = useState(false)
@@ -1702,6 +1824,9 @@ export const Books: React.FC = () => {
     setPdfPageAspectRatio(PDF_DEFAULT_PAGE_ASPECT_RATIO)
     setPdfPageAspectRatios({})
     setPdfOutlineEntries(null)
+    setPdfPageTextModes({})
+    setPdfInkDraft(null)
+    setPdfLocationOverride({ active: false, entryId: '', manualTitle: '' })
     setPdfOutlineStatus('empty')
     setSelectedPdfOutlineNodeId(null)
     pdfDocumentRef.current = null
@@ -1853,6 +1978,9 @@ export const Books: React.FC = () => {
     setPdfPageAspectRatio(PDF_DEFAULT_PAGE_ASPECT_RATIO)
     setPdfPageAspectRatios({})
     setPdfOutlineEntries(null)
+    setPdfPageTextModes({})
+    setPdfInkDraft(null)
+    setPdfLocationOverride({ active: false, entryId: '', manualTitle: '' })
     setPdfOutlineStatus('empty')
     setSelectedPdfOutlineNodeId(null)
     pdfDocumentRef.current = null
@@ -2165,12 +2293,16 @@ export const Books: React.FC = () => {
     clientY: number,
     textOverride?: string,
     highlight?: SavedPdfHighlight,
+    allowEmpty = false,
   ) => {
     const text = textOverride || window.getSelection()?.toString().trim() || selectedHighlightText
-    if (!text) return false
-    const menuHeight = highlight ? 260 : 188
+    if (!text && !allowEmpty) return false
+    const canCorrectPdfOcrText =
+      !highlight && isPdfOcrSelectionAvailable(selectedHighlightAnchorRef.current)
+    const menuHeight = (highlight ? 260 : 188) + (canCorrectPdfOcrText ? 36 : 0)
     setSelectedHighlightText(text)
     setEditingHighlightId(null)
+    setIsCorrectingPdfOcrText(false)
     editingAnnotationKindRef.current = null
     if (highlight) {
       const record = highlight as ReaderAnnotationRecord
@@ -2184,6 +2316,7 @@ export const Books: React.FC = () => {
       top: Math.max(8, Math.min(clientY, window.innerHeight - menuHeight)),
       text,
       highlight,
+      canCorrectPdfOcrText,
     })
     return true
   }
@@ -2192,6 +2325,30 @@ export const Books: React.FC = () => {
     if (!openReaderContextMenu(event.clientX, event.clientY)) return
     event.preventDefault()
     event.stopPropagation()
+  }
+
+  const clearPendingReaderSelection = () => {
+    setReaderContextMenu(null)
+    if (editingHighlightId) return
+    setSelectedHighlightText('')
+    selectedHighlightAnchorRef.current = null
+    setSelectedHighlightAnchor(null)
+    selectedSelectionIdRef.current = null
+    editingAnnotationKindRef.current = null
+    selectedTranslationLanguageRef.current = null
+    setEditingHighlightId(null)
+    setIsCorrectingPdfOcrText(false)
+    setSelectedHighlightIncludesMark(true)
+    setIsSelectionEditorOpen(false)
+    setNewAnnotation('')
+    setAiTranslation('')
+    setPdfInkDraft(null)
+    setPdfLocationOverride({ active: false, entryId: '', manualTitle: '' })
+    window.getSelection()?.removeAllRanges()
+  }
+
+  const handlePdfInkContextMenu = (position: { clientX: number; clientY: number }) => {
+    openReaderContextMenu(position.clientX, position.clientY, selectedHighlightText, undefined, true)
   }
 
   const handleCopySelectedText = async (text: string) => {
@@ -2247,24 +2404,58 @@ export const Books: React.FC = () => {
     setPdfOcrImageDataUrl(currentPageCanvas.toDataURL('image/png'))
   }
 
-  const handlePdfOcrRecognized = (text: string) => {
+  const handlePdfOcrRecognized = (
+    text: string,
+    menuPosition?: { clientX: number; clientY: number },
+    openMenu = true,
+  ) => {
     setSelectedHighlightText(text)
     selectedSelectionIdRef.current = crypto.randomUUID()
     editingAnnotationKindRef.current = null
     selectedTranslationLanguageRef.current = null
     setEditingHighlightId(null)
+    setIsCorrectingPdfOcrText(false)
     setSelectedHighlightIncludesMark(true)
     setIsSelectionEditorOpen(false)
     setAiTranslation('')
+    if (!openMenu) {
+      setReaderContextMenu(null)
+      return
+    }
     setReaderContextMenu({
-      left: Math.max(8, window.innerWidth / 2 - 94),
-      top: Math.max(8, window.innerHeight / 2 - 86),
+      left: Math.max(
+        8,
+        Math.min(menuPosition?.clientX ?? window.innerWidth / 2 - 94, window.innerWidth - 196),
+      ),
+      top: Math.max(
+        8,
+        Math.min(menuPosition?.clientY ?? window.innerHeight / 2 - 104, window.innerHeight - 224),
+      ),
       text,
+      canCorrectPdfOcrText: isPdfOcrSelectionAvailable(selectedHighlightAnchorRef.current),
     })
   }
 
   const getPdfPageElement = (pageNumber: number) =>
     readerMainRef.current?.querySelector<HTMLElement>(`[data-page-number="${pageNumber}"]`)
+
+  const recognizePdfReaderRegion = async (
+    pageNumber: number,
+    canvas: HTMLCanvasElement,
+    area: { x: number; y: number; width: number; height: number },
+    progressListener: (status: string, progress?: number) => void,
+    options: { priority: 'background' | 'user'; signal?: AbortSignal },
+  ) => {
+    const cacheKey = getPdfOcrRegionCacheKey(pageNumber, area, PDF_OCR_ENGINE_VERSION, {
+      width: canvas.width,
+      height: canvas.height,
+    })
+    const cached = pdfOcrRegionCacheRef.current.get(cacheKey)
+    if (cached) return cached
+    const result = await recognizePdfCanvasRegion(canvas, area, progressListener, options)
+    if (!options.signal?.aborted) pdfOcrRegionCacheRef.current.set(cacheKey, result)
+    return result
+  }
 
   const getPdfOcrProgressLabel = (status: string, progress?: number) => {
     if (status === 'loading tesseract core') return t('books.ocr_modal_loading_engine')
@@ -2329,16 +2520,7 @@ export const Books: React.FC = () => {
         },
         { priority: 'background', signal: abortController.signal },
       )
-      const normalized: PdfOcrPage = {
-        text: result.text,
-        words: result.words.map((word) => ({
-          ...word,
-          x: word.x / canvas.width,
-          y: word.y / canvas.height,
-          width: word.width / canvas.width,
-          height: word.height / canvas.height,
-        })),
-      }
+      const normalized = normalizePdfOcrPageGeometry(result, canvas.width, canvas.height)
       if (isCurrentSession()) {
         setPdfOcrPages((current) => ({
           ...current,
@@ -2403,16 +2585,7 @@ export const Books: React.FC = () => {
             signal,
           },
         )
-        const normalized: PdfOcrPage = {
-          text: result.text,
-          words: result.words.map((word) => ({
-            ...word,
-            x: word.x / canvas.width,
-            y: word.y / canvas.height,
-            width: word.width / canvas.width,
-            height: word.height / canvas.height,
-          })),
-        }
+        const normalized = normalizePdfOcrPageGeometry(result, canvas.width, canvas.height)
         await api?.dbQuery(
           'books',
           'INSERT OR REPLACE INTO pdf_ocr_pages (book_id, page_number, engine_version, payload) VALUES (?, ?, ?, ?)',
@@ -2430,10 +2603,14 @@ export const Books: React.FC = () => {
 
   const repairNativePdfOutlineTitles = useCallback(
     async (entries: PdfOutlineEntry[], sessionId: number) => {
-      const brokenEntries = entries.filter(
+      const normalizedEntries = entries.map((entry) => ({
+        ...entry,
+        title: normalizePdfOutlineText(entry.title),
+      }))
+      const brokenEntries = normalizedEntries.filter(
         (entry) => Number.isInteger(entry.pageNumber) && hasBrokenPdfOutlineGlyph(entry.title),
       )
-      if (brokenEntries.length === 0 || !pdfDocumentRef.current) return entries
+      if (brokenEntries.length === 0 || !pdfDocumentRef.current) return normalizedEntries
 
       const abortController = new AbortController()
       pdfOcrAbortControllersRef.current.add(abortController)
@@ -2443,7 +2620,7 @@ export const Books: React.FC = () => {
           ...new Set(brokenEntries.map((entry) => entry.pageNumber as number)),
         ]) {
           if (abortController.signal.aborted || sessionId !== readerSessionRef.current)
-            return entries
+            return normalizedEntries
           const page = await pdfDocumentRef.current.getPage(pageNumber)
           const content = await page.getTextContent()
           const lines = new Map<number, Array<{ x: number; text: string }>>()
@@ -2466,7 +2643,7 @@ export const Books: React.FC = () => {
           )
         }
 
-        let repaired = entries.map((entry) => ({
+        let repaired = normalizedEntries.map((entry) => ({
           ...entry,
           title: Number.isInteger(entry.pageNumber)
             ? repairPdfOutlineTitle(
@@ -2488,7 +2665,7 @@ export const Books: React.FC = () => {
 
         for (const [index, pageNumber] of unresolvedPages.entries()) {
           if (abortController.signal.aborted || sessionId !== readerSessionRef.current)
-            return entries
+            return normalizedEntries
           setPdfOutlineAnalysisMessage(
             t('books.outline_correcting_title', {
               current: index + 1,
@@ -2518,7 +2695,7 @@ export const Books: React.FC = () => {
       } catch (error) {
         if ((error as { name?: string })?.name !== 'AbortError')
           console.warn('PDF outline title correction failed:', error)
-        return entries
+        return normalizedEntries
       } finally {
         pdfOcrAbortControllersRef.current.delete(abortController)
       }
@@ -2540,6 +2717,15 @@ export const Books: React.FC = () => {
     let lastCandidatePage = 0
     let lastReportedPercent = -1
     try {
+      const pageLabels = await pdfDocumentRef.current.getPageLabels()
+      if (sessionId !== readerSessionRef.current) return
+      if (!pageLabels) {
+        setPdfOutlineEntries(buildPageOnlyPdfOutlineEntries(pdfNumPages))
+        setPdfOutlineStatus('fallback')
+        setPdfOutlineAnalysisMessage(t('books.outline_ocr_page_mapping_unavailable'))
+        return
+      }
+
       for (let pageNumber = 1; pageNumber <= pageLimit; pageNumber += 1) {
         if (abortController.signal.aborted || sessionId !== readerSessionRef.current) return
         setPdfOutlineAnalysisMessage(
@@ -2568,7 +2754,12 @@ export const Books: React.FC = () => {
         if (candidates.length >= 3 && pageNumber - lastCandidatePage >= 2) break
       }
 
-      const entries = buildOcrPdfOutlineEntries(candidates)
+      const resolvedCandidates = resolveOcrOutlineCandidatesWithPageLabels(
+        candidates,
+        pageLabels,
+        pdfNumPages,
+      )
+      const entries = resolvedCandidates ? buildOcrPdfOutlineEntries(resolvedCandidates) : []
       if (entries.length > 0) {
         setPdfOutlineEntries(entries)
         setPdfOutlineStatus('ready')
@@ -2578,7 +2769,11 @@ export const Books: React.FC = () => {
       }
       setPdfOutlineEntries(buildPageOnlyPdfOutlineEntries(pdfNumPages))
       setPdfOutlineStatus('fallback')
-      setPdfOutlineAnalysisMessage(t('books.outline_ocr_empty'))
+      setPdfOutlineAnalysisMessage(
+        candidates.length > 0
+          ? t('books.outline_ocr_page_mapping_unavailable')
+          : t('books.outline_ocr_empty'),
+      )
     } catch (error) {
       if ((error as { name?: string })?.name === 'AbortError') return
       console.warn('Scanned PDF outline OCR failed:', error)
@@ -2622,6 +2817,94 @@ export const Books: React.FC = () => {
     handlePdfOcrRecognized(text)
   }
 
+  const handlePdfInkStroke = async (pageNumber: number, stroke: PdfInkStroke) => {
+    const canvas = getPdfPageElement(pageNumber)?.querySelector<HTMLCanvasElement>('canvas')
+    if (!canvas || canvas.width === 0 || canvas.height === 0) {
+      showToast(t('books.ocr_page_not_ready'))
+      return
+    }
+    const plans = createPdfInkSelectionPlans(canvas, stroke.strokes || [stroke.points])
+    if (plans.length === 0) {
+      showToast(t('books.ocr_ink_stroke_too_short'))
+      return
+    }
+    const visualAreas = plans.map((plan) => plan.visualArea)
+
+    const pendingAnchor: ReaderHighlightAnchor = {
+      source: 'ocr',
+      pageNumber,
+      areas: visualAreas,
+      recognition: { status: 'pending', engineVersion: PDF_OCR_ENGINE_VERSION },
+    }
+    selectedHighlightAnchorRef.current = pendingAnchor
+    setSelectedHighlightAnchor(pendingAnchor)
+    setSelectedHighlightText('')
+    selectedSelectionIdRef.current = crypto.randomUUID()
+    editingAnnotationKindRef.current = null
+    selectedTranslationLanguageRef.current = null
+    setEditingHighlightId(null)
+    setSelectedHighlightIncludesMark(true)
+    setPdfInkDraft({ pageNumber, areas: visualAreas, status: 'recognizing' })
+
+    const abortController = new AbortController()
+    pdfOcrAbortControllersRef.current.add(abortController)
+    try {
+      let sourceWords = pdfOcrPages[pageNumber]?.data?.words || []
+      let selections = plans.map((plan) => selectPdfOcrWordsForInk(sourceWords, plan.visualArea))
+      if (selections.some((selection) => !selection)) {
+        const cropArea = getPdfInkCropArea(plans)
+        if (!cropArea) throw new Error('The ink selection has no OCR crop area.')
+        const localPage = await recognizePdfReaderRegion(pageNumber, canvas, cropArea, () => {}, {
+          priority: 'user',
+          signal: abortController.signal,
+        })
+        sourceWords = localPage.words
+        selections = plans.map((plan) => selectPdfOcrWordsForInk(sourceWords, plan.visualArea))
+      }
+
+      const recognizedSelections = selections.filter(
+        (selection): selection is NonNullable<typeof selection> => Boolean(selection),
+      )
+      if (recognizedSelections.length === 0) {
+        throw new Error('No OCR text matched the ink stroke.')
+      }
+      const areas = mergePdfSelectionAreas(
+        recognizedSelections.flatMap((selection) => selection.areas),
+      )
+      const text = recognizedSelections.map((selection) => selection.text).join('\n')
+      const confidence =
+        recognizedSelections.reduce((total, selection) => total + selection.confidence, 0) /
+        recognizedSelections.length
+      const readyAnchor: ReaderHighlightAnchor = {
+        source: 'ocr',
+        pageNumber,
+        areas,
+        recognition: {
+          status: 'ready',
+          engineVersion: PDF_OCR_ENGINE_VERSION,
+          confidence,
+        },
+      }
+      selectedHighlightAnchorRef.current = readyAnchor
+      setSelectedHighlightAnchor(readyAnchor)
+      setPdfInkDraft({ pageNumber, areas, status: 'ready' })
+      handlePdfOcrRecognized(text, stroke, false)
+    } catch (error) {
+      if ((error as { name?: string })?.name === 'AbortError') return
+      console.warn('PDF ink selection OCR failed:', error)
+      const failedAnchor: ReaderHighlightAnchor = {
+        ...pendingAnchor,
+        recognition: { status: 'error', engineVersion: PDF_OCR_ENGINE_VERSION },
+      }
+      selectedHighlightAnchorRef.current = failedAnchor
+      setSelectedHighlightAnchor(failedAnchor)
+      setPdfInkDraft({ pageNumber, areas: visualAreas, status: 'error' })
+      showToast(t('books.ocr_ink_saved_without_text'))
+    } finally {
+      pdfOcrAbortControllersRef.current.delete(abortController)
+    }
+  }
+
   const requestPdfOcrForCurrentPage = () => {
     const pageNumber = currentPageIndex + 1
     const canvas = getPdfPageElement(pageNumber)?.querySelector<HTMLCanvasElement>('canvas')
@@ -2635,6 +2918,33 @@ export const Books: React.FC = () => {
   const handleReaderContentClick = () => {
     setReaderContextMenu(null)
   }
+
+  const handlePdfPageTextModeDetected = useCallback(
+    async (pageNumber: number, page: PDFPageProxy) => {
+      const sessionId = readerSessionRef.current
+      try {
+        const textContent = await page.getTextContent()
+        const textItems = textContent.items
+          .map((item) => (item as { str?: unknown }).str)
+          .filter((str): str is string => typeof str === 'string' && str.trim().length > 0)
+        const characterCount = textItems.reduce((total, item) => total + item.trim().length, 0)
+        const mode: PdfPageTextMode = characterCount >= 2 ? 'text' : 'scanned'
+        if (sessionId !== readerSessionRef.current) return
+        setPdfPageTextModes((current) =>
+          current[pageNumber] === mode ? current : { ...current, [pageNumber]: mode },
+        )
+      } catch {
+        // If the text layer cannot be extracted, keep the page usable through local OCR ink.
+        if (sessionId !== readerSessionRef.current) return
+        setPdfPageTextModes((current) =>
+          current[pageNumber] === 'scanned'
+            ? current
+            : { ...current, [pageNumber]: 'scanned' },
+        )
+      }
+    },
+    [],
+  )
 
   const handlePdfLoadSuccess = async (pdfDocument: PDFDocumentProxy) => {
     const { numPages } = pdfDocument
@@ -3222,17 +3532,25 @@ export const Books: React.FC = () => {
     forceCreate = false,
   ) => {
     const highlightText = textOverride || selectedHighlightText
-    if (!highlightText || !readingBook || !api) return
+    const anchor = selectedHighlightAnchorRef.current ||
+      selectedHighlightAnchor || { chapter: currentChapter, chapterIndex: currentChapterIndex }
+    if ((!highlightText && !isVisualOcrAnchor(anchor)) || !readingBook || !api) return
     const annotation = normalizeHighlightAnnotation(annotationOverride ?? newAnnotation)
     const kind = kindOverride || (annotation ? 'note' : 'highlight')
     if ((kind === 'note' || kind === 'translation') && !annotation) return
     const storedKind = kind === 'highlight' ? 'underline' : kind
-    const anchor = selectedHighlightAnchorRef.current ||
-      selectedHighlightAnchor || { chapter: currentChapter, chapterIndex: currentChapterIndex }
     const includesMark =
       kind === 'highlight' ? true : (includesMarkOverride ?? selectedHighlightIncludesMark)
+    const manualOutlinePath = pdfLocationOverride.active
+      ? buildPdfOutlinePathSnapshot(
+          pdfOutlineEntries,
+          pdfLocationOverride.entryId,
+          pdfLocationOverride.manualTitle,
+        )
+      : undefined
     const storedAnchor = {
       ...anchor,
+      ...(pdfLocationOverride.active ? { outlinePath: manualOutlinePath } : {}),
       highlighted: includesMark,
       kind,
     }
@@ -3272,11 +3590,14 @@ export const Books: React.FC = () => {
       editingAnnotationKindRef.current = null
       selectedTranslationLanguageRef.current = null
       setEditingHighlightId(null)
+      setIsCorrectingPdfOcrText(false)
       setSelectedHighlightIncludesMark(true)
       setIsSelectionEditorOpen(false)
       setNewAnnotation('')
       setAiTranslation('')
       setReaderContextMenu(null)
+      setPdfInkDraft(null)
+      setPdfLocationOverride({ active: false, entryId: '', manualTitle: '' })
 
       await reconcileSavedSelectionLocation(
         savedSelectionId || itemId || highlightText,
@@ -3301,6 +3622,17 @@ export const Books: React.FC = () => {
     setSelectedHighlightText(highlight.text)
     setSelectedHighlightAnchor(persistedAnchor)
     selectedHighlightAnchorRef.current = persistedAnchor
+    const persistedOutlinePath = parseOutlinePathSnapshot(persistedAnchor?.outlinePath)
+    const persistedOutlineNode = persistedOutlinePath?.nodes?.slice(-1)[0]
+    const hasKnownOutlineEntry = Boolean(
+      persistedOutlineNode?.id &&
+        pdfOutlineEntries?.some((entry) => entry.id === persistedOutlineNode.id),
+    )
+    setPdfLocationOverride({
+      active: Boolean(persistedOutlineNode && !hasKnownOutlineEntry),
+      entryId: hasKnownOutlineEntry ? persistedOutlineNode?.id || '' : '',
+      manualTitle: hasKnownOutlineEntry ? '' : persistedOutlineNode?.title || '',
+    })
     selectedSelectionIdRef.current = highlight.selection_id || highlight.id
     editingAnnotationKindRef.current = mode === 'edit' ? kind : null
     selectedTranslationLanguageRef.current =
@@ -3308,6 +3640,7 @@ export const Books: React.FC = () => {
         ? highlight.translation_language || i18n.language
         : null
     setEditingHighlightId(mode === 'edit' ? highlight.id : null)
+    setIsCorrectingPdfOcrText(false)
     setSelectedHighlightIncludesMark(kind === 'translation' ? false : isMarked)
     setNewAnnotation(
       mode === 'edit' && kind === 'note' ? normalizeHighlightAnnotation(highlight.annotation) : '',
@@ -3383,6 +3716,7 @@ export const Books: React.FC = () => {
   }
 
   const openSavedHighlight = (highlight: any) => {
+    clearPendingReaderSelection()
     setActiveHighlightId(highlight.id)
     setIsAnnotationsDrawerOpen(true)
     window.requestAnimationFrame(() => {
@@ -3516,12 +3850,12 @@ export const Books: React.FC = () => {
       sortedHighlights.map((highlight) => ({
         id: highlight.id,
         kind: getReaderAnnotationKind(highlight),
-        text: highlight.text,
+        text: highlight.text || t('books.ocr_unrecognized_selection'),
         content: normalizeHighlightAnnotation(highlight.annotation),
         locationLabel: getReaderAnnotationLocationLabel(highlight),
         createdAt: highlight.created_at || null,
       })),
-    [getReaderAnnotationLocationLabel, sortedHighlights],
+    [getReaderAnnotationLocationLabel, sortedHighlights, t],
   )
   const readerAnnotationsById = useMemo(
     () => new Map(sortedHighlights.map((highlight) => [highlight.id, highlight])),
@@ -4135,13 +4469,23 @@ export const Books: React.FC = () => {
   }, [isPdf, bookChapters, currentChapterIndex, currentParagraphOffset, isLoadingReader])
 
   useEffect(() => {
-    if (!selectedHighlightText || !isSelectionEditorOpen || !isAnnotationsDrawerOpen) return
+    if (
+      (!selectedHighlightText && !isVisualOcrAnchor(selectedHighlightAnchor)) ||
+      !isSelectionEditorOpen ||
+      !isAnnotationsDrawerOpen
+    )
+      return
 
     const raf = requestAnimationFrame(() => {
       annotationInputRef.current?.focus(getAnnotationEditorFocusOptions())
     })
     return () => cancelAnimationFrame(raf)
-  }, [selectedHighlightText, isSelectionEditorOpen, isAnnotationsDrawerOpen])
+  }, [
+    selectedHighlightText,
+    selectedHighlightAnchor,
+    isSelectionEditorOpen,
+    isAnnotationsDrawerOpen,
+  ])
 
   // In EPUB scroll mode the whole chapter is shown, so paging is chapter-bound.
   const isEpubScroll = !isPdf && bookChapters && epubLayoutMode === 'scroll'
@@ -4644,13 +4988,15 @@ export const Books: React.FC = () => {
               {/* Custom font and bg adjustments */}
               <div className="book-reader__toolbar">
                 {isPdf && (
-                  <button
-                    className="btn sm"
-                    onClick={requestPdfOcrForCurrentPage}
-                    title={t('books.ocr_shortcut', { shortcut: readerShortcuts.readerOcr })}
-                  >
-                    <Languages size={12} /> {t('books.ocr_extract')}
-                  </button>
+                  <>
+                    <button
+                      className="btn sm"
+                      onClick={requestPdfOcrForCurrentPage}
+                      title={t('books.ocr_shortcut', { shortcut: readerShortcuts.readerOcr })}
+                    >
+                      <Languages size={12} /> {t('books.ocr_extract')}
+                    </button>
+                  </>
                 )}
                 <button
                   className="btn sm"
@@ -4820,13 +5166,34 @@ export const Books: React.FC = () => {
                 style={{ left: readerContextMenu.left, top: readerContextMenu.top }}
                 onPointerDown={(event) => event.stopPropagation()}
               >
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => void handleCopySelectedText(readerContextMenu.text)}
-                >
-                  <Copy size={14} /> {t('books.copy_selected_text')}
-                </button>
+                {readerContextMenu.text ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => void handleCopySelectedText(readerContextMenu.text)}
+                  >
+                    <Copy size={14} /> {t('books.copy_selected_text')}
+                  </button>
+                ) : null}
+                {readerContextMenu.canCorrectPdfOcrText ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setReaderContextMenu(null)
+                      setEditingHighlightId(null)
+                      editingAnnotationKindRef.current = null
+                      setSelectedHighlightIncludesMark(true)
+                      setNewAnnotation('')
+                      setAiTranslation('')
+                      setIsCorrectingPdfOcrText(true)
+                      setIsAnnotationsDrawerOpen(true)
+                      setIsSelectionEditorOpen(true)
+                    }}
+                  >
+                    <Edit3 size={14} /> {t('books.ocr_correct_text')}
+                  </button>
+                ) : null}
                 {(!contextHighlight ||
                   (contextHighlightKind !== 'highlight' && !contextHighlightIsMarked)) && (
                   <button
@@ -4851,42 +5218,46 @@ export const Books: React.FC = () => {
                     }
                     setReaderContextMenu(null)
                     setEditingHighlightId(null)
+                    setIsCorrectingPdfOcrText(false)
                     editingAnnotationKindRef.current = null
                     setSelectedHighlightIncludesMark(false)
                     setNewAnnotation('')
+                    setPdfLocationOverride({ active: false, entryId: '', manualTitle: '' })
                     setIsAnnotationsDrawerOpen(true)
                     setIsSelectionEditorOpen(true)
                   }}
                 >
                   <MessageSquareText size={14} /> {t('books.add_annotation_action')}
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    if (contextHighlight) {
-                      const anchor = getPersistedReaderHighlightAnchor(contextHighlight)
-                      selectedHighlightAnchorRef.current = anchor
-                      setSelectedHighlightAnchor(anchor)
-                      setSelectedHighlightText(contextHighlight.text)
-                      selectedSelectionIdRef.current =
-                        (contextHighlight as ReaderAnnotationRecord).selection_id ||
-                        contextHighlight.id
-                      setEditingHighlightId(null)
-                      editingAnnotationKindRef.current = null
-                      setSelectedHighlightIncludesMark(false)
-                      setNewAnnotation('')
-                    } else {
-                      setEditingHighlightId(null)
-                      editingAnnotationKindRef.current = null
-                      setSelectedHighlightIncludesMark(false)
-                    }
-                    setReaderContextMenu(null)
-                    void handleTranslateSelection(readerContextMenu.text)
-                  }}
-                >
-                  <Languages size={14} /> {t('books.translate_selected_text')}
-                </button>
+                {readerContextMenu.text ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      if (contextHighlight) {
+                        const anchor = getPersistedReaderHighlightAnchor(contextHighlight)
+                        selectedHighlightAnchorRef.current = anchor
+                        setSelectedHighlightAnchor(anchor)
+                        setSelectedHighlightText(contextHighlight.text)
+                        selectedSelectionIdRef.current =
+                          (contextHighlight as ReaderAnnotationRecord).selection_id ||
+                          contextHighlight.id
+                        setEditingHighlightId(null)
+                        editingAnnotationKindRef.current = null
+                        setSelectedHighlightIncludesMark(false)
+                        setNewAnnotation('')
+                      } else {
+                        setEditingHighlightId(null)
+                        editingAnnotationKindRef.current = null
+                        setSelectedHighlightIncludesMark(false)
+                      }
+                      setReaderContextMenu(null)
+                      void handleTranslateSelection(readerContextMenu.text)
+                    }}
+                  >
+                    <Languages size={14} /> {t('books.translate_selected_text')}
+                  </button>
+                ) : null}
                 {contextHighlight && (
                   <button
                     type="button"
@@ -5161,9 +5532,15 @@ export const Books: React.FC = () => {
                                   pdfPageAspectRatio={pdfPageAspectRatio}
                                   pdfPageAspectRatios={pdfPageAspectRatios}
                                   onPageAspectRatioLoaded={handlePdfPageAspectRatioLoaded}
+                                  onPageTextModeDetected={handlePdfPageTextModeDetected}
                                   pdfOcrPages={pdfOcrPages}
                                   pdfHighlightsByPage={pdfHighlightsByPage}
                                   activeHighlightId={activeHighlightId}
+                                  pdfPageTextModes={pdfPageTextModes}
+                                  pdfInkDraft={pdfInkDraft}
+                                  handlePdfInkStroke={handlePdfInkStroke}
+                                  onClearInkSelection={clearPendingReaderSelection}
+                                  onOpenInkContextMenu={handlePdfInkContextMenu}
                                   handlePdfOcrAreasSelected={handlePdfOcrAreasSelected}
                                   openReaderContextMenu={openReaderContextMenu}
                                   ensurePdfOcrPage={ensurePdfOcrPage}
@@ -5221,6 +5598,12 @@ export const Books: React.FC = () => {
                                           renderTextLayer={true}
                                           renderAnnotationLayer={false}
                                           width={pdfPageRenderWidth || undefined}
+                                          onLoadSuccess={(page) =>
+                                            void handlePdfPageTextModeDetected(
+                                              currentPageIndex + 1,
+                                              page,
+                                            )
+                                          }
                                           loading={
                                             <div
                                               className="book-reader__pdf-page-loading"
@@ -5259,6 +5642,21 @@ export const Books: React.FC = () => {
                                             onFallback={handleOpenPdfOcrFallback}
                                           />
                                         )}
+                                        <PdfInkSelectionLayer
+                                          enabled={
+                                            pdfPageTextModes[currentPageIndex + 1] === 'scanned'
+                                          }
+                                          draft={
+                                            pdfInkDraft?.pageNumber === currentPageIndex + 1
+                                              ? pdfInkDraft
+                                              : null
+                                          }
+                                          onStroke={(stroke) =>
+                                            handlePdfInkStroke(currentPageIndex + 1, stroke)
+                                          }
+                                          onClearSelection={clearPendingReaderSelection}
+                                          onOpenContextMenu={handlePdfInkContextMenu}
+                                        />
                                         {pdfHighlightsByPage.has(currentPageIndex + 1) && (
                                           <PdfAnnotationLayer
                                             highlights={
@@ -5298,6 +5696,12 @@ export const Books: React.FC = () => {
                                             renderTextLayer={true}
                                             renderAnnotationLayer={false}
                                             width={pdfPageRenderWidth || undefined}
+                                            onLoadSuccess={(page) =>
+                                              void handlePdfPageTextModeDetected(
+                                                currentPageIndex + 2,
+                                                page,
+                                              )
+                                            }
                                             loading={
                                               <div
                                                 className="book-reader__pdf-page-loading"
@@ -5336,6 +5740,21 @@ export const Books: React.FC = () => {
                                               onFallback={handleOpenPdfOcrFallback}
                                             />
                                           )}
+                                          <PdfInkSelectionLayer
+                                            enabled={
+                                              pdfPageTextModes[currentPageIndex + 2] === 'scanned'
+                                            }
+                                            draft={
+                                              pdfInkDraft?.pageNumber === currentPageIndex + 2
+                                                ? pdfInkDraft
+                                                : null
+                                            }
+                                            onStroke={(stroke) =>
+                                              handlePdfInkStroke(currentPageIndex + 2, stroke)
+                                            }
+                                            onClearSelection={clearPendingReaderSelection}
+                                            onOpenContextMenu={handlePdfInkContextMenu}
+                                          />
                                           {pdfHighlightsByPage.has(currentPageIndex + 2) && (
                                             <PdfAnnotationLayer
                                               highlights={
@@ -5377,6 +5796,12 @@ export const Books: React.FC = () => {
                                         renderTextLayer={true}
                                         renderAnnotationLayer={false}
                                         width={pdfPageRenderWidth || undefined}
+                                        onLoadSuccess={(page) =>
+                                          void handlePdfPageTextModeDetected(
+                                            currentPageIndex + 1,
+                                            page,
+                                          )
+                                        }
                                         loading={
                                           <div
                                             className="book-reader__pdf-page-loading"
@@ -5415,6 +5840,21 @@ export const Books: React.FC = () => {
                                           onFallback={handleOpenPdfOcrFallback}
                                         />
                                       )}
+                                      <PdfInkSelectionLayer
+                                        enabled={
+                                          pdfPageTextModes[currentPageIndex + 1] === 'scanned'
+                                        }
+                                        draft={
+                                          pdfInkDraft?.pageNumber === currentPageIndex + 1
+                                            ? pdfInkDraft
+                                            : null
+                                        }
+                                        onStroke={(stroke) =>
+                                          handlePdfInkStroke(currentPageIndex + 1, stroke)
+                                        }
+                                        onClearSelection={clearPendingReaderSelection}
+                                        onOpenContextMenu={handlePdfInkContextMenu}
+                                      />
                                       {pdfHighlightsByPage.has(currentPageIndex + 1) && (
                                         <PdfAnnotationLayer
                                           highlights={
@@ -5739,131 +6179,249 @@ export const Books: React.FC = () => {
                     }}
                   >
                     {/* Inline editor inside right sidebar instead of overlay popover to prevent shifting */}
-                    {isAnnotationsDrawerOpen && selectedHighlightText && isSelectionEditorOpen && (
-                      <div
-                        style={{
-                          padding: '12px',
-                          border: `1px solid ${readerBorderColor}`,
-                          borderRadius: '8px',
-                          backgroundColor: readerCardBg,
-                          boxShadow: 'var(--shadow-app)',
-                          marginBottom: '16px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '8px',
-                        }}
-                      >
+                    {isAnnotationsDrawerOpen &&
+                      (selectedHighlightText || isVisualOcrAnchor(selectedHighlightAnchor)) &&
+                      isSelectionEditorOpen && (
                         <div
                           style={{
-                            fontSize: '11px',
-                            color: isDarkReader ? '#888' : 'var(--text-muted)',
+                            padding: '12px',
+                            border: `1px solid ${readerBorderColor}`,
+                            borderRadius: '8px',
+                            backgroundColor: readerCardBg,
+                            boxShadow: 'var(--shadow-app)',
+                            marginBottom: '16px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px',
                           }}
                         >
-                          <strong>{t('books.selected_text_label')}：</strong>
-                          <span style={{ fontStyle: 'italic' }}>"{selectedHighlightText}"</span>
-                        </div>
-                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                          <button
-                            className="btn sm"
-                            type="button"
-                            onClick={() => void handleTranslateSelection()}
-                            disabled={isTranslatingSelection}
-                            style={{ padding: '4px 8px', fontSize: '11px' }}
-                          >
-                            <Languages size={11} />{' '}
-                            {isTranslatingSelection
-                              ? t('books.ai_translating')
-                              : t('books.ai_translate')}
-                          </button>
-                          <span
-                            style={{
-                              fontSize: '10px',
-                              color: isDarkReader ? '#888' : 'var(--text-muted)',
-                            }}
-                          >
-                            {t('books.ai_translate_shortcut', {
-                              shortcut: readerShortcuts.readerTranslate.replace(
-                                'CommandOrControl',
-                                'Ctrl',
-                              ),
-                            })}
-                          </span>
-                        </div>
-                        {aiTranslation && (
-                          <div className="book-reader__translation-result">
-                            <label>
-                              <strong>{t('books.ai_translation_label')}：</strong>
+                          {isVisualOcrAnchor(selectedHighlightAnchor) ? (
+                            <label
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '6px',
+                                fontSize: '11px',
+                                color: isDarkReader ? '#888' : 'var(--text-muted)',
+                              }}
+                            >
+                              <strong>{t('books.ocr_correct_text_label')}</strong>
                               <textarea
                                 className="form-field"
-                                value={aiTranslation}
-                                onChange={(event) => setAiTranslation(event.target.value)}
+                                aria-label={t('books.ocr_correct_text_label')}
+                                placeholder={t('books.ocr_correct_text_placeholder')}
+                                value={selectedHighlightText}
+                                onChange={(event) => setSelectedHighlightText(event.target.value)}
                                 rows={3}
                               />
                             </label>
+                          ) : (
+                            <div
+                              style={{
+                                fontSize: '11px',
+                                color: isDarkReader ? '#888' : 'var(--text-muted)',
+                              }}
+                            >
+                              <strong>{t('books.selected_text_label')}：</strong>
+                              <span style={{ fontStyle: 'italic' }}>"{selectedHighlightText}"</span>
+                            </div>
+                          )}
+                          {isPdf &&
+                          (selectedHighlightAnchor?.source === 'pdf' ||
+                            selectedHighlightAnchor?.source === 'ocr') ? (
+                            <label
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '6px',
+                                fontSize: '11px',
+                                color: isDarkReader ? '#888' : 'var(--text-muted)',
+                              }}
+                            >
+                              <strong>{t('books.reader_location_label')}</strong>
+                              <select
+                                className="form-field"
+                                value={
+                                  pdfLocationOverride.active
+                                    ? pdfLocationOverride.entryId
+                                    : (parseOutlinePathSnapshot(selectedHighlightAnchor.outlinePath)
+                                          ?.nodes?.slice(-1)[0]?.id || '')
+                                }
+                                onChange={(event) => {
+                                  const entry = (pdfOutlineEntries || []).find(
+                                    (candidate) => candidate.id === event.target.value,
+                                  )
+                                  setPdfLocationOverride({
+                                    active: true,
+                                    entryId: event.target.value,
+                                    manualTitle: entry?.title || '',
+                                  })
+                                }}
+                              >
+                                <option value="">{t('books.reader_location_page_auto')}</option>
+                                {(pdfOutlineEntries || [])
+                                  .filter((entry) => entry.analysisSource !== 'page-only')
+                                  .map((entry) => (
+                                    <option key={entry.id} value={entry.id}>
+                                      {entry.title}
+                                    </option>
+                                  ))}
+                              </select>
+                              <input
+                                className="form-field"
+                                value={
+                                  pdfLocationOverride.active && !pdfLocationOverride.entryId
+                                    ? pdfLocationOverride.manualTitle
+                                    : ''
+                                }
+                                onChange={(event) =>
+                                  setPdfLocationOverride({
+                                    active: true,
+                                    entryId: '',
+                                    manualTitle: event.target.value,
+                                  })
+                                }
+                                placeholder={t('books.reader_location_chapter_placeholder')}
+                                aria-label={t('books.reader_location_manual_chapter')}
+                              />
+                            </label>
+                          ) : null}
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                             <button
                               className="btn sm"
                               type="button"
-                              onClick={() =>
-                                void handleAddHighlight(
-                                  undefined,
-                                  aiTranslation,
-                                  false,
-                                  'translation',
-                                )
-                              }
-                              disabled={!aiTranslation.trim()}
+                              onClick={() => void handleTranslateSelection()}
+                              disabled={isTranslatingSelection || !selectedHighlightText.trim()}
+                              style={{ padding: '4px 8px', fontSize: '11px' }}
                             >
-                              <Save size={11} /> {t('books.save_translation')}
+                              <Languages size={11} />{' '}
+                              {isTranslatingSelection
+                                ? t('books.ai_translating')
+                                : t('books.ai_translate')}
+                            </button>
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                color: isDarkReader ? '#888' : 'var(--text-muted)',
+                              }}
+                            >
+                              {t('books.ai_translate_shortcut', {
+                                shortcut: readerShortcuts.readerTranslate.replace(
+                                  'CommandOrControl',
+                                  'Ctrl',
+                                ),
+                              })}
+                            </span>
+                          </div>
+                          {aiTranslation && (
+                            <div className="book-reader__translation-result">
+                              <label>
+                                <strong>{t('books.ai_translation_label')}：</strong>
+                                <textarea
+                                  className="form-field"
+                                  value={aiTranslation}
+                                  onChange={(event) => setAiTranslation(event.target.value)}
+                                  rows={3}
+                                />
+                              </label>
+                              <button
+                                className="btn sm"
+                                type="button"
+                                onClick={() =>
+                                  void handleAddHighlight(
+                                    undefined,
+                                    aiTranslation,
+                                    false,
+                                    'translation',
+                                  )
+                                }
+                                disabled={!aiTranslation.trim()}
+                              >
+                                <Save size={11} /> {t('books.save_translation')}
+                              </button>
+                            </div>
+                          )}
+                          <input
+                            ref={annotationInputRef}
+                            className="form-field"
+                            style={{
+                              fontSize: '12px',
+                              padding: '6px 8px',
+                              backgroundColor: isDarkReader ? '#121212' : '#fff',
+                              color: readerTextColor,
+                              border: `1px solid ${readerBorderColor}`,
+                            }}
+                            placeholder={t('books.annotation_placeholder')}
+                            value={newAnnotation}
+                            onChange={(e) => setNewAnnotation(e.target.value)}
+                          />
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexWrap: 'wrap',
+                              gap: '8px',
+                              justifyContent: 'flex-end',
+                            }}
+                          >
+                            <button
+                              className="btn sm"
+                              onClick={() => {
+                                setSelectedHighlightText('')
+                                selectedHighlightAnchorRef.current = null
+                                setSelectedHighlightAnchor(null)
+                                selectedSelectionIdRef.current = null
+                                editingAnnotationKindRef.current = null
+                                selectedTranslationLanguageRef.current = null
+                                setEditingHighlightId(null)
+                                setIsCorrectingPdfOcrText(false)
+                                setSelectedHighlightIncludesMark(true)
+                                setIsSelectionEditorOpen(false)
+                                setNewAnnotation('')
+                                setAiTranslation('')
+                                setPdfInkDraft(null)
+                              }}
+                              style={{ padding: '4px 8px', fontSize: '11px' }}
+                            >
+                              {t('common.cancel')}
+                            </button>
+                            {isCorrectingPdfOcrText ? (
+                              <button
+                                className="btn sm"
+                                type="button"
+                                onClick={() =>
+                                  void handleAddHighlight(undefined, '', true, 'highlight')
+                                }
+                                style={{ padding: '4px 8px', fontSize: '11px' }}
+                              >
+                                <Highlighter size={10} /> {t('books.ocr_save_corrected_highlight')}
+                              </button>
+                            ) : null}
+                            {editingHighlightId &&
+                            editingAnnotationKindRef.current === 'highlight' ? (
+                              <button
+                                className="btn sm"
+                                type="button"
+                                onClick={() =>
+                                  void handleAddHighlight(undefined, '', true, 'highlight')
+                                }
+                                style={{ padding: '4px 8px', fontSize: '11px' }}
+                              >
+                                <Save size={10} /> {t('books.save_highlight_changes')}
+                              </button>
+                            ) : null}
+                            <button
+                              className="btn sm primary"
+                              onClick={() =>
+                                void handleAddHighlight(undefined, undefined, undefined, 'note')
+                              }
+                              disabled={!newAnnotation.trim()}
+                              style={{ padding: '4px 8px', fontSize: '11px' }}
+                            >
+                              <Save size={10} /> {t('books.save_annotation_btn')}
                             </button>
                           </div>
-                        )}
-                        <input
-                          ref={annotationInputRef}
-                          className="form-field"
-                          style={{
-                            fontSize: '12px',
-                            padding: '6px 8px',
-                            backgroundColor: isDarkReader ? '#121212' : '#fff',
-                            color: readerTextColor,
-                            border: `1px solid ${readerBorderColor}`,
-                          }}
-                          placeholder={t('books.annotation_placeholder')}
-                          value={newAnnotation}
-                          onChange={(e) => setNewAnnotation(e.target.value)}
-                        />
-                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                          <button
-                            className="btn sm"
-                            onClick={() => {
-                              setSelectedHighlightText('')
-                              selectedHighlightAnchorRef.current = null
-                              setSelectedHighlightAnchor(null)
-                              selectedSelectionIdRef.current = null
-                              editingAnnotationKindRef.current = null
-                              selectedTranslationLanguageRef.current = null
-                              setEditingHighlightId(null)
-                              setSelectedHighlightIncludesMark(true)
-                              setIsSelectionEditorOpen(false)
-                              setNewAnnotation('')
-                              setAiTranslation('')
-                            }}
-                            style={{ padding: '4px 8px', fontSize: '11px' }}
-                          >
-                            {t('common.cancel')}
-                          </button>
-                          <button
-                            className="btn sm primary"
-                            onClick={() =>
-                              void handleAddHighlight(undefined, undefined, undefined, 'note')
-                            }
-                            disabled={!newAnnotation.trim()}
-                            style={{ padding: '4px 8px', fontSize: '11px' }}
-                          >
-                            <Save size={10} /> {t('books.save_annotation_btn')}
-                          </button>
                         </div>
-                      </div>
-                    )}
+                      )}
 
                     {isAnnotationsDrawerOpen ? (
                       <ReaderAnnotationsPanel
