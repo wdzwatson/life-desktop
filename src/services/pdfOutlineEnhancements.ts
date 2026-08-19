@@ -19,18 +19,35 @@ export type OcrOutlineCandidate = {
   title: string
   level: number
   pageNumber: number
+  printedPageNumber: number | null
+  pageNumberSource: 'pdf-sequence' | 'printed' | 'pdf-label'
   y: number | null
 }
 
 const BROKEN_GLYPH_PATTERN = /[\uFFFD\u25A1\u25A0]/u
 const OUTLINE_NUMBER_PATTERN = /^(\d+(?:[.．]\d+)*)(?:[.．])?\s+(.+)$/u
-const TRAILING_PAGE_PATTERN = /^(.*?)(?:\.{2,}|…+|\s{2,}|\s)(\d{1,4})$/u
+const TRAILING_PAGE_PATTERN = /^(.*?)(?:\.{2,}|…+|\s{2,}|\s)([0-9/]{1,4})$/u
+
+const PDF_LIGATURE_REPLACEMENTS: Readonly<Record<string, string>> = {
+  ﬀ: 'ff',
+  ﬁ: 'fi',
+  ﬂ: 'fl',
+  ﬃ: 'ffi',
+  ﬄ: 'ffl',
+  ﬅ: 'ft',
+  ﬆ: 'st',
+}
 
 const normalizeWhitespace = (value: string) => value.replace(/\s+/gu, ' ').trim()
 
-const normalizeForComparison = (value: string) =>
+export const normalizePdfOutlineText = (value: string) =>
   value
     .normalize('NFKC')
+    .replace(/[ﬀ-ﬆ]/gu, (ligature) => PDF_LIGATURE_REPLACEMENTS[ligature] ?? ligature)
+    .replace(/[\u00AD\u200B]/gu, '')
+
+const normalizeForComparison = (value: string) =>
+  normalizePdfOutlineText(value)
     .toLocaleLowerCase()
     .replace(/[\s\p{P}\p{S}]+/gu, '')
 
@@ -55,9 +72,9 @@ export function getActivePdfOutlineNodeId(
 }
 
 export function repairPdfOutlineTitle(title: string, candidates: string[]) {
-  if (!hasBrokenPdfOutlineGlyph(title)) return title
-  const parts = title
-    .normalize('NFKC')
+  const normalizedTitle = normalizePdfOutlineText(title)
+  if (!hasBrokenPdfOutlineGlyph(title)) return normalizedTitle
+  const parts = normalizedTitle
     .toLocaleLowerCase()
     .split(BROKEN_GLYPH_PATTERN)
     .map((part) => normalizeForComparison(part))
@@ -76,7 +93,47 @@ export function repairPdfOutlineTitle(title: string, candidates: string[]) {
       return normalizedCandidate.length - cursor <= 4
     })
 
-  return matches.length === 1 ? matches[0] : title
+  return matches.length === 1 ? normalizePdfOutlineText(matches[0]) : normalizedTitle
+}
+
+export type OcrOutlinePageNumberMode = 'pdf-sequence' | 'printed'
+
+export function resolveOcrOutlinePageNumber({
+  sourcePageNumber,
+  printedPageNumber,
+  documentPageCount,
+  mode = 'pdf-sequence',
+}: {
+  sourcePageNumber: number
+  printedPageNumber: number | null
+  documentPageCount: number
+  mode?: OcrOutlinePageNumberMode
+}) {
+  const sourceIsValid =
+    Number.isInteger(sourcePageNumber) &&
+    sourcePageNumber >= 1 &&
+    sourcePageNumber <= documentPageCount
+  const printedIsValid =
+    Number.isInteger(printedPageNumber) &&
+    (printedPageNumber as number) >= 1 &&
+    (printedPageNumber as number) <= documentPageCount
+  if (mode === 'printed' && printedIsValid) return printedPageNumber as number
+  if (sourceIsValid) return sourcePageNumber
+  return printedIsValid ? (printedPageNumber as number) : 1
+}
+
+const parseOcrPrintedPageNumber = (match: RegExpExecArray | null) => {
+  if (!match) return null
+  const token = match[2]
+  if (/^\d+$/u.test(token)) return Number(token)
+
+  // OCR frequently reads a dotted-leader page number "1" as "/". Restrict
+  // this repair to a slash-only token preceded by an actual leader so that
+  // ordinary title text such as "A / B" is not changed.
+  if (/^\/+$/u.test(token) && /(?:\.{2,}|…+)\s*$/u.test(match[1])) {
+    return Number(token.replaceAll('/', '1'))
+  }
+  return null
 }
 
 export function groupOcrWordsIntoLines(words: OcrOutlineWord[]) {
@@ -119,10 +176,11 @@ export function extractOcrOutlineCandidates(
   words: OcrOutlineWord[],
   sourcePageNumber: number,
   documentPageCount: number,
+  pageNumberMode: OcrOutlinePageNumberMode = 'pdf-sequence',
 ) {
   const candidates: OcrOutlineCandidate[] = []
   for (const line of groupOcrWordsIntoLines(words)) {
-    const cleaned = line.text
+    const cleaned = normalizePdfOutlineText(line.text)
       .replace(/[·•]{2,}/gu, ' ')
       .replace(/\s+/gu, ' ')
       .trim()
@@ -141,11 +199,13 @@ export function extractOcrOutlineCandidates(
       .trim()
     if (rawTitle.length < 2 || /^\d+$/u.test(rawTitle)) continue
 
-    const printedPage = Number(trailingPage?.[2])
-    const targetPage =
-      Number.isInteger(printedPage) && printedPage >= 1 && printedPage <= documentPageCount
-        ? printedPage
-        : sourcePageNumber
+    const printedPage = parseOcrPrintedPageNumber(trailingPage)
+    const targetPage = resolveOcrOutlinePageNumber({
+      sourcePageNumber,
+      printedPageNumber: printedPage,
+      documentPageCount,
+      mode: pageNumberMode,
+    })
     candidates.push({
       title: numbered
         ? `${sectionNumber} ${rawTitle}`
@@ -156,10 +216,51 @@ export function extractOcrOutlineCandidates(
           ? 1
           : 0,
       pageNumber: targetPage,
+      printedPageNumber: printedPage,
+      pageNumberSource:
+        pageNumberMode === 'printed' && targetPage === printedPage ? 'printed' : 'pdf-sequence',
       y: line.y,
     })
   }
   return candidates
+}
+
+export function resolveOcrOutlineCandidatesWithPageLabels(
+  candidates: OcrOutlineCandidate[],
+  pageLabels: string[] | null,
+  documentPageCount: number,
+) {
+  if (
+    candidates.length === 0 ||
+    !pageLabels ||
+    pageLabels.length !== documentPageCount ||
+    documentPageCount < 1
+  ) {
+    return null
+  }
+
+  const labelToPageNumber = new Map<string, number | null>()
+  pageLabels.forEach((label, index) => {
+    const normalizedLabel = normalizePdfOutlineText(label).trim()
+    if (!/^\d{1,4}$/u.test(normalizedLabel)) return
+    labelToPageNumber.set(
+      normalizedLabel,
+      labelToPageNumber.has(normalizedLabel) ? null : index + 1,
+    )
+  })
+
+  const resolved: OcrOutlineCandidate[] = []
+  for (const candidate of candidates) {
+    if (!Number.isInteger(candidate.printedPageNumber)) return null
+    const pageNumber = labelToPageNumber.get(String(candidate.printedPageNumber))
+    if (!Number.isInteger(pageNumber)) return null
+    resolved.push({
+      ...candidate,
+      pageNumber: pageNumber as number,
+      pageNumberSource: 'pdf-label',
+    })
+  }
+  return resolved
 }
 
 export function buildOcrPdfOutlineEntries(candidates: OcrOutlineCandidate[]) {

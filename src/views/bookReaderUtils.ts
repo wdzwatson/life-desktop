@@ -101,6 +101,11 @@ export type ReaderHighlightAnchor = {
   areas?: Array<{ x: number; y: number; width: number; height: number }>
   highlighted?: boolean
   kind?: ReaderAnnotationKind
+  recognition?: {
+    status?: 'pending' | 'ready' | 'error'
+    engineVersion?: string
+    confidence?: number
+  }
 }
 
 export type ReaderHighlight = {
