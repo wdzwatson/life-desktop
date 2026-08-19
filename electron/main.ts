@@ -2798,9 +2798,16 @@ function getBrowserControlExtensionPath() {
     : path.resolve(process.cwd(), 'extensions', 'lifeos-chrome')
 }
 
+function getBrowserControlNativeHostPath() {
+  const fileName = process.platform === 'win32' ? 'lifeos-native-host.exe' : 'lifeos-native-host'
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'native-host', fileName)
+    : path.resolve(process.cwd(), 'build', 'native-host', fileName)
+}
+
 function getBrowserControlRegistrationOptions() {
   return {
-    executablePath: process.execPath,
+    executablePath: getBrowserControlNativeHostPath(),
     packaged: app.isPackaged,
   }
 }

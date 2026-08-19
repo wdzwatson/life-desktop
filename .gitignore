@@ -15,6 +15,7 @@ dist-ssr
 *.local
 .superpowers/
 .worktrees/
+build/native-host/
 
 # Local browser/test artifacts
 .playwright-cli/

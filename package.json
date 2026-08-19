@@ -17,7 +17,8 @@
     "postinstall": "npm run rebuild:native",
     "test": "node scripts/run-tests.mjs",
     "build": "tsc -b && vite build",
-    "build:app": "npm run build && npm run verify:native && electron-builder",
+    "build:native-host": "node scripts/build-native-host.mjs",
+    "build:app": "npm run build && npm run build:native-host && npm run verify:native && electron-builder",
     "lint": "eslint .",
     "format": "prettier --write .",
     "preview": "vite preview"
@@ -96,6 +97,10 @@
       {
         "from": "extensions/lifeos-chrome",
         "to": "extensions/lifeos-chrome"
+      },
+      {
+        "from": "build/native-host",
+        "to": "native-host"
       }
     ],
     "mac": {
