@@ -1,11 +1,9 @@
 import { parseHttpUrl, selectMatchingTab } from './url-match.js'
+import { DOUYIN_AUTO_LIKE_SCRIPT } from './douyin-auto-like.js'
 
 const NATIVE_HOST_NAME = 'com.lifeos.browser'
 const PROTOCOL_VERSION = 1
-const SCRIPT_EXPRESSION = `(() => {
-  console.log('741852963');
-  return { success: true, url: location.href };
-})()`
+const SCRIPT_EXPRESSION = DOUYIN_AUTO_LIKE_SCRIPT
 const instanceIdKey = 'lifeosBrowserInstanceId'
 
 let nativePort = null
@@ -116,6 +114,9 @@ async function executeFixedScript(tabId) {
 async function executeWebLike(params) {
   const requested = parseHttpUrl(params?.url)
   if (!requested) throw new Error('A complete HTTP or HTTPS URL is required.')
+  if (requested.hostname !== 'live.douyin.com') {
+    throw new Error('The auto-like script only supports https://live.douyin.com/.')
+  }
 
   const tabs = (await chrome.tabs.query({})).filter((tab) => Number.isInteger(tab.id) && parseHttpUrl(tab.url || ''))
   const selection = selectMatchingTab(requested.href, tabs, params?.preferredTabId)
@@ -140,6 +141,9 @@ async function executeWebLike(params) {
   if (Number.isInteger(tab.windowId)) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined)
   await chrome.tabs.update(tab.id, { active: true }).catch(() => undefined)
   const evaluation = await executeFixedScript(tab.id)
+  if (!evaluation?.success) {
+    throw new Error(typeof evaluation?.message === 'string' ? evaluation.message : 'The auto-like script could not be installed.')
+  }
   return {
     status: opened ? 'opened' : 'matched',
     tabId: tab.id,
