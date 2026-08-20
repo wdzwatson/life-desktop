@@ -273,6 +273,23 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
     setPrivateDialogMode(null)
   }, [])
 
+  useEffect(() => {
+    const handleOpenNoteEvent = async (event: Event) => {
+      const noteId = Number((event as CustomEvent<{ noteId?: unknown }>).detail?.noteId)
+      if (!api || !Number.isInteger(noteId)) return
+      const result = await api.dbQuery('notes', 'SELECT * FROM notes WHERE id = ?', [noteId])
+      const note = result?.success && Array.isArray(result.data) ? result.data[0] : null
+      if (!note) {
+        showToast(t('app.search_result_not_found'))
+        return
+      }
+      selectNote(note as Note)
+    }
+
+    window.addEventListener('lifeos:open-notes', handleOpenNoteEvent)
+    return () => window.removeEventListener('lifeos:open-notes', handleOpenNoteEvent)
+  }, [api, selectNote, showToast, t])
+
   const getNotebookDisplayName = (name: string, id: number) => {
     const currentLocale = i18n.language
     const trans = translations.find(

@@ -63,7 +63,6 @@ import {
   getActionableTasks,
   isRecurringDateInstance,
   isRecurringExecution,
-  isRecurringStep,
 } from './taskSemantics'
 import {
   buildCompleteTaskTreeMutation,
@@ -877,6 +876,24 @@ export const Tasks: React.FC = () => {
     setDrawerMode('edit')
     animateTaskDrawerOpen()
   }
+
+  useEffect(() => {
+    const handleOpenTaskEvent = async (event: Event) => {
+      const taskId = Number((event as CustomEvent<{ taskId?: unknown }>).detail?.taskId)
+      if (!api || !Number.isInteger(taskId)) return
+      const result = await api.dbQuery('tasks', 'SELECT * FROM tasks WHERE id = ?', [taskId])
+      const task = result?.success && Array.isArray(result.data) ? result.data[0] : null
+      if (!task) {
+        showToast(t('app.search_result_not_found'))
+        return
+      }
+      setTaskTab('list')
+      selectTaskForDetails(task)
+    }
+
+    window.addEventListener('lifeos:open-tasks', handleOpenTaskEvent)
+    return () => window.removeEventListener('lifeos:open-tasks', handleOpenTaskEvent)
+  }, [api, selectTaskForDetails, setTaskTab, showToast, t])
 
   const getCurrentRuleScheduleSummary = () => {
     return getRuleScheduleSummary({

@@ -498,6 +498,24 @@ export const Videos: React.FC = () => {
     if (action === 'open-details') openDrawer()
     else closeDrawer()
   }
+
+  useEffect(() => {
+    const handleOpenVideoEvent = async (event: Event) => {
+      const videoId = Number((event as CustomEvent<{ videoId?: unknown }>).detail?.videoId)
+      if (!api || !Number.isInteger(videoId)) return
+      const result = await api.dbQuery('videos', 'SELECT * FROM videos WHERE id = ?', [videoId])
+      const video = result?.success && Array.isArray(result.data) ? result.data[0] : null
+      if (!video) {
+        showToast(t('app.search_result_not_found'))
+        return
+      }
+      setSelectedVideo(video)
+      updateDrawer('open-details')
+    }
+
+    window.addEventListener('lifeos:open-videos', handleOpenVideoEvent)
+    return () => window.removeEventListener('lifeos:open-videos', handleOpenVideoEvent)
+  }, [api, openDrawer, showToast, t])
   const toggleGroupDropdown = () => {
     if (isGroupDropdownOpen) {
       setIsGroupDropdownOpen(false)

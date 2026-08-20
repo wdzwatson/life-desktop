@@ -1989,6 +1989,23 @@ export const Books: React.FC = () => {
     return () => window.removeEventListener('lifeos:open-book', handleOpenBookEvent)
   }, [api, showToast, t])
 
+  useEffect(() => {
+    const handleOpenSearchBookEvent = async (event: Event) => {
+      const bookId = Number((event as CustomEvent<{ bookId?: unknown }>).detail?.bookId)
+      if (!api || !Number.isInteger(bookId) || !readerOpenForDeepLinkRef.current) return
+      const result = await api.dbQuery('books', 'SELECT * FROM books WHERE id = ?', [bookId])
+      const book = result?.success && Array.isArray(result.data) ? result.data[0] : null
+      if (!book) {
+        showToast(t('app.search_result_not_found'))
+        return
+      }
+      await readerOpenForDeepLinkRef.current(book)
+    }
+
+    window.addEventListener('lifeos:open-books', handleOpenSearchBookEvent)
+    return () => window.removeEventListener('lifeos:open-books', handleOpenSearchBookEvent)
+  }, [api, showToast, t])
+
   // Close reader and save final progress percentage if changed
   const handleCloseReader = async () => {
     if (readingBook && api) {

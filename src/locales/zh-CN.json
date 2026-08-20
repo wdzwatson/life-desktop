@@ -2256,6 +2256,7 @@
     "search_placeholder": "搜索任务、笔记、书籍、视频，或输入 /task、/note 指令...",
     "search_no_results": "没有匹配的检索结果",
     "search_default_hint": "没有匹配的检索结果",
+    "search_result_not_found": "该检索结果已不存在",
     "toast_task_generated": "命令触发：任务已生成 (\"{{title}}\")",
     "toast_note_created": "命令触发：笔记已创建 (\"{{title}}\")"
   },

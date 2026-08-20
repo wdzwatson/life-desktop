@@ -1,7 +1,7 @@
 # C-01-01 搜索结果模型与精确定位
 
 日期：2026-08-20  
-状态：已归档，待执行  
+状态：已完成，已归档  
 所属计划：[C-01 全局搜索原子任务计划](2026-08-20-c01-global-search-atomic-tasks.md)
 
 ## 目标
@@ -35,6 +35,13 @@
 - 四类对象各一个定位测试。
 - 无效 ID 回退测试。
 - `npx eslint src/App.tsx src/components/Topbar.tsx` 通过。
+
+## 完成证据
+
+- 提交：本任务实现提交 `feat: deep link global search results`。
+- `node --import tsx --test tests/globalSearch.test.ts` 通过。
+- `npx tsc --noEmit -p tsconfig.app.json` 通过。
+- `npm run build` 通过。
 
 ## 依赖与风险
 

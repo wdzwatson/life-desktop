@@ -6,6 +6,10 @@ import { ViewportPortal } from './components/ViewportPortal'
 import { useAppStore } from './store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { AIChatBoundary } from './views/ai/AIChatBoundary'
+import {
+  dispatchGlobalSearchOpen,
+  type GlobalSearchResult,
+} from './globalSearch'
 
 // Screen views
 import { AuthScreen } from './components/AuthScreen'
@@ -61,7 +65,7 @@ function App() {
   // Command palette overlay states
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchResults, setSearchResults] = useState<GlobalSearchResult[]>([])
   const [screenProgressVisible, setScreenProgressVisible] = useState(false)
   const hasMountedScreen = useRef(false)
 
@@ -148,15 +152,19 @@ function App() {
       if (searchQuery.startsWith('/task ')) {
         results.push({
           type: 'cmd',
+          id: `command:task:${searchQuery}`,
+          module: 'command',
           title: t('app.create_task_cmd_title', { query: searchQuery.replace('/task ', '') }),
-          desc: t('app.create_task_cmd_desc'),
+          description: t('app.create_task_cmd_desc'),
           action: () => handleCreateTaskFromCmd(searchQuery.replace('/task ', '')),
         })
       } else if (searchQuery.startsWith('/note ')) {
         results.push({
           type: 'cmd',
+          id: `command:note:${searchQuery}`,
+          module: 'command',
           title: t('app.create_note_cmd_title', { query: searchQuery.replace('/note ', '') }),
-          desc: t('app.create_note_cmd_desc'),
+          description: t('app.create_note_cmd_desc'),
           action: () => handleCreateNoteFromCmd(searchQuery.replace('/note ', '')),
         })
       } else {
@@ -170,14 +178,17 @@ function App() {
           tasksRes.data.forEach((taskObj: any) => {
             results.push({
               type: 'tasks',
+              id: taskObj.id,
+              module: 'tasks',
               title: taskObj.title,
-              desc: t('app.search_desc_task', {
+              description: t('app.search_desc_task', {
                 priority: taskObj.priority,
                 due_date: taskObj.due_date,
               }),
               action: () => {
                 setActiveScreen('tasks')
                 setTaskTab('list')
+                window.setTimeout(() => dispatchGlobalSearchOpen('tasks', taskObj.id), 200)
                 setSearchOpen(false)
               },
             })
@@ -194,10 +205,13 @@ function App() {
           notesRes.data.forEach((n: any) => {
             results.push({
               type: 'notes',
+              id: n.id,
+              module: 'notes',
               title: n.title,
-              desc: t('app.search_desc_note', { type: n.note_type }),
+              description: t('app.search_desc_note', { type: n.note_type }),
               action: () => {
                 setActiveScreen('notes')
+                window.setTimeout(() => dispatchGlobalSearchOpen('notes', n.id), 200)
                 setSearchOpen(false)
               },
             })
@@ -214,13 +228,16 @@ function App() {
           booksRes.data.forEach((b: any) => {
             results.push({
               type: 'books',
+              id: b.id,
+              module: 'books',
               title: b.title,
-              desc: t('app.search_desc_book', {
+              description: t('app.search_desc_book', {
                 author: b.author,
                 progress: Math.round(b.progress),
               }),
               action: () => {
                 setActiveScreen('books')
+                window.setTimeout(() => dispatchGlobalSearchOpen('books', b.id), 200)
                 setSearchOpen(false)
               },
             })
@@ -237,13 +254,16 @@ function App() {
           videosRes.data.forEach((video: any) => {
             results.push({
               type: 'videos',
+              id: video.id,
+              module: 'videos',
               title: video.title,
-              desc: t('app.search_desc_video', {
+              description: t('app.search_desc_video', {
                 source: video.source || t('app.search_video_source_unknown'),
                 duration: video.duration || t('app.search_video_duration_unknown'),
               }),
               action: () => {
                 setActiveScreen('videos')
+                window.setTimeout(() => dispatchGlobalSearchOpen('videos', video.id), 200)
                 setSearchOpen(false)
               },
             })
@@ -491,7 +511,7 @@ function App() {
                           {result.title}
                         </strong>
                         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {result.desc}
+                          {result.description}
                         </span>
                       </div>
                       <span
