@@ -186,3 +186,29 @@ test('scheduler backfills rule subtasks into existing time children without dupl
     rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
   }
 })
+
+test('scheduler materializes multiple dates and multiple times as separate execution items', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'life-task-scheduler-multi-day-'))
+  try {
+    initializeUserDatabase(dir)
+    const db = new Database(path.join(dir, 'tasks.db'))
+    db.prepare(
+      "INSERT INTO recurring_rules (title, frequency, start_date, start_time, time_slots, end_date) VALUES ('Brush teeth', 'daily', '2026-08-18', '08:00', '08:00,13:00,21:00', '2026-08-20')",
+    ).run()
+    db.prepare("INSERT INTO recurring_rule_steps (rule_id, title, sort_order) VALUES (1, 'Brush tongue', 1)").run()
+
+    for (const day of [18, 19, 20]) {
+      runTaskSchedulerCore(db, new Date(2026, 7, day, 23, 0))
+    }
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE task_kind = ?').get('recurring_date_instance').count, 3)
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE task_kind = ?').get('recurring_execution').count, 9)
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM tasks WHERE task_kind = 'normal' AND parent_id IN (SELECT id FROM tasks WHERE task_kind = 'recurring_execution')").get().count, 9)
+
+    runTaskSchedulerCore(db, new Date(2026, 7, 20, 23, 30))
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE task_kind = ?').get('recurring_date_instance').count, 3)
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE task_kind = ?').get('recurring_execution').count, 9)
+    db.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  }
+})
