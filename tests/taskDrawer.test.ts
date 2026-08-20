@@ -32,6 +32,11 @@ test('task creation and editing use one right drawer with picker-based time and 
   assert.match(tasksView, /isMonthDayPickerExpanded/)
   assert.match(tasksView, /isRuleExclusionsExpanded/)
   assert.match(tasksView, /rule_instance_unchanged_note/)
+  assert.match(tasksView, /rule_section_schedule/)
+  assert.match(tasksView, /rule_section_frequency/)
+  assert.match(tasksView, /rule_section_range/)
+  assert.match(tasksView, /time_slots/)
+  assert.match(tasksView, /recurring_rule_steps/)
 })
 
 test('recurring tasks use generation dates and a fixed per-instance deadline', () => {
