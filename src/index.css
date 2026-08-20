@@ -1197,6 +1197,32 @@ body.theme-dense .nav-item.active {
   animation-name: dialog-surface-enter;
 }
 
+.command-palette__status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 72px;
+  padding: 16px 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.command-palette__status--warning {
+  justify-content: flex-start;
+  min-height: 0;
+  padding: 8px 14px;
+  color: var(--color-warning, #b45309);
+  font-size: 12px;
+  text-align: left;
+}
+
+.command-palette__status--error {
+  flex-direction: column;
+  color: var(--color-danger);
+}
+
 @keyframes dialog-surface-enter {
   from {
     transform: translateY(8px) scale(0.98);

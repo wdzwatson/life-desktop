@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { AIChatBoundary } from './views/ai/AIChatBoundary'
 import {
   dispatchGlobalSearchOpen,
+  type GlobalSearchState,
   type GlobalSearchResult,
 } from './globalSearch'
 
@@ -66,6 +67,10 @@ function App() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<GlobalSearchResult[]>([])
+  const [searchState, setSearchState] = useState<GlobalSearchState>('idle')
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [searchRetryNonce, setSearchRetryNonce] = useState(0)
+  const searchRequestIdRef = useRef(0)
   const [screenProgressVisible, setScreenProgressVisible] = useState(false)
   const hasMountedScreen = useRef(false)
 
@@ -140,143 +145,193 @@ function App() {
 
   // Dynamic search engine querying tasks, notes, books, and videos
   useEffect(() => {
-    if (!searchQuery.trim() || !api) {
+    const query = searchQuery.trim()
+    const requestId = ++searchRequestIdRef.current
+
+    if (!query) {
       setSearchResults([])
+      setSearchError(null)
+      setSearchState('idle')
+      return
+    }
+    if (!api) {
+      setSearchResults([])
+      setSearchError(t('app.search_unavailable'))
+      setSearchState('error')
       return
     }
 
-    const runFtsQuery = async () => {
-      const results: any[] = []
+    setSearchResults([])
+    setSearchError(null)
+    setSearchState('loading')
 
-      // If command `/` input
-      if (searchQuery.startsWith('/task ')) {
-        results.push({
-          type: 'cmd',
-          id: `command:task:${searchQuery}`,
-          module: 'command',
-          title: t('app.create_task_cmd_title', { query: searchQuery.replace('/task ', '') }),
-          description: t('app.create_task_cmd_desc'),
-          action: () => handleCreateTaskFromCmd(searchQuery.replace('/task ', '')),
-        })
-      } else if (searchQuery.startsWith('/note ')) {
-        results.push({
-          type: 'cmd',
-          id: `command:note:${searchQuery}`,
-          module: 'command',
-          title: t('app.create_note_cmd_title', { query: searchQuery.replace('/note ', '') }),
-          description: t('app.create_note_cmd_desc'),
-          action: () => handleCreateNoteFromCmd(searchQuery.replace('/note ', '')),
-        })
-      } else {
-        // Query tasks.db
-        const tasksRes = await api.dbQuery(
-          'tasks',
-          'SELECT * FROM tasks WHERE title LIKE ? OR description LIKE ? LIMIT 3',
-          [`%${searchQuery}%`, `%${searchQuery}%`],
-        )
-        if (tasksRes?.success) {
-          tasksRes.data.forEach((taskObj: any) => {
-            results.push({
-              type: 'tasks',
-              id: taskObj.id,
-              module: 'tasks',
-              title: taskObj.title,
-              description: t('app.search_desc_task', {
-                priority: taskObj.priority,
-                due_date: taskObj.due_date,
+    const timer = window.setTimeout(() => {
+      const runSearchQuery = async () => {
+        const results: GlobalSearchResult[] = []
+
+        if (query.startsWith('/task ')) {
+          const title = query.replace('/task ', '')
+          results.push({
+            type: 'cmd',
+            id: `command:task:${query}`,
+            module: 'command',
+            title: t('app.create_task_cmd_title', { query: title }),
+            description: t('app.create_task_cmd_desc'),
+            action: () => handleCreateTaskFromCmd(title),
+          })
+        } else if (query.startsWith('/note ')) {
+          const title = query.replace('/note ', '')
+          results.push({
+            type: 'cmd',
+            id: `command:note:${query}`,
+            module: 'command',
+            title: t('app.create_note_cmd_title', { query: title }),
+            description: t('app.create_note_cmd_desc'),
+            action: () => handleCreateNoteFromCmd(title),
+          })
+        } else {
+          const likeQuery = `%${query}%`
+          const querySafely = (database: string, sql: string, params: string[]) =>
+            Promise.resolve(api.dbQuery(database, sql, params)).catch(
+              (error: unknown) => ({
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
               }),
-              action: () => {
-                setActiveScreen('tasks')
-                setTaskTab('list')
-                window.setTimeout(() => dispatchGlobalSearchOpen('tasks', taskObj.id), 200)
-                setSearchOpen(false)
-              },
+            )
+          const [tasksRes, notesRes, booksRes, videosRes] = await Promise.all([
+            querySafely(
+              'tasks',
+              'SELECT * FROM tasks WHERE title LIKE ? OR description LIKE ? LIMIT 3',
+              [likeQuery, likeQuery],
+            ),
+            querySafely(
+              'notes',
+              'SELECT * FROM notes WHERE title LIKE ? OR (COALESCE(is_private, 0) = 0 AND content LIKE ?) LIMIT 3',
+              [likeQuery, likeQuery],
+            ),
+            querySafely('books', 'SELECT * FROM books WHERE title LIKE ? OR author LIKE ? LIMIT 2', [likeQuery, likeQuery]),
+            querySafely(
+              'videos',
+              'SELECT id, title, source, duration FROM videos WHERE title LIKE ? OR url LIKE ? OR source_url LIKE ? LIMIT 3',
+              [likeQuery, likeQuery, likeQuery],
+            ),
+          ])
+
+          if (requestId !== searchRequestIdRef.current) return
+
+          const responses = [
+            ['tasks', tasksRes],
+            ['notes', notesRes],
+            ['books', booksRes],
+            ['videos', videosRes],
+          ] as const
+          const failedModules = responses.filter(([, response]) => !response?.success)
+
+          if (tasksRes?.success) {
+            tasksRes.data.forEach((taskObj: any) => {
+              results.push({
+                type: 'tasks',
+                id: taskObj.id,
+                module: 'tasks',
+                title: taskObj.title,
+                description: t('app.search_desc_task', {
+                  priority: taskObj.priority,
+                  due_date: taskObj.due_date,
+                }),
+                action: () => {
+                  setActiveScreen('tasks')
+                  setTaskTab('list')
+                  window.setTimeout(() => dispatchGlobalSearchOpen('tasks', taskObj.id), 200)
+                  setSearchOpen(false)
+                },
+              })
             })
-          })
+          }
+          if (notesRes?.success) {
+            notesRes.data.forEach((n: any) => {
+              results.push({
+                type: 'notes',
+                id: n.id,
+                module: 'notes',
+                title: n.title,
+                description: t('app.search_desc_note', { type: n.note_type }),
+                action: () => {
+                  setActiveScreen('notes')
+                  window.setTimeout(() => dispatchGlobalSearchOpen('notes', n.id), 200)
+                  setSearchOpen(false)
+                },
+              })
+            })
+          }
+          if (booksRes?.success) {
+            booksRes.data.forEach((b: any) => {
+              results.push({
+                type: 'books',
+                id: b.id,
+                module: 'books',
+                title: b.title,
+                description: t('app.search_desc_book', {
+                  author: b.author,
+                  progress: Math.round(b.progress),
+                }),
+                action: () => {
+                  setActiveScreen('books')
+                  window.setTimeout(() => dispatchGlobalSearchOpen('books', b.id), 200)
+                  setSearchOpen(false)
+                },
+              })
+            })
+          }
+          if (videosRes?.success) {
+            videosRes.data.forEach((video: any) => {
+              results.push({
+                type: 'videos',
+                id: video.id,
+                module: 'videos',
+                title: video.title,
+                description: t('app.search_desc_video', {
+                  source: video.source || t('app.search_video_source_unknown'),
+                  duration: video.duration || t('app.search_video_duration_unknown'),
+                }),
+                action: () => {
+                  setActiveScreen('videos')
+                  window.setTimeout(() => dispatchGlobalSearchOpen('videos', video.id), 200)
+                  setSearchOpen(false)
+                },
+              })
+            })
+          }
+
+          if (failedModules.length === responses.length) {
+            setSearchResults([])
+            setSearchError(t('app.search_error'))
+            setSearchState('error')
+            return
+          }
+          setSearchResults(results)
+          setSearchError(
+            failedModules.length > 0
+              ? t('app.search_partial_error', { modules: failedModules.map(([module]) => module).join(', ') })
+              : null,
+          )
+          setSearchState(failedModules.length > 0 ? 'partial-error' : results.length > 0 ? 'ready' : 'empty')
+          return
         }
 
-        // Query notes.db (FTS5)
-        const notesRes = await api.dbQuery(
-          'notes',
-          'SELECT * FROM notes WHERE title LIKE ? OR (COALESCE(is_private, 0) = 0 AND content LIKE ?) LIMIT 3',
-          [`%${searchQuery}%`, `%${searchQuery}%`],
-        )
-        if (notesRes?.success) {
-          notesRes.data.forEach((n: any) => {
-            results.push({
-              type: 'notes',
-              id: n.id,
-              module: 'notes',
-              title: n.title,
-              description: t('app.search_desc_note', { type: n.note_type }),
-              action: () => {
-                setActiveScreen('notes')
-                window.setTimeout(() => dispatchGlobalSearchOpen('notes', n.id), 200)
-                setSearchOpen(false)
-              },
-            })
-          })
-        }
-
-        // Query books.db
-        const booksRes = await api.dbQuery(
-          'books',
-          'SELECT * FROM books WHERE title LIKE ? OR author LIKE ? LIMIT 2',
-          [`%${searchQuery}%`, `%${searchQuery}%`],
-        )
-        if (booksRes?.success) {
-          booksRes.data.forEach((b: any) => {
-            results.push({
-              type: 'books',
-              id: b.id,
-              module: 'books',
-              title: b.title,
-              description: t('app.search_desc_book', {
-                author: b.author,
-                progress: Math.round(b.progress),
-              }),
-              action: () => {
-                setActiveScreen('books')
-                window.setTimeout(() => dispatchGlobalSearchOpen('books', b.id), 200)
-                setSearchOpen(false)
-              },
-            })
-          })
-        }
-
-        // Query videos.db so the global search matches the product scope.
-        const videosRes = await api.dbQuery(
-          'videos',
-          'SELECT id, title, source, duration FROM videos WHERE title LIKE ? OR url LIKE ? OR source_url LIKE ? LIMIT 3',
-          [`%${searchQuery}%`, `%${searchQuery}%`, `%${searchQuery}%`],
-        )
-        if (videosRes?.success) {
-          videosRes.data.forEach((video: any) => {
-            results.push({
-              type: 'videos',
-              id: video.id,
-              module: 'videos',
-              title: video.title,
-              description: t('app.search_desc_video', {
-                source: video.source || t('app.search_video_source_unknown'),
-                duration: video.duration || t('app.search_video_duration_unknown'),
-              }),
-              action: () => {
-                setActiveScreen('videos')
-                window.setTimeout(() => dispatchGlobalSearchOpen('videos', video.id), 200)
-                setSearchOpen(false)
-              },
-            })
-          })
-        }
+        if (requestId !== searchRequestIdRef.current) return
+        setSearchResults(results)
+        setSearchState('ready')
       }
 
-      setSearchResults(results)
-    }
-
-    const timer = setTimeout(runFtsQuery, 150)
+      void runSearchQuery().catch((error: unknown) => {
+        if (requestId !== searchRequestIdRef.current) return
+        setSearchResults([])
+        setSearchError(error instanceof Error ? error.message : t('app.search_error'))
+        setSearchState('error')
+      })
+    }, 150)
     return () => clearTimeout(timer)
-  }, [searchQuery])
+  }, [api, searchQuery, searchRetryNonce, t])
 
   // Create task command handler
   const handleCreateTaskFromCmd = async (title: string) => {
@@ -473,7 +528,18 @@ function App() {
 
               {/* Results Grid */}
               <div style={{ maxHeight: '360px', overflowY: 'auto', padding: '8px' }}>
-                {searchResults.length === 0 ? (
+                {searchState === 'loading' ? (
+                  <div className="command-palette__status" role="status" aria-live="polite">
+                    {t('app.search_loading')}
+                  </div>
+                ) : searchState === 'error' ? (
+                  <div className="command-palette__status command-palette__status--error" role="alert">
+                    <span>{searchError || t('app.search_error')}</span>
+                    <button type="button" className="btn sm" onClick={() => setSearchRetryNonce((value) => value + 1)}>
+                      {t('common.retry')}
+                    </button>
+                  </div>
+                ) : searchResults.length === 0 ? (
                   <div
                     style={{
                       padding: '24px',
@@ -482,12 +548,18 @@ function App() {
                       fontSize: '13px',
                     }}
                   >
-                    {searchQuery.trim() ? t('app.search_no_results') : t('app.search_default_hint')}
+                    {searchState === 'empty' ? t('app.search_no_results') : t('app.search_default_hint')}
                   </div>
                 ) : (
-                  searchResults.map((result, idx) => (
+                  <>
+                    {searchState === 'partial-error' && searchError ? (
+                      <div className="command-palette__status command-palette__status--warning" role="status">
+                        {searchError}
+                      </div>
+                    ) : null}
+                    {searchResults.map((result) => (
                     <div
-                      key={idx}
+                      key={`${result.module}:${result.id}`}
                       onClick={result.action}
                       style={{
                         padding: '10px 14px',
@@ -521,7 +593,8 @@ function App() {
                         {result.type}
                       </span>
                     </div>
-                  ))
+                    ))}
+                  </>
                 )}
               </div>
             </div>

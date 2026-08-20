@@ -2256,7 +2256,11 @@
     "search_placeholder": "Search tasks, notes, books, videos, or type /task, /note command...",
     "search_no_results": "No matching results found",
     "search_default_hint": "No matching results found",
-     "search_result_not_found": "This search result is no longer available",
+    "search_result_not_found": "This search result is no longer available",
+    "search_loading": "Searching…",
+    "search_unavailable": "Search is unavailable in this environment",
+    "search_error": "Search failed. Try again.",
+    "search_partial_error": "Some sources could not be searched: {{modules}}",
     "toast_task_generated": "Command: Task generated (\"{{title}}\")",
     "toast_note_created": "Command: Note created (\"{{title}}\")"
   },

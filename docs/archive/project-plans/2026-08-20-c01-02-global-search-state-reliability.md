@@ -1,7 +1,7 @@
 # C-01-02 搜索状态与查询竞态
 
 日期：2026-08-20  
-状态：已归档，待执行  
+状态：已完成，已归档
 所属计划：[C-01 全局搜索原子任务计划](2026-08-20-c01-global-search-atomic-tasks.md)
 
 ## 目标
@@ -23,6 +23,13 @@
 - 单模块失败时其余结果仍可操作，并显示失败范围。
 - 全部失败时显示错误和重试入口。
 - 空查询显示引导，不执行无意义查询。
+
+## 完成证据
+
+- `npx tsc --noEmit -p tsconfig.app.json` 通过。
+- `npm run build` 通过。
+- `node --import tsx --test tests/globalSearch.test.ts` 通过。
+- 四源查询已改为并行执行，并使用 request ID 防止过期结果提交。
 
 ## 测试证据
 

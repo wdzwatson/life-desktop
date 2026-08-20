@@ -1,5 +1,7 @@
 export type GlobalSearchModule = 'tasks' | 'notes' | 'books' | 'videos'
 
+export type GlobalSearchState = 'idle' | 'loading' | 'ready' | 'empty' | 'partial-error' | 'error'
+
 export type GlobalSearchResult = {
   id: string | number
   module: GlobalSearchModule | 'command'
