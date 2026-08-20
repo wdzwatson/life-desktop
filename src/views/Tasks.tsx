@@ -1363,8 +1363,8 @@ export const Tasks: React.FC = () => {
       if (taskDraft.repeat === 'none') {
         const result = await api.dbQuery(
           'tasks',
-          `INSERT INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, parent_id, progress)
-           VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, 0)`,
+          `INSERT INTO tasks (title, description, priority, status, requires_review, start_date, start_time, due_date, due_time, parent_id, task_kind, relation_kind, progress)
+           VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, 'normal', ?, 0)`,
           [
             taskDraft.title.trim(),
             taskDraft.description,
@@ -1375,6 +1375,7 @@ export const Tasks: React.FC = () => {
             taskDraft.dueDate || null,
             normalizeTaskDueTime(taskDraft.time),
             targetParentId,
+            targetParentId === null ? 'root' : 'manual_child',
           ],
         )
         const createdTaskId = Number(result?.data?.lastInsertRowid)

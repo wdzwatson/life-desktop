@@ -50,8 +50,8 @@ export function runTaskSchedulerCore(db: any, now = new Date()) {
             `INSERT INTO tasks
               (title, description, priority, status, requires_review, start_date, start_time,
                due_date, due_time, recur_rule_id, template_id, template_version,
-               recurring_instance_id, instance_key, recur_instance_root, parent_id, progress)
-             VALUES (?, ?, ?, '待处理', ?, ?, '00:00:00', ?, '23:59:59', ?, ?, ?, ?, NULL, 1, ?, 0)`,
+               recurring_instance_id, instance_key, recur_instance_root, parent_id, task_kind, relation_kind, progress)
+             VALUES (?, ?, ?, '待处理', ?, ?, '00:00:00', ?, '23:59:59', ?, ?, ?, ?, NULL, 1, ?, 'recurring_date_instance', ?, 0)`,
           )
           .run(
             rule.title,
@@ -65,6 +65,7 @@ export function runTaskSchedulerCore(db: any, now = new Date()) {
             rule.template_version || null,
             instance.id,
             rule.parent_id || null,
+            rule.parent_id ? 'manual_child' : 'root',
           )
         parent = { id: Number(inserted.lastInsertRowid) }
         generatedTasks.push({ title: rule.title })
@@ -74,8 +75,8 @@ export function runTaskSchedulerCore(db: any, now = new Date()) {
         `INSERT INTO tasks
           (title, description, priority, status, requires_review, start_date, start_time,
            due_date, due_time, recur_rule_id, template_id, template_version,
-           recurring_instance_id, instance_key, recur_instance_root, parent_id, progress)
-         VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)`,
+           recurring_instance_id, instance_key, recur_instance_root, parent_id, task_kind, relation_kind, progress)
+         VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'recurring_execution', 'recurring_occurrence', 0)`,
       )
       const steps = db
         .prepare('SELECT * FROM recurring_rule_steps WHERE rule_id = ? ORDER BY sort_order ASC, id ASC')
@@ -84,8 +85,8 @@ export function runTaskSchedulerCore(db: any, now = new Date()) {
         `INSERT INTO tasks
           (title, description, priority, status, requires_review, start_date, start_time,
            due_date, due_time, recur_rule_id, template_id, template_version,
-           recurring_instance_id, instance_key, parent_id, progress)
-         VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+           recurring_instance_id, instance_key, parent_id, task_kind, relation_kind, progress)
+         VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'normal', 'manual_child', 0)`,
       )
       let added = 0
       for (const occurrence of available) {

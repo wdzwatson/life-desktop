@@ -75,6 +75,8 @@ export function initializeUserDatabase(userDbDir: string) {
       instance_key TEXT,
       recur_instance_root INTEGER NOT NULL DEFAULT 0,
       parent_id INTEGER,
+      task_kind TEXT NOT NULL DEFAULT 'normal' CHECK(task_kind IN ('normal', 'recurring_date_instance', 'recurring_execution')),
+      relation_kind TEXT NOT NULL DEFAULT 'root' CHECK(relation_kind IN ('root', 'manual_child', 'recurring_occurrence')),
       progress INTEGER DEFAULT 0,
       associated_note_id INTEGER,
       is_completed INTEGER DEFAULT 0,
@@ -200,6 +202,12 @@ export function initializeUserDatabase(userDbDir: string) {
     }
     if (!taskColumnNames.has('recur_instance_root')) {
       tasksDb.exec('ALTER TABLE tasks ADD COLUMN recur_instance_root INTEGER NOT NULL DEFAULT 0')
+    }
+    if (!taskColumnNames.has('task_kind')) {
+      tasksDb.exec("ALTER TABLE tasks ADD COLUMN task_kind TEXT NOT NULL DEFAULT 'normal'")
+    }
+    if (!taskColumnNames.has('relation_kind')) {
+      tasksDb.exec("ALTER TABLE tasks ADD COLUMN relation_kind TEXT NOT NULL DEFAULT 'root'")
     }
 
     const ruleColumns = tasksDb.prepare('PRAGMA table_info(recurring_rules)').all() as {

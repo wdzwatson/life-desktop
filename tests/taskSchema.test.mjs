@@ -182,6 +182,8 @@ test('task schema migrates legacy recurring task columns before creating recurre
       assert.ok(taskColumns.includes('requires_review'))
       assert.ok(taskColumns.includes('start_date'))
       assert.ok(taskColumns.includes('start_time'))
+      assert.ok(taskColumns.includes('task_kind'))
+      assert.ok(taskColumns.includes('relation_kind'))
 
       const ruleColumns = migratedDb
         .prepare('PRAGMA table_info(recurring_rules)')
@@ -248,6 +250,31 @@ test('task schema migrates legacy recurring task columns before creating recurre
     } catch {
       // Windows may keep SQLite WAL handles briefly after Electron closes a test database.
     }
+  }
+})
+
+test('task schema supports explicit normal and recurring task kinds', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'life-task-kind-schema-'))
+  try {
+    initializeUserDatabase(dir)
+    const db = new Database(path.join(dir, 'tasks.db'))
+    try {
+      db.prepare("INSERT INTO tasks (title, task_kind, relation_kind) VALUES ('Normal root', 'normal', 'root')").run()
+      db.prepare("INSERT INTO tasks (title, task_kind, relation_kind, parent_id) VALUES ('Normal child', 'normal', 'manual_child', 1)").run()
+      db.prepare("INSERT INTO tasks (title, task_kind, relation_kind) VALUES ('Date instance', 'recurring_date_instance', 'root')").run()
+      db.prepare("INSERT INTO tasks (title, task_kind, relation_kind, parent_id, instance_key) VALUES ('Execution', 'recurring_execution', 'recurring_occurrence', 3, '2026-08-20T09:00')").run()
+      assert.deepEqual(db.prepare('SELECT task_kind, relation_kind FROM tasks ORDER BY id').all(), [
+        { task_kind: 'normal', relation_kind: 'root' },
+        { task_kind: 'normal', relation_kind: 'manual_child' },
+        { task_kind: 'recurring_date_instance', relation_kind: 'root' },
+        { task_kind: 'recurring_execution', relation_kind: 'recurring_occurrence' },
+      ])
+      assert.throws(() => db.prepare("INSERT INTO tasks (title, task_kind) VALUES ('Invalid', 'unknown')").run(), /CHECK constraint failed/i)
+    } finally {
+      db.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
   }
 })
 
