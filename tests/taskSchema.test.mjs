@@ -650,7 +650,7 @@ test('task schema preserves completed state while merging duplicate date roots',
     const db = new Database(dbPath)
     db.exec(`
       CREATE TABLE tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT '待处理',
+        id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, description TEXT, status TEXT NOT NULL DEFAULT '待处理',
         due_date TEXT, due_time TEXT, recur_rule_id INTEGER, recurring_instance_id INTEGER,
         instance_key TEXT, recur_instance_root INTEGER NOT NULL DEFAULT 0, parent_id INTEGER,
         progress INTEGER DEFAULT 0, is_completed INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -672,6 +672,53 @@ test('task schema preserves completed state while merging duplicate date roots',
         repaired.prepare('SELECT status, progress, is_completed FROM tasks WHERE recur_instance_root = 1').all(),
         [{ status: '已关闭', progress: 100, is_completed: 1 }],
       )
+    } finally {
+      repaired.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('task schema repairs orphan timed roots when a legacy child index exists', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'life-task-schema-legacy-index-'))
+  try {
+    const dbPath = path.join(dir, 'tasks.db')
+    const db = new Database(dbPath)
+    db.exec(`
+      CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, description TEXT, priority TEXT DEFAULT 'mid',
+        status TEXT NOT NULL DEFAULT '待处理', closed_from_status TEXT, requires_review INTEGER NOT NULL DEFAULT 0,
+        start_date TEXT, start_time TEXT, due_date TEXT, due_time TEXT, recur_rule_id INTEGER, template_id INTEGER,
+        template_version INTEGER, recurring_instance_id INTEGER, instance_key TEXT,
+        recur_instance_root INTEGER NOT NULL DEFAULT 0, parent_id INTEGER, associated_note_id INTEGER,
+        progress INTEGER DEFAULT 0, is_completed INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE recurring_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, frequency TEXT DEFAULT 'daily', start_date TEXT, start_time TEXT DEFAULT '09:00', end_condition TEXT, missed_policy TEXT DEFAULT 'accumulate', created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+      CREATE TABLE recurring_instances (id INTEGER PRIMARY KEY AUTOINCREMENT, recur_rule_id INTEGER NOT NULL, date_key TEXT NOT NULL);
+      CREATE TABLE translations (entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, locale TEXT NOT NULL, translation TEXT NOT NULL, PRIMARY KEY (entity_type, entity_id, locale));
+      INSERT INTO recurring_rules (title, start_date) VALUES ('Brush teeth', '2026-08-20');
+      INSERT INTO recurring_instances (recur_rule_id, date_key) VALUES (1, '2026-08-20');
+      INSERT INTO tasks (title, status, due_date, recur_rule_id, recurring_instance_id, recur_instance_root) VALUES ('Brush teeth', '进行中', '2026-08-20', 1, 1, 1);
+      INSERT INTO tasks (title, status, due_date, due_time, recur_rule_id, instance_key, recur_instance_root) VALUES
+        ('Brush teeth', '已关闭', '2026-08-20', '09:00:00', 1, '2026-08-20T09:00', 1),
+        ('Brush teeth', '待处理', '2026-08-20', '23:59:59', 1, '2026-08-20T23:59', 1);
+      INSERT INTO tasks (title, status, due_date, due_time, recur_rule_id, instance_key, parent_id) VALUES
+        ('Brush tongue', '待处理', '2026-08-20', '09:00:00', 1, '2026-08-20T09:00', 2);
+      CREATE UNIQUE INDEX tasks_recur_instance_child_idx ON tasks (recurring_instance_id, instance_key, parent_id) WHERE recurring_instance_id IS NOT NULL AND instance_key IS NOT NULL;
+    `)
+    db.close()
+    initializeUserDatabase(dir)
+    const repaired = new Database(dbPath)
+    try {
+      assert.equal(repaired.prepare('SELECT COUNT(*) AS count FROM tasks WHERE parent_id IS NULL AND instance_key IS NOT NULL').get().count, 0)
+      assert.equal(repaired.prepare('SELECT COUNT(*) AS count FROM tasks WHERE recur_instance_root = 0 AND instance_key IS NOT NULL').get().count, 2)
+      assert.equal(repaired.prepare('SELECT COUNT(*) AS count FROM tasks WHERE title = ?').get('Brush tongue').count, 1)
+      assert.equal(
+        repaired.prepare('SELECT parent_id FROM tasks WHERE title = ?').get('Brush tongue').parent_id,
+        repaired.prepare("SELECT id FROM tasks WHERE instance_key = '2026-08-20T09:00'").get().id,
+      )
+      assert.ok(repaired.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'tasks_recur_instance_child_idx'").get())
     } finally {
       repaired.close()
     }
