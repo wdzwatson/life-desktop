@@ -59,6 +59,7 @@ import {
   parseTaskCode,
 } from './taskHierarchyUtils'
 import { getAutomaticTaskStatus, TASK_STATUS } from '../taskWorkflow'
+import { isRecurringDateInstance, isRecurringExecution, isRecurringStep } from './taskSemantics'
 import {
   buildCompleteTaskTreeMutation,
   buildAggregateTaskMutation,
@@ -2267,11 +2268,12 @@ export const Tasks: React.FC = () => {
     return [...nearestByRule.values()]
   }, [rules, skippedOccurrences, tasks])
   const isRecurringOccurrenceTask = (task: any) => {
+    if (isRecurringExecution(task)) return true
     if (!task?.parent_id || !task.recur_rule_id || !task.instance_key) return false
     const parent = tasks.find((candidate) => candidate.id === task.parent_id)
     return Boolean(
       parent?.recur_rule_id === task.recur_rule_id &&
-        parent.recur_instance_root === 1 &&
+        isRecurringDateInstance(parent) &&
         !parent.instance_key &&
         parent.recurring_instance_id === task.recurring_instance_id,
     )
@@ -2288,7 +2290,7 @@ export const Tasks: React.FC = () => {
           !task.parent_id &&
           // Timed recurring tasks belong under their date-level instance.
           // Keep virtual projections visible until they are materialized.
-          !(task.recur_rule_id && task.instance_key && task.recur_instance_root === 1 && !task.is_virtual),
+          !(isRecurringDateInstance(task) && task.instance_key && !task.is_virtual),
       ),
     [listTasks],
   )

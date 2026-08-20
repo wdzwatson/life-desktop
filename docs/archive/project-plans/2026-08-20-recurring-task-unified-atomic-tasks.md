@@ -66,7 +66,7 @@
 - 验收：多个步骤可以属于同一执行项；步骤不影响执行项唯一性；步骤不被识别为普通子任务。
 - 依赖：AT-02、AT-07。
 
-### AT-09：统一任务类型判断 API
+### AT-09：统一任务类型判断 API（已完成）
 
 - 输入：AT-02 类型字段。
 - 工作：实现 `isNormalTask`、`isRecurringDateInstance`、`isRecurringExecution`、`isManualChildTask`、`isRecurringStep`、`isActionableTask` 及集合查询函数。
