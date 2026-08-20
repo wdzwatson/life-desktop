@@ -110,3 +110,10 @@ test('same-day recurrence totals exclude the date-level parent task', () => {
   assert.match(tasksView, /isRecurringOccurrenceTask/)
   assert.match(tasksView, /hasActualSubtasks\(activeTask\)/)
 })
+
+test('main task list renders recurring execution items separately from ordinary subtasks', () => {
+  const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
+  assert.match(tasksView, /task-occurrence-list/)
+  assert.match(tasksView, /occurrenceSubtasks = tasks\.filter/)
+  assert.match(tasksView, /isRecurringOccurrenceTask\(candidate\)/)
+})
