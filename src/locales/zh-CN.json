@@ -2254,6 +2254,8 @@
     "search_video_source_unknown": "未知来源",
     "search_video_duration_unknown": "未知时长",
     "search_placeholder": "搜索任务、笔记、书籍、视频，或输入 /task、/note 指令...",
+    "search_accessible_label": "打开全局搜索",
+    "search_results_label": "搜索结果",
     "search_no_results": "没有匹配的检索结果",
     "search_default_hint": "没有匹配的检索结果",
     "search_result_not_found": "该检索结果已不存在",

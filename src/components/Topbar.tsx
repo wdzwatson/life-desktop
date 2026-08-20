@@ -16,7 +16,10 @@ import {
 } from 'lucide-react'
 import { shouldHighlightTopbarNewTask } from './topbarUtils'
 
-export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch }) => {
+export const Topbar: React.FC<{
+  onOpenSearch: () => void
+  searchButtonRef?: React.RefObject<HTMLButtonElement | null>
+}> = ({ onOpenSearch, searchButtonRef }) => {
   const { t } = useTranslation()
   const theme = useAppStore((state) => state.theme)
   const setTheme = useAppStore((state) => state.setTheme)
@@ -140,8 +143,14 @@ export const Topbar: React.FC<{ onOpenSearch: () => void }> = ({ onOpenSearch })
         </div>
 
         {/* Global search trigger */}
-        <button className="global-search-btn" onClick={onOpenSearch}>
-          <Search size={16} />
+        <button
+          ref={searchButtonRef}
+          className="global-search-btn"
+          type="button"
+          onClick={onOpenSearch}
+          aria-label={t('topbar.search_accessible_label')}
+        >
+          <Search size={16} aria-hidden="true" />
           <span style={{ fontSize: '13px' }}>{t('topbar.search_placeholder')}</span>
           <span className="kbd-shortcut">{isMac ? '⌘ K' : 'Ctrl+K'}</span>
         </button>

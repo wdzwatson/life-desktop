@@ -2254,6 +2254,8 @@
     "search_video_source_unknown": "Unknown source",
     "search_video_duration_unknown": "Unknown duration",
     "search_placeholder": "Search tasks, notes, books, videos, or type /task, /note command...",
+    "search_accessible_label": "Open global search",
+    "search_results_label": "Search results",
     "search_no_results": "No matching results found",
     "search_default_hint": "No matching results found",
     "search_result_not_found": "This search result is no longer available",

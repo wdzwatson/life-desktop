@@ -8,6 +8,8 @@ import { useTranslation } from 'react-i18next'
 import { AIChatBoundary } from './views/ai/AIChatBoundary'
 import {
   dispatchGlobalSearchOpen,
+  getGlobalSearchOptionId,
+  getNextGlobalSearchIndex,
   type GlobalSearchState,
   type GlobalSearchResult,
 } from './globalSearch'
@@ -70,7 +72,11 @@ function App() {
   const [searchState, setSearchState] = useState<GlobalSearchState>('idle')
   const [searchError, setSearchError] = useState<string | null>(null)
   const [searchRetryNonce, setSearchRetryNonce] = useState(0)
+  const [activeSearchIndex, setActiveSearchIndex] = useState(-1)
   const searchRequestIdRef = useRef(0)
+  const searchButtonRef = useRef<HTMLButtonElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const wasSearchOpenRef = useRef(false)
   const [screenProgressVisible, setScreenProgressVisible] = useState(false)
   const hasMountedScreen = useRef(false)
 
@@ -333,6 +339,19 @@ function App() {
     return () => clearTimeout(timer)
   }, [api, searchQuery, searchRetryNonce, t])
 
+  useEffect(() => {
+    if (searchOpen) {
+      searchInputRef.current?.focus()
+    } else if (wasSearchOpenRef.current) {
+      searchButtonRef.current?.focus()
+    }
+    wasSearchOpenRef.current = searchOpen
+  }, [searchOpen])
+
+  useEffect(() => {
+    setActiveSearchIndex(-1)
+  }, [searchQuery, searchState, searchResults.length])
+
   // Create task command handler
   const handleCreateTaskFromCmd = async (title: string) => {
     if (!api) return
@@ -439,7 +458,7 @@ function App() {
       <div className={`shell-container sidebar-display-${sidebarDisplayMode}`}>
         <Sidebar />
         <main className="main-workspace">
-          <Topbar onOpenSearch={() => setSearchOpen(true)} />
+          <Topbar searchButtonRef={searchButtonRef} onOpenSearch={() => setSearchOpen(true)} />
           <div
             className={`screen-progress ${screenProgressVisible ? 'is-visible' : ''}`}
             role="progressbar"
@@ -507,7 +526,7 @@ function App() {
               >
                 <span style={{ fontSize: '18px', color: 'var(--text-muted)' }}>⌕</span>
                 <input
-                  autoFocus
+                  ref={searchInputRef}
                   style={{
                     border: 'none',
                     outline: 'none',
@@ -518,8 +537,38 @@ function App() {
                   }}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      setSearchOpen(false)
+                      return
+                    }
+                    if (event.key === 'Enter') {
+                      if (activeSearchIndex >= 0 && searchResults[activeSearchIndex]) {
+                        event.preventDefault()
+                        searchResults[activeSearchIndex].action()
+                      }
+                      return
+                    }
+                    const nextIndex = getNextGlobalSearchIndex(
+                      activeSearchIndex,
+                      event.key,
+                      searchResults.length,
+                    )
+                    if (nextIndex !== activeSearchIndex) {
+                      event.preventDefault()
+                      setActiveSearchIndex(nextIndex)
+                    }
+                  }}
                   placeholder={t('app.search_placeholder')}
                   aria-label={t('app.search_placeholder')}
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-controls="global-search-results"
+                  aria-expanded="true"
+                  aria-activedescendant={
+                    activeSearchIndex >= 0 ? getGlobalSearchOptionId(activeSearchIndex) : undefined
+                  }
                 />
                 <span className="kbd-shortcut" style={{ margin: 0 }}>
                   Esc
@@ -527,7 +576,12 @@ function App() {
               </div>
 
               {/* Results Grid */}
-              <div style={{ maxHeight: '360px', overflowY: 'auto', padding: '8px' }}>
+              <div
+                id="global-search-results"
+                role="listbox"
+                aria-label={t('app.search_results_label')}
+                style={{ maxHeight: '360px', overflowY: 'auto', padding: '8px' }}
+              >
                 {searchState === 'loading' ? (
                   <div className="command-palette__status" role="status" aria-live="polite">
                     {t('app.search_loading')}
@@ -557,10 +611,15 @@ function App() {
                         {searchError}
                       </div>
                     ) : null}
-                    {searchResults.map((result) => (
+                    {searchResults.map((result, index) => (
                     <div
                       key={`${result.module}:${result.id}`}
+                      id={getGlobalSearchOptionId(index)}
+                      role="option"
+                      aria-selected={activeSearchIndex === index}
+                      tabIndex={-1}
                       onClick={result.action}
+                      onMouseEnter={() => setActiveSearchIndex(index)}
                       style={{
                         padding: '10px 14px',
                         borderRadius: '8px',
@@ -568,13 +627,11 @@ function App() {
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        backgroundColor: 'transparent',
+                        backgroundColor:
+                          activeSearchIndex === index ? 'var(--bg-app)' : 'transparent',
                         transition: 'background-color 0.1s',
                       }}
-                      onMouseEnter={(e) =>
-                        (e.currentTarget.style.backgroundColor = 'var(--bg-app)')
-                      }
-                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      onMouseLeave={() => setActiveSearchIndex(-1)}
                     >
                       <div>
                         <strong

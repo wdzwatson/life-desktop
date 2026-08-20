@@ -1,7 +1,7 @@
 # C-01-03 键盘导航与可访问性
 
 日期：2026-08-20  
-状态：已归档，待执行  
+状态：已完成，已归档
 所属计划：[C-01 全局搜索原子任务计划](2026-08-20-c01-global-search-atomic-tasks.md)
 
 ## 目标
@@ -29,3 +29,10 @@
 - DOM/ARIA 检查。
 - 键盘交互测试。
 - 390px 截图和 scrollWidth 检查。
+
+## 完成证据
+
+- 搜索输入、结果容器和结果项已实现 combobox/listbox/option 语义。
+- 已支持 ArrowUp/ArrowDown、Home/End、Enter、Esc，并在结果间循环选择。
+- 顶部搜索按钮具备稳定本地化 aria-label；弹层关闭后焦点恢复到触发按钮。
+- `npx tsc --noEmit -p tsconfig.app.json`、定向 ESLint、搜索测试和 `npm run build` 通过。

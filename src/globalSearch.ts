@@ -15,6 +15,19 @@ export type GlobalSearchResult = {
   action: () => void
 }
 
+export function getGlobalSearchOptionId(index: number) {
+  return `global-search-option-${index}`
+}
+
+export function getNextGlobalSearchIndex(currentIndex: number, key: string, resultCount: number) {
+  if (resultCount <= 0) return -1
+  if (key === 'ArrowDown') return currentIndex < 0 ? 0 : (currentIndex + 1) % resultCount
+  if (key === 'ArrowUp') return currentIndex < 0 ? resultCount - 1 : (currentIndex - 1 + resultCount) % resultCount
+  if (key === 'Home') return 0
+  if (key === 'End') return resultCount - 1
+  return currentIndex
+}
+
 export type GlobalSearchOpenEvent = {
   name: `lifeos:open-${GlobalSearchModule}`
   detail: Record<string, string | number>
