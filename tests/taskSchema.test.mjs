@@ -642,3 +642,40 @@ test('task schema merges duplicate same-day recurring instances on startup', () 
     rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 })
+
+test('task schema preserves completed state while merging duplicate date roots', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'life-task-schema-duplicate-state-'))
+  try {
+    const dbPath = path.join(dir, 'tasks.db')
+    const db = new Database(dbPath)
+    db.exec(`
+      CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT '待处理',
+        due_date TEXT, due_time TEXT, recur_rule_id INTEGER, recurring_instance_id INTEGER,
+        instance_key TEXT, recur_instance_root INTEGER NOT NULL DEFAULT 0, parent_id INTEGER,
+        progress INTEGER DEFAULT 0, is_completed INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE recurring_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, frequency TEXT DEFAULT 'daily', start_date TEXT, start_time TEXT DEFAULT '09:00', end_condition TEXT, missed_policy TEXT DEFAULT 'accumulate', created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+      CREATE TABLE recurring_instances (id INTEGER PRIMARY KEY AUTOINCREMENT, recur_rule_id INTEGER NOT NULL, date_key TEXT NOT NULL);
+      CREATE TABLE translations (entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, locale TEXT NOT NULL, translation TEXT NOT NULL, PRIMARY KEY (entity_type, entity_id, locale));
+      INSERT INTO recurring_rules (title, start_date) VALUES ('Review', '2026-08-20');
+      INSERT INTO recurring_instances (recur_rule_id, date_key) VALUES (1, '2026-08-20'), (1, '2026-08-20');
+      INSERT INTO tasks (title, status, due_date, recur_rule_id, recurring_instance_id, recur_instance_root, progress, is_completed) VALUES
+        ('Review', '待处理', '2026-08-20', 1, 1, 1, 0, 0),
+        ('Review', '已关闭', '2026-08-20', 1, 2, 1, 100, 1);
+    `)
+    db.close()
+    initializeUserDatabase(dir)
+    const repaired = new Database(dbPath)
+    try {
+      assert.deepEqual(
+        repaired.prepare('SELECT status, progress, is_completed FROM tasks WHERE recur_instance_root = 1').all(),
+        [{ status: '已关闭', progress: 100, is_completed: 1 }],
+      )
+    } finally {
+      repaired.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

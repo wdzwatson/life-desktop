@@ -654,6 +654,20 @@ export function initializeUserDatabase(userDbDir: string) {
         )
         .all() as { recur_rule_id: number; recurring_instance_id: number; keep_id: number }[]
       for (const duplicate of duplicateRoots) {
+        const rootState = tasksDb
+          .prepare(
+            `SELECT MAX(is_completed) AS any_completed,
+                    MAX(progress) AS max_progress,
+                    MAX(CASE WHEN status = '待审核' THEN 1 ELSE 0 END) AS needs_review,
+                    MAX(CASE WHEN status = '已逾期' THEN 1 ELSE 0 END) AS overdue
+             FROM tasks WHERE recur_rule_id = ? AND recurring_instance_id = ? AND recur_instance_root = 1`,
+          )
+          .get(duplicate.recur_rule_id, duplicate.recurring_instance_id) as {
+          any_completed: number
+          max_progress: number
+          needs_review: number
+          overdue: number
+        }
         const duplicates = tasksDb
           .prepare(
             `SELECT id FROM tasks
@@ -669,6 +683,24 @@ export function initializeUserDatabase(userDbDir: string) {
             .run(duplicate.keep_id, row.id)
           tasksDb.prepare('DELETE FROM tasks WHERE id = ?').run(row.id)
         }
+        tasksDb
+          .prepare(
+            `UPDATE tasks SET is_completed = ?, progress = ?, status = CASE
+              WHEN ? = 1 AND ? = 1 THEN '待审核'
+              WHEN ? = 1 THEN '已逾期'
+              WHEN ? = 1 THEN '已关闭'
+              ELSE status END
+             WHERE id = ?`,
+          )
+          .run(
+            rootState.any_completed ? 1 : 0,
+            rootState.max_progress || 0,
+            rootState.any_completed ? 1 : 0,
+            rootState.needs_review ? 1 : 0,
+            rootState.overdue ? 1 : 0,
+            rootState.any_completed ? 1 : 0,
+            duplicate.keep_id,
+          )
       }
 
       const duplicateChildren = tasksDb
