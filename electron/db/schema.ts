@@ -210,6 +210,24 @@ export function initializeUserDatabase(userDbDir: string) {
       tasksDb.exec("ALTER TABLE tasks ADD COLUMN relation_kind TEXT NOT NULL DEFAULT 'root'")
     }
 
+    // Backfill explicit task semantics without changing task content or state.
+    tasksDb.exec(`
+      UPDATE tasks
+      SET task_kind = CASE
+            WHEN recur_rule_id IS NOT NULL AND recur_instance_root = 1 AND instance_key IS NULL
+              THEN 'recurring_date_instance'
+            WHEN recur_rule_id IS NOT NULL AND recur_instance_root = 0 AND instance_key IS NOT NULL
+              THEN 'recurring_execution'
+            ELSE 'normal'
+          END,
+          relation_kind = CASE
+            WHEN recur_rule_id IS NOT NULL AND recur_instance_root = 0 AND instance_key IS NOT NULL
+              THEN 'recurring_occurrence'
+            WHEN parent_id IS NULL THEN 'root'
+            ELSE 'manual_child'
+          END
+    `)
+
     const ruleColumns = tasksDb.prepare('PRAGMA table_info(recurring_rules)').all() as {
       name: string
     }[]

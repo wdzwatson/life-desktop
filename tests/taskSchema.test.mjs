@@ -278,6 +278,54 @@ test('task schema supports explicit normal and recurring task kinds', () => {
   }
 })
 
+test('task schema backfills task kinds without changing task content or state', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'life-task-kind-migration-'))
+  try {
+    const dbPath = path.join(dir, 'tasks.db')
+    const db = new Database(dbPath)
+    db.exec(`
+      CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT '待处理',
+        recur_rule_id INTEGER,
+        recurring_instance_id INTEGER,
+        instance_key TEXT,
+        recur_instance_root INTEGER NOT NULL DEFAULT 0,
+        parent_id INTEGER,
+        progress INTEGER DEFAULT 0,
+        is_completed INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE recurring_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, frequency TEXT DEFAULT 'daily', start_date TEXT, start_time TEXT DEFAULT '09:00', end_condition TEXT, missed_policy TEXT DEFAULT 'accumulate', created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+      CREATE TABLE recurring_instances (id INTEGER PRIMARY KEY AUTOINCREMENT, recur_rule_id INTEGER NOT NULL, date_key TEXT NOT NULL);
+      CREATE TABLE translations (entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, locale TEXT NOT NULL, translation TEXT NOT NULL, PRIMARY KEY (entity_type, entity_id, locale));
+      INSERT INTO tasks (title, status, progress, is_completed) VALUES ('普通父任务', '进行中', 20, 0);
+      INSERT INTO tasks (title, status, parent_id, progress, is_completed) VALUES ('普通子任务', '已关闭', 1, 100, 1);
+      INSERT INTO tasks (title, status, recur_rule_id, recurring_instance_id, recur_instance_root) VALUES ('日期实例', '进行中', 1, 1, 1);
+      INSERT INTO tasks (title, status, recur_rule_id, recurring_instance_id, instance_key, parent_id, recur_instance_root) VALUES ('执行项', '待处理', 1, 1, '2026-08-20T09:00', 3, 0);
+    `)
+    const before = db.prepare('SELECT id, title, status, parent_id, progress, is_completed FROM tasks ORDER BY id').all()
+    db.close()
+    initializeUserDatabase(dir)
+    const migrated = new Database(dbPath)
+    try {
+      assert.deepEqual(migrated.prepare('SELECT id, title, status, parent_id, progress, is_completed FROM tasks ORDER BY id').all(), before)
+      assert.deepEqual(migrated.prepare('SELECT task_kind, relation_kind FROM tasks ORDER BY id').all(), [
+        { task_kind: 'normal', relation_kind: 'root' },
+        { task_kind: 'normal', relation_kind: 'manual_child' },
+        { task_kind: 'recurring_date_instance', relation_kind: 'root' },
+        { task_kind: 'recurring_execution', relation_kind: 'recurring_occurrence' },
+      ])
+    } finally {
+      migrated.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('task schema rejects self and descendant parent bindings', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'life-task-hierarchy-schema-'))
   try {
