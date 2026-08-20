@@ -233,6 +233,34 @@ test('task schema migrates legacy recurring task columns before creating recurre
           .get('tasks_parent_no_cycle'),
       )
 
+      const ruleId = migratedDb.prepare("INSERT INTO recurring_rules (title, start_date) VALUES ('Constraint rule', '2026-07-20')").run().lastInsertRowid
+      migratedDb.prepare('INSERT INTO recurring_instances (recur_rule_id, date_key) VALUES (?, ?)').run(ruleId, '2026-07-20')
+      const instanceId = migratedDb.prepare('SELECT id FROM recurring_instances WHERE recur_rule_id = ? AND date_key = ?').get(ruleId, '2026-07-20').id
+      const parentId = migratedDb.prepare("INSERT INTO tasks (title, recur_rule_id, recurring_instance_id, recur_instance_root, instance_key) VALUES ('Date parent', ?, ?, 1, NULL)").run(ruleId, instanceId).lastInsertRowid
+      assert.throws(
+        () => migratedDb.prepare('INSERT INTO recurring_instances (recur_rule_id, date_key) VALUES (?, ?)').run(ruleId, '2026-07-20'),
+        /UNIQUE constraint failed/i,
+      )
+      migratedDb
+        .prepare(
+          `INSERT INTO tasks
+            (title, recur_rule_id, recurring_instance_id, instance_key, parent_id, recur_instance_root)
+           VALUES ('Timed task', ?, ?, '2026-07-20T09:00', ?, 0)`,
+        )
+        .run(ruleId, instanceId, parentId)
+      assert.throws(
+        () => migratedDb
+          .prepare(
+            `INSERT INTO tasks
+              (title, recur_rule_id, recurring_instance_id, instance_key, parent_id, recur_instance_root)
+             VALUES ('Timed duplicate', ?, ?, '2026-07-20T09:00', ?, 0)`,
+          )
+          .run(ruleId, instanceId, parentId),
+        /UNIQUE constraint failed/i,
+      )
+      migratedDb.prepare("INSERT INTO tasks (title) VALUES ('Ordinary duplicate title')").run()
+      migratedDb.prepare("INSERT INTO tasks (title) VALUES ('Ordinary duplicate title')").run()
+
       migratedDb
         .prepare(
           `
