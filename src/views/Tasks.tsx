@@ -405,6 +405,7 @@ export const Tasks: React.FC = () => {
   const [ruleEndDate, setRuleEndDate] = useState('')
   const [ruleTime, setRuleTime] = useState('09:00')
   const [ruleTimes, setRuleTimes] = useState<string[]>(['09:00'])
+  const [ruleStepsText, setRuleStepsText] = useState('')
   const [rulePriority, setRulePriority] = useState('mid')
   const [ruleWeekDays, setRuleWeekDays] = useState<number[]>([]) // 0=Sun...6=Sat
   const [ruleMonthDays, setRuleMonthDays] = useState<number[]>([])
@@ -706,7 +707,7 @@ export const Tasks: React.FC = () => {
               task.template_id || null,
               task.template_version || null,
               recurringInstanceId,
-              task.instance_key,
+              null,
               childId,
               childId,
               step.title,
@@ -767,6 +768,7 @@ export const Tasks: React.FC = () => {
     setRuleStartDate(toLocalDateKey(new Date()))
     setRuleEndDate('')
     setRuleTimes(['09:00'])
+    setRuleStepsText('')
     setRuleWeekDays([])
     setRuleMonthDays([])
     setRuleExcludedWeekDays([])
@@ -840,6 +842,19 @@ export const Tasks: React.FC = () => {
           .filter((value) => value >= 1 && value <= 31),
       )
       setRulePriority(rule.priority || task.priority || 'mid')
+      if (api?.dbQuery && task.recur_rule_id) {
+        void api
+          .dbQuery(
+            'tasks',
+            'SELECT title FROM recurring_rule_steps WHERE rule_id = ? ORDER BY sort_order ASC, id ASC',
+            [task.recur_rule_id],
+          )
+          .then((result: any) =>
+            setRuleStepsText((result?.data ?? []).map((step: any) => step.title).join('\n')),
+          )
+      }
+    } else {
+      setRuleStepsText('')
     }
     setTaskDraft({
       title: task.title || '',
@@ -1033,7 +1048,7 @@ export const Tasks: React.FC = () => {
   }, [api, userId, taskTab, isRefreshing])
 
   // Select a rule and map to inputs
-  const selectRule = (rule: any) => {
+  const selectRule = async (rule: any) => {
     setSelectedRuleId(rule.id)
     setRuleName(rule.title)
     setRuleDesc(rule.description || '')
@@ -1070,6 +1085,16 @@ export const Tasks: React.FC = () => {
         .map((x: string) => parseInt(x)),
     )
     setRuleCron(rule.cron || '')
+    if (api?.dbQuery) {
+      const stepsResult = await api.dbQuery(
+        'tasks',
+        'SELECT title FROM recurring_rule_steps WHERE rule_id = ? ORDER BY sort_order ASC, id ASC',
+        [rule.id],
+      )
+      setRuleStepsText((stepsResult?.data ?? []).map((step: any) => step.title).join('\n'))
+    } else {
+      setRuleStepsText('')
+    }
   }
 
   // Task checkmark click toggle
@@ -1383,6 +1408,17 @@ export const Tasks: React.FC = () => {
           ],
         )
         if (res?.success) {
+          const ruleId = res.data?.lastInsertRowid || res.data?.insertId
+          const steps = ruleStepsText.split('\n').map((step) => step.trim()).filter(Boolean)
+          if (ruleId) {
+            for (const [index, step] of steps.entries()) {
+              await api.dbQuery(
+                'tasks',
+                'INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order) VALUES (?, ?, \'\', ?, ?)',
+                [ruleId, step, taskDraft.priority, index + 1],
+              )
+            }
+          }
           await runDueTaskGeneration()
           showToast(t('tasks.toast_task_added'))
         }
@@ -1486,6 +1522,14 @@ export const Tasks: React.FC = () => {
               activeTask.id,
             ],
           )
+          const steps = ruleStepsText.split('\n').map((step) => step.trim()).filter(Boolean)
+          for (const [index, step] of steps.entries()) {
+            await api.dbQuery(
+              'tasks',
+              'INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order) VALUES (?, ?, \'\', ?, ?)',
+              [ruleId, step, taskDraft.priority, index + 1],
+            )
+          }
         }
       } else if (
         activeTask.recur_rule_id &&
@@ -1515,6 +1559,15 @@ export const Tasks: React.FC = () => {
             activeTask.recur_rule_id,
           ],
         )
+        const steps = ruleStepsText.split('\n').map((step) => step.trim()).filter(Boolean)
+        await api.dbQuery('tasks', 'DELETE FROM recurring_rule_steps WHERE rule_id = ?', [activeTask.recur_rule_id])
+        for (const [index, step] of steps.entries()) {
+          await api.dbQuery(
+            'tasks',
+            'INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order) VALUES (?, ?, \'\', ?, ?)',
+            [activeTask.recur_rule_id, step, taskDraft.priority, index + 1],
+          )
+        }
       }
       const nextPeerTaskIds = peerTaskIds.filter((peerId) =>
         tasks.some(
@@ -1776,6 +1829,10 @@ export const Tasks: React.FC = () => {
     const timeSlots = ruleTimes.length > 0 ? ruleTimes : [ruleTime]
     const primaryTime = timeSlots[0] || '09:00'
     const timeSlotsStr = timeSlots.join(',')
+    const steps = ruleStepsText
+      .split('\n')
+      .map((step) => step.trim())
+      .filter(Boolean)
 
     if (selectedRuleId) {
       // Update
@@ -1801,6 +1858,14 @@ export const Tasks: React.FC = () => {
         rulePriority,
         selectedRuleId,
       ])
+      await api.dbQuery('tasks', 'DELETE FROM recurring_rule_steps WHERE rule_id = ?', [selectedRuleId])
+      for (const [index, step] of steps.entries()) {
+        await api.dbQuery(
+          'tasks',
+          'INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order) VALUES (?, ?, \'\', ?, ?)',
+          [selectedRuleId, step, rulePriority, index + 1],
+        )
+      }
       showToast(t('tasks.toast_rule_modified'))
     } else {
       // Create new
@@ -1810,7 +1875,7 @@ export const Tasks: React.FC = () => {
         )
         VALUES (?, ?, 'daily', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
-      await api.dbQuery('tasks', query, [
+      const result = await api.dbQuery('tasks', query, [
         ruleName,
         ruleDesc,
         ruleScheduleMode,
@@ -1827,6 +1892,16 @@ export const Tasks: React.FC = () => {
         rulePriority,
         DEFAULT_MISSED_POLICY,
       ])
+      const ruleId = result?.data?.lastInsertRowid || result?.data?.insertId
+      if (ruleId) {
+        for (const [index, step] of steps.entries()) {
+          await api.dbQuery(
+            'tasks',
+            'INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order) VALUES (?, ?, \'\', ?, ?)',
+            [ruleId, step, rulePriority, index + 1],
+          )
+        }
+      }
       showToast(t('tasks.toast_rule_created'))
     }
     await runDueTaskGeneration()
@@ -1844,6 +1919,7 @@ export const Tasks: React.FC = () => {
     setRuleEndDate('')
     setRuleTime('09:00')
     setRuleTimes(['09:00'])
+    setRuleStepsText('')
     setRulePriority('mid')
     setRuleWeekDays([])
     setRuleMonthDays([])
@@ -2189,8 +2265,32 @@ export const Tasks: React.FC = () => {
 
     return [...nearestByRule.values()]
   }, [rules, skippedOccurrences, tasks])
+  const isRecurringOccurrenceTask = (task: any) => {
+    if (!task?.parent_id || !task.recur_rule_id || !task.instance_key) return false
+    const parent = tasks.find((candidate) => candidate.id === task.parent_id)
+    return Boolean(
+      parent?.recur_rule_id === task.recur_rule_id &&
+        parent.recur_instance_root === 1 &&
+        !parent.instance_key &&
+        parent.recurring_instance_id === task.recurring_instance_id,
+    )
+  }
+  const hasActualSubtasks = (task: any) =>
+    tasks.some(
+      (candidate) => candidate.parent_id === task.id && !isRecurringOccurrenceTask(candidate),
+    )
   const listTasks = useMemo(() => [...tasks, ...listProjectedTasks], [listProjectedTasks, tasks])
-  const rootTasks = useMemo(() => listTasks.filter((task) => !task.parent_id), [listTasks])
+  const rootTasks = useMemo(
+    () =>
+      listTasks.filter(
+        (task) =>
+          !task.parent_id &&
+          // Timed recurring tasks belong under their date-level instance.
+          // Keep virtual projections visible until they are materialized.
+          !(task.recur_rule_id && task.instance_key && task.recur_instance_root === 1 && !task.is_virtual),
+      ),
+    [listTasks],
+  )
   const displayRootTasks = useMemo(() => {
     const seen = new Set<string>()
     const statusOrder: Record<string, number> = {
@@ -2613,7 +2713,9 @@ export const Tasks: React.FC = () => {
                     const isSelected = selectedTaskId === task.id
                     const isOverdue = task.status === '已逾期'
                     const directSubtasks = tasks.filter(
-                      (candidate) => candidate.parent_id === task.id,
+                      (candidate) =>
+                        candidate.parent_id === task.id &&
+                        !isRecurringOccurrenceTask(candidate),
                     )
                     const completedSubtaskCount = directSubtasks.filter(
                       (subtask) => subtask.is_completed === 1,
@@ -2621,10 +2723,12 @@ export const Tasks: React.FC = () => {
                     const isTaskGroupExpanded = expandedTaskGroupId === task.id
                     const repeatSummary = getRepeatSummary(task)
                     const sameDayOccurrences = task.recur_rule_id
-                      ? rootTasks.filter(
+                      ? tasks.filter(
                           (candidate) =>
+                            candidate.parent_id === task.id &&
                             candidate.recur_rule_id === task.recur_rule_id &&
-                            candidate.due_date === task.due_date,
+                            candidate.due_date === task.due_date &&
+                            Boolean(candidate.instance_key),
                         )
                       : []
                     const orderedSameDayOccurrences = [...sameDayOccurrences].sort((left, right) =>
@@ -2885,28 +2989,74 @@ export const Tasks: React.FC = () => {
                             })}
                           >
                             {orderedSameDayOccurrences.map((occurrence) => (
-                              <button
-                                type="button"
-                                key={occurrence.id}
-                                className={`task-occurrence-row ${occurrence.is_completed === 1 ? 'is-completed' : ''}`}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  requestTaskCompletionToggle(occurrence, event.currentTarget)
-                                }}
-                              >
-                                <span>
-                                  {occurrence.is_completed === 1 ? (
-                                    <Check size={14} />
-                                  ) : (
-                                    <Circle size={14} />
-                                  )}
-                                </span>
-                                <time className="task-occurrence-row__time">
-                                  <Clock3 size={13} aria-hidden="true" />
-                                  {occurrence.due_date} {getOccurrenceScheduleTime(occurrence)}
-                                </time>
-                                <span>{getStatusLabel(occurrence.status)}</span>
-                              </button>
+                              (() => {
+                                const occurrenceSubtasks = tasks.filter(
+                                  (candidate) => candidate.parent_id === occurrence.id,
+                                )
+                                return (
+                                  <div
+                                    key={occurrence.id}
+                                    className={`task-occurrence-row ${occurrence.is_completed === 1 ? 'is-completed' : ''}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      selectTaskForDetails(occurrence)
+                                    }}
+                                    onKeyDown={(event) => {
+                                      if (event.key === 'Enter' || event.key === ' ') {
+                                        event.preventDefault()
+                                        selectTaskForDetails(occurrence)
+                                      }
+                                    }}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label={`${occurrence.title} ${getOccurrenceScheduleTime(occurrence)}`}
+                                  >
+                                    <button
+                                      type="button"
+                                      className="task-occurrence-row__check"
+                                      aria-label={
+                                        occurrence.is_completed === 1
+                                          ? t('tasks.reopen_task_action')
+                                          : t('tasks.complete_task_action')
+                                      }
+                                      title={
+                                        occurrence.is_completed === 1
+                                          ? t('tasks.reopen_task_action')
+                                          : t('tasks.complete_task_action')
+                                      }
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        requestTaskCompletionToggle(occurrence, event.currentTarget)
+                                      }}
+                                    >
+                                      {occurrence.is_completed === 1 ? (
+                                        <Check size={14} />
+                                      ) : (
+                                        <Circle size={14} />
+                                      )}
+                                    </button>
+                                    <span className="task-occurrence-row__content">
+                                      <strong className="task-occurrence-row__title">
+                                        {occurrence.title}
+                                      </strong>
+                                      <span className="task-occurrence-row__meta">
+                                        <time className="task-occurrence-row__time">
+                                          <Clock3 size={13} aria-hidden="true" />
+                                          {getOccurrenceScheduleTime(occurrence)}
+                                        </time>
+                                        <span>{getStatusLabel(occurrence.status)}</span>
+                                      </span>
+                                      {occurrenceSubtasks.length > 0 && (
+                                        <span className="task-occurrence-row__subtasks">
+                                          {occurrenceSubtasks.map((subtask) => (
+                                            <span key={subtask.id}>{subtask.title}</span>
+                                          ))}
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                )
+                              })()
                             ))}
                           </div>
                         )}
@@ -3017,7 +3167,7 @@ export const Tasks: React.FC = () => {
                   </div>
 
                   {/* Manual Progress Slider */}
-                  {!activeTask.parent_id && tasks.some((c) => c.parent_id === activeTask.id) ? (
+                  {hasActualSubtasks(activeTask) ? (
                     <div className="task-details-field">
                       <span>{t('tasks.details_subtask_progress')}</span>
                       <div className="task-details-progress">
@@ -3425,6 +3575,18 @@ export const Tasks: React.FC = () => {
                   </button>
                 </div>
                 <span className="task-form-hint">{t('tasks.instance_start_times_hint')}</span>
+              </div>
+
+              <div className="task-form-section">
+                <label>{t('tasks.rule_steps_label')}</label>
+                <textarea
+                  className="form-field"
+                  rows={4}
+                  value={ruleStepsText}
+                  onChange={(event) => setRuleStepsText(event.target.value)}
+                  placeholder={t('tasks.rule_steps_placeholder')}
+                />
+                <span className="task-form-hint">{t('tasks.rule_steps_hint')}</span>
               </div>
 
               {ruleScheduleMode === 'rules' && (
@@ -4484,6 +4646,23 @@ export const Tasks: React.FC = () => {
                         <section className="task-rule-section">
                           <header className="task-rule-section__header">
                             <span className="task-rule-section__number">4</span>
+                            <span>
+                              <strong>{t('tasks.rule_steps_label')}</strong>
+                              <small>{t('tasks.rule_steps_hint')}</small>
+                            </span>
+                          </header>
+                          <textarea
+                            className="form-field"
+                            rows={4}
+                            value={ruleStepsText}
+                            onChange={(event) => setRuleStepsText(event.target.value)}
+                            placeholder={t('tasks.rule_steps_placeholder')}
+                          />
+                        </section>
+
+                        <section className="task-rule-section">
+                          <header className="task-rule-section__header">
+                            <span className="task-rule-section__number">5</span>
                             <span>
                               <strong>{t('tasks.rule_section_range')}</strong>
                               <small>{getCurrentRuleRangeSummary()}</small>

@@ -51,6 +51,76 @@ test('book category schema adds parent ids without losing legacy shelves', () =>
   }
 })
 
+test('schema migration repairs timed roots left beside an existing date parent', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'life-task-schema-'))
+  try {
+    const dbPath = path.join(dir, 'tasks.db')
+    const db = new Database(dbPath)
+    db.exec(`
+      CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT,
+        priority TEXT DEFAULT 'mid',
+        status TEXT NOT NULL DEFAULT '待处理',
+        closed_from_status TEXT,
+        requires_review INTEGER NOT NULL DEFAULT 0,
+        start_date TEXT,
+        start_time TEXT,
+        due_date TEXT,
+        due_time TEXT,
+        recur_rule_id INTEGER,
+        template_id INTEGER,
+        template_version INTEGER,
+        recurring_instance_id INTEGER,
+        instance_key TEXT,
+        recur_instance_root INTEGER NOT NULL DEFAULT 0,
+        parent_id INTEGER,
+        progress INTEGER DEFAULT 0,
+        associated_note_id INTEGER,
+        is_completed INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE recurring_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, frequency TEXT DEFAULT 'daily', start_date TEXT, start_time TEXT DEFAULT '09:00', end_condition TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+      CREATE TABLE recurring_instances (id INTEGER PRIMARY KEY AUTOINCREMENT, recur_rule_id INTEGER NOT NULL, date_key TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+      CREATE TABLE translations (entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, locale TEXT NOT NULL, translation TEXT NOT NULL, PRIMARY KEY (entity_type, entity_id, locale));
+      INSERT INTO recurring_rules (title, frequency, start_date, start_time) VALUES ('刷牙', 'daily', '2026-08-20', '09:00');
+      INSERT INTO recurring_instances (recur_rule_id, date_key) VALUES (1, '2026-08-20');
+      INSERT INTO tasks (title, status, due_date, due_time, recur_rule_id, recurring_instance_id, recur_instance_root, is_completed) VALUES ('刷牙', '待处理', '2026-08-20', '23:59:59', 1, 1, 1, 0);
+      INSERT INTO tasks (title, status, due_date, due_time, recur_rule_id, recurring_instance_id, instance_key, parent_id, is_completed) VALUES
+        ('刷牙', '已关闭', '2026-08-20', '09:00:00', 1, 1, '2026-08-20T09:00', 1, 1),
+        ('刷牙', '待处理', '2026-08-20', '23:59:59', 1, 1, '2026-08-20T23:59', 1, 0);
+      INSERT INTO tasks (title, status, due_date, due_time, recur_rule_id, instance_key, recur_instance_root, is_completed) VALUES
+        ('刷牙', '待处理', '2026-08-20', '09:00:00', 1, '2026-08-20T09:00', 1, 0),
+        ('刷牙', '待处理', '2026-08-20', '23:59:59', 1, '2026-08-20T23:59', 1, 0);
+      CREATE UNIQUE INDEX tasks_recur_instance_child_idx
+        ON tasks (recurring_instance_id, instance_key, parent_id)
+        WHERE recurring_instance_id IS NOT NULL AND instance_key IS NOT NULL;
+    `)
+    db.close()
+
+    initializeUserDatabase(dir)
+    const repairedDb = new Database(dbPath)
+    try {
+      assert.deepEqual(
+        repairedDb
+          .prepare('SELECT parent_id, recurring_instance_id, recur_instance_root, instance_key FROM tasks WHERE recur_rule_id = 1 ORDER BY id')
+          .all(),
+        [
+          { parent_id: null, recurring_instance_id: 1, recur_instance_root: 1, instance_key: null },
+          { parent_id: 1, recurring_instance_id: 1, recur_instance_root: 0, instance_key: '2026-08-20T09:00' },
+          { parent_id: 1, recurring_instance_id: 1, recur_instance_root: 0, instance_key: '2026-08-20T23:59' },
+        ],
+      )
+    } finally {
+      repairedDb.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('task schema migrates legacy recurring task columns before creating recurrence index', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'lifeos-task-schema-'))
   try {
@@ -142,6 +212,13 @@ test('task schema migrates legacy recurring task columns before creating recurre
         migratedDb
           .prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?")
           .get('tasks_recur_instance_parent_idx'),
+      )
+      assert.deepEqual(
+        migratedDb
+          .prepare("PRAGMA index_info('tasks_recur_instance_child_idx')")
+          .all()
+          .map((column) => column.name),
+        ['recur_rule_id', 'recurring_instance_id', 'instance_key', 'parent_id'],
       )
       assert.ok(
         migratedDb
@@ -356,6 +433,32 @@ test('task schema prevents duplicate root instances for the same template occurr
   }
 })
 
+test('task schema uniquely identifies time occurrences while allowing multiple ordinary steps', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'life-task-occurrence-constraint-'))
+  try {
+    initializeUserDatabase(dir)
+    const db = new Database(path.join(dir, 'tasks.db'))
+    try {
+      db.prepare("INSERT INTO recurring_rules (title, start_date) VALUES ('Brush teeth', '2026-08-20')").run()
+      db.prepare("INSERT INTO recurring_instances (recur_rule_id, date_key) VALUES (1, '2026-08-20')").run()
+      db.prepare("INSERT INTO tasks (title, recur_rule_id, recurring_instance_id, recur_instance_root) VALUES ('Brush teeth', 1, 1, 1)").run()
+      db.prepare("INSERT INTO tasks (title, recur_rule_id, recurring_instance_id, instance_key, parent_id) VALUES ('09:00', 1, 1, '2026-08-20T09:00', 1)").run()
+      assert.throws(
+        () => db.prepare("INSERT INTO tasks (title, recur_rule_id, recurring_instance_id, instance_key, parent_id) VALUES ('09:00 duplicate', 1, 1, '2026-08-20T09:00', 1)").run(),
+        /UNIQUE constraint failed/i,
+      )
+      assert.doesNotThrow(() => {
+        db.prepare("INSERT INTO tasks (title, recur_rule_id, recurring_instance_id, parent_id) VALUES ('Brush tongue', 1, 1, 2)").run()
+        db.prepare("INSERT INTO tasks (title, recur_rule_id, recurring_instance_id, parent_id) VALUES ('Floss', 1, 1, 2)").run()
+      })
+    } finally {
+      db.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('task schema migrates same-day legacy time roots into one recurring parent', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'life-task-schema-legacy-recurring-'))
   try {
@@ -408,5 +511,59 @@ test('task schema migrates same-day legacy time roots into one recurring parent'
     }
   } finally {
     rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('task schema merges duplicate same-day recurring instances on startup', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'life-task-schema-duplicate-date-'))
+  try {
+    const dbPath = path.join(dir, 'tasks.db')
+    const db = new Database(dbPath)
+    db.exec(`
+      CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT '待处理',
+        due_date TEXT,
+        due_time TEXT,
+        recur_rule_id INTEGER,
+        recurring_instance_id INTEGER,
+        instance_key TEXT,
+        recur_instance_root INTEGER NOT NULL DEFAULT 0,
+        parent_id INTEGER,
+        is_completed INTEGER DEFAULT 0,
+        progress INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE recurring_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, frequency TEXT DEFAULT 'daily', start_date TEXT, start_time TEXT DEFAULT '09:00', end_condition TEXT, missed_policy TEXT DEFAULT 'accumulate', created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+      CREATE TABLE recurring_instances (id INTEGER PRIMARY KEY AUTOINCREMENT, recur_rule_id INTEGER NOT NULL, date_key TEXT NOT NULL);
+      CREATE TABLE translations (entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, locale TEXT NOT NULL, translation TEXT NOT NULL, PRIMARY KEY (entity_type, entity_id, locale));
+      INSERT INTO recurring_rules (title, frequency, start_date, start_time) VALUES ('刷牙', 'daily', '2026-08-20', '09:00');
+      INSERT INTO recurring_instances (recur_rule_id, date_key) VALUES (1, '2026-08-20'), (1, '2026-08-20');
+      INSERT INTO tasks (title, status, recur_rule_id, recurring_instance_id, recur_instance_root) VALUES
+        ('刷牙', '待处理', 1, 1, 1),
+        ('刷牙', '待处理', 1, 2, 1);
+      INSERT INTO tasks (title, status, recur_rule_id, recurring_instance_id, instance_key, parent_id) VALUES
+        ('09:00', '待处理', 1, 2, '2026-08-20T09:00', 2);
+    `)
+    db.close()
+
+    initializeUserDatabase(dir)
+    const repairedDb = new Database(dbPath)
+    try {
+      assert.equal(
+        repairedDb
+          .prepare("SELECT COUNT(*) AS count FROM recurring_instances WHERE recur_rule_id = 1 AND date_key = '2026-08-20'")
+          .get().count,
+        1,
+      )
+      assert.equal(repairedDb.prepare('SELECT COUNT(*) AS count FROM tasks WHERE recur_instance_root = 1').get().count, 1)
+      assert.equal(repairedDb.prepare("SELECT recurring_instance_id FROM tasks WHERE instance_key = '2026-08-20T09:00'").get().recurring_instance_id, 1)
+    } finally {
+      repairedDb.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 })

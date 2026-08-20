@@ -71,7 +71,10 @@ test('list groups parent tasks with their subtasks in a scannable responsive flo
   assert.match(css, /\.task-row\.is-closed\s*\{[\s\S]*var\(--text-muted\) 8%/)
   assert.match(css, /\.task-expanded-group\s*\{[\s\S]*border:\s*1px solid var\(--color-border\)/)
   assert.match(css, /\.task-expanded-group\s*\{[\s\S]*margin:\s*0 8px 8px/)
-  assert.match(css, /\.task-row-group > \.task-row\s*\{[\s\S]*height:\s*92px/)
+  assert.match(
+    css,
+    /\.task-row-group > \.task-row\s*\{[^}]*min-height:\s*92px[^}]*height:\s*auto[^}]*overflow:\s*visible/,
+  )
   assert.match(css, /\.task-row--child\s*\{[\s\S]*border-left:\s*2px solid var\(--color-border\)/)
   assert.match(
     css,
@@ -95,4 +98,15 @@ test('expanding subtasks brings the detail panel into focus', () => {
   assert.match(tasksView, /panel\.focus\(\{ preventScroll: true \}\)/)
   assert.match(tasksView, /ref=\{expandedSubtaskPanelRef\}/)
   assert.match(tasksView, /tabIndex=\{-1\}/)
+})
+
+test('same-day recurrence totals exclude the date-level parent task', () => {
+  const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
+
+  assert.match(
+    tasksView,
+    /candidate\.parent_id === task\.id &&\s*candidate\.recur_rule_id === task\.recur_rule_id &&\s*candidate\.due_date === task\.due_date &&[\s\S]*Boolean\(candidate\.instance_key\)/,
+  )
+  assert.match(tasksView, /isRecurringOccurrenceTask/)
+  assert.match(tasksView, /hasActualSubtasks\(activeTask\)/)
 })

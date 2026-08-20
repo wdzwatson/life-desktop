@@ -18,6 +18,9 @@ test('scheduler writes the next day recurring task and its subtasks at midnight'
     db.prepare(
       "INSERT INTO recurring_rule_steps (rule_id, title, sort_order) VALUES (1, 'Write notes', 1)",
     ).run()
+    db.prepare(
+      "INSERT INTO recurring_rule_steps (rule_id, title, sort_order) VALUES (1, 'Review notes', 2)",
+    ).run()
     const result = runTaskSchedulerCore(db, new Date(2026, 6, 22, 0, 1))
     assert.equal(result.generatedTasks.length, 1)
     assert.deepEqual(
@@ -40,7 +43,7 @@ test('scheduler writes the next day recurring task and its subtasks at midnight'
     )
     assert.equal(
       db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE parent_id IS NOT NULL').get().count,
-      4,
+      6,
     )
     db.close()
   } finally {
@@ -136,11 +139,13 @@ test('scheduler keeps time children isolated and remains idempotent for one date
   const dir = mkdtempSync(path.join(tmpdir(), 'life-task-scheduler-'))
   try {
     initializeUserDatabase(dir)
-    const db = new Database(path.join(dir, 'tasks.db'))
+    let db = new Database(path.join(dir, 'tasks.db'))
     db.prepare(
       "INSERT INTO recurring_rules (title, frequency, start_date, start_time, time_slots) VALUES ('Brush teeth', 'daily', '2026-08-18', '09:00', '09:00,23:59')",
     ).run()
     runTaskSchedulerCore(db, new Date(2026, 7, 18, 8, 0))
+    db.close()
+    db = new Database(path.join(dir, 'tasks.db'))
     runTaskSchedulerCore(db, new Date(2026, 7, 18, 12, 0))
     const children = db
       .prepare(
@@ -154,6 +159,28 @@ test('scheduler keeps time children isolated and remains idempotent for one date
     ])
     db.prepare("UPDATE tasks SET status = '已关闭', is_completed = 1, progress = 100 WHERE instance_key = '2026-08-18T09:00'").run()
     assert.equal(db.prepare("SELECT status FROM tasks WHERE instance_key = '2026-08-18T23:59'").get().status, '待处理')
+    db.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  }
+})
+
+test('scheduler backfills rule subtasks into existing time children without duplicates', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'life-task-scheduler-backfill-'))
+  try {
+    initializeUserDatabase(dir)
+    const db = new Database(path.join(dir, 'tasks.db'))
+    db.prepare(
+      "INSERT INTO recurring_rules (title, frequency, start_date, start_time, time_slots) VALUES ('Brush teeth', 'daily', '2026-08-18', '09:00', '09:00,23:59')",
+    ).run()
+    runTaskSchedulerCore(db, new Date(2026, 7, 18, 8, 0))
+    db.prepare("INSERT INTO recurring_rule_steps (rule_id, title, sort_order) VALUES (1, 'Brush tongue', 1)").run()
+    runTaskSchedulerCore(db, new Date(2026, 7, 18, 12, 0))
+    runTaskSchedulerCore(db, new Date(2026, 7, 18, 13, 0))
+    assert.deepEqual(
+      db.prepare('SELECT title, COUNT(*) AS count FROM tasks WHERE parent_id IN (SELECT id FROM tasks WHERE recur_instance_root = 0) GROUP BY title').all(),
+      [{ title: 'Brush tongue', count: 2 }],
+    )
     db.close()
   } finally {
     rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })

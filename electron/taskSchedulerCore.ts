@@ -77,6 +77,16 @@ export function runTaskSchedulerCore(db: any, now = new Date()) {
            recurring_instance_id, instance_key, recur_instance_root, parent_id, progress)
          VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)`,
       )
+      const steps = db
+        .prepare('SELECT * FROM recurring_rule_steps WHERE rule_id = ? ORDER BY sort_order ASC, id ASC')
+        .all(rule.id) as any[]
+      const insertStep = db.prepare(
+        `INSERT INTO tasks
+          (title, description, priority, status, requires_review, start_date, start_time,
+           due_date, due_time, recur_rule_id, template_id, template_version,
+           recurring_instance_id, instance_key, parent_id, progress)
+         VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      )
       let added = 0
       for (const occurrence of available) {
         const existing = db
@@ -84,8 +94,7 @@ export function runTaskSchedulerCore(db: any, now = new Date()) {
             'SELECT id FROM tasks WHERE recurring_instance_id = ? AND instance_key = ? AND parent_id = ? LIMIT 1',
           )
           .get(instance.id, occurrence.instanceKey, parent.id)
-        if (existing) continue
-        const childResult = insertChild.run(
+        const childId = existing?.id ?? Number(insertChild.run(
           rule.title,
           rule.description || '',
           rule.priority || 'mid',
@@ -100,37 +109,31 @@ export function runTaskSchedulerCore(db: any, now = new Date()) {
           instance.id,
           occurrence.instanceKey,
           parent.id,
-        )
-        const childId = Number(childResult.lastInsertRowid)
-        const steps = db
-          .prepare('SELECT * FROM recurring_rule_steps WHERE rule_id = ? ORDER BY sort_order ASC, id ASC')
-          .all(rule.id) as any[]
-        const insertStep = db.prepare(
-          `INSERT INTO tasks
-            (title, description, priority, status, requires_review, start_date, start_time,
-             due_date, due_time, recur_rule_id, template_id, template_version,
-             recurring_instance_id, instance_key, parent_id, progress)
-           VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-        )
+        ).lastInsertRowid)
         for (const step of steps) {
-          insertStep.run(
-            step.title,
-            step.description || '',
-            step.priority || rule.priority || 'mid',
-            rule.requires_review ? 1 : 0,
-            dateKey,
-            occurrence.time,
-            dateKey,
-            `${occurrence.time}:00`,
-            rule.id,
-            rule.template_id || null,
-            rule.template_version || null,
-            instance.id,
-            occurrence.instanceKey,
-            childId,
-          )
+          const stepExists = db
+            .prepare('SELECT id FROM tasks WHERE parent_id = ? AND title = ? LIMIT 1')
+            .get(childId, step.title)
+          if (!stepExists) {
+            insertStep.run(
+              step.title,
+              step.description || '',
+              step.priority || rule.priority || 'mid',
+              rule.requires_review ? 1 : 0,
+              dateKey,
+              occurrence.time,
+              dateKey,
+              `${occurrence.time}:00`,
+              rule.id,
+              rule.template_id || null,
+              rule.template_version || null,
+              instance.id,
+              null,
+              childId,
+            )
+          }
         }
-        added += 1
+        if (!existing) added += 1
       }
       return added
     })

@@ -321,25 +321,6 @@ export function initializeUserDatabase(userDbDir: string) {
         FOREIGN KEY (recur_rule_id) REFERENCES recurring_rules(id) ON DELETE CASCADE
       );
 
-      DROP INDEX IF EXISTS tasks_recur_instance_parent_idx;
-
-      CREATE UNIQUE INDEX tasks_recur_instance_parent_idx
-        ON tasks (recurring_instance_id)
-        WHERE recurring_instance_id IS NOT NULL AND recur_instance_root = 1;
-
-      CREATE UNIQUE INDEX IF NOT EXISTS tasks_legacy_recur_instance_idx
-        ON tasks (recur_rule_id, instance_key)
-        WHERE recur_rule_id IS NOT NULL AND instance_key IS NOT NULL
-          AND recur_instance_root = 1 AND recurring_instance_id IS NULL;
-
-      CREATE UNIQUE INDEX IF NOT EXISTS tasks_recur_instance_child_idx
-        ON tasks (recurring_instance_id, instance_key, parent_id)
-        WHERE recurring_instance_id IS NOT NULL AND instance_key IS NOT NULL;
-
-      CREATE INDEX IF NOT EXISTS tasks_recurring_instance_id_idx ON tasks (recurring_instance_id);
-      CREATE UNIQUE INDEX IF NOT EXISTS recurring_instances_rule_date_idx
-        ON recurring_instances (recur_rule_id, date_key);
-
       CREATE INDEX IF NOT EXISTS tasks_parent_id_idx ON tasks (parent_id);
 
       CREATE TABLE IF NOT EXISTS task_peer_links (
@@ -426,6 +407,15 @@ export function initializeUserDatabase(userDbDir: string) {
       BEGIN
         DELETE FROM task_peer_links WHERE task_id = OLD.id OR peer_task_id = OLD.id;
       END;
+    `)
+
+    // Existing installations may still have the older uniqueness indexes.
+    // Remove them before repairing duplicates, then recreate stronger indexes below.
+    tasksDb.exec(`
+      DROP INDEX IF EXISTS tasks_recur_instance_parent_idx;
+      DROP INDEX IF EXISTS tasks_recur_instance_child_idx;
+      DROP INDEX IF EXISTS tasks_legacy_recur_instance_idx;
+      DROP INDEX IF EXISTS recurring_instances_rule_date_idx;
     `)
 
     // Convert the former one-root-per-time representation into one date-level
@@ -535,6 +525,177 @@ export function initializeUserDatabase(userDbDir: string) {
       },
     )
     for (const group of legacyGroups) migrateRecurringGroup(group)
+
+    // Repair instances created by the former scheduler after the date-level
+    // migration: timed roots must be children of the single date parent.
+    const orphanOccurrenceRoots = tasksDb
+      .prepare(
+        `SELECT id, recur_rule_id, due_date, instance_key
+         FROM tasks
+         WHERE recur_rule_id IS NOT NULL
+           AND parent_id IS NULL
+           AND recur_instance_root = 1
+           AND instance_key IS NOT NULL
+           AND recurring_instance_id IS NULL
+         ORDER BY id`,
+      )
+      .all() as { id: number; recur_rule_id: number; due_date: string | null; instance_key: string }[]
+
+    const repairOrphanOccurrence = tasksDb.transaction(
+      (occurrence: { id: number; recur_rule_id: number; due_date: string | null; instance_key: string }) => {
+        const dateKey = occurrence.due_date || occurrence.instance_key.slice(0, 10)
+        const parent = tasksDb
+          .prepare(
+            `SELECT id, recurring_instance_id FROM tasks
+             WHERE recur_rule_id = ? AND parent_id IS NULL
+               AND recur_instance_root = 1 AND instance_key IS NULL
+               AND due_date = ?
+             ORDER BY id LIMIT 1`,
+          )
+          .get(occurrence.recur_rule_id, dateKey) as
+          | { id: number; recurring_instance_id: number }
+          | undefined
+        if (!parent) return
+
+        tasksDb
+          .prepare(
+            `UPDATE tasks
+             SET parent_id = ?, recurring_instance_id = ?, recur_instance_root = 0
+             WHERE id = ?`,
+          )
+          .run(parent.id, parent.recurring_instance_id, occurrence.id)
+        tasksDb
+          .prepare(
+            `WITH RECURSIVE descendants(id) AS (
+               SELECT id FROM tasks WHERE id = ?
+               UNION ALL
+               SELECT tasks.id FROM tasks INNER JOIN descendants ON tasks.parent_id = descendants.id
+             )
+             UPDATE tasks SET recurring_instance_id = ?
+             WHERE id IN (SELECT id FROM descendants)`,
+          )
+          .run(occurrence.id, parent.recurring_instance_id)
+      },
+    )
+    for (const occurrence of orphanOccurrenceRoots) repairOrphanOccurrence(occurrence)
+
+    // instance_key identifies a timed occurrence, not the ordinary steps below it.
+    tasksDb.exec(`
+      UPDATE tasks
+      SET instance_key = NULL
+      WHERE parent_id IN (
+        SELECT id FROM tasks AS occurrence
+        WHERE occurrence.recur_rule_id IS NOT NULL
+          AND occurrence.recurring_instance_id IS NOT NULL
+          AND occurrence.instance_key IS NOT NULL
+          AND occurrence.recur_instance_root = 0
+      )
+    `)
+
+    // Consolidate duplicate date instances and their task roots before adding
+    // uniqueness constraints. Older scheduler versions could create one root
+    // per execution time or duplicate the same date instance after restart.
+    const repairDuplicateRecurringData = tasksDb.transaction(() => {
+      const duplicateInstances = tasksDb
+        .prepare(
+          `SELECT recur_rule_id, date_key, MIN(id) AS keep_id
+           FROM recurring_instances
+           GROUP BY recur_rule_id, date_key
+           HAVING COUNT(*) > 1`,
+        )
+        .all() as { recur_rule_id: number; date_key: string; keep_id: number }[]
+      for (const duplicate of duplicateInstances) {
+        const duplicates = tasksDb
+          .prepare(
+            'SELECT id FROM recurring_instances WHERE recur_rule_id = ? AND date_key = ? AND id <> ?',
+          )
+          .all(duplicate.recur_rule_id, duplicate.date_key, duplicate.keep_id) as { id: number }[]
+        for (const row of duplicates) {
+          tasksDb
+            .prepare('UPDATE tasks SET recurring_instance_id = ? WHERE recurring_instance_id = ?')
+            .run(duplicate.keep_id, row.id)
+          tasksDb.prepare('DELETE FROM recurring_instances WHERE id = ?').run(row.id)
+        }
+      }
+
+      const duplicateRoots = tasksDb
+        .prepare(
+          `SELECT recur_rule_id, recurring_instance_id, MIN(id) AS keep_id
+           FROM tasks
+           WHERE recur_instance_root = 1 AND recurring_instance_id IS NOT NULL
+           GROUP BY recur_rule_id, recurring_instance_id
+           HAVING COUNT(*) > 1`,
+        )
+        .all() as { recur_rule_id: number; recurring_instance_id: number; keep_id: number }[]
+      for (const duplicate of duplicateRoots) {
+        const duplicates = tasksDb
+          .prepare(
+            `SELECT id FROM tasks
+             WHERE recur_rule_id = ? AND recurring_instance_id = ?
+               AND recur_instance_root = 1 AND id <> ?`,
+          )
+          .all(duplicate.recur_rule_id, duplicate.recurring_instance_id, duplicate.keep_id) as {
+          id: number
+        }[]
+        for (const row of duplicates) {
+          tasksDb
+            .prepare('UPDATE tasks SET parent_id = ? WHERE parent_id = ?')
+            .run(duplicate.keep_id, row.id)
+          tasksDb.prepare('DELETE FROM tasks WHERE id = ?').run(row.id)
+        }
+      }
+
+      const duplicateChildren = tasksDb
+        .prepare(
+          `SELECT recur_rule_id, recurring_instance_id, instance_key, parent_id, MIN(id) AS keep_id
+           FROM tasks
+           WHERE recurring_instance_id IS NOT NULL AND instance_key IS NOT NULL AND parent_id IS NOT NULL
+           GROUP BY recur_rule_id, recurring_instance_id, instance_key, parent_id
+           HAVING COUNT(*) > 1`,
+        )
+        .all() as {
+        recur_rule_id: number
+        recurring_instance_id: number
+        instance_key: string
+        parent_id: number
+        keep_id: number
+      }[]
+      for (const duplicate of duplicateChildren) {
+        tasksDb
+          .prepare(
+            `DELETE FROM tasks
+             WHERE recur_rule_id = ? AND recurring_instance_id = ? AND instance_key = ?
+               AND parent_id = ? AND id <> ?`,
+          )
+          .run(
+            duplicate.recur_rule_id,
+            duplicate.recurring_instance_id,
+            duplicate.instance_key,
+            duplicate.parent_id,
+            duplicate.keep_id,
+          )
+      }
+    })
+    repairDuplicateRecurringData()
+
+    tasksDb.exec(`
+      DROP INDEX IF EXISTS tasks_recur_instance_parent_idx;
+      DROP INDEX IF EXISTS tasks_recur_instance_child_idx;
+      CREATE UNIQUE INDEX IF NOT EXISTS tasks_recur_instance_parent_idx
+        ON tasks (recurring_instance_id)
+        WHERE recurring_instance_id IS NOT NULL AND recur_instance_root = 1;
+      CREATE UNIQUE INDEX IF NOT EXISTS tasks_recur_instance_child_idx
+        ON tasks (recur_rule_id, recurring_instance_id, instance_key, parent_id)
+        WHERE recur_rule_id IS NOT NULL AND recurring_instance_id IS NOT NULL
+          AND instance_key IS NOT NULL AND parent_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS tasks_legacy_recur_instance_idx
+        ON tasks (recur_rule_id, instance_key)
+        WHERE recur_rule_id IS NOT NULL AND instance_key IS NOT NULL
+          AND recur_instance_root = 1 AND recurring_instance_id IS NULL;
+      CREATE INDEX IF NOT EXISTS tasks_recurring_instance_id_idx ON tasks (recurring_instance_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS recurring_instances_rule_date_idx
+        ON recurring_instances (recur_rule_id, date_key);
+    `)
   } catch (err) {
     console.error('Failed to migrate task template schema:', err)
   }
