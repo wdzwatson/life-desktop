@@ -8,6 +8,7 @@ import {
   type DesktopTaskOrder,
 } from './taskDesktopUtils'
 import { getTaskDuePresentation } from './taskDuePresentationUtils'
+import { getActionableTasks } from './taskSemantics'
 import './DesktopTaskNote.css'
 import { SystemMonitor } from '../components/SystemMonitor'
 import {
@@ -113,7 +114,7 @@ export const DesktopTaskNote: React.FC = () => {
         "SELECT * FROM tasks WHERE status != '已关闭' ORDER BY COALESCE(due_date, created_at) ASC, COALESCE(due_time, '23:59:59') ASC, id ASC",
       )
       if (result?.success) {
-        setTasks(getDesktopTasksForDate(result.data as DesktopTaskRecord[], todayKey))
+        setTasks(getDesktopTasksForDate(getActionableTasks(result.data as DesktopTaskRecord[]), todayKey))
       } else {
         setError('任务加载失败，请稍后重试。')
       }

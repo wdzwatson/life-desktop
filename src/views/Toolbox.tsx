@@ -9,6 +9,7 @@ import { PasswordInput } from '../components/PasswordInput'
 import { SystemCleaner } from './SystemCleaner'
 import { ScreenshotTool } from './ScreenshotTool'
 import { WebLike } from './WebLike'
+import { getActionableTasks } from './taskSemantics'
 
 type VaultStatus =
   | 'not_configured'
@@ -148,7 +149,7 @@ export const Toolbox: React.FC = () => {
       'SELECT * FROM tasks WHERE is_completed = 0 AND status != ?',
       ['已关闭'],
     )
-    if (tasksRes?.success) setActiveTasks(tasksRes.data)
+    if (tasksRes?.success) setActiveTasks(getActionableTasks(tasksRes.data))
   }
 
   useEffect(() => {

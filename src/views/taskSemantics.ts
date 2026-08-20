@@ -15,3 +15,6 @@ export const isRecurringStep = (task: any) =>
   task?.recurring_instance_id != null
 
 export const isManualTask = (task: any) => task?.task_kind === 'normal' && !isRecurringStep(task)
+
+export const getActionableTasks = <T extends any>(tasks: T[]) =>
+  tasks.filter((task: any) => !isRecurringDateInstance(task) && !isRecurringStep(task))
