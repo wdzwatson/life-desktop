@@ -100,6 +100,85 @@
   white-space: nowrap;
 }
 
+.web-like-tutorial__overlay {
+  padding: 24px;
+}
+
+.web-like-tutorial {
+  position: relative;
+  align-self: center;
+  width: min(560px, calc(100vw - 48px));
+  max-height: min(720px, calc(100vh - 48px));
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.web-like-tutorial > h3 {
+  margin: 0;
+  padding-right: 38px;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.web-like-tutorial__close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.web-like-tutorial__close:hover {
+  color: var(--text-main);
+  background: var(--bg-hover);
+}
+
+.web-like-tutorial__close:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.web-like-tutorial__summary {
+  margin: 8px 0 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.web-like-tutorial__steps {
+  gap: 12px;
+  padding: 0 0 0 22px;
+  color: var(--text-main);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.web-like__guide-note.web-like-tutorial__note {
+  align-items: center;
+  margin-top: 20px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, var(--color-border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-accent) 6%, var(--bg-surface));
+}
+
+.web-like__guide-note.web-like-tutorial__note svg {
+  margin-top: 0;
+}
+
+.web-like-tutorial__footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
 .web-like__workspace {
   display: grid;
   gap: 8px;
@@ -265,7 +344,7 @@
   color: var(--color-accent);
 }
 
-.web-like__guide:nth-child(2) summary > svg {
+.web-like__guide summary > svg {
   color: var(--color-warn);
 }
 
@@ -397,6 +476,16 @@
 }
 
 @media (max-width: 640px) {
+  .web-like-tutorial__overlay {
+    padding: 12px;
+  }
+
+  .web-like-tutorial {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+    padding: 20px;
+  }
+
   .web-like__url-row {
     grid-template-columns: 36px minmax(0, 1fr);
   }

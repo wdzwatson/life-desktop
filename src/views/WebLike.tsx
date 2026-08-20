@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   CheckCircle2,
@@ -11,7 +11,9 @@ import {
   LoaderCircle,
   Play,
   PlugZap,
+  X,
 } from 'lucide-react'
+import { AccessibleDialog } from '../components/AccessibleDialog'
 import './WebLike.css'
 
 type ApiError = { code?: string; message?: string }
@@ -66,6 +68,9 @@ export function WebLike() {
   const [notice, setNotice] = useState('')
   const [result, setResult] = useState<Extract<WebLikeResult, { status: 'opened' | 'matched' }> | null>(null)
   const [candidates, setCandidates] = useState<WebLikeCandidate[]>([])
+  const [tutorialOpen, setTutorialOpen] = useState(false)
+  const tutorialButtonRef = useRef<HTMLButtonElement | null>(null)
+  const tutorialCloseButtonRef = useRef<HTMLButtonElement | null>(null)
 
   const refreshStatus = useCallback(async () => {
     const api = getBrowserControlApi()
@@ -169,6 +174,15 @@ export function WebLike() {
           <span className={status?.extensionConnected ? 'is-ready' : ''}>{t('toolbox.web_like_extension')}</span>
         </div>
         <div className="web-like__setup-actions">
+          <button
+            ref={tutorialButtonRef}
+            className="btn"
+            type="button"
+            onClick={() => setTutorialOpen(true)}
+          >
+            <ListChecks size={15} aria-hidden="true" />
+            {t('toolbox.web_like_tutorial_button')}
+          </button>
           <button className="btn" type="button" onClick={() => void openExtensionFolder()}>
             <FolderOpen size={15} aria-hidden="true" />
             {t('toolbox.web_like_open_extension')}
@@ -236,26 +250,6 @@ export function WebLike() {
       )}
 
       <section className="web-like__guides" aria-label={t('toolbox.web_like_guides_label')}>
-        <details className="web-like__guide" open>
-          <summary>
-            <ListChecks size={17} aria-hidden="true" />
-            <span>
-              <strong>{t('toolbox.web_like_first_use_title')}</strong>
-              <small>{t('toolbox.web_like_first_use_summary')}</small>
-            </span>
-          </summary>
-          <ol className="web-like__steps">
-            <li>{t('toolbox.web_like_first_use_step_1')}</li>
-            <li>{t('toolbox.web_like_first_use_step_2')}</li>
-            <li>{t('toolbox.web_like_first_use_step_3')}</li>
-            <li>{t('toolbox.web_like_first_use_step_4')}</li>
-          </ol>
-          <p className="web-like__guide-note">
-            <CircleHelp size={15} aria-hidden="true" />
-            <span>{t('toolbox.web_like_first_use_note')}</span>
-          </p>
-        </details>
-
         <details className="web-like__guide">
           <summary>
             <CircleAlert size={17} aria-hidden="true" />
@@ -290,6 +284,45 @@ export function WebLike() {
           </p>
         </details>
       </section>
+
+      {tutorialOpen ? (
+        <AccessibleDialog
+          title={t('toolbox.web_like_first_use_title')}
+          onClose={() => setTutorialOpen(false)}
+          returnFocus={() => tutorialButtonRef.current?.focus()}
+          initialFocusRef={tutorialCloseButtonRef}
+          closeOnOverlay
+          overlayClassName="web-like-tutorial__overlay"
+          contentClassName="web-like-tutorial"
+        >
+          <button
+            ref={tutorialCloseButtonRef}
+            className="web-like-tutorial__close"
+            type="button"
+            onClick={() => setTutorialOpen(false)}
+            title={t('common.close')}
+            aria-label={t('common.close')}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+          <p className="web-like-tutorial__summary">{t('toolbox.web_like_first_use_summary')}</p>
+          <ol className="web-like__steps web-like-tutorial__steps">
+            <li>{t('toolbox.web_like_first_use_step_1')}</li>
+            <li>{t('toolbox.web_like_first_use_step_2')}</li>
+            <li>{t('toolbox.web_like_first_use_step_3')}</li>
+            <li>{t('toolbox.web_like_first_use_step_4')}</li>
+          </ol>
+          <p className="web-like__guide-note web-like-tutorial__note">
+            <CircleHelp size={15} aria-hidden="true" />
+            <span>{t('toolbox.web_like_first_use_note')}</span>
+          </p>
+          <div className="web-like-tutorial__footer">
+            <button className="btn primary" type="button" onClick={() => setTutorialOpen(false)}>
+              {t('toolbox.web_like_tutorial_acknowledge')}
+            </button>
+          </div>
+        </AccessibleDialog>
+      ) : null}
     </section>
   )
 }
