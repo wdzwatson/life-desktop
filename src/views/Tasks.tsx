@@ -59,7 +59,12 @@ import {
   parseTaskCode,
 } from './taskHierarchyUtils'
 import { getAutomaticTaskStatus, TASK_STATUS } from '../taskWorkflow'
-import { isRecurringDateInstance, isRecurringExecution, isRecurringStep } from './taskSemantics'
+import {
+  getActionableTasks,
+  isRecurringDateInstance,
+  isRecurringExecution,
+  isRecurringStep,
+} from './taskSemantics'
 import {
   buildCompleteTaskTreeMutation,
   buildAggregateTaskMutation,
@@ -578,9 +583,9 @@ export const Tasks: React.FC = () => {
     start.setHours(0, 0, 0, 0)
     const end = new Date(calendarVisibleDays[calendarVisibleDays.length - 1])
     end.setHours(23, 59, 59, 999)
-    return projectCalendarOccurrences(tasks, rules, start, end, skippedOccurrences).filter(
-      taskMatchesFilters,
-    )
+    return getActionableTasks(
+      projectCalendarOccurrences(tasks, rules, start, end, skippedOccurrences),
+    ).filter(taskMatchesFilters)
   }, [calendarVisibleDays, rules, skippedOccurrences, taskMatchesFilters, tasks])
   const calendarTasksByDate = useMemo(() => groupTasksByDueDate(calendarTasks), [calendarTasks])
   const calendarVisibleTasks = calendarVisibleDays.flatMap(
@@ -2229,7 +2234,7 @@ export const Tasks: React.FC = () => {
   }, [rules, skippedOccurrences, tasks])
   const executionTasks = useMemo(
     () => [
-      ...tasks.filter((task) =>
+      ...getActionableTasks(tasks).filter((task) =>
         task.start_date ? task.start_date <= todayKey : !task.due_date || task.due_date <= todayKey,
       ),
       ...todayProjectedTasks.filter((task) => task.is_virtual),

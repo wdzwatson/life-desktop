@@ -117,3 +117,9 @@ test('main task list renders recurring execution items separately from ordinary 
   assert.match(tasksView, /occurrenceSubtasks = tasks\.filter/)
   assert.match(tasksView, /isRecurringOccurrenceTask\(candidate\)/)
 })
+
+test('kanban and calendar filter out recurring date containers', () => {
+  const tasksView = readFileSync(join(process.cwd(), 'src', 'views', 'Tasks.tsx'), 'utf8')
+  assert.match(tasksView, /getActionableTasks\(\s*projectCalendarOccurrences/)
+  assert.match(tasksView, /getActionableTasks\(tasks\)\.filter/)
+})
