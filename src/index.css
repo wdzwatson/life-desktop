@@ -1223,6 +1223,43 @@ body.theme-dense .nav-item.active {
   color: var(--color-danger);
 }
 
+.command-palette__group + .command-palette__group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+}
+
+.command-palette__group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+  padding: 2px 14px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.command-palette__view-all {
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--color-accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+}
+
+.command-palette__view-all:hover,
+.command-palette__view-all:focus-visible {
+  background: var(--bg-app);
+  outline: none;
+}
+
 @keyframes dialog-surface-enter {
   from {
     transform: translateY(8px) scale(0.98);
@@ -1233,18 +1270,34 @@ body.theme-dense .nav-item.active {
 }
 
 @keyframes dialog-overlay-enter {
-  from { opacity: 0; backdrop-filter: blur(0); }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0);
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes dialog-surface-exit {
-  from { opacity: 1; transform: translateY(0) scale(1); }
-  to { opacity: 0; transform: translateY(6px) scale(0.985); }
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
 }
 
 @keyframes dialog-overlay-exit {
-  from { opacity: 1; }
-  to { opacity: 0; backdrop-filter: blur(0); }
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    backdrop-filter: blur(0);
+  }
 }
 
 @keyframes video-refresh-sweep {
@@ -2129,8 +2182,14 @@ body.theme-dense .tab:hover {
 }
 
 @keyframes tab-panel-enter {
-  from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

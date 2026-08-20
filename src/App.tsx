@@ -8,8 +8,10 @@ import { useTranslation } from 'react-i18next'
 import { AIChatBoundary } from './views/ai/AIChatBoundary'
 import {
   dispatchGlobalSearchOpen,
+  groupGlobalSearchResults,
   getGlobalSearchOptionId,
   getNextGlobalSearchIndex,
+  rankGlobalSearchResults,
   type GlobalSearchState,
   type GlobalSearchResult,
 } from './globalSearch'
@@ -81,6 +83,8 @@ function App() {
   const hasMountedScreen = useRef(false)
 
   const api = (window as any).electronAPI
+  const searchGroups = groupGlobalSearchResults(searchResults)
+  const visibleSearchResults = searchGroups.flatMap((group) => group.items)
 
   useEffect(() => {
     if (!hasMountedScreen.current) {
@@ -198,27 +202,29 @@ function App() {
         } else {
           const likeQuery = `%${query}%`
           const querySafely = (database: string, sql: string, params: string[]) =>
-            Promise.resolve(api.dbQuery(database, sql, params)).catch(
-              (error: unknown) => ({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-              }),
-            )
+            Promise.resolve(api.dbQuery(database, sql, params)).catch((error: unknown) => ({
+              success: false,
+              error: error instanceof Error ? error.message : String(error),
+            }))
           const [tasksRes, notesRes, booksRes, videosRes] = await Promise.all([
             querySafely(
               'tasks',
-              'SELECT * FROM tasks WHERE title LIKE ? OR description LIKE ? LIMIT 3',
+              'SELECT id, title, description, priority, due_date, updated_at, COUNT(*) OVER() AS total_count FROM tasks WHERE title LIKE ? OR description LIKE ? LIMIT 4',
               [likeQuery, likeQuery],
             ),
             querySafely(
               'notes',
-              'SELECT * FROM notes WHERE title LIKE ? OR (COALESCE(is_private, 0) = 0 AND content LIKE ?) LIMIT 3',
+              'SELECT id, title, content, note_type, updated_at, COUNT(*) OVER() AS total_count FROM notes WHERE title LIKE ? OR (COALESCE(is_private, 0) = 0 AND content LIKE ?) LIMIT 4',
               [likeQuery, likeQuery],
             ),
-            querySafely('books', 'SELECT * FROM books WHERE title LIKE ? OR author LIKE ? LIMIT 2', [likeQuery, likeQuery]),
+            querySafely(
+              'books',
+              'SELECT id, title, author, progress, created_at AS updated_at, COUNT(*) OVER() AS total_count FROM books WHERE title LIKE ? OR author LIKE ? LIMIT 4',
+              [likeQuery, likeQuery],
+            ),
             querySafely(
               'videos',
-              'SELECT id, title, source, duration FROM videos WHERE title LIKE ? OR url LIKE ? OR source_url LIKE ? LIMIT 3',
+              'SELECT id, title, source, duration, url, source_url, updated_at, COUNT(*) OVER() AS total_count FROM videos WHERE title LIKE ? OR url LIKE ? OR source_url LIKE ? LIMIT 4',
               [likeQuery, likeQuery, likeQuery],
             ),
           ])
@@ -240,6 +246,12 @@ function App() {
                 id: taskObj.id,
                 module: 'tasks',
                 title: taskObj.title,
+                matchedField: t('app.search_match_title'),
+                updatedAt: taskObj.updated_at,
+                totalCount: taskObj.total_count,
+                searchableFields: {
+                  [t('app.search_match_description')]: taskObj.description,
+                },
                 description: t('app.search_desc_task', {
                   priority: taskObj.priority,
                   due_date: taskObj.due_date,
@@ -260,6 +272,12 @@ function App() {
                 id: n.id,
                 module: 'notes',
                 title: n.title,
+                matchedField: t('app.search_match_title'),
+                updatedAt: n.updated_at,
+                totalCount: n.total_count,
+                searchableFields: {
+                  [t('app.search_match_content')]: n.content,
+                },
                 description: t('app.search_desc_note', { type: n.note_type }),
                 action: () => {
                   setActiveScreen('notes')
@@ -276,6 +294,12 @@ function App() {
                 id: b.id,
                 module: 'books',
                 title: b.title,
+                matchedField: t('app.search_match_title'),
+                updatedAt: b.updated_at,
+                totalCount: b.total_count,
+                searchableFields: {
+                  [t('app.search_match_author')]: b.author,
+                },
                 description: t('app.search_desc_book', {
                   author: b.author,
                   progress: Math.round(b.progress),
@@ -295,6 +319,12 @@ function App() {
                 id: video.id,
                 module: 'videos',
                 title: video.title,
+                matchedField: t('app.search_match_title'),
+                updatedAt: video.updated_at,
+                totalCount: video.total_count,
+                searchableFields: {
+                  [t('app.search_match_url')]: video.url || video.source_url,
+                },
                 description: t('app.search_desc_video', {
                   source: video.source || t('app.search_video_source_unknown'),
                   duration: video.duration || t('app.search_video_duration_unknown'),
@@ -314,18 +344,22 @@ function App() {
             setSearchState('error')
             return
           }
-          setSearchResults(results)
+          setSearchResults(rankGlobalSearchResults(query, results))
           setSearchError(
             failedModules.length > 0
-              ? t('app.search_partial_error', { modules: failedModules.map(([module]) => module).join(', ') })
+              ? t('app.search_partial_error', {
+                  modules: failedModules.map(([module]) => module).join(', '),
+                })
               : null,
           )
-          setSearchState(failedModules.length > 0 ? 'partial-error' : results.length > 0 ? 'ready' : 'empty')
+          setSearchState(
+            failedModules.length > 0 ? 'partial-error' : results.length > 0 ? 'ready' : 'empty',
+          )
           return
         }
 
         if (requestId !== searchRequestIdRef.current) return
-        setSearchResults(results)
+        setSearchResults(rankGlobalSearchResults(query, results))
         setSearchState('ready')
       }
 
@@ -350,7 +384,14 @@ function App() {
 
   useEffect(() => {
     setActiveSearchIndex(-1)
-  }, [searchQuery, searchState, searchResults.length])
+  }, [searchQuery, searchState, visibleSearchResults.length])
+
+  const openSearchModule = (module: GlobalSearchResult['module']) => {
+    if (module === 'command') return
+    setActiveScreen(module)
+    if (module === 'tasks') setTaskTab('list')
+    setSearchOpen(false)
+  }
 
   // Create task command handler
   const handleCreateTaskFromCmd = async (title: string) => {
@@ -544,16 +585,16 @@ function App() {
                       return
                     }
                     if (event.key === 'Enter') {
-                      if (activeSearchIndex >= 0 && searchResults[activeSearchIndex]) {
+                      if (activeSearchIndex >= 0 && visibleSearchResults[activeSearchIndex]) {
                         event.preventDefault()
-                        searchResults[activeSearchIndex].action()
+                        visibleSearchResults[activeSearchIndex].action()
                       }
                       return
                     }
                     const nextIndex = getNextGlobalSearchIndex(
                       activeSearchIndex,
                       event.key,
-                      searchResults.length,
+                      visibleSearchResults.length,
                     )
                     if (nextIndex !== activeSearchIndex) {
                       event.preventDefault()
@@ -579,7 +620,7 @@ function App() {
               <div
                 id="global-search-results"
                 role="listbox"
-                aria-label={t('app.search_results_label')}
+                aria-label={t('app.search_results_label', { count: visibleSearchResults.length })}
                 style={{ maxHeight: '360px', overflowY: 'auto', padding: '8px' }}
               >
                 {searchState === 'loading' ? (
@@ -587,9 +628,16 @@ function App() {
                     {t('app.search_loading')}
                   </div>
                 ) : searchState === 'error' ? (
-                  <div className="command-palette__status command-palette__status--error" role="alert">
+                  <div
+                    className="command-palette__status command-palette__status--error"
+                    role="alert"
+                  >
                     <span>{searchError || t('app.search_error')}</span>
-                    <button type="button" className="btn sm" onClick={() => setSearchRetryNonce((value) => value + 1)}>
+                    <button
+                      type="button"
+                      className="btn sm"
+                      onClick={() => setSearchRetryNonce((value) => value + 1)}
+                    >
                       {t('common.retry')}
                     </button>
                   </div>
@@ -602,54 +650,95 @@ function App() {
                       fontSize: '13px',
                     }}
                   >
-                    {searchState === 'empty' ? t('app.search_no_results') : t('app.search_default_hint')}
+                    {searchState === 'empty'
+                      ? t('app.search_no_results')
+                      : t('app.search_default_hint')}
                   </div>
                 ) : (
                   <>
                     {searchState === 'partial-error' && searchError ? (
-                      <div className="command-palette__status command-palette__status--warning" role="status">
+                      <div
+                        className="command-palette__status command-palette__status--warning"
+                        role="status"
+                      >
                         {searchError}
                       </div>
                     ) : null}
-                    {searchResults.map((result, index) => (
-                    <div
-                      key={`${result.module}:${result.id}`}
-                      id={getGlobalSearchOptionId(index)}
-                      role="option"
-                      aria-selected={activeSearchIndex === index}
-                      tabIndex={-1}
-                      onClick={result.action}
-                      onMouseEnter={() => setActiveSearchIndex(index)}
-                      style={{
-                        padding: '10px 14px',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        backgroundColor:
-                          activeSearchIndex === index ? 'var(--bg-app)' : 'transparent',
-                        transition: 'background-color 0.1s',
-                      }}
-                      onMouseLeave={() => setActiveSearchIndex(-1)}
-                    >
-                      <div>
-                        <strong
-                          style={{ fontSize: '13px', display: 'block', color: 'var(--text-main)' }}
-                        >
-                          {result.title}
-                        </strong>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {result.description}
-                        </span>
-                      </div>
-                      <span
-                        className="pill"
-                        style={{ textTransform: 'uppercase', fontSize: '9px' }}
+                    {searchGroups.map((group) => (
+                      <div
+                        key={group.module}
+                        role="group"
+                        aria-label={t('app.search_group_label', {
+                          module: t(`app.search_group_${group.module}`),
+                          count: group.totalCount,
+                        })}
+                        className="command-palette__group"
                       >
-                        {result.type}
-                      </span>
-                    </div>
+                        <div className="command-palette__group-heading" aria-hidden="true">
+                          <span>{t(`app.search_group_${group.module}`)}</span>
+                          <span>{group.totalCount}</span>
+                        </div>
+                        {group.items.map((result) => {
+                          const index = visibleSearchResults.indexOf(result)
+                          return (
+                            <div
+                              key={`${result.module}:${result.id}`}
+                              id={getGlobalSearchOptionId(index)}
+                              role="option"
+                              aria-selected={activeSearchIndex === index}
+                              tabIndex={-1}
+                              onClick={result.action}
+                              onMouseEnter={() => setActiveSearchIndex(index)}
+                              style={{
+                                padding: '10px 14px',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                backgroundColor:
+                                  activeSearchIndex === index ? 'var(--bg-app)' : 'transparent',
+                                transition: 'background-color 0.1s',
+                              }}
+                              onMouseLeave={() => setActiveSearchIndex(-1)}
+                            >
+                              <div>
+                                <strong
+                                  style={{
+                                    fontSize: '13px',
+                                    display: 'block',
+                                    color: 'var(--text-main)',
+                                  }}
+                                >
+                                  {result.title}
+                                </strong>
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                  {result.matchedField && result.snippet
+                                    ? `${result.matchedField}: ${result.snippet}`
+                                    : result.description}
+                                </span>
+                              </div>
+                              <span
+                                className="pill"
+                                style={{ textTransform: 'uppercase', fontSize: '9px' }}
+                              >
+                                {result.type}
+                              </span>
+                            </div>
+                          )
+                        })}
+                        {group.hasMore ? (
+                          <button
+                            type="button"
+                            className="command-palette__view-all"
+                            onClick={() => openSearchModule(group.module)}
+                          >
+                            {t('app.search_view_all', {
+                              module: t(`app.search_group_${group.module}`),
+                            })}
+                          </button>
+                        ) : null}
+                      </div>
                     ))}
                   </>
                 )}

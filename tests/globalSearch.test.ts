@@ -6,7 +6,12 @@ import {
   getGlobalSearchOpenEvent,
   getGlobalSearchOptionId,
   getNextGlobalSearchIndex,
+  groupGlobalSearchResults,
+  rankGlobalSearchResults,
+  type GlobalSearchResult,
 } from '../src/globalSearch'
+
+const noop = () => undefined
 
 test('global search deep-link events map modules to stable entity ids', () => {
   assert.deepEqual(getGlobalSearchOpenEvent('tasks', 7), {
@@ -53,4 +58,94 @@ test('global search exposes keyboard and accessibility contracts in the UI', () 
   assert.match(appSource, /event\.key === 'Escape'/)
   assert.match(topbarSource, /aria-label=\{t\('topbar\.search_accessible_label'\)\}/)
   assert.match(topbarSource, /searchButtonRef/)
+})
+
+test('global search ranking prioritizes exact, prefix, title and secondary-field matches', () => {
+  const candidates: GlobalSearchResult[] = [
+    { id: 1, module: 'tasks', type: 'tasks', title: 'Plan search work', action: noop },
+    { id: 2, module: 'notes', type: 'notes', title: 'Search', action: noop },
+    { id: 3, module: 'books', type: 'books', title: 'Searching well', action: noop },
+    {
+      id: 4,
+      module: 'videos',
+      type: 'videos',
+      title: 'Productivity',
+      searchableFields: { URL: 'https://example.test/search' },
+      action: noop,
+    },
+  ]
+
+  const ranked = rankGlobalSearchResults('search', candidates)
+  assert.deepEqual(
+    ranked.map((result) => result.id),
+    [2, 3, 1, 4],
+  )
+  assert.deepEqual(
+    ranked.map((result) => result.score),
+    [400, 300, 200, 100],
+  )
+  assert.equal(ranked[3].matchedField, 'URL')
+  assert.match(ranked[3].snippet || '', /search/)
+})
+
+test('global search ranking uses updated time and stable fields as tie breakers', () => {
+  const candidates: GlobalSearchResult[] = [
+    {
+      id: 2,
+      module: 'tasks',
+      type: 'tasks',
+      title: '中文查询 B',
+      updatedAt: '2026-01-01',
+      action: noop,
+    },
+    {
+      id: 1,
+      module: 'tasks',
+      type: 'tasks',
+      title: '中文查询 A',
+      updatedAt: '2026-01-02',
+      action: noop,
+    },
+    {
+      id: 3,
+      module: 'tasks',
+      type: 'tasks',
+      title: '中文查询 C',
+      updatedAt: '2026-01-02',
+      action: noop,
+    },
+  ]
+  const first = rankGlobalSearchResults('中文', candidates)
+  const second = rankGlobalSearchResults('中文', candidates)
+  assert.deepEqual(
+    first.map((result) => result.id),
+    [1, 3, 2],
+  )
+  assert.deepEqual(
+    second.map((result) => result.id),
+    [1, 3, 2],
+  )
+})
+
+test('global search groups expose counts and truncation without losing module order', () => {
+  const results: GlobalSearchResult[] = [
+    ...Array.from({ length: 4 }, (_, index) => ({
+      id: index,
+      module: 'tasks' as const,
+      type: 'tasks',
+      title: `Task ${index}`,
+      totalCount: 9,
+      action: noop,
+    })),
+    { id: 10, module: 'notes', type: 'notes', title: 'Note', action: noop },
+  ]
+  const groups = groupGlobalSearchResults(results, 3)
+  assert.deepEqual(
+    groups.map((group) => group.module),
+    ['tasks', 'notes'],
+  )
+  assert.equal(groups[0].totalCount, 9)
+  assert.equal(groups[0].items.length, 3)
+  assert.equal(groups[0].hasMore, true)
+  assert.equal(groups[1].hasMore, false)
 })
