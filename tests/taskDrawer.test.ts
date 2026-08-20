@@ -60,3 +60,11 @@ test('task drawer keeps its actions within the visible viewport', () => {
   assert.match(css, /\.task-drawer__rule-panel\s*\{[\s\S]*flex:\s*0 0 auto/)
   assert.match(css, /\.task-drawer__footer\s*\{[\s\S]*position:\s*sticky[\s\S]*bottom:\s*0/)
 })
+
+test('drawer restores focus before applying aria-hidden during exit', () => {
+  const hook = readFileSync(join(process.cwd(), 'src', 'components', 'useDrawerTransition.ts'), 'utf8')
+  assert.match(hook, /previouslyFocusedRef/)
+  assert.match(hook, /panel\?\.contains\(activeElement\)/)
+  assert.match(hook, /restoreTarget\.focus\(\{ preventScroll: true \}\)/)
+  assert.match(hook, /setIsDrawerOpen\(false\)/)
+})

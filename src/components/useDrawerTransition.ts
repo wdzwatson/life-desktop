@@ -32,15 +32,30 @@ export function useDrawerTransition(onExitComplete: () => void = () => {}) {
   const [isDrawerMounted, setIsDrawerMounted] = useState(false)
   const drawerOverlayRef = useRef<HTMLDivElement | null>(null)
   const drawerPanelRef = useRef<HTMLElement | null>(null)
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null)
   const onExitCompleteRef = useRef(onExitComplete)
   onExitCompleteRef.current = onExitComplete
 
   const openDrawer = useCallback(() => {
+    previouslyFocusedRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
     setIsDrawerMounted(true)
     setIsDrawerOpen(true)
   }, [])
 
-  const closeDrawer = useCallback(() => setIsDrawerOpen(false), [])
+  const closeDrawer = useCallback(() => {
+    const activeElement = document.activeElement
+    const panel = drawerPanelRef.current
+    if (panel?.contains(activeElement)) {
+      const restoreTarget = previouslyFocusedRef.current
+      if (restoreTarget?.isConnected && !restoreTarget.hasAttribute('disabled')) {
+        restoreTarget.focus({ preventScroll: true })
+      } else {
+        ;(activeElement as HTMLElement | null)?.blur()
+      }
+    }
+    setIsDrawerOpen(false)
+  }, [])
 
   useGSAP(
     () => {
