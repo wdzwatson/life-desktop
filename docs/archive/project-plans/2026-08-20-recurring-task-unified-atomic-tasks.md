@@ -10,7 +10,7 @@
 
 ## 2. 原子任务清单
 
-### AT-01：冻结现有数据语义与迁移基线
+### AT-01：冻结现有数据语义与迁移基线（已完成）
 
 - 输入：现有 `tasks`、`recurring_rules`、`recurring_instances`、`recurring_rule_steps` 数据。
 - 工作：盘点旧字段组合、重复数据、孤立根、错误步骤 `instance_key`，输出迁移前后映射。
