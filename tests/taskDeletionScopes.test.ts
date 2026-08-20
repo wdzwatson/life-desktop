@@ -17,4 +17,5 @@ test('recurring task deletion preserves completed history while removing the sel
   assert.match(tasksView, /tasks\.delete_scope_end_repeat_description/)
   assert.match(tasksView, /tasks\.delete_scope_delete_repeat_description/)
   assert.match(tasksView, /tasks\.delete_scope_delete_all_repeat_description/)
+  assert.match(tasksView, /task\.instance_key/)
 })

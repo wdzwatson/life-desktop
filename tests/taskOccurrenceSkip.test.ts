@@ -12,4 +12,5 @@ test('deleting one recurring occurrence persists and reloads its exception befor
     /const skippedRes = await api\.dbQuery\([\s\S]*SELECT recur_rule_id, instance_key FROM recurring_rule_occurrence_exceptions/,
   )
   assert.match(tasksView, /setSkippedOccurrences\([\s\S]*item\.instance_key/)
+  assert.match(tasksView, /occurrenceKeys = task\.instance_key/)
 })
