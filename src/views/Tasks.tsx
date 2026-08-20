@@ -629,8 +629,8 @@ export const Tasks: React.FC = () => {
         'tasks',
         `INSERT OR IGNORE INTO tasks (title, description, priority, status, requires_review,
           start_date, start_time, due_date, due_time, recur_rule_id, template_id,
-          template_version, recurring_instance_id, instance_key, recur_instance_root, parent_id, progress)
-         VALUES (?, ?, ?, '待处理', ?, ?, '00:00:00', ?, '23:59:59', ?, ?, ?, ?, NULL, 1, ?, 0)`,
+          template_version, recurring_instance_id, instance_key, recur_instance_root, parent_id, task_kind, relation_kind, progress)
+         VALUES (?, ?, ?, '待处理', ?, ?, '00:00:00', ?, '23:59:59', ?, ?, ?, ?, NULL, 1, ?, 'recurring_date_instance', ?, 0)`,
         [
           task.title,
           task.description || '',
@@ -656,8 +656,8 @@ export const Tasks: React.FC = () => {
           'tasks',
           `INSERT OR IGNORE INTO tasks (title, description, priority, status, requires_review,
             start_date, start_time, due_date, due_time, recur_rule_id, template_id,
-            template_version, recurring_instance_id, instance_key, parent_id, progress)
-           VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+            template_version, recurring_instance_id, instance_key, parent_id, task_kind, relation_kind, progress)
+           VALUES (?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'recurring_execution', 'recurring_occurrence', 0)`,
           [
             task.title,
             task.description || '',
@@ -691,8 +691,8 @@ export const Tasks: React.FC = () => {
             'tasks',
             `INSERT INTO tasks (title, description, priority, status, requires_review,
               start_date, start_time, due_date, due_time, recur_rule_id, template_id,
-              template_version, recurring_instance_id, instance_key, parent_id, progress)
-             SELECT ?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0
+              template_version, recurring_instance_id, instance_key, parent_id, task_kind, relation_kind, progress)
+             SELECT ?, ?, ?, '待处理', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'normal', 'manual_child', 0
              WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE parent_id = ? AND title = ?)`,
             [
               step.title,
