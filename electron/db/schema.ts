@@ -6,6 +6,7 @@ import { initializeVaultSchema } from '../vault/schema'
 import { initializeAISchema } from '../ai/schema'
 import { ensureReaderAnnotationSchema } from '../readerAnnotationStore'
 import { ensureLegacyHighlightCompatibility, migrateLegacyHighlights } from '../readerAnnotationMigration'
+import { ensurePrivateSafeNotesFts } from './notesFts'
 
 const VIDEO_STATUS_CHECK =
   "CHECK(status IN ('unclassified', 'not_downloaded', 'queued', 'downloading', 'downloaded', 'download_failed', 'invalid'))"
@@ -833,19 +834,6 @@ export function initializeUserDatabase(userDbDir: string) {
       content_rowid='id'
     );
 
-    -- FTS Triggers to keep index in sync
-    CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
-      INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-    END;
-    
-    CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
-      INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content);
-    END;
-    
-    CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
-      INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES('delete', old.id, old.title, old.content);
-      INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
-    END;
   `)
 
   // Migrate existing notes table if newer columns are missing
@@ -876,6 +864,8 @@ export function initializeUserDatabase(userDbDir: string) {
   } catch (err) {
     console.error('Failed to migrate notes table:', err)
   }
+
+  ensurePrivateSafeNotesFts(notesDb)
 
   // Migrate notebooks table if category column is missing
   try {

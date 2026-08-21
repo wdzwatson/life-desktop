@@ -214,7 +214,7 @@ function App() {
             ),
             querySafely(
               'notes',
-              'SELECT id, title, content, note_type, updated_at, COUNT(*) OVER() AS total_count FROM notes WHERE title LIKE ? OR (COALESCE(is_private, 0) = 0 AND content LIKE ?) LIMIT 4',
+              'SELECT id, title, content, note_type, updated_at, COUNT(*) OVER() AS total_count FROM notes WHERE COALESCE(is_private, 0) = 0 AND (title LIKE ? OR content LIKE ?) LIMIT 4',
               [likeQuery, likeQuery],
             ),
             querySafely(
