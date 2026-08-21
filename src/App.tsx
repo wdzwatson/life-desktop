@@ -15,6 +15,7 @@ import {
   type GlobalSearchState,
   type GlobalSearchResult,
 } from './globalSearch'
+import { recordGlobalSearchMetric } from './globalSearchMetrics'
 
 // Screen views
 import { AuthScreen } from './components/AuthScreen'
@@ -79,6 +80,11 @@ function App() {
   const searchButtonRef = useRef<HTMLButtonElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const wasSearchOpenRef = useRef(false)
+  const searchMetricRef = useRef<{
+    requestId: number
+    startedAt: number
+    firstResult: boolean
+  } | null>(null)
   const [screenProgressVisible, setScreenProgressVisible] = useState(false)
   const hasMountedScreen = useRef(false)
 
@@ -162,12 +168,18 @@ function App() {
       setSearchResults([])
       setSearchError(null)
       setSearchState('idle')
+      if (searchQuery !== '') recordGlobalSearchMetric('query_empty')
       return
     }
+    searchMetricRef.current = { requestId, startedAt: performance.now(), firstResult: false }
+    recordGlobalSearchMetric('query_started')
     if (!api) {
       setSearchResults([])
       setSearchError(t('app.search_unavailable'))
       setSearchState('error')
+      recordGlobalSearchMetric('query_failed', {
+        duration_ms: performance.now() - searchMetricRef.current.startedAt,
+      })
       return
     }
 
@@ -342,6 +354,12 @@ function App() {
             setSearchResults([])
             setSearchError(t('app.search_error'))
             setSearchState('error')
+            const metric = searchMetricRef.current
+            if (metric?.requestId === requestId) {
+              recordGlobalSearchMetric('query_failed', {
+                duration_ms: performance.now() - metric.startedAt,
+              })
+            }
             return
           }
           setSearchResults(rankGlobalSearchResults(query, results))
@@ -355,12 +373,38 @@ function App() {
           setSearchState(
             failedModules.length > 0 ? 'partial-error' : results.length > 0 ? 'ready' : 'empty',
           )
+          const metric = searchMetricRef.current
+          if (metric?.requestId === requestId) {
+            if (results.length > 0 && !metric.firstResult) {
+              metric.firstResult = true
+              recordGlobalSearchMetric('first_result', {
+                duration_ms: performance.now() - metric.startedAt,
+              })
+            } else if (results.length === 0) {
+              recordGlobalSearchMetric('query_empty', {
+                duration_ms: performance.now() - metric.startedAt,
+              })
+            }
+            if (failedModules.length > 0) {
+              recordGlobalSearchMetric('query_failed', {
+                duration_ms: performance.now() - metric.startedAt,
+              })
+            }
+          }
           return
         }
 
         if (requestId !== searchRequestIdRef.current) return
         setSearchResults(rankGlobalSearchResults(query, results))
         setSearchState('ready')
+        const metric = searchMetricRef.current
+        if (metric?.requestId === requestId && !metric.firstResult) {
+          metric.firstResult = true
+          recordGlobalSearchMetric('first_result', {
+            module: 'command',
+            duration_ms: performance.now() - metric.startedAt,
+          })
+        }
       }
 
       void runSearchQuery().catch((error: unknown) => {
@@ -368,6 +412,12 @@ function App() {
         setSearchResults([])
         setSearchError(error instanceof Error ? error.message : t('app.search_error'))
         setSearchState('error')
+        const metric = searchMetricRef.current
+        if (metric?.requestId === requestId) {
+          recordGlobalSearchMetric('query_failed', {
+            duration_ms: performance.now() - metric.startedAt,
+          })
+        }
       })
     }, 150)
     return () => clearTimeout(timer)
@@ -687,7 +737,17 @@ function App() {
                               role="option"
                               aria-selected={activeSearchIndex === index}
                               tabIndex={-1}
-                              onClick={result.action}
+                              onClick={() => {
+                                const metric = searchMetricRef.current
+                                recordGlobalSearchMetric('result_clicked', {
+                                  module: result.module,
+                                  duration_ms:
+                                    metric?.requestId === searchRequestIdRef.current
+                                      ? performance.now() - metric.startedAt
+                                      : undefined,
+                                })
+                                result.action()
+                              }}
                               onMouseEnter={() => setActiveSearchIndex(index)}
                               style={{
                                 padding: '10px 14px',

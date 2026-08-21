@@ -148,7 +148,7 @@ export const Topbar: React.FC<{
           className="global-search-btn"
           type="button"
           onClick={onOpenSearch}
-          aria-label={t('topbar.search_accessible_label')}
+          aria-label={t('app.search_accessible_label')}
         >
           <Search size={16} aria-hidden="true" />
           <span style={{ fontSize: '13px' }}>{t('topbar.search_placeholder')}</span>

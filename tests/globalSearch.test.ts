@@ -10,6 +10,11 @@ import {
   rankGlobalSearchResults,
   type GlobalSearchResult,
 } from '../src/globalSearch'
+import {
+  GLOBAL_SEARCH_METRICS_STORAGE_KEY,
+  appendGlobalSearchMetric,
+  createGlobalSearchMetric,
+} from '../src/globalSearchMetrics'
 
 const noop = () => undefined
 
@@ -56,7 +61,7 @@ test('global search exposes keyboard and accessibility contracts in the UI', () 
   assert.match(appSource, /getNextGlobalSearchIndex\(/)
   assert.match(appSource, /event\.key/)
   assert.match(appSource, /event\.key === 'Escape'/)
-  assert.match(topbarSource, /aria-label=\{t\('topbar\.search_accessible_label'\)\}/)
+  assert.match(topbarSource, /aria-label=\{t\('app\.search_accessible_label'\)\}/)
   assert.match(topbarSource, /searchButtonRef/)
 })
 
@@ -148,4 +153,32 @@ test('global search groups expose counts and truncation without losing module or
   assert.equal(groups[0].items.length, 3)
   assert.equal(groups[0].hasMore, true)
   assert.equal(groups[1].hasMore, false)
+})
+
+test('global search metrics use a privacy-safe bounded session schema', () => {
+  const values = new Map<string, string>()
+  const storage = {
+    getItem: (key: string) => values.get(key) || null,
+    setItem: (key: string, value: string) => values.set(key, value),
+  }
+  const metric = createGlobalSearchMetric(
+    'result_clicked',
+    { module: 'notes', duration_ms: 12.7 },
+    new Date('2026-08-21T00:00:00.000Z'),
+  )
+  assert.deepEqual(metric, {
+    event: 'result_clicked',
+    module: 'notes',
+    duration_ms: 13,
+    timestamp: '2026-08-21T00:00:00.000Z',
+  })
+  assert.equal(appendGlobalSearchMetric(metric, storage), true)
+  const stored = JSON.parse(values.get(GLOBAL_SEARCH_METRICS_STORAGE_KEY) || '[]')
+  assert.deepEqual(stored, [metric])
+  assert.equal('query' in stored[0], false)
+  assert.equal('id' in stored[0], false)
+  for (let index = 0; index < 120; index += 1) {
+    appendGlobalSearchMetric(createGlobalSearchMetric('query_started'), storage)
+  }
+  assert.equal(JSON.parse(values.get(GLOBAL_SEARCH_METRICS_STORAGE_KEY) || '[]').length, 100)
 })
