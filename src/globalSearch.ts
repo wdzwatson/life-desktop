@@ -1,5 +1,14 @@
 export type GlobalSearchModule = 'tasks' | 'notes' | 'books' | 'videos'
 
+export type GlobalSearchCommand = { type: 'task' | 'note'; title: string }
+
+export function parseGlobalSearchCommand(query: string): GlobalSearchCommand | null {
+  const normalized = query.trim()
+  const match = normalized.match(/^\/(task|note)(?:\s+(.+))?$/i)
+  if (!match) return null
+  return { type: match[1].toLowerCase() as 'task' | 'note', title: match[2]?.trim() || '' }
+}
+
 export type GlobalSearchState = 'idle' | 'loading' | 'ready' | 'empty' | 'partial-error' | 'error'
 
 export type GlobalSearchResult = {

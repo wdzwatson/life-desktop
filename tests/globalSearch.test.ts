@@ -7,6 +7,7 @@ import {
   getGlobalSearchOptionId,
   getNextGlobalSearchIndex,
   groupGlobalSearchResults,
+  parseGlobalSearchCommand,
   rankGlobalSearchResults,
   type GlobalSearchResult,
 } from '../src/globalSearch'
@@ -181,4 +182,25 @@ test('global search metrics use a privacy-safe bounded session schema', () => {
     appendGlobalSearchMetric(createGlobalSearchMetric('query_started'), storage)
   }
   assert.equal(JSON.parse(values.get(GLOBAL_SEARCH_METRICS_STORAGE_KEY) || '[]').length, 100)
+})
+
+test('global search parses task and note commands with optional whitespace', () => {
+  assert.deepEqual(parseGlobalSearchCommand('/task Ship release'), {
+    type: 'task',
+    title: 'Ship release',
+  })
+  assert.deepEqual(parseGlobalSearchCommand(' /note  会议纪要 '), {
+    type: 'note',
+    title: '会议纪要',
+  })
+  assert.deepEqual(parseGlobalSearchCommand('/task'), { type: 'task', title: '' })
+  assert.equal(parseGlobalSearchCommand('/video clip'), null)
+})
+
+test('global task search excludes closed tasks at the SQL boundary', () => {
+  const appSource = readFileSync(join(process.cwd(), 'src', 'App.tsx'), 'utf8')
+  assert.match(
+    appSource,
+    /FROM tasks WHERE status != '已关闭' AND \(title LIKE \? OR description LIKE \?\)/,
+  )
 })

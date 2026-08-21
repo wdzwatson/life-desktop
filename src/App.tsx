@@ -11,6 +11,7 @@ import {
   groupGlobalSearchResults,
   getGlobalSearchOptionId,
   getNextGlobalSearchIndex,
+  parseGlobalSearchCommand,
   rankGlobalSearchResults,
   type GlobalSearchState,
   type GlobalSearchResult,
@@ -191,8 +192,9 @@ function App() {
       const runSearchQuery = async () => {
         const results: GlobalSearchResult[] = []
 
-        if (query.startsWith('/task ')) {
-          const title = query.replace('/task ', '')
+        const command = parseGlobalSearchCommand(query)
+        if (command?.type === 'task' && command.title) {
+          const title = command.title
           results.push({
             type: 'cmd',
             id: `command:task:${query}`,
@@ -201,8 +203,8 @@ function App() {
             description: t('app.create_task_cmd_desc'),
             action: () => handleCreateTaskFromCmd(title),
           })
-        } else if (query.startsWith('/note ')) {
-          const title = query.replace('/note ', '')
+        } else if (command?.type === 'note' && command.title) {
+          const title = command.title
           results.push({
             type: 'cmd',
             id: `command:note:${query}`,
@@ -221,7 +223,7 @@ function App() {
           const [tasksRes, notesRes, booksRes, videosRes] = await Promise.all([
             querySafely(
               'tasks',
-              'SELECT id, title, description, priority, due_date, updated_at, COUNT(*) OVER() AS total_count FROM tasks WHERE title LIKE ? OR description LIKE ? LIMIT 4',
+              "SELECT id, title, description, priority, due_date, updated_at, COUNT(*) OVER() AS total_count FROM tasks WHERE status != '已关闭' AND (title LIKE ? OR description LIKE ?) LIMIT 4",
               [likeQuery, likeQuery],
             ),
             querySafely(
