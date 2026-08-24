@@ -110,7 +110,7 @@ function App() {
     }
 
     setScreenProgressVisible(true)
-    const timer = window.setTimeout(() => setScreenProgressVisible(false), 360)
+    const timer = window.setTimeout(() => setScreenProgressVisible(false), 520)
 
     return () => window.clearTimeout(timer)
   }, [activeScreen])

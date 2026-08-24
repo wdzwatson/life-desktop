@@ -229,6 +229,8 @@ export const Dropdown = forwardRef<SelectInstance<DropdownOption, boolean, Dropd
             ...base,
             minHeight: 'var(--dropdown-height)',
             height: 'var(--dropdown-height)',
+            transition:
+              'border-color var(--motion-fast) ease, background-color var(--motion-fast) ease, box-shadow var(--motion-base) var(--ease-standard), transform var(--motion-base) var(--ease-standard)',
           }),
           menu: (base) => ({ ...base, marginTop: menuGap }),
           menuPortal: (base) => ({ ...base, zIndex: 10000 }),

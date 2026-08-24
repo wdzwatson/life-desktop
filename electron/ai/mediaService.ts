@@ -62,6 +62,25 @@ function mediaError(code: AIErrorDetail['code'], message: string, retryable = fa
   return new AIServiceError({ code, message, retryable })
 }
 
+function abortReason(signal: AbortSignal) {
+  return signal.reason instanceof Error ? signal.reason : new Error('Operation aborted.')
+}
+
+async function withAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) throw abortReason(signal)
+  let removeAbortListener: (() => void) | undefined
+  const abortPromise = new Promise<never>((_resolve, reject) => {
+    const onAbort = () => reject(abortReason(signal))
+    signal.addEventListener('abort', onAbort, { once: true })
+    removeAbortListener = () => signal.removeEventListener('abort', onAbort)
+  })
+  try {
+    return await Promise.race([operation, abortPromise])
+  } finally {
+    removeAbortListener?.()
+  }
+}
+
 function cleanMime(value: string | null | undefined) {
   return String(value ?? '').split(';', 1)[0].trim().toLowerCase()
 }
@@ -342,12 +361,15 @@ export class AIMediaService {
       let requestHeaders = input.headers
       let response: Response | undefined
       for (let redirect = 0; redirect <= 5; redirect += 1) {
-        response = await this.fetchImpl(currentUrl, {
-          method: 'GET',
-          headers: requestHeaders,
-          redirect: 'manual',
-          signal: controller.signal,
-        })
+        response = await withAbort(
+          this.fetchImpl(currentUrl, {
+            method: 'GET',
+            headers: requestHeaders,
+            redirect: 'manual',
+            signal: controller.signal,
+          }),
+          controller.signal,
+        )
         if (![301, 302, 303, 307, 308].includes(response.status)) break
         if (redirect === 5) throw mediaError('network_error', 'The media download exceeded the redirect limit.', true)
         const location = response.headers.get('location')
@@ -368,7 +390,7 @@ export class AIMediaService {
       let byteSize = 0
       try {
         while (true) {
-          const chunk = await reader.read()
+          const chunk = await withAbort(reader.read(), controller.signal)
           if (chunk.done) break
           byteSize += chunk.value.byteLength
           if (byteSize > this.maxBytes[mediaType]) {
@@ -458,12 +480,15 @@ export class AIMediaService {
       let requestHeaders = input.headers
       let response: Response | undefined
       for (let redirect = 0; redirect <= 5; redirect += 1) {
-        response = await this.fetchImpl(currentUrl, {
-          method: 'GET',
-          headers: requestHeaders,
-          redirect: 'manual',
-          signal: controller.signal,
-        })
+        response = await withAbort(
+          this.fetchImpl(currentUrl, {
+            method: 'GET',
+            headers: requestHeaders,
+            redirect: 'manual',
+            signal: controller.signal,
+          }),
+          controller.signal,
+        )
         if (![301, 302, 303, 307, 308].includes(response.status)) break
         if (redirect === 5) throw mediaError('network_error', 'The media download exceeded the redirect limit.', true)
         const location = response.headers.get('location')
@@ -484,7 +509,7 @@ export class AIMediaService {
       let byteSize = 0
       try {
         while (true) {
-          const chunk = await reader.read()
+          const chunk = await withAbort(reader.read(), controller.signal)
           if (chunk.done) break
           byteSize += chunk.value.byteLength
           if (byteSize > this.maxBytes[mediaType]) {

@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const appStyles = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8')
 const aiStyles = readFileSync(new URL('../src/views/ai/AIChat.css', import.meta.url), 'utf8')
+const dropdownSource = readFileSync(new URL('../src/components/Dropdown.tsx', import.meta.url), 'utf8')
 
 const skinIds = [
   'aurora-glass',
@@ -65,6 +66,8 @@ test('dropdowns consume skin-specific color tokens instead of raw accent colors'
   assert.match(selectedOption, /background:\s*var\(--dropdown-selected-bg\)/)
   assert.match(selectedOption, /color:\s*var\(--dropdown-selected-text\)/)
   assert.doesNotMatch(selectedOption, /color:\s*var\(--color-accent\)/)
+  assert.match(dropdownSource, /transition:\s*\n\s*'border-color var\(--motion-fast\) ease/)
+  assert.doesNotMatch(dropdownSource, /transition:\s*'all 0\.1s ease'/)
 })
 
 test('icon-only buttons consume skin-specific color tokens', () => {

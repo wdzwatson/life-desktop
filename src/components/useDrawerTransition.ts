@@ -5,15 +5,16 @@ import gsap from 'gsap'
 gsap.registerPlugin(useGSAP)
 
 export const DRAWER_MOTION = {
-  edgeOffset: 24,
-  overlayEnterDuration: 0.36,
-  panelEnterDuration: 0.58,
-  panelExitDuration: 0.52,
-  overlayExitDuration: 0.42,
-  overlayExitDelay: 0.06,
-  overlayEnterEase: 'power2.out',
-  panelEase: 'power2.inOut',
-  overlayExitEase: 'power1.inOut',
+  edgeOffset: 36,
+  overlayEnterDuration: 0.42,
+  panelEnterDuration: 0.66,
+  panelExitDuration: 0.44,
+  overlayExitDuration: 0.34,
+  overlayExitDelay: 0.04,
+  overlayEnterEase: 'power3.out',
+  panelEnterEase: 'expo.out',
+  panelExitEase: 'power3.inOut',
+  overlayExitEase: 'power2.inOut',
 } as const
 
 type DrawerDirection = 'left' | 'right'
@@ -22,10 +23,12 @@ const getHiddenPanelState = (direction: DrawerDirection) => ({
   xPercent: direction === 'right' ? 100 : -100,
   x: direction === 'right' ? DRAWER_MOTION.edgeOffset : -DRAWER_MOTION.edgeOffset,
   opacity: 0,
+  scale: 0.985,
+  filter: 'blur(8px)',
   transformOrigin: `${direction} center`,
 })
 
-const visiblePanelState = { xPercent: 0, x: 0, opacity: 1 }
+const visiblePanelState = { xPercent: 0, x: 0, opacity: 1, scale: 1, filter: 'blur(0px)' }
 
 export function useDrawerTransition(onExitComplete: () => void = () => {}) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -67,7 +70,7 @@ export function useDrawerTransition(onExitComplete: () => void = () => {}) {
       gsap.killTweensOf([overlay, panel])
       const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
       if (prefersReducedMotion) {
-        gsap.set([overlay, panel], { clearProps: 'opacity,transform' })
+        gsap.set([overlay, panel], { clearProps: 'opacity,transform,filter' })
         if (!isDrawerOpen) {
           setIsDrawerMounted(false)
           onExitCompleteRef.current()
@@ -93,7 +96,7 @@ export function useDrawerTransition(onExitComplete: () => void = () => {}) {
             {
               ...visiblePanelState,
               duration: DRAWER_MOTION.panelEnterDuration,
-              ease: DRAWER_MOTION.panelEase,
+              ease: DRAWER_MOTION.panelEnterEase,
             },
             0,
           )
@@ -110,7 +113,7 @@ export function useDrawerTransition(onExitComplete: () => void = () => {}) {
         .to(panel, {
           ...getHiddenPanelState('right'),
           duration: DRAWER_MOTION.panelExitDuration,
-          ease: DRAWER_MOTION.panelEase,
+          ease: DRAWER_MOTION.panelExitEase,
         })
         .to(
           overlay,
@@ -158,7 +161,7 @@ export function useDrawerPanelTransition(isOpen: boolean, direction: DrawerDirec
         const tween = gsap.fromTo(panel, hiddenState, {
           ...visiblePanelState,
           duration: DRAWER_MOTION.panelEnterDuration,
-          ease: DRAWER_MOTION.panelEase,
+          ease: DRAWER_MOTION.panelEnterEase,
         })
         return () => tween.kill()
       }
@@ -166,7 +169,7 @@ export function useDrawerPanelTransition(isOpen: boolean, direction: DrawerDirec
       const tween = gsap.to(panel, {
         ...hiddenState,
         duration: DRAWER_MOTION.panelExitDuration,
-        ease: DRAWER_MOTION.panelEase,
+        ease: DRAWER_MOTION.panelExitEase,
       })
       return () => tween.kill()
     },
