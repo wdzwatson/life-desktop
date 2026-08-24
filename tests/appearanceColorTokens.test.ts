@@ -4,7 +4,10 @@ import test from 'node:test'
 
 const appStyles = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8')
 const aiStyles = readFileSync(new URL('../src/views/ai/AIChat.css', import.meta.url), 'utf8')
-const dropdownSource = readFileSync(new URL('../src/components/Dropdown.tsx', import.meta.url), 'utf8')
+const dropdownSource = readFileSync(
+  new URL('../src/components/Dropdown.tsx', import.meta.url),
+  'utf8',
+)
 
 const skinIds = [
   'aurora-glass',
@@ -70,6 +73,15 @@ test('dropdowns consume skin-specific color tokens instead of raw accent colors'
   assert.doesNotMatch(dropdownSource, /transition:\s*'all 0\.1s ease'/)
 })
 
+test('topbar dropdown surfaces stay above the scrolling content pane', () => {
+  assert.match(declarationsFor(appStyles, '.top-bar'), /z-index:\s*30/)
+  assert.match(declarationsFor(appStyles, '.sidebar-display-menu__panel'), /z-index:\s*31/)
+  assert.match(
+    declarationsFor(appStyles, '.sidebar-display-menu__panel'),
+    /background:\s*var\(--surface-menu\)/,
+  )
+})
+
 test('icon-only buttons consume skin-specific color tokens', () => {
   const iconButton = declarationsFor(
     appStyles,
@@ -88,5 +100,32 @@ test('icon-only buttons consume skin-specific color tokens', () => {
   assert.match(
     declarationsFor(aiStyles, '.ai-chat-icon-button:hover'),
     /color:\s*var\(--icon-button-hover-color\)/,
+  )
+
+  const topbarToolButton = declarationsFor(appStyles, '.topbar-tool-button')
+  assert.match(topbarToolButton, /color:\s*var\(--icon-button-color\)/)
+  assert.doesNotMatch(topbarToolButton, /color:\s*var\(--color-accent\)/)
+
+  const topbarToolButtonHover = declarationsFor(appStyles, '.topbar-tool-button:hover')
+  assert.match(topbarToolButtonHover, /background:\s*var\(--icon-button-hover-bg\)/)
+  assert.match(topbarToolButtonHover, /color:\s*var\(--icon-button-hover-color\)/)
+})
+
+test('primary controls keep a stable hit area during hover', () => {
+  assert.doesNotMatch(declarationsFor(appStyles, '.btn:hover:not(:disabled)'), /transform:/)
+  assert.doesNotMatch(declarationsFor(appStyles, '.topbar-tool-button:hover'), /transform:/)
+  assert.doesNotMatch(declarationsFor(appStyles, '.nav-item:hover'), /transform:/)
+})
+
+test('sidebar brand divider shares the topbar boundary', () => {
+  assert.match(appStyles, /--sidebar-padding:\s*0\s+6px\s+12px/)
+  assert.match(declarationsFor(appStyles, '.sidebar-brand'), /height:\s*var\(--topbar-height\)/)
+  assert.match(declarationsFor(appStyles, '.sidebar-brand'), /border-bottom:\s*1px solid var\(--color-border\)/)
+})
+
+test('checkbox tokens resolve against the active skin instead of root defaults', () => {
+  assert.match(
+    appStyles,
+    /body\s*\{[\s\S]*--checkbox-checked-bg:\s*var\(--color-accent\)[\s\S]*--checkbox-check-color:\s*var\(--text-on-accent\)/,
   )
 })

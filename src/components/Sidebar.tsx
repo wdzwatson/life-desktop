@@ -34,17 +34,7 @@ export const Sidebar: React.FC = () => {
     <aside className="sidebar-nav">
       <div className="nav-group">
         {/* App Logo & Title */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            padding: '8px 10px',
-            marginBottom: '4px',
-            borderBottom: '1px solid var(--color-border)',
-            paddingBottom: '12px',
-          }}
-        >
+        <div className="sidebar-brand">
           <img
             src={logoImg}
             alt="LifeOS Logo"

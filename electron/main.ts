@@ -2560,14 +2560,43 @@ function runSchedulerCycle(options: { notify?: boolean } = {}) {
 function configureApplicationMenu() {
   if (process.platform !== 'win32') return
 
-  Menu.setApplicationMenu(
-    Menu.buildFromTemplate([
-      {
-        label: 'View',
-        submenu: [{ role: 'reload', label: 'Reload' }],
-      },
-    ]),
-  )
+  Menu.setApplicationMenu(null)
+}
+
+function emitWindowMaximizedState(window: BrowserWindow | null) {
+  if (!window || window.isDestroyed()) return
+  window.webContents.send('window:maximized-state', window.isMaximized())
+}
+
+function getSenderWindow(event: Electron.IpcMainInvokeEvent) {
+  const window = BrowserWindow.fromWebContents(event.sender)
+  return window && !window.isDestroyed() ? window : null
+}
+
+function registerWindowControlIpc() {
+  ipcMain.handle('window:getState', (event) => {
+    const window = getSenderWindow(event)
+    return { isMaximized: Boolean(window?.isMaximized()) }
+  })
+
+  ipcMain.handle('window:minimize', (event) => {
+    getSenderWindow(event)?.minimize()
+    return { success: true }
+  })
+
+  ipcMain.handle('window:toggleMaximize', (event) => {
+    const window = getSenderWindow(event)
+    if (!window) return { success: false, isMaximized: false }
+    if (window.isMaximized()) window.unmaximize()
+    else window.maximize()
+    emitWindowMaximizedState(window)
+    return { success: true, isMaximized: window.isMaximized() }
+  })
+
+  ipcMain.handle('window:close', (event) => {
+    getSenderWindow(event)?.close()
+    return { success: true }
+  })
 }
 
 function createWindow() {
@@ -2576,15 +2605,15 @@ function createWindow() {
   const settings = getSettings()
   activeUserId = settings.lastUserId || 'guest'
   switchUserSession(activeUserId)
+  const useCustomTitlebar = ['win32', 'linux'].includes(process.platform)
 
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    // Let each operating system provide its standard title bar and window controls.
-    // This preserves the expected Windows, macOS, and Linux interactions instead of
-    // recreating a macOS-style control strip in the renderer.
+    autoHideMenuBar: true,
+    frame: !useCustomTitlebar,
     title: 'LifeOS',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -2592,6 +2621,8 @@ function createWindow() {
       contextIsolation: true,
     },
   })
+
+  if (useCustomTitlebar) mainWindow.setMenuBarVisibility(false)
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
@@ -2611,6 +2642,8 @@ function createWindow() {
     closeDouyinReaderView()
     mainWindow = null
   })
+  mainWindow.on('maximize', () => emitWindowMaximizedState(mainWindow))
+  mainWindow.on('unmaximize', () => emitWindowMaximizedState(mainWindow))
 
   mainWindow.on('close', (event) => {
     if (!isQuitting) {
@@ -2868,6 +2901,7 @@ app.whenReady().then(async () => {
   setupNoteAssetProtocol()
   setupLandingPosterProtocol()
   configureApplicationMenu()
+  registerWindowControlIpc()
   createWindow()
   createDesktopTaskNoteWindow()
   createAppTray()

@@ -5,6 +5,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isMac: process.platform === 'darwin',
   platform: process.platform,
   managedVideoToolInstallSupport: getManagedVideoToolInstallSupport(),
+  getWindowState: () => ipcRenderer.invoke('window:getState'),
+  minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
+  toggleMaximizeWindow: () => ipcRenderer.invoke('window:toggleMaximize'),
+  closeWindow: () => ipcRenderer.invoke('window:close'),
+  onWindowMaximizedChange: (callback: (isMaximized: boolean) => void) => {
+    const subscription = (_event: unknown, isMaximized: boolean) => callback(Boolean(isMaximized))
+    ipcRenderer.on('window:maximized-state', subscription)
+    return () => ipcRenderer.removeListener('window:maximized-state', subscription)
+  },
 
   // User Authentication & Workspace Settings
   switchUser: (userId: string) => ipcRenderer.invoke('user:switch', userId),

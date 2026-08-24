@@ -557,7 +557,7 @@ function App() {
 
   return (
     <div className="app-container">
-      {/* 1. Main Workspace Layout. The native title bar lives outside this client area. */}
+      {/* The desktop title bar, when present, lives outside this application workspace. */}
       <div className={`shell-container sidebar-display-${sidebarDisplayMode}`}>
         <Sidebar />
         <main className="main-workspace">

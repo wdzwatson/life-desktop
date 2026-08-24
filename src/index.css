@@ -25,6 +25,14 @@
   --dropdown-selected-icon-color: var(--color-accent);
   --dropdown-chip-bg: color-mix(in srgb, var(--color-accent) 10%, var(--surface-control));
   --dropdown-chip-color: var(--text-main);
+  --checkbox-bg: var(--surface-control);
+  --checkbox-hover-bg: var(--surface-control-hover);
+  --checkbox-border: var(--border-subtle);
+  --checkbox-hover-border: var(--border-strong);
+  --checkbox-checked-bg: var(--color-accent);
+  --checkbox-checked-border: var(--color-accent);
+  --checkbox-check-color: var(--text-on-accent);
+  --checkbox-focus-ring: color-mix(in srgb, var(--color-accent) 38%, transparent);
   --text-main: #1a1a1a;
   --text-muted: #737373;
   --text-on-accent: #ffffff;
@@ -66,10 +74,11 @@
   --app-backdrop: var(--bg-app);
   --topbar-bg: var(--bg-surface);
   --topbar-height: 56px;
+  --desktop-titlebar-height: 32px;
   --topbar-shadow: none;
   --shell-sidebar-width: 64px;
   --shell-sidebar-expanded-width: 200px;
-  --sidebar-padding: 12px 6px;
+  --sidebar-padding: 0 6px 12px;
   --nav-gap: 8px;
   --nav-item-height: 40px;
   --nav-item-padding: 0 14px;
@@ -289,8 +298,7 @@ body.skin-paper-studio {
   --shadow-hover: 0 16px 34px rgba(94, 68, 42, 0.13);
   --shadow-pressed: 0 5px 14px rgba(94, 68, 42, 0.11);
   --radius-card: 12px;
-  --app-backdrop:
-    linear-gradient(90deg, rgba(120, 88, 56, 0.03) 1px, transparent 1px), #f7efe2;
+  --app-backdrop: linear-gradient(90deg, rgba(120, 88, 56, 0.03) 1px, transparent 1px), #f7efe2;
   --interactive-sheen-color: rgba(184, 101, 34, 0.24);
   --interactive-sheen-opacity: 0.16;
   --icon-button-bg: #fbf1df;
@@ -473,6 +481,18 @@ body.skin-monolith-pro {
   --dropdown-chip-color: #f5f5f5;
 }
 
+/* Resolve control tokens on the themed body so skin overrides participate in them. */
+body {
+  --checkbox-bg: var(--surface-control);
+  --checkbox-hover-bg: var(--surface-control-hover);
+  --checkbox-border: var(--border-subtle);
+  --checkbox-hover-border: var(--border-strong);
+  --checkbox-checked-bg: var(--color-accent);
+  --checkbox-checked-border: var(--color-accent);
+  --checkbox-check-color: var(--text-on-accent);
+  --checkbox-focus-ring: color-mix(in srgb, var(--color-accent) 38%, transparent);
+}
+
 body.layout-command-center {
   --topbar-height: 64px;
   --shell-sidebar-width: 72px;
@@ -502,7 +522,7 @@ body.layout-dense-workspace {
   --topbar-height: 48px;
   --shell-sidebar-width: 56px;
   --shell-sidebar-expanded-width: 184px;
-  --sidebar-padding: 8px 4px;
+  --sidebar-padding: 0 4px 8px;
   --nav-gap: 4px;
   --nav-item-height: 34px;
   --nav-item-padding: 0 10px;
@@ -641,7 +661,8 @@ body.motion-reduced .command-palette__loader,
 body.motion-reduced .screen-progress,
 body.motion-reduced .screen-progress.is-visible::after,
 body.motion-reduced .screen-transition,
-body.motion-reduced .screen-transition
+body.motion-reduced
+  .screen-transition
   > *:not(.screen-loading)
   > *:not(.dialog-overlay):not(.command-palette-overlay) {
   animation: none !important;
@@ -701,12 +722,98 @@ body,
   user-select: none;
 }
 
-/* The system title bar sits outside the renderer's client area. */
+/* Windows and Linux render a themed title bar outside the application workspace. */
+.app-window {
+  height: 100%;
+  min-height: 0;
+  background: var(--app-backdrop);
+}
+
+.app-window--custom-titlebar {
+  display: grid;
+  grid-template-rows: var(--desktop-titlebar-height) minmax(0, 1fr);
+}
+
 .app-container {
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   display: grid;
   grid-template-rows: 1fr 28px;
   background: var(--app-backdrop);
+}
+
+.desktop-titlebar {
+  position: relative;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  height: var(--desktop-titlebar-height);
+  overflow: hidden;
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--bg-sidebar) 90%, var(--bg-surface) 10%);
+  color: var(--text-muted);
+  box-shadow: 0 1px 0 color-mix(in srgb, #000 10%, transparent);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.desktop-titlebar__caption {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.desktop-titlebar__controls {
+  align-self: stretch;
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  border-left: 1px solid var(--color-border);
+  -webkit-app-region: no-drag;
+}
+
+.desktop-titlebar__control {
+  width: 46px;
+  min-width: 46px;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease;
+}
+
+.desktop-titlebar__control:hover {
+  background: color-mix(in srgb, var(--text-main) 8%, transparent);
+  color: var(--text-main);
+}
+
+.desktop-titlebar__control:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 70%, transparent);
+  outline-offset: -3px;
+}
+
+.desktop-titlebar__control--close:hover {
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.desktop-titlebar__control svg {
+  color: currentColor;
+  stroke: currentColor;
 }
 
 /* App Main Body Shell */
@@ -734,6 +841,18 @@ body,
   box-shadow: inset -1px 0 0 color-mix(in srgb, var(--color-border) 62%, transparent);
 }
 
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--topbar-height);
+  min-height: var(--topbar-height);
+  padding: 0 10px;
+  margin: 0;
+  border-bottom: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
 .nav-group {
   display: flex;
   flex-direction: column;
@@ -756,13 +875,10 @@ body,
   overflow: hidden;
   text-align: left;
   white-space: nowrap;
-  transform: translateX(0) scale(1);
   transition:
     background-color var(--motion-fast) ease,
     color var(--motion-fast) ease,
-    box-shadow var(--motion-base) var(--ease-standard),
-    transform var(--motion-base) var(--ease-standard);
-  will-change: transform;
+    box-shadow var(--motion-base) var(--ease-standard);
 }
 
 .nav-item::before {
@@ -806,7 +922,6 @@ body,
 .nav-item:hover {
   background-color: color-mix(in srgb, var(--color-accent) 8%, var(--surface-control));
   color: var(--text-main);
-  transform: translateX(var(--nav-hover-shift)) scale(var(--interactive-pop-scale));
   box-shadow: 0 9px 22px color-mix(in srgb, #000 8%, transparent);
 }
 
@@ -829,7 +944,6 @@ body.theme-dense .nav-item:hover {
   background-color: color-mix(in srgb, var(--color-accent-soft) 72%, var(--surface-control));
   font-weight: bold;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border-strong) 34%, transparent);
-  transform: translateX(0) scale(1.01);
 }
 
 .nav-item.active::before {
@@ -849,17 +963,7 @@ body.theme-dense .nav-item.active {
   align-items: center;
   justify-content: center;
   width: 20px;
-  transition:
-    color var(--motion-fast) ease,
-    transform var(--motion-base) var(--ease-elastic);
-}
-
-.nav-item:hover .nav-icon {
-  transform: translateX(2px) scale(1.1);
-}
-
-.nav-item.active .nav-icon {
-  transform: translateX(2px) scale(1.12);
+  transition: color var(--motion-fast) ease;
 }
 
 .nav-label {
@@ -1013,9 +1117,11 @@ body.theme-dense .nav-item.active {
 .top-bar {
   position: relative;
   isolation: isolate;
+  z-index: 30;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   background: var(--topbar-bg);
   border-bottom: 1px solid var(--border-subtle);
   padding: 0 var(--content-padding);
@@ -1050,7 +1156,7 @@ body.theme-dense .nav-item.active {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  z-index: 20;
+  z-index: 31;
   width: max-content;
   min-width: 176px;
   padding: 4px;
@@ -1090,7 +1196,6 @@ body.theme-dense .nav-item.active {
 .sidebar-display-menu__option:focus-visible {
   background-color: color-mix(in srgb, var(--color-accent-soft) 72%, var(--surface-control));
   outline: none;
-  transform: translateX(3px);
 }
 
 .global-search-btn {
@@ -1109,14 +1214,11 @@ body.theme-dense .nav-item.active {
   width: 320px;
   overflow: hidden;
   text-align: left;
-  transform: translateY(0) scale(1);
   transition:
     border-color var(--motion-fast) ease,
     background-color var(--motion-fast) ease,
     color var(--motion-fast) ease,
-    box-shadow var(--motion-base) var(--ease-standard),
-    transform var(--motion-base) var(--ease-standard);
-  will-change: transform;
+    box-shadow var(--motion-base) var(--ease-standard);
 }
 
 .global-search-btn::after {
@@ -1149,7 +1251,6 @@ body.theme-dense .nav-item.active {
   background: var(--surface-control-hover);
   color: var(--text-main);
   box-shadow: var(--shadow-hover);
-  transform: translateY(var(--interactive-hover-lift)) scale(var(--interactive-pop-scale));
   outline: none;
 }
 
@@ -1185,13 +1286,75 @@ body.theme-dense .nav-item.active {
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  margin-left: auto;
   min-width: 0;
   flex: 0 0 auto;
 }
 
+.topbar-main-action {
+  height: 34px;
+  padding: 0 14px;
+  font-weight: 760;
+}
+
+.topbar-main-action > svg {
+  flex: 0 0 auto;
+}
+
+.topbar-tool-tray {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 82%, transparent);
+  border-radius: calc(var(--radius-card) + 2px);
+  background: color-mix(in srgb, var(--icon-button-bg) 78%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 12%, transparent);
+  flex: 0 0 auto;
+}
+
+.topbar-tool-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: calc(var(--radius-card) - 2px);
+  background: transparent;
+  color: var(--icon-button-color);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease;
+}
+
+.topbar-tool-button:hover {
+  background: var(--icon-button-hover-bg);
+  color: var(--icon-button-hover-color);
+}
+
+.topbar-tool-button:active {
+  transition-duration: var(--motion-micro);
+}
+
+.topbar-tool-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 70%, transparent);
+  outline-offset: -1px;
+}
+
+.topbar-tool-button svg {
+  color: currentColor;
+  stroke: currentColor;
+}
+
 .app-boot-loading {
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   padding: 24px;
   background: var(--bg-app);
 }
@@ -1207,9 +1370,19 @@ body.theme-dense .nav-item.active {
   .topbar-actions {
     gap: 6px;
   }
-  .topbar-actions .btn {
+  .topbar-main-action {
     padding-left: 8px;
     padding-right: 8px;
+  }
+  .topbar-tool-tray {
+    gap: 1px;
+    height: 33px;
+    padding: 2px;
+  }
+  .topbar-tool-button {
+    width: 29px;
+    min-width: 29px;
+    height: 29px;
   }
 }
 
@@ -1220,7 +1393,11 @@ body.theme-dense .nav-item.active {
     grid-template-columns: 48px minmax(0, 1fr);
   }
   .sidebar-nav {
-    padding: 10px 4px;
+    padding: 0 4px 10px;
+  }
+  .sidebar-brand {
+    padding-right: 6px;
+    padding-left: 6px;
   }
   .nav-item {
     padding: 0 12px;
@@ -1245,10 +1422,19 @@ body.theme-dense .nav-item.active {
   .topbar-actions {
     gap: 4px;
   }
-  .topbar-actions .btn {
+  .topbar-main-action {
     min-width: 36px;
     padding-left: 8px;
     padding-right: 8px;
+  }
+  .topbar-tool-tray {
+    height: 32px;
+    padding: 2px;
+  }
+  .topbar-tool-button {
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
   }
   .content-pane {
     padding: 14px;
@@ -1291,9 +1477,34 @@ body.theme-dense .nav-item.active {
   background: var(--bg-app);
 }
 
+.toolbox-pomodoro-card {
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, 340px);
+}
+
+.toolbox-pomodoro-card__settings {
+  padding-left: 16px;
+  border-left: 1px solid var(--color-border);
+}
+
 @media (max-width: 640px) {
   .toolbox-view__tabs {
     top: -14px;
+  }
+}
+
+@media (max-width: 760px) {
+  .toolbox-pomodoro-card {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch !important;
+    height: auto !important;
+    min-height: 0;
+  }
+
+  .toolbox-pomodoro-card__settings {
+    padding-top: 18px;
+    padding-left: 0;
+    border-top: 1px solid var(--color-border);
+    border-left: 0;
   }
 }
 
@@ -2151,7 +2362,9 @@ body.loading-particle-burst .screen-loading__card {
   border-radius: 14px;
   background: var(--surface-menu);
   color: var(--text-main);
-  box-shadow: 0 28px 80px color-mix(in srgb, #000 24%, transparent), var(--shadow-app);
+  box-shadow:
+    0 28px 80px color-mix(in srgb, #000 24%, transparent),
+    var(--shadow-app);
   overscroll-behavior: contain;
 }
 
@@ -2393,6 +2606,147 @@ body.loading-particle-burst .command-palette__loader {
   }
 }
 
+/* Custom form controls */
+.checkbox-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: inherit;
+  cursor: pointer;
+  line-height: 1.2;
+  user-select: none;
+}
+
+.checkbox-field.is-disabled,
+.checkbox.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.checkbox {
+  --checkbox-size: 16px;
+  --checkbox-radius: 4px;
+  position: relative;
+  display: inline-grid;
+  width: var(--checkbox-size);
+  height: var(--checkbox-size);
+  flex: 0 0 var(--checkbox-size);
+  place-items: center;
+  color: var(--checkbox-check-color);
+  cursor: pointer;
+  vertical-align: -0.125em;
+}
+
+.checkbox.checkbox {
+  overflow: visible;
+  color: var(--checkbox-check-color);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: normal;
+}
+
+.checkbox .checkbox__input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.checkbox__box {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--checkbox-border);
+  border-radius: var(--checkbox-radius);
+  background: var(--checkbox-bg);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent);
+  pointer-events: none;
+  transform: translateZ(0) scale(1);
+  transition:
+    border-color var(--motion-fast) ease,
+    background var(--motion-fast) ease,
+    box-shadow var(--motion-base) var(--ease-standard),
+    transform var(--motion-base) var(--ease-standard);
+}
+
+.checkbox .checkbox__box {
+  overflow: visible;
+  color: var(--checkbox-check-color);
+}
+
+.checkbox__box::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 32%;
+  height: 54%;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  opacity: 0;
+  transform: translate(-50%, -50%) rotate(45deg) scale(0.72);
+  transform-origin: center;
+  transition:
+    opacity var(--motion-fast) ease,
+    transform var(--motion-base) var(--ease-elastic);
+}
+
+.checkbox:hover .checkbox__box,
+.checkbox__input:focus-visible + .checkbox__box {
+  border-color: var(--checkbox-hover-border);
+  background: var(--checkbox-hover-bg);
+}
+
+.checkbox__input:checked + .checkbox__box,
+.checkbox__input:indeterminate + .checkbox__box {
+  border-color: var(--checkbox-checked-border);
+  background: var(--checkbox-checked-bg);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, #000 10%, transparent);
+}
+
+.checkbox__input:checked + .checkbox__box::after {
+  opacity: 1;
+  transform: translate(-50%, -50%) rotate(45deg) scale(1);
+}
+
+.checkbox__input:indeterminate + .checkbox__box::after {
+  left: 50%;
+  top: 50%;
+  width: 52%;
+  height: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 1;
+  transform: translate(-50%, -50%);
+}
+
+.checkbox__input:focus-visible + .checkbox__box {
+  outline: 2px solid var(--checkbox-focus-ring);
+  outline-offset: 2px;
+}
+
+.checkbox__input:disabled + .checkbox__box {
+  box-shadow: none;
+  filter: saturate(0.82);
+}
+
+.checkbox-field__label {
+  min-width: 0;
+}
+
 /* Buttons */
 .btn {
   position: relative;
@@ -2411,17 +2765,14 @@ body.loading-particle-burst .command-palette__loader {
   justify-content: center;
   line-height: 1;
   gap: 8px;
-  transform: translateY(0) scale(1);
   transition:
     border-color var(--motion-fast) ease,
     background-color var(--motion-fast) ease,
     color var(--motion-fast) ease,
     box-shadow var(--motion-base) var(--ease-standard),
-    transform var(--motion-base) var(--ease-standard),
     opacity var(--motion-fast) ease;
   white-space: nowrap;
   flex-shrink: 0;
-  will-change: transform;
 }
 
 .btn::after {
@@ -2429,17 +2780,9 @@ body.loading-particle-burst .command-palette__loader {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(
-    110deg,
-    transparent 20%,
-    var(--interactive-sheen-color) 48%,
-    transparent 76%
-  );
+  background: color-mix(in srgb, var(--interactive-sheen-color) 70%, transparent);
   opacity: 0;
-  transform: translateX(-80%);
-  transition:
-    opacity var(--motion-fast) ease,
-    transform var(--motion-slow) var(--ease-standard);
+  transition: opacity var(--motion-fast) ease;
   pointer-events: none;
 }
 
@@ -2447,17 +2790,14 @@ body.loading-particle-burst .command-palette__loader {
   border-color: var(--border-strong);
   background: var(--surface-control-hover);
   box-shadow: var(--shadow-hover);
-  transform: translateY(var(--interactive-hover-lift)) scale(var(--interactive-pop-scale));
 }
 
 .btn:hover:not(:disabled)::after {
   opacity: var(--interactive-sheen-opacity);
-  transform: translateX(80%);
 }
 
 .btn:active:not(:disabled) {
   box-shadow: var(--shadow-pressed);
-  transform: translateY(0) scale(var(--interactive-press-scale));
   transition-duration: var(--motion-micro);
 }
 
@@ -2472,13 +2812,21 @@ body.loading-particle-burst .command-palette__loader {
 }
 
 .btn.primary {
-  background: linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent-2) 38%, var(--color-accent)));
+  background: linear-gradient(
+    135deg,
+    var(--color-accent),
+    color-mix(in srgb, var(--color-accent-2) 38%, var(--color-accent))
+  );
   border-color: var(--color-accent);
   color: var(--text-on-accent);
 }
 
 .btn.primary:hover {
-  background-color: var(--color-accent-hover);
+  background: linear-gradient(
+    135deg,
+    var(--color-accent-hover),
+    color-mix(in srgb, var(--color-accent-2) 32%, var(--color-accent-hover))
+  );
   box-shadow: 0 8px 18px color-mix(in srgb, var(--color-accent) 28%, transparent);
 }
 
@@ -2523,16 +2871,6 @@ body.loading-particle-burst .command-palette__loader {
   height: 16px;
   color: currentColor;
   stroke: currentColor;
-  transition: transform var(--motion-base) var(--ease-elastic);
-}
-
-.btn:hover:not(:disabled) > svg {
-  transform: translateY(-1px) scale(1.08);
-}
-
-.btn.btn-icon:hover:not(:disabled) > svg,
-.btn[class*='icon-button']:hover:not(:disabled) > svg {
-  transform: scale(1.12) rotate(var(--icon-button-hover-tilt));
 }
 
 /* Keep compact icon buttons compact after the base icon-button rule. */
@@ -3382,7 +3720,7 @@ body.theme-dense .tab:hover {
 
 .tab.active {
   color: var(--color-accent);
-  border-bottom-color: var(--color-accent);
+  border-bottom-color: transparent;
   font-weight: 700;
 }
 

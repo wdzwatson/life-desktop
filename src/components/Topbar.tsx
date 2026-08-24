@@ -33,6 +33,7 @@ export const Topbar: React.FC<{
   const setSidebarDisplayMode = useAppStore((state) => state.setSidebarDisplayMode)
   const [sidebarMenuOpen, setSidebarMenuOpen] = useState(false)
   const sidebarMenuRef = useRef<HTMLDivElement>(null)
+  const api = (window as any).electronAPI
 
   const cycleAppearancePreset = () => {
     void setAppearancePreset(getNextAppearancePresetId(appearance.preset))
@@ -54,11 +55,10 @@ export const Topbar: React.FC<{
   }
 
   const handleShowDesktopTaskNote = () => {
-    void (window as any).electronAPI?.showDesktopTaskNote?.()
+    void api?.showDesktopTaskNote?.()
   }
 
   const handleScreenCapture = () => {
-    const api = (window as any).electronAPI
     if (api?.startScreenCapture) {
       void api.startScreenCapture()
       return
@@ -66,7 +66,7 @@ export const Topbar: React.FC<{
     window.dispatchEvent(new Event('screen-capture:open'))
   }
 
-  const isMac = navigator.userAgent.includes('Mac')
+  const isMac = api?.isMac ?? navigator.userAgent.includes('Mac')
 
   useEffect(() => {
     if (!sidebarMenuOpen) return
@@ -153,60 +153,69 @@ export const Topbar: React.FC<{
         </button>
       </div>
 
-      {/* Control buttons */}
-      <div className="topbar-actions">
-        {/* Module shortcuts */}
+      <div className="topbar-actions" role="group" aria-label={t('topbar.quick_actions')}>
         <button
-          className={`btn ${shouldHighlightTopbarNewTask(activeScreen) ? 'primary' : ''}`.trim()}
+          className={`btn topbar-main-action ${shouldHighlightTopbarNewTask(activeScreen) ? 'primary' : ''}`.trim()}
+          type="button"
           onClick={handleNewTask}
         >
           <Plus size={15} />
           <span className="topbar-action-label">{t('common.new_task')}</span>
         </button>
 
-        <button className="btn" onClick={handleImportFile}>
-          <Upload size={14} />
-          <span className="topbar-action-label">{t('common.imported')}</span>
-        </button>
+        <div className="topbar-tool-tray" role="group" aria-label={t('topbar.tools')}>
+          <button
+            className="topbar-tool-button"
+            type="button"
+            onClick={handleImportFile}
+            title={t('common.imported')}
+            aria-label={t('common.imported')}
+          >
+            <Upload size={15} />
+          </button>
 
-        <button
-          className="btn btn-icon"
-          type="button"
-          onClick={handleScreenCapture}
-          title={t('topbar.screen_capture')}
-          aria-label={t('topbar.screen_capture')}
-        >
-          <MonitorUp size={16} />
-        </button>
+          <button
+            className="topbar-tool-button"
+            type="button"
+            onClick={handleScreenCapture}
+            title={t('topbar.screen_capture')}
+            aria-label={t('topbar.screen_capture')}
+          >
+            <MonitorUp size={15} />
+          </button>
 
-        <button
-          className="btn btn-icon"
-          onClick={handleShowDesktopTaskNote}
-          title={t('topbar.show_desktop_task_note')}
-          aria-label={t('topbar.show_desktop_task_note')}
-        >
-          <StickyNote size={16} />
-        </button>
+          <button
+            className="topbar-tool-button"
+            type="button"
+            onClick={handleShowDesktopTaskNote}
+            title={t('topbar.show_desktop_task_note')}
+            aria-label={t('topbar.show_desktop_task_note')}
+          >
+            <StickyNote size={15} />
+          </button>
 
-        {/* Theme and Language Cyclers */}
-        <button
-          className="btn btn-icon"
-          onClick={cycleAppearancePreset}
-          title={t('topbar.switch_theme')}
-          aria-label={t('topbar.switch_theme')}
-        >
-          <Palette size={16} />
-        </button>
+          <button
+            className="topbar-tool-button"
+            type="button"
+            onClick={cycleAppearancePreset}
+            title={t('topbar.switch_theme')}
+            aria-label={t('topbar.switch_theme')}
+          >
+            <Palette size={15} />
+          </button>
 
-        <button
-          className="btn btn-icon"
-          onClick={toggleLanguage}
-          title={t('topbar.switch_language')}
-          aria-label={t('topbar.switch_language')}
-        >
-          <Globe size={16} />
-        </button>
+          <button
+            className="topbar-tool-button"
+            type="button"
+            onClick={toggleLanguage}
+            title={t('topbar.switch_language')}
+            aria-label={t('topbar.switch_language')}
+          >
+            <Globe size={15} />
+          </button>
+        </div>
       </div>
+
     </header>
   )
 }
