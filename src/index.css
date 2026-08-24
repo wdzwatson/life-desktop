@@ -12,6 +12,19 @@
   --surface-control: color-mix(in srgb, var(--bg-elevated) 88%, var(--bg-app));
   --surface-control-hover: color-mix(in srgb, var(--color-accent) 8%, var(--surface-control));
   --surface-menu: color-mix(in srgb, var(--bg-elevated) 96%, var(--bg-app));
+  --icon-button-bg: var(--surface-control);
+  --icon-button-hover-bg: var(--surface-control-hover);
+  --icon-button-color: color-mix(in srgb, var(--text-muted) 82%, var(--text-main));
+  --icon-button-hover-color: var(--color-accent);
+  --dropdown-menu-bg: var(--surface-menu);
+  --dropdown-icon-color: color-mix(in srgb, var(--text-muted) 82%, var(--color-accent));
+  --dropdown-icon-hover-color: var(--color-accent);
+  --dropdown-focused-bg: color-mix(in srgb, var(--color-accent) 8%, var(--surface-control));
+  --dropdown-selected-bg: color-mix(in srgb, var(--color-accent) 13%, var(--surface-control));
+  --dropdown-selected-text: var(--text-main);
+  --dropdown-selected-icon-color: var(--color-accent);
+  --dropdown-chip-bg: color-mix(in srgb, var(--color-accent) 10%, var(--surface-control));
+  --dropdown-chip-color: var(--text-main);
   --text-main: #1a1a1a;
   --text-muted: #737373;
   --text-on-accent: #ffffff;
@@ -173,6 +186,19 @@ body.skin-aurora-glass {
   --topbar-shadow: 0 1px 0 rgba(148, 163, 184, 0.18), 0 18px 40px rgba(0, 0, 0, 0.18);
   --interactive-sheen-color: rgba(34, 211, 238, 0.42);
   --interactive-sheen-opacity: 0.18;
+  --icon-button-bg: rgba(15, 23, 42, 0.52);
+  --icon-button-hover-bg: rgba(34, 211, 238, 0.12);
+  --icon-button-color: #a9b8d7;
+  --icon-button-hover-color: #22d3ee;
+  --dropdown-menu-bg: rgba(15, 23, 42, 0.97);
+  --dropdown-icon-color: #b9c6e8;
+  --dropdown-icon-hover-color: #22d3ee;
+  --dropdown-focused-bg: rgba(34, 211, 238, 0.1);
+  --dropdown-selected-bg: rgba(34, 211, 238, 0.16);
+  --dropdown-selected-text: #f8fbff;
+  --dropdown-selected-icon-color: #22d3ee;
+  --dropdown-chip-bg: rgba(34, 211, 238, 0.14);
+  --dropdown-chip-color: #f8fbff;
 }
 
 body.skin-cyber-console {
@@ -210,6 +236,19 @@ body.skin-cyber-console {
   --interactive-sheen-color: rgba(0, 245, 212, 0.36);
   --interactive-sheen-opacity: 0.14;
   --interactive-hover-lift: 0;
+  --icon-button-bg: #050c18;
+  --icon-button-hover-bg: #071f2b;
+  --icon-button-color: #60b5a9;
+  --icon-button-hover-color: #00f5d4;
+  --dropdown-menu-bg: #030a14;
+  --dropdown-icon-color: #6fe2d5;
+  --dropdown-icon-hover-color: #38bdf8;
+  --dropdown-focused-bg: rgba(0, 245, 212, 0.1);
+  --dropdown-selected-bg: rgba(0, 245, 212, 0.16);
+  --dropdown-selected-text: #d8fff8;
+  --dropdown-selected-icon-color: #38bdf8;
+  --dropdown-chip-bg: rgba(0, 245, 212, 0.13);
+  --dropdown-chip-color: #d8fff8;
 }
 
 body.skin-paper-studio {
@@ -241,6 +280,19 @@ body.skin-paper-studio {
     linear-gradient(90deg, rgba(120, 88, 56, 0.03) 1px, transparent 1px), #f7efe2;
   --interactive-sheen-color: rgba(184, 101, 34, 0.24);
   --interactive-sheen-opacity: 0.16;
+  --icon-button-bg: #fbf1df;
+  --icon-button-hover-bg: #f1dcc0;
+  --icon-button-color: #806d5a;
+  --icon-button-hover-color: #945118;
+  --dropdown-menu-bg: #fffdf7;
+  --dropdown-icon-color: #9b7046;
+  --dropdown-icon-hover-color: #b86522;
+  --dropdown-focused-bg: #f3e3ca;
+  --dropdown-selected-bg: #ecd4b5;
+  --dropdown-selected-text: #33281f;
+  --dropdown-selected-icon-color: #b86522;
+  --dropdown-chip-bg: #f1dcc0;
+  --dropdown-chip-color: #33281f;
 }
 
 body.skin-neo-minimal {
@@ -265,6 +317,19 @@ body.skin-neo-minimal {
   --border-strong: #8fb4ff;
   --radius-card: 8px;
   --interactive-sheen-opacity: 0.12;
+  --icon-button-bg: #f8fafc;
+  --icon-button-hover-bg: #eaf2ff;
+  --icon-button-color: #64748b;
+  --icon-button-hover-color: #1d4ed8;
+  --dropdown-menu-bg: #ffffff;
+  --dropdown-icon-color: #4f6f9f;
+  --dropdown-icon-hover-color: #2563eb;
+  --dropdown-focused-bg: #edf5ff;
+  --dropdown-selected-bg: #dceafe;
+  --dropdown-selected-text: #0f172a;
+  --dropdown-selected-icon-color: #2563eb;
+  --dropdown-chip-bg: #e7f0ff;
+  --dropdown-chip-color: #0f172a;
 }
 
 body.skin-pulse-desk {
@@ -292,6 +357,19 @@ body.skin-pulse-desk {
   --radius-card: 10px;
   --interactive-sheen-color: rgba(6, 214, 160, 0.28);
   --interactive-sheen-opacity: 0.2;
+  --icon-button-bg: #f2f8ff;
+  --icon-button-hover-bg: #ffeaf0;
+  --icon-button-color: #667085;
+  --icon-button-hover-color: #d6335c;
+  --dropdown-menu-bg: #ffffff;
+  --dropdown-icon-color: #8b6f80;
+  --dropdown-icon-hover-color: #ef476f;
+  --dropdown-focused-bg: #fff0f4;
+  --dropdown-selected-bg: #ffe0e9;
+  --dropdown-selected-text: #172033;
+  --dropdown-selected-icon-color: #ef476f;
+  --dropdown-chip-bg: #ffe8ef;
+  --dropdown-chip-color: #172033;
 }
 
 body.skin-orbit-os {
@@ -323,6 +401,19 @@ body.skin-orbit-os {
     radial-gradient(circle at 80% 86%, rgba(139, 92, 246, 0.14), transparent 30%), #080f2a;
   --interactive-sheen-color: rgba(245, 158, 11, 0.38);
   --interactive-sheen-opacity: 0.16;
+  --icon-button-bg: rgba(10, 18, 46, 0.82);
+  --icon-button-hover-bg: rgba(245, 158, 11, 0.13);
+  --icon-button-color: #a7b0d9;
+  --icon-button-hover-color: #fbbf24;
+  --dropdown-menu-bg: rgba(8, 15, 42, 0.98);
+  --dropdown-icon-color: #d6bf8a;
+  --dropdown-icon-hover-color: #fbbf24;
+  --dropdown-focused-bg: rgba(245, 158, 11, 0.11);
+  --dropdown-selected-bg: rgba(245, 158, 11, 0.18);
+  --dropdown-selected-text: #fff7e6;
+  --dropdown-selected-icon-color: #fbbf24;
+  --dropdown-chip-bg: rgba(245, 158, 11, 0.15);
+  --dropdown-chip-color: #fff7e6;
 }
 
 body.skin-monolith-pro {
@@ -354,6 +445,19 @@ body.skin-monolith-pro {
   --interactive-sheen-color: rgba(255, 255, 255, 0.16);
   --interactive-sheen-opacity: 0.08;
   --interactive-hover-lift: 0;
+  --icon-button-bg: #0d0d0d;
+  --icon-button-hover-bg: #1a1a1a;
+  --icon-button-color: #a3a3a3;
+  --icon-button-hover-color: #f5f5f5;
+  --dropdown-menu-bg: #090909;
+  --dropdown-icon-color: #a3a3a3;
+  --dropdown-icon-hover-color: #f5f5f5;
+  --dropdown-focused-bg: #181818;
+  --dropdown-selected-bg: #242424;
+  --dropdown-selected-text: #f5f5f5;
+  --dropdown-selected-icon-color: #f5f5f5;
+  --dropdown-chip-bg: #242424;
+  --dropdown-chip-color: #f5f5f5;
 }
 
 body.layout-command-center {
@@ -2159,9 +2263,23 @@ body.loading-particle-burst .command-palette__loader {
   justify-content: center;
 }
 
+.btn:where(.btn-icon, .btn-icon-close, [class*='icon-button']):where(:not(.primary):not(.danger)) {
+  background: var(--icon-button-bg);
+  color: var(--icon-button-color);
+}
+
+.btn:where(.btn-icon, .btn-icon-close, [class*='icon-button']):where(
+    :not(.primary):not(.danger)
+  ):hover:not(:disabled) {
+  background: var(--icon-button-hover-bg);
+  color: var(--icon-button-hover-color);
+}
+
 .btn-icon > svg {
   width: 16px;
   height: 16px;
+  color: currentColor;
+  stroke: currentColor;
 }
 
 /* Keep compact icon buttons compact after the base icon-button rule. */
@@ -2186,6 +2304,13 @@ body.loading-particle-burst .command-palette__loader {
 .btn.btn-icon-close > svg {
   width: 16px;
   height: 16px;
+  color: currentColor;
+  stroke: currentColor;
+}
+
+.btn[class*='icon-button'] > svg {
+  color: currentColor;
+  stroke: currentColor;
 }
 
 /* Cards & Layout grids */
@@ -2304,7 +2429,8 @@ body.loading-particle-burst .command-palette__loader {
   display: inline-flex;
   flex: 0 0 auto;
   margin-left: 10px;
-  color: var(--color-accent);
+  color: var(--dropdown-icon-color);
+  transition: color var(--motion-fast) ease;
 }
 
 .dropdown__value-container {
@@ -2334,8 +2460,18 @@ body.loading-particle-burst .command-palette__loader {
   justify-content: center;
   width: 32px;
   height: 100%;
-  color: var(--text-muted);
+  color: var(--dropdown-icon-color);
   pointer-events: none;
+  transition: color var(--motion-fast) ease;
+}
+
+.dropdown__control:hover .dropdown__control-icon,
+.dropdown__control:hover .dropdown__indicator,
+.dropdown__control--is-focused .dropdown__control-icon,
+.dropdown__control--is-focused .dropdown__indicator,
+.dropdown__control--menu-is-open .dropdown__control-icon,
+.dropdown__control--menu-is-open .dropdown__indicator {
+  color: var(--dropdown-icon-hover-color);
 }
 
 .dropdown__control--menu-is-open .dropdown__indicator svg {
@@ -2351,7 +2487,7 @@ body.loading-particle-burst .command-palette__loader {
   margin-top: 6px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
-  background: var(--surface-menu);
+  background: var(--dropdown-menu-bg);
   box-shadow: 0 14px 30px color-mix(in srgb, #000 16%, transparent);
   color: var(--text-main);
   font-family: var(--font-sans);
@@ -2388,12 +2524,12 @@ body.loading-particle-burst .command-palette__loader {
 }
 
 .dropdown__option--is-focused {
-  background: color-mix(in srgb, var(--color-accent) 8%, var(--surface-control));
+  background: var(--dropdown-focused-bg);
 }
 
 .dropdown__option--is-selected {
-  background: color-mix(in srgb, var(--color-accent) 15%, var(--surface-control));
-  color: var(--color-accent);
+  background: var(--dropdown-selected-bg);
+  color: var(--dropdown-selected-text);
 }
 
 .dropdown__option--is-disabled {
@@ -2411,7 +2547,15 @@ body.loading-particle-burst .command-palette__loader {
 .dropdown__option-icon {
   display: inline-flex;
   flex: 0 0 auto;
-  color: var(--color-accent);
+  color: var(--dropdown-icon-color);
+}
+
+.dropdown__option--is-focused .dropdown__option-icon {
+  color: var(--dropdown-icon-hover-color);
+}
+
+.dropdown__option--is-selected .dropdown__option-icon {
+  color: var(--dropdown-selected-icon-color);
 }
 
 .dropdown__option-copy {
@@ -2437,8 +2581,8 @@ body.loading-particle-burst .command-palette__loader {
   align-items: center;
   overflow: hidden;
   border-radius: 4px;
-  background: color-mix(in srgb, var(--color-accent) 12%, var(--bg-app));
-  color: var(--text-main);
+  background: var(--dropdown-chip-bg);
+  color: var(--dropdown-chip-color);
 }
 
 .dropdown__multi-value__label {

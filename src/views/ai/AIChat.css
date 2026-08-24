@@ -91,16 +91,26 @@
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-subtle, var(--color-border));
   border-radius: 10px;
-  background: var(--bg-surface);
-  color: var(--text-main);
+  background: var(--icon-button-bg);
+  color: var(--icon-button-color);
   cursor: pointer;
+  transition:
+    border-color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease;
 }
 
 .ai-chat-icon-button:hover {
   border-color: color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
-  color: var(--color-accent);
+  background: var(--icon-button-hover-bg);
+  color: var(--icon-button-hover-color);
+}
+
+.ai-chat-icon-button svg {
+  color: currentColor;
+  stroke: currentColor;
 }
 
 .ai-chat-nav {
