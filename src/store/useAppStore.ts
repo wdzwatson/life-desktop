@@ -6,6 +6,16 @@ import {
   toLaunchpadDateKey,
   type LaunchpadSettings,
 } from '../views/launchpadUtils'
+import {
+  APPEARANCE_PRESETS,
+  appearanceFromPreset,
+  applyAppearanceToDocument,
+  legacyThemeFromAppearance,
+  mergeAppearanceSettings,
+  normalizeAppearanceSettings,
+  type AppearancePresetId,
+  type AppearanceSettings,
+} from '../appearance'
 
 export type SettingsMenu = 'appearance' | 'shortcuts' | 'profile' | 'security' | 'updates' | 'video'
 export type SidebarDisplayMode = 'dynamic' | 'collapsed' | 'expanded'
@@ -15,6 +25,7 @@ interface AppState {
   taskTab: string
   settingsMenu: SettingsMenu
   sidebarDisplayMode: SidebarDisplayMode
+  appearance: AppearanceSettings
   theme: string
   language: string
   userId: string
@@ -32,6 +43,8 @@ interface AppState {
   setTaskTab: (tab: string) => void
   setSettingsMenu: (menu: SettingsMenu) => void
   setSidebarDisplayMode: (mode: SidebarDisplayMode) => Promise<void>
+  setAppearancePreset: (preset: AppearancePresetId) => Promise<void>
+  setAppearanceSettings: (appearance: Partial<AppearanceSettings>) => Promise<void>
   setTheme: (theme: string) => Promise<void>
   setLanguage: (lang: string) => Promise<void>
   setLaunchpadSettings: (settings: Partial<LaunchpadSettings>) => Promise<void>
@@ -80,9 +93,10 @@ const getMockSettings = () => {
   if (!data) {
     const initial = {
       theme: 'Minimal',
+      appearance: appearanceFromPreset('neo-minimal'),
       language: 'zh-CN',
-    sidebarDisplayMode: 'dynamic',
-    launchpad: { startupMode: 'daily' },
+      sidebarDisplayMode: 'dynamic',
+      launchpad: { startupMode: 'daily' },
       lastUserId: 'guest',
     }
     localStorage.setItem('mock_settings', JSON.stringify(initial))
@@ -104,6 +118,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   taskTab: 'list',
   settingsMenu: 'appearance',
   sidebarDisplayMode: 'dynamic',
+  appearance: appearanceFromPreset('neo-minimal'),
   theme: 'Minimal',
   language: 'zh-CN',
   userId: 'guest',
@@ -153,19 +168,66 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ sidebarDisplayMode })
   },
 
-  setTheme: async (theme) => {
-    document.body.className = `theme-${theme.toLowerCase().replace(' ', '-')}`
+  setAppearancePreset: async (preset) => {
+    const appearance = appearanceFromPreset(preset)
+    const theme = legacyThemeFromAppearance(appearance)
+    applyAppearanceToDocument(appearance)
     const api = getElectronAPI()
     if (api) {
       const settings = await api.getSettings()
+      settings.appearance = appearance
       settings.theme = theme
       await api.saveSettings(settings)
     } else {
       const settings = getMockSettings()
+      settings.appearance = appearance
       settings.theme = theme
       saveMockSettings(settings)
     }
-    set({ theme })
+    set({ appearance, theme })
+    get().showToast(
+      get().language === 'zh-CN'
+        ? `已切换外观: ${APPEARANCE_PRESETS[preset].name}`
+        : `Appearance switched to: ${APPEARANCE_PRESETS[preset].name}`,
+    )
+  },
+
+  setAppearanceSettings: async (update) => {
+    const appearance = mergeAppearanceSettings(get().appearance, update)
+    const theme = legacyThemeFromAppearance(appearance)
+    applyAppearanceToDocument(appearance)
+    const api = getElectronAPI()
+    if (api) {
+      const settings = await api.getSettings()
+      settings.appearance = appearance
+      settings.theme = theme
+      await api.saveSettings(settings)
+    } else {
+      const settings = getMockSettings()
+      settings.appearance = appearance
+      settings.theme = theme
+      saveMockSettings(settings)
+    }
+    set({ appearance, theme })
+    get().showToast(get().language === 'zh-CN' ? '外观设置已更新' : 'Appearance updated')
+  },
+
+  setTheme: async (theme) => {
+    const appearance = normalizeAppearanceSettings(undefined, theme)
+    applyAppearanceToDocument(appearance)
+    const api = getElectronAPI()
+    if (api) {
+      const settings = await api.getSettings()
+      settings.theme = theme
+      settings.appearance = appearance
+      await api.saveSettings(settings)
+    } else {
+      const settings = getMockSettings()
+      settings.theme = theme
+      settings.appearance = appearance
+      saveMockSettings(settings)
+    }
+    set({ appearance, theme })
     get().showToast(
       get().language === 'zh-CN' ? `已切换主题: ${theme}` : `Theme switched to: ${theme}`,
     )
@@ -548,13 +610,16 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const settings = await api.getSettings()
       if (settings) {
+        const appearance = normalizeAppearanceSettings(settings.appearance, settings.theme)
+        const theme = settings.theme || legacyThemeFromAppearance(appearance)
         const launchpadSettings = normalizeLaunchpadSettings(settings.launchpad)
         const shouldOpenLaunchpad = shouldShowLaunchpad(launchpadSettings)
         const nextLaunchpadSettings = shouldOpenLaunchpad
           ? { ...launchpadSettings, lastShownDate: toLaunchpadDateKey() }
           : launchpadSettings
         set({
-          theme: settings.theme || 'Minimal',
+          appearance,
+          theme,
           language: settings.language || 'zh-CN',
           sidebarDisplayMode: isSidebarDisplayMode(settings.sidebarDisplayMode)
             ? settings.sidebarDisplayMode
@@ -565,14 +630,20 @@ export const useAppStore = create<AppState>((set, get) => ({
             : launchpadSettings.lastContext?.screen || 'dashboard',
           isInitialConfigLoaded: true,
         })
-        if (shouldOpenLaunchpad) {
-          await api.saveSettings({ ...settings, launchpad: nextLaunchpadSettings })
+        if (shouldOpenLaunchpad || !settings.appearance) {
+          await api.saveSettings({
+            ...settings,
+            appearance,
+            theme,
+            launchpad: nextLaunchpadSettings,
+          })
         }
-        const themeClass = `theme-${(settings.theme || 'Minimal').toLowerCase().replace(' ', '-')}`
-        document.body.className = themeClass
+        applyAppearanceToDocument(appearance)
         await i18n.changeLanguage(settings.language || 'zh-CN')
       } else {
-        set({ isInitialConfigLoaded: true })
+        const appearance = appearanceFromPreset('neo-minimal')
+        applyAppearanceToDocument(appearance)
+        set({ appearance, theme: legacyThemeFromAppearance(appearance), isInitialConfigLoaded: true })
       }
     } else {
       // Browser Mock Fallback
@@ -580,6 +651,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       const profiles = getMockProfiles()
       const currentUserId = settings.lastUserId || 'guest'
       const profile = profiles[currentUserId] || { nickname: '访客模式', avatar: 'G' }
+      const appearance = normalizeAppearanceSettings(settings.appearance, settings.theme)
+      const theme = settings.theme || legacyThemeFromAppearance(appearance)
       const launchpadSettings = normalizeLaunchpadSettings(settings.launchpad)
       const shouldOpenLaunchpad = shouldShowLaunchpad(launchpadSettings)
       const nextLaunchpadSettings = shouldOpenLaunchpad
@@ -606,7 +679,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         userNickname: profile.nickname,
         userAvatar: profile.avatar,
         isAuthenticated: isAuthenticated,
-        theme: settings.theme || 'Minimal',
+        appearance,
+        theme,
         language: settings.language || 'zh-CN',
         sidebarDisplayMode: isSidebarDisplayMode(settings.sidebarDisplayMode)
           ? settings.sidebarDisplayMode
@@ -618,13 +692,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         isInitialConfigLoaded: true,
       })
 
-      if (shouldOpenLaunchpad) {
+      if (shouldOpenLaunchpad || !settings.appearance) {
+        settings.appearance = appearance
+        settings.theme = theme
         settings.launchpad = nextLaunchpadSettings
         saveMockSettings(settings)
       }
 
-      const themeClass = `theme-${(settings.theme || 'Minimal').toLowerCase().replace(' ', '-')}`
-      document.body.className = themeClass
+      applyAppearanceToDocument(appearance)
       await i18n.changeLanguage(settings.language || 'zh-CN')
 
       const list = Object.entries(profiles).map(([id, p]: [string, any]) => ({
