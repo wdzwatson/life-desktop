@@ -30,6 +30,10 @@ function ScreenLoading({ screen }: { screen: string }) {
       aria-live="polite"
       aria-label="Loading"
     >
+      <div className="screen-loading__visual" aria-hidden="true">
+        <span className="screen-loading__orb" />
+        <span className="screen-loading__rail" />
+      </div>
       <div className="screen-loading__bar" />
       <div className="screen-loading__row screen-loading__row--wide" />
       <div className="screen-loading__row" />
@@ -683,7 +687,8 @@ function App() {
               >
                 {searchState === 'loading' ? (
                   <div className="command-palette__status" role="status" aria-live="polite">
-                    {t('app.search_loading')}
+                    <span className="command-palette__loader" aria-hidden="true" />
+                    <span>{t('app.search_loading')}</span>
                   </div>
                 ) : searchState === 'error' ? (
                   <div

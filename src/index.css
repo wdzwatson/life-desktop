@@ -369,6 +369,9 @@ body.motion-reduced *::after {
 body.motion-reduced .screen-loading__bar,
 body.motion-reduced .screen-loading__row,
 body.motion-reduced .screen-loading__card,
+body.motion-reduced .screen-loading__orb,
+body.motion-reduced .screen-loading__rail::after,
+body.motion-reduced .command-palette__loader,
 body.motion-reduced .screen-progress,
 body.motion-reduced .screen-progress.is-visible::after,
 body.motion-reduced .screen-transition,
@@ -898,6 +901,65 @@ body.theme-dense .nav-item.active {
   color: var(--text-muted);
 }
 
+.screen-loading__visual {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: min(360px, 68%);
+  min-height: 20px;
+}
+
+.screen-loading__orb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid color-mix(in srgb, var(--loading-accent) 72%, var(--color-border));
+  border-top-color: transparent;
+  border-radius: 999px;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--loading-accent) 45%, transparent);
+  animation: spin calc(var(--motion-slow) * 2.3) linear infinite;
+}
+
+.screen-loading__rail {
+  position: relative;
+  flex: 1 1 auto;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-border) 76%, transparent);
+}
+
+.screen-loading__rail::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 -28%;
+  width: 28%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--loading-accent), var(--color-accent-2));
+  animation: screen-loading-rail calc(var(--motion-slow) * 2.2) var(--ease-standard) infinite;
+}
+
+body.loading-terminal-scan .screen-loading__orb,
+body.loading-matrix-rails .screen-loading__orb {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  border-color: var(--loading-accent);
+  border-top-color: var(--loading-accent);
+  animation: terminal-loader-blink calc(var(--motion-slow) * 1.4) steps(2, end) infinite;
+}
+
+body.loading-paper-skeleton .screen-loading__orb {
+  border-radius: 3px 999px 999px 999px;
+  transform: rotate(45deg);
+  animation: paper-loader-turn calc(var(--motion-slow) * 2.8) ease-in-out infinite;
+}
+
+body.loading-particle-burst .screen-loading__orb {
+  background: radial-gradient(circle, var(--loading-accent) 30%, transparent 33%);
+  border-color: transparent;
+  animation: loading-soft-pulse calc(var(--motion-slow) * 1.8) ease-in-out infinite;
+}
+
 .screen-loading__bar,
 .screen-loading__row,
 .screen-loading__card {
@@ -1015,6 +1077,36 @@ body.loading-particle-burst .screen-loading__card {
   }
 }
 
+@keyframes screen-loading-rail {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(458%);
+  }
+}
+
+@keyframes terminal-loader-blink {
+  0%,
+  44% {
+    opacity: 0.42;
+  }
+  45%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes paper-loader-turn {
+  0%,
+  100% {
+    transform: rotate(45deg) translateY(0);
+  }
+  50% {
+    transform: rotate(45deg) translateY(-2px);
+  }
+}
+
 @keyframes loading-soft-pulse {
   0%,
   100% {
@@ -1069,7 +1161,10 @@ body.loading-particle-burst .screen-loading__card {
 
   .screen-loading__bar,
   .screen-loading__row,
-  .screen-loading__card {
+  .screen-loading__card,
+  .screen-loading__orb,
+  .screen-loading__rail::after,
+  .command-palette__loader {
     animation: none;
   }
 
@@ -1568,6 +1663,52 @@ body.loading-particle-burst .screen-loading__card {
   color: var(--text-muted);
   font-size: 13px;
   text-align: center;
+}
+
+.command-palette__loader {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: 2px solid color-mix(in srgb, var(--loading-accent) 72%, var(--color-border));
+  border-top-color: transparent;
+  border-radius: 999px;
+  animation: spin calc(var(--motion-slow) * 2.1) linear infinite;
+}
+
+body.loading-terminal-scan .command-palette__loader,
+body.loading-matrix-rails .command-palette__loader {
+  width: 22px;
+  height: 10px;
+  border: 1px solid var(--loading-accent);
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--loading-accent) 0 36%, transparent 36% 100%);
+  background-size: 12px 100%;
+  animation: command-terminal-scan calc(var(--motion-slow) * 2.2) steps(4, end) infinite;
+}
+
+body.loading-paper-skeleton .command-palette__loader {
+  border-radius: 4px;
+  animation: paper-loader-turn calc(var(--motion-slow) * 2.6) ease-in-out infinite;
+}
+
+body.loading-pulse-bars .command-palette__loader,
+body.loading-particle-burst .command-palette__loader {
+  border-color: transparent;
+  background:
+    radial-gradient(circle at 20% 50%, var(--loading-accent) 0 3px, transparent 4px),
+    radial-gradient(circle at 50% 50%, var(--color-accent) 0 3px, transparent 4px),
+    radial-gradient(circle at 80% 50%, var(--color-accent-2) 0 3px, transparent 4px);
+  animation: loading-soft-pulse calc(var(--motion-slow) * 1.6) ease-in-out infinite;
+}
+
+@keyframes command-terminal-scan {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 24px 0;
+  }
 }
 
 .command-palette__status--warning {
