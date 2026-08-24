@@ -46,7 +46,6 @@ Apply appearance-aware loading/transition behavior to screen loading, screen pro
 
 ## AT-07: Final QA and Regression Sweep
 
-Run lint, focused tests, full test runner where practical, and production build. Review diffs against the parent design and confirm no unrelated files were modified.
+Run lint, focused tests, full test runner where practical, production build, and desktop/mobile rendered QA for the appearance controls. Review diffs against the parent design and confirm no unrelated files were modified.
 
-**Done when:** verification passes and the final commit records the completed appearance system.
-
+**Done when:** verification passes, the settings appearance controls remain usable on narrow viewports, and the final commit records the completed appearance system.

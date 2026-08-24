@@ -721,45 +721,21 @@ export const Settings: React.FC = () => {
   }
 
   return (
-    <div
-      style={{
-        animation: 'enter 0.15s ease both',
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
+    <div className="settings-view">
       {/* Header */}
       <div style={{ marginBottom: '16px' }}>
         <h1 style={{ fontSize: '22px', fontWeight: 800 }}>{t('settings.title')}</h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{t('settings.subtitle')}</p>
       </div>
 
-      <div
-        style={{
-          flexGrow: 1,
-          minHeight: 0,
-          display: 'grid',
-          gridTemplateColumns: '200px 1fr',
-          gap: '16px',
-          border: '1px solid var(--color-border)',
-          borderRadius: '8px',
-          backgroundColor: 'var(--bg-surface)',
-        }}
-      >
+      <div className="settings-layout">
         {/* Left Settings Sidebar */}
-        <aside
-          style={{
-            borderRight: '1px solid var(--color-border)',
-            padding: '12px',
-            overflowY: 'auto',
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <aside className="settings-menu-panel">
+          <div className="settings-menu-list">
             <button
               className={`nav-item ${activeMenu === 'appearance' ? 'active' : ''}`}
               onClick={() => setActiveMenu('appearance')}
-              style={{ width: '100%', border: 'none', background: 'none' }}
+              style={{ border: 'none', background: 'none' }}
             >
               <span className="nav-icon">
                 <Palette size={15} />
@@ -769,7 +745,7 @@ export const Settings: React.FC = () => {
             <button
               className={`nav-item ${activeMenu === 'shortcuts' ? 'active' : ''}`}
               onClick={() => setActiveMenu('shortcuts')}
-              style={{ width: '100%', border: 'none', background: 'none' }}
+              style={{ border: 'none', background: 'none' }}
             >
               <span className="nav-icon">
                 <Keyboard size={15} />
@@ -779,7 +755,7 @@ export const Settings: React.FC = () => {
             <button
               className={`nav-item ${activeMenu === 'profile' ? 'active' : ''}`}
               onClick={() => setActiveMenu('profile')}
-              style={{ width: '100%', border: 'none', background: 'none' }}
+              style={{ border: 'none', background: 'none' }}
             >
               <span className="nav-icon">
                 <User size={15} />
@@ -789,7 +765,7 @@ export const Settings: React.FC = () => {
             <button
               className={`nav-item ${activeMenu === 'security' ? 'active' : ''}`}
               onClick={() => setActiveMenu('security')}
-              style={{ width: '100%', border: 'none', background: 'none' }}
+              style={{ border: 'none', background: 'none' }}
             >
               <span className="nav-icon">
                 <Shield size={15} />
@@ -799,7 +775,7 @@ export const Settings: React.FC = () => {
             <button
               className={`nav-item ${activeMenu === 'updates' ? 'active' : ''}`}
               onClick={() => setActiveMenu('updates')}
-              style={{ width: '100%', border: 'none', background: 'none' }}
+              style={{ border: 'none', background: 'none' }}
             >
               <span className="nav-icon">
                 <RefreshCw size={15} />
@@ -809,7 +785,7 @@ export const Settings: React.FC = () => {
             <button
               className={`nav-item ${activeMenu === 'video' ? 'active' : ''}`}
               onClick={() => setActiveMenu('video')}
-              style={{ width: '100%', border: 'none', background: 'none' }}
+              style={{ border: 'none', background: 'none' }}
             >
               <span className="nav-icon">
                 <Download size={15} />
@@ -820,15 +796,7 @@ export const Settings: React.FC = () => {
         </aside>
 
         {/* Right Settings Content */}
-        <section
-          style={{
-            padding: '20px',
-            overflowY: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '20px',
-          }}
-        >
+        <section className="settings-content">
           {/* TAB: APPEARANCE */}
           {activeMenu === 'appearance' && (
             <>
@@ -839,13 +807,7 @@ export const Settings: React.FC = () => {
                 <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', marginBottom: '12px' }}>
                   {t('settings.appearance_desc')}
                 </p>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
-                    gap: '10px',
-                  }}
-                >
+                <div className="appearance-preset-grid">
                   {APPEARANCE_PRESET_IDS.map((presetId) => {
                     const preset = APPEARANCE_PRESETS[presetId]
                     const isSelected = appearance.preset === presetId
@@ -915,13 +877,7 @@ export const Settings: React.FC = () => {
                     engine: getAnimationEngineInfo(appearance.engine).displayName,
                   })}
                 </p>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                    gap: '12px',
-                  }}
-                >
+                <div className="appearance-controls-grid">
                   <label style={{ display: 'grid', gap: '6px', fontSize: '12px' }}>
                     {t('settings.appearance_skin')}
                     <Dropdown
