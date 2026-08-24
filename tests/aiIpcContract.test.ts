@@ -20,11 +20,15 @@ import {
 } from '../electron/ai/ipc.ts'
 
 test('AI configuration IPC exposes only the approved channel whitelist', () => {
-  assert.equal(AI_CONFIG_CHANNELS.length, 33)
+  assert.equal(AI_CONFIG_CHANNELS.length, 26)
   assert.equal(new Set(AI_CONFIG_CHANNELS).size, AI_CONFIG_CHANNELS.length)
   assert.equal(
     AI_CONFIG_CHANNELS.some((channel) => /runtime|credential:reveal|shell|sql/i.test(channel)),
     false,
+  )
+  assert.deepEqual(
+    AI_CONFIG_CHANNELS.filter((channel) => channel.startsWith('ai:agents:')),
+    ['ai:agents:list', 'ai:agents:update'],
   )
 })
 
@@ -64,7 +68,10 @@ test('preload exposes structured AI methods without runtime credentials or gener
   ]) {
     assert.match(preload, new RegExp(`${method}:`))
   }
-  assert.doesNotMatch(preload, /getAIMcpRuntime|getAIProviderCredential|executeAICommand|callAIMcpTool|ai:sql/)
+  assert.doesNotMatch(
+    preload,
+    /getAIMcpRuntime|getAIProviderCredential|executeAICommand|callAIMcpTool|ai:sql|getAIAgent:|createAIAgent:|copyAIAgent:|setAIAgentEnabled:|setDefaultAIAgent:|getAIAgentSnapshot:|deleteAIAgent:/,
+  )
 })
 
 test('image runtime exposes only generation while media files remain behind asset IDs', () => {

@@ -30,14 +30,7 @@ export const AI_CONFIG_CHANNELS = [
   'ai:models:delete',
   'ai:models:sync',
   'ai:agents:list',
-  'ai:agents:get',
-  'ai:agents:create',
   'ai:agents:update',
-  'ai:agents:copy',
-  'ai:agents:setEnabled',
-  'ai:agents:setDefault',
-  'ai:agents:snapshot',
-  'ai:agents:delete',
   'ai:mcp:list',
   'ai:mcp:get',
   'ai:mcp:create',
@@ -354,32 +347,11 @@ export function createAIConfigHandlers(
     }),
 
     'ai:agents:list': () => respond(() => services().agents.list()),
-    'ai:agents:get': (_event, payload) =>
-      respondWithObject(payload, (data) => services().agents.get(requireId(data.id))),
-    'ai:agents:create': (_event, payload) => respond(() => services().agents.create(payload)),
     'ai:agents:update': (_event, payload) =>
       respondWithObject(payload, (data) => {
         const id = requireId(data.id)
         return services().agents.update(id, data.input)
       }),
-    'ai:agents:copy': (_event, payload) =>
-      respondWithObject(payload, (data) => {
-        const id = requireId(data.id)
-        const name = requireOptionalName(data.name)
-        return services().agents.copy(id, name)
-      }),
-    'ai:agents:setEnabled': (_event, payload) =>
-      respondWithObject(payload, (data) => {
-        const id = requireId(data.id)
-        const enabled = requireBoolean(data.enabled, 'enabled')
-        return services().agents.setEnabled(id, enabled)
-      }),
-    'ai:agents:setDefault': (_event, payload) =>
-      respondWithObject(payload, (data) => services().agents.setDefault(requireId(data.id))),
-    'ai:agents:snapshot': (_event, payload) =>
-      respondWithObject(payload, (data) => services().agents.getSnapshot(requireId(data.id))),
-    'ai:agents:delete': (_event, payload) =>
-      respondWithObject(payload, (data) => services().agents.delete(requireId(data.id))),
 
     'ai:mcp:list': () => respond(() => services().mcp.list()),
     'ai:mcp:get': (_event, payload) =>

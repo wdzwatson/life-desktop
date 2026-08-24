@@ -15,7 +15,6 @@ const drawerMotionSource = readFileSync(
 const aiDrawerSources = [
   'ProviderManager.tsx',
   'ModelManager.tsx',
-  'AgentManager.tsx',
   'McpManager.tsx',
 ].map((file) => readFileSync(new URL(`../src/views/ai/${file}`, import.meta.url), 'utf8'))
 const chatWorkspaceSource = readFileSync(

@@ -1,5 +1,3 @@
-import type { ProviderSummary } from './providerUtils'
-
 export type AgentApprovalMode = 'confirm_all' | 'confirm_risky' | 'allow_selected' | 'allow_all'
 
 export type AgentSummary = {
@@ -24,15 +22,6 @@ export type AgentSummary = {
   updatedAt: string
 }
 
-export type AgentMcpSummary = {
-  id: number
-  name: string
-  enabled: boolean
-  transport: 'streamable_http' | 'sse' | 'stdio'
-  connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'failed'
-  toolCount: number
-}
-
 export type AgentDraft = {
   name: string
   description: string
@@ -51,43 +40,6 @@ export type AgentDraft = {
   maxOutputTokens: string
   enabled: boolean
   isDefault: boolean
-}
-
-export function getAgentProviderOptions(
-  providers: ProviderSummary[],
-  capability: 'text' | 'image' | 'video',
-) {
-  return providers
-    .filter((provider) => provider.capabilities.includes(capability) && provider.models[capability])
-    .sort((left, right) => {
-      if (left.enabled !== right.enabled) return left.enabled ? -1 : 1
-      if (left.defaults[capability] !== right.defaults[capability]) {
-        return left.defaults[capability] ? -1 : 1
-      }
-      return left.name.localeCompare(right.name)
-    })
-}
-
-export function createAgentDraft(textProviderId?: number, isDefault = false, textModel = ''): AgentDraft {
-  return {
-    name: '',
-    description: '',
-    systemPrompt: '',
-    textProviderId: textProviderId ? String(textProviderId) : '',
-    textModel,
-    imageProviderId: '',
-    videoProviderId: '',
-    mcpServerIds: [],
-    allowedToolsText: '',
-    blockedToolsText: '',
-    toolApprovalMode: 'confirm_risky',
-    maxToolCalls: '8',
-    temperature: '0.2',
-    maxMessages: '50',
-    maxOutputTokens: '4000',
-    enabled: true,
-    isDefault,
-  }
 }
 
 export function agentToDraft(agent: AgentSummary): AgentDraft {
@@ -167,24 +119,5 @@ export function buildAgentPayload(draft: AgentDraft) {
     },
     enabled: draft.enabled,
     isDefault: draft.isDefault,
-  }
-}
-
-export function toggleAgentMcpServer(serverIds: number[], serverId: number) {
-  return serverIds.includes(serverId)
-    ? serverIds.filter((item) => item !== serverId)
-    : [...serverIds, serverId].sort((left, right) => left - right)
-}
-
-export function getAgentProviderNames(agent: AgentSummary, providers: ProviderSummary[]) {
-  const byId = new Map(providers.map((provider) => [provider.id, provider.name]))
-  return {
-    text: byId.get(agent.providers.text) ?? `#${agent.providers.text}`,
-    ...(agent.providers.image
-      ? { image: byId.get(agent.providers.image) ?? `#${agent.providers.image}` }
-      : {}),
-    ...(agent.providers.video
-      ? { video: byId.get(agent.providers.video) ?? `#${agent.providers.video}` }
-      : {}),
   }
 }

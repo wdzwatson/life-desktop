@@ -200,16 +200,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   syncAIModels: () => ipcRenderer.invoke('ai:models:sync'),
 
   listAIAgents: () => ipcRenderer.invoke('ai:agents:list'),
-  getAIAgent: (id: number) => ipcRenderer.invoke('ai:agents:get', { id }),
-  createAIAgent: (input: unknown) => ipcRenderer.invoke('ai:agents:create', input),
   updateAIAgent: (id: number, input: unknown) =>
     ipcRenderer.invoke('ai:agents:update', { id, input }),
-  copyAIAgent: (id: number, name?: string) => ipcRenderer.invoke('ai:agents:copy', { id, name }),
-  setAIAgentEnabled: (id: number, enabled: boolean) =>
-    ipcRenderer.invoke('ai:agents:setEnabled', { id, enabled }),
-  setDefaultAIAgent: (id: number) => ipcRenderer.invoke('ai:agents:setDefault', { id }),
-  getAIAgentSnapshot: (id: number) => ipcRenderer.invoke('ai:agents:snapshot', { id }),
-  deleteAIAgent: (id: number) => ipcRenderer.invoke('ai:agents:delete', { id }),
 
   listAIMcpServers: () => ipcRenderer.invoke('ai:mcp:list'),
   getAIMcpServer: (id: number) => ipcRenderer.invoke('ai:mcp:get', { id }),

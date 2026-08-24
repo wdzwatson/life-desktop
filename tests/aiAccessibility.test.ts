@@ -14,7 +14,6 @@ const conversationRename = readFileSync(path.resolve('src/views/ai/ConversationR
 const conversationList = readFileSync(path.resolve('src/views/ai/ConversationList.tsx'), 'utf8')
 const providerManager = readFileSync(path.resolve('src/views/ai/ProviderManager.tsx'), 'utf8')
 const modelManager = readFileSync(path.resolve('src/views/ai/ModelManager.tsx'), 'utf8')
-const agentManager = readFileSync(path.resolve('src/views/ai/AgentManager.tsx'), 'utf8')
 const mcpManager = readFileSync(path.resolve('src/views/ai/McpManager.tsx'), 'utf8')
 const messageRenderer = readFileSync(path.resolve('src/views/ai/MessageRenderer.tsx'), 'utf8')
 const css = readFileSync(path.resolve('src/views/ai/AIChat.css'), 'utf8')
@@ -32,7 +31,7 @@ test('tool approval and media viewer trap focus, close with Escape, and restore 
 test('conversation deletion uses one explicit dialog and keeps cancel separate from media cleanup', () => {
   assert.doesNotMatch(workspace, /window\.confirm\(t\('aiChat\.chat\.delete/)
   assert.match(workspace, /<ConversationDeleteDialog[\s\S]*onCancel=[\s\S]*onConfirm=/)
-  assert.match(conversationDelete, /type="checkbox"[\s\S]*deleteMedia/)
+  assert.match(conversationDelete, /<Checkbox[\s\S]*deleteMedia/)
   assert.match(conversationDelete, /className="btn danger"[\s\S]*common\.delete/)
   assert.match(conversationDelete, /role="alertdialog"[\s\S]*overlayClassName="ai-conversation-dialog-overlay"/)
   assert.match(conversationDelete, /closeOnOverlay/)
@@ -136,8 +135,11 @@ test('provider actions explain themselves and editor controls retain safe close 
   assert.match(modelManager, /onClick=\{handleDrawerClose\}/)
   assert.match(css, /\.ai-settings-drawer__title\s*\{[\s\S]*-webkit-app-region:\s*no-drag/)
   assert.match(css, /\.ai-settings-drawer__close\s*\{[\s\S]*flex:\s*0 0 auto[\s\S]*-webkit-app-region:\s*no-drag/)
-  assert.match(appCss, /The system title bar sits outside the renderer's client area\./)
-  assert.doesNotMatch(appCss, /\.title-bar\s*\{[\s\S]*-webkit-app-region:\s*drag/)
+  assert.match(appCss, /Windows and Linux render a themed title bar outside the application workspace\./)
+  assert.match(appCss, /\.desktop-titlebar\s*\{[\s\S]*-webkit-app-region:\s*drag/)
+  assert.match(appCss, /\.desktop-titlebar__controls\s*\{[\s\S]*display:\s*flex/)
+  assert.match(appCss, /\.desktop-titlebar\s*\{[\s\S]*background:\s*color-mix\([\s\S]*var\(--bg-sidebar\)/)
+  assert.match(appCss, /\.desktop-titlebar\s*\{[\s\S]*box-shadow:/)
   assert.match(css, /\.ai-settings-drawer-overlay\s*\{[\s\S]*-webkit-app-region:\s*no-drag/)
   assert.match(css, /\.ai-settings-drawer\s*\{[\s\S]*-webkit-app-region:\s*no-drag/)
   assert.match(css, /\.ai-settings-drawer__close\s*\{[\s\S]*-webkit-app-region:\s*no-drag/)
@@ -146,7 +148,7 @@ test('provider actions explain themselves and editor controls retain safe close 
 test('provider creation selects catalog models from one flat list and does not create Agents', () => {
   assert.match(providerManager, /catalogModels\.map\(\(model\)/)
   assert.doesNotMatch(providerManager, /catalogModels\.filter\(\(model\) => model\.capabilities\.includes\(kind\)\)/)
-  assert.match(providerManager, /type="checkbox" checked=\{selected\}/)
+  assert.match(providerManager, /<Checkbox checked=\{selected\}/)
   assert.match(providerManager, /const plural = `\$\{kind\}Models`/)
   assert.match(providerManager, /className="ai-provider-model-catalog"/)
   assert.match(providerManager, /default_model/)
@@ -162,7 +164,7 @@ test('provider and model editors separate connection settings from the model cat
   assert.match(modelManager, /aria-label=\{t\('aiChat\.models\.capability_filter'\)\}/)
   assert.match(modelManager, /api\.createAIModel/)
   assert.match(modelManager, /api\.updateAIModel/)
-  assert.match(modelManager, /type="checkbox" value=\{capability\}/)
+  assert.match(modelManager, /<Checkbox value=\{capability\}/)
   assert.match(modelManager, /draft\.capabilities\.includes\(capability\)/)
   assert.doesNotMatch(modelManager, /providerName|setDefaultAIProvider/)
   assert.doesNotMatch(modelManager, /ai-model-form__intro/)
@@ -210,22 +212,13 @@ test('model switch dividers persist as conversation events without entering mess
   assert.match(workspace, /setSelectedAgentId\(latestTargetAgentId\)/)
 })
 
-test('agent creation reuses the settings drawer and returns focus to its trigger', () => {
-  assert.match(agentManager, /overlayClassName=\{`drawer-motion-overlay ai-settings-drawer-overlay/)
-  assert.match(agentManager, /contentClassName="drawer-motion-panel ai-settings-drawer ai-settings-drawer--agent"/)
-  assert.match(agentManager, /returnFocus=\{\(\) => drawerTriggerRef\.current\?\.focus\(\)\}/)
-  assert.match(agentManager, /closeOnOverlay/)
-  assert.match(css, /\.ai-settings-drawer--agent\s*\{[\s\S]*width:\s*min\(700px, 100vw\)/)
-  assert.match(css, /\.ai-settings-drawer \.ai-provider-form,[\s\S]*\.ai-settings-drawer \.ai-agent-form,[\s\S]*\.ai-settings-drawer \.ai-mcp-form\s*\{[\s\S]*flex:\s*1/)
-})
-
 test('MCP creation uses the shared drawer without changing transport logic', () => {
   assert.match(mcpManager, /overlayClassName=\{`drawer-motion-overlay ai-settings-drawer-overlay/)
   assert.match(mcpManager, /contentClassName="drawer-motion-panel ai-settings-drawer ai-settings-drawer--mcp"/)
   assert.match(mcpManager, /returnFocus=\{\(\) => drawerTriggerRef\.current\?\.focus\(\)\}/)
   assert.match(mcpManager, /changeTransport\(event\.target\.value as McpDraft\['transport'\]\)/)
   assert.match(css, /\.ai-settings-drawer--mcp\s*\{[\s\S]*width:\s*min\(680px, 100vw\)/)
-  assert.match(css, /\.ai-settings-drawer \.ai-agent-form,[\s\S]*\.ai-settings-drawer \.ai-mcp-form\s*\{[\s\S]*flex:\s*1/)
+  assert.match(css, /\.ai-settings-drawer \.ai-provider-form,[\s\S]*\.ai-settings-drawer \.ai-mcp-form\s*\{[\s\S]*flex:\s*1/)
 })
 
 test('daily chat typography and action targets remain readable', () => {
