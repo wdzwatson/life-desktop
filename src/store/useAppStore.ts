@@ -611,7 +611,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const settings = await api.getSettings()
       if (settings) {
         const appearance = normalizeAppearanceSettings(settings.appearance, settings.theme)
-        const theme = settings.theme || legacyThemeFromAppearance(appearance)
+        const theme = legacyThemeFromAppearance(appearance)
         const launchpadSettings = normalizeLaunchpadSettings(settings.launchpad)
         const shouldOpenLaunchpad = shouldShowLaunchpad(launchpadSettings)
         const nextLaunchpadSettings = shouldOpenLaunchpad
@@ -652,7 +652,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const currentUserId = settings.lastUserId || 'guest'
       const profile = profiles[currentUserId] || { nickname: '访客模式', avatar: 'G' }
       const appearance = normalizeAppearanceSettings(settings.appearance, settings.theme)
-      const theme = settings.theme || legacyThemeFromAppearance(appearance)
+      const theme = legacyThemeFromAppearance(appearance)
       const launchpadSettings = normalizeLaunchpadSettings(settings.launchpad)
       const shouldOpenLaunchpad = shouldShowLaunchpad(launchpadSettings)
       const nextLaunchpadSettings = shouldOpenLaunchpad

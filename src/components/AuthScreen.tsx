@@ -282,7 +282,7 @@ export const AuthScreen: React.FC = () => {
                         height: '44px',
                         borderRadius: '50%',
                         backgroundColor: isSelected ? 'var(--color-accent)' : 'var(--color-border)',
-                        color: isSelected ? '#fff' : 'var(--text-main)',
+                        color: isSelected ? 'var(--text-on-accent)' : 'var(--text-main)',
                         fontWeight: 800,
                         fontSize: '16px',
                         display: 'flex',
@@ -291,7 +291,7 @@ export const AuthScreen: React.FC = () => {
                         border: isSelected
                           ? '2px solid var(--color-accent)'
                           : '2px solid transparent',
-                        boxShadow: isSelected ? '0 0 0 2px var(--bg-surface)' : 'none',
+                        boxShadow: isSelected ? '0 0 0 2px var(--surface-card)' : 'none',
                         transition: 'all 0.2s ease',
                       }}
                     >

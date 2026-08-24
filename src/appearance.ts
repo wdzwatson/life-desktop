@@ -280,6 +280,17 @@ export const APPEARANCE_CLASS_PREFIXES = [
   'theme-',
 ] as const
 
+export const LEGACY_THEME_CLASSES = [
+  'theme-minimal',
+  'theme-dense',
+  'theme-card',
+  'theme-dark-tech',
+  'minimal',
+  'dense',
+  'card',
+  'dark-tech',
+] as const
+
 export const getAppearanceBodyClasses = (appearance: AppearanceSettings): string[] => [
   `preset-${appearance.preset}`,
   `skin-${appearance.skin}`,
@@ -297,7 +308,10 @@ export const applyAppearanceToDocument = (
   if (!body) return
   const nextClasses = getAppearanceBodyClasses(appearance)
   for (const className of Array.from(body.classList)) {
-    if (APPEARANCE_CLASS_PREFIXES.some((prefix) => className.startsWith(prefix))) {
+    if (
+      APPEARANCE_CLASS_PREFIXES.some((prefix) => className.startsWith(prefix)) ||
+      LEGACY_THEME_CLASSES.includes(className as (typeof LEGACY_THEME_CLASSES)[number])
+    ) {
       body.classList.remove(className)
     }
   }
@@ -309,4 +323,3 @@ export const applyAppearanceToDocument = (
   body.dataset.appearanceLoading = appearance.loading
   body.dataset.appearanceEngine = appearance.engine
 }
-

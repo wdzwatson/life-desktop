@@ -820,14 +820,18 @@ export const Settings: React.FC = () => {
                         style={{
                           minHeight: '132px',
                           padding: '14px',
-                          border: '2px solid var(--color-border)',
+                          border: '1px solid var(--border-subtle)',
                           borderRadius: 'var(--radius-card)',
                           cursor: 'pointer',
                           textAlign: 'left',
-                          background: isSelected ? 'var(--color-accent-soft)' : 'var(--bg-elevated)',
-                          borderColor: isSelected ? 'var(--color-accent)' : 'var(--color-border)',
+                          background: isSelected
+                            ? 'color-mix(in srgb, var(--color-accent-soft) 76%, var(--surface-card))'
+                            : 'var(--surface-card)',
+                          borderColor: isSelected ? 'var(--border-strong)' : 'var(--border-subtle)',
                           color: 'var(--text-main)',
-                          boxShadow: isSelected ? 'var(--shadow-hover)' : 'var(--shadow-app)',
+                          boxShadow: isSelected
+                            ? 'var(--shadow-hover)'
+                            : '0 1px 0 color-mix(in srgb, var(--text-main) 4%, transparent)',
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '9px',

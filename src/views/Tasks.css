@@ -2344,7 +2344,7 @@
   background: var(--color-accent);
 }
 .task-drawer__recurring-setting input:checked::after {
-  background: #fff;
+  background: var(--surface-card);
   transform: translateX(14px);
 }
 .task-drawer__recurring-setting input:focus-visible {
@@ -2424,7 +2424,7 @@
 .react-datepicker__day--selected,
 .react-datepicker__time-list-item--selected {
   background: var(--color-accent) !important;
-  color: #fff !important;
+  color: var(--text-on-accent) !important;
 }
 
 .react-datepicker__input-time-container {
@@ -2432,8 +2432,8 @@
   float: none;
   margin: 0;
   padding: 10px;
-  border-top: 1px solid var(--color-border);
-  background: var(--bg-surface);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-menu);
 }
 
 .react-datepicker-time__input {
@@ -2785,7 +2785,7 @@
 .task-drawer__rule-editor .task-monthday-picker button[aria-pressed='true'] {
   border-color: var(--color-accent);
   background: var(--color-accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .task-drawer__rule-editor .task-monthday-picker {
@@ -3064,7 +3064,7 @@
 .task-monthday-picker .btn[aria-pressed='true'] {
   background-color: var(--color-accent);
   border-color: var(--color-accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .task-preview-section {

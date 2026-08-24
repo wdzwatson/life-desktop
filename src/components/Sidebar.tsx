@@ -90,7 +90,7 @@ export const Sidebar: React.FC = () => {
               height: '32px',
               borderRadius: '50%',
               backgroundColor: 'var(--color-accent)',
-              color: '#fff',
+              color: 'var(--text-on-accent)',
               display: 'grid',
               placeItems: 'center',
               fontWeight: 'bold',
