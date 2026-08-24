@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Checkbox } from '../components/Checkbox'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import { ViewportPortal } from '../components/ViewportPortal'
 import {
@@ -780,9 +781,8 @@ export function DouyinFavoritesPanel({
                             style={{ width: '100%', height: '100%', background: 'var(--bg-muted)' }}
                           />
                         )}
-                        <input
+                        <Checkbox
                           className="douyin-favorite-card__check"
-                          type="checkbox"
                           checked={selectedItemIds.includes(item.id)}
                           onChange={() => toggleItemSelection(item.id)}
                           aria-label={item.title}

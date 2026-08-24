@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
+import { Checkbox } from '../../components/Checkbox'
 import { useDrawerTransition } from '../../components/useDrawerTransition'
 import { useConfirmation } from '../../components/ConfirmationProvider'
 import { Dropdown } from '../../components/Dropdown'
@@ -337,7 +338,7 @@ export function ProviderManager({ onChanged }: Props) {
               <legend>{t('aiChat.providers.capabilities')}</legend>
               {PROVIDER_CAPABILITIES.map((item) => (
                 <label key={item}>
-                  <input type="checkbox" checked={draft.capabilities.includes(item)} onChange={() => setDraft({ ...draft, capabilities: toggleProviderCapability(draft.capabilities, item) })} />
+                  <Checkbox checked={draft.capabilities.includes(item)} onChange={() => setDraft({ ...draft, capabilities: toggleProviderCapability(draft.capabilities, item) })} />
                   <span>{t(`aiChat.providers.capability_${item}`)}</span>
                 </label>
               ))}
@@ -366,7 +367,7 @@ export function ProviderManager({ onChanged }: Props) {
                     return draft[plural].includes(model.name)
                   })
                   return <label key={model.id} className="ai-provider-model-option" role="listitem">
-                    <input type="checkbox" checked={selected} disabled={applicableCapabilities.length === 0} onChange={() => toggleCatalogModel(model)} />
+                    <Checkbox checked={selected} disabled={applicableCapabilities.length === 0} onChange={() => toggleCatalogModel(model)} />
                     <span className="ai-provider-model-option__name">{model.name}</span>
                     <span className="ai-provider-model-option__category">{model.category || 'other'}</span>
                     <span className="ai-provider-model-option__capabilities">{model.capabilities.map((kind) => t(`aiChat.providers.capability_${kind}`)).join(' · ')}</span>
@@ -411,8 +412,8 @@ export function ProviderManager({ onChanged }: Props) {
             )}
 
             <div className="ai-provider-options">
-              <label><input type="checkbox" checked={draft.allowLocalNetwork} onChange={(event) => setDraft({ ...draft, allowLocalNetwork: event.target.checked })} />{t('aiChat.providers.allow_local')}</label>
-              <label><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />{t('aiChat.providers.enabled')}</label>
+              <label><Checkbox checked={draft.allowLocalNetwork} onChange={(event) => setDraft({ ...draft, allowLocalNetwork: event.target.checked })} />{t('aiChat.providers.allow_local')}</label>
+              <label><Checkbox checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />{t('aiChat.providers.enabled')}</label>
             </div>
 
             {error && <p className="ai-provider-error" role="alert">{error}</p>}

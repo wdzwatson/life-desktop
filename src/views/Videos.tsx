@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
+import { Checkbox } from '../components/Checkbox'
 import { useDrawerTransition } from '../components/useDrawerTransition'
 import {
   AlertTriangle,
@@ -2112,8 +2113,7 @@ export const Videos: React.FC = () => {
                         cursor: 'pointer',
                       }}
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={isBulkSelected}
                         aria-label={t(
                           isBulkSelected
@@ -2133,10 +2133,9 @@ export const Videos: React.FC = () => {
                           )
                         }}
                         style={{
-                          width: '14px',
-                          height: '14px',
+                          '--checkbox-size': '14px',
                           opacity: bulkSelectedVideoIds.length > 0 ? 1 : undefined,
-                        }}
+                        } as React.CSSProperties}
                       />
                       <button
                         className={`btn sm btn-icon video-library-row__play ${canPlay ? 'primary' : ''}`}
@@ -2803,12 +2802,9 @@ export const Videos: React.FC = () => {
                   <label
                     style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}
                   >
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={bulkSelection.checked}
-                      ref={(node) => {
-                        if (node) node.indeterminate = bulkSelection.indeterminate
-                      }}
+                      indeterminate={bulkSelection.indeterminate}
                       onChange={() =>
                         setSelectedVideoIds(toggleBulkSelection(parsedItemIds, selectedVideoIds))
                       }
@@ -2872,8 +2868,7 @@ export const Videos: React.FC = () => {
                         borderRadius: '6px',
                       }}
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={checked}
                         onChange={() =>
                           setSelectedVideoIds((prev) =>

@@ -3,6 +3,7 @@ import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { getConfiguredLocales } from '../localeRegistry'
 import { clampVideoConcurrentDownloads } from './videoLibraryUtils'
+import { Checkbox } from '../components/Checkbox'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import { Dropdown } from '../components/Dropdown'
 import { PasswordInput } from '../components/PasswordInput'
@@ -1107,8 +1108,7 @@ export const Settings: React.FC = () => {
                     cursor: 'pointer',
                   }}
                 >
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={readerTranslationEnabled}
                     onChange={(event) => void handleToggleReaderTranslation(event.target.checked)}
                   />
@@ -2073,11 +2073,9 @@ export const Settings: React.FC = () => {
                         cursor: 'pointer',
                       }}
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={autoCheckUpdates}
                         onChange={handleToggleAutoCheck}
-                        style={{ cursor: 'pointer' }}
                       />
                       <span>{t('settings.updates_auto_check')}</span>
                     </label>
@@ -2098,11 +2096,9 @@ export const Settings: React.FC = () => {
                         cursor: 'pointer',
                       }}
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={openAtLogin}
                         onChange={(event) => void handleToggleOpenAtLogin(event.target.checked)}
-                        style={{ cursor: 'pointer' }}
                       />
                       <span>{t('settings.open_at_login')}</span>
                     </label>

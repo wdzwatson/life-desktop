@@ -40,7 +40,7 @@ test('task workspace navigation exposes shared task filters alongside execution 
 
   assert.match(tasksView, /task-navigation__views/)
   assert.match(tasksView, /task-navigation__tools/)
-  assert.match(tasksView, /type="checkbox"/)
+  assert.match(tasksView, /<Checkbox[\s\S]*checked=\{showClosedTasks\}/)
   assert.match(tasksView, /checked=\{showClosedTasks\}/)
   assert.match(tasksView, /dueDateFrom/)
   assert.match(tasksView, /dueDateTo/)

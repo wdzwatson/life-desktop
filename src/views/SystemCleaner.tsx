@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, HardDrive, PauseCircle, ScanLine, ShieldCheck, Trash2, Wrench } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Checkbox } from '../components/Checkbox'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import './SystemCleaner.css'
 
@@ -157,7 +158,7 @@ export function SystemCleaner() {
           <div className="system-cleaner__panel-heading"><div><h3>{t('toolbox.cleaner.review_title')}</h3><p>{t('toolbox.cleaner.review_desc')}</p></div>{scan.state === 'completed' && <button className="btn primary" onClick={() => void preview()} disabled={!selectedCategories.length || busy || active}>{t('toolbox.cleaner.preview')}</button>}</div>
           <div className="system-cleaner__categories">
             {scan.categories.map((category) => <label className={`system-cleaner__category risk-${category.risk}`} key={category.id}>
-              <input type="checkbox" checked={Boolean(selected[category.id])} disabled={scan.state !== 'completed' || category.incomplete || category.fileCount === 0 || busy || active} onChange={(event) => { setSelected((current) => ({ ...current, [category.id]: event.target.checked })); setPlan(null) }} />
+              <Checkbox checked={Boolean(selected[category.id])} disabled={scan.state !== 'completed' || category.incomplete || category.fileCount === 0 || busy || active} onChange={(event) => { setSelected((current) => ({ ...current, [category.id]: event.target.checked })); setPlan(null) }} />
               <span className="system-cleaner__category-main"><span><strong>{category.title}</strong><em>{category.risk === 'safe' ? t('toolbox.cleaner.safe') : t('toolbox.cleaner.optional')}</em></span><small>{category.description}</small>{category.unavailableReason && <small>{t('toolbox.cleaner.unavailable')}</small>}{category.requiresClosedApp && <small className="system-cleaner__warning"><AlertTriangle size={13} />{t('toolbox.cleaner.close_app', { app: category.requiresClosedApp })}</small>}</span>
               <span className="system-cleaner__category-size"><strong>{formatBytes(category.bytes)}</strong><small>{t('toolbox.cleaner.file_count', { count: category.fileCount })}</small>{category.incomplete && <small className="system-cleaner__warning">{t('toolbox.cleaner.incomplete')}</small>}</span>
             </label>)}

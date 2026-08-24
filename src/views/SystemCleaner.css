@@ -24,7 +24,7 @@
 .system-cleaner__categories { border-top: 1px solid var(--color-border); }
 .system-cleaner__category { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 4px; border-bottom: 1px solid var(--color-border); cursor: pointer; }
 .system-cleaner__category:last-child { border-bottom: 0; }
-.system-cleaner__category input { margin-top: 3px; accent-color: var(--color-accent); }
+.system-cleaner__category .checkbox { margin-top: 3px; }
 .system-cleaner__category-main { display: grid; gap: 4px; min-width: 0; }
 .system-cleaner__category-main > span { display: flex; align-items: center; gap: 8px; }
 .system-cleaner__category em { font-size: 10px; font-style: normal; padding: 2px 5px; border-radius: 3px; }

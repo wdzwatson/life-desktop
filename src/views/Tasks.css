@@ -96,25 +96,31 @@
 }
 
 .task-navigation__checkbox {
-  padding: 0 4px;
-  border-radius: 4px;
+  padding: 0 6px 0 4px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-card) - 3px);
   cursor: pointer;
+  line-height: 1;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
 }
 
-.task-navigation__checkbox:hover {
+.task-navigation__checkbox:hover,
+.task-navigation__checkbox:focus-within {
+  border-color: color-mix(in srgb, var(--color-accent) 24%, transparent);
+  background-color: color-mix(in srgb, var(--color-accent) 7%, transparent);
   color: var(--text-main);
 }
 
-.task-navigation__checkbox input {
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  accent-color: var(--color-accent);
+.task-navigation__checkbox .checkbox {
+  --checkbox-size: 14px;
+  --checkbox-radius: 4px;
 }
 
-.task-navigation__checkbox input:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--color-accent) 68%, transparent);
-  outline-offset: 2px;
+.task-navigation__checkbox > span {
+  line-height: 1;
 }
 
 .task-navigation__date-range {

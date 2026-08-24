@@ -2,6 +2,7 @@ import { Trash2 } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
+import { Checkbox } from '../../components/Checkbox'
 import type { AIChatConversation } from './chatUtils'
 
 type ConversationDeleteDialogProps = {
@@ -42,8 +43,7 @@ export function ConversationDeleteDialog({
       </div>
 
       <label className="ai-conversation-delete__media-option">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={deleteMedia}
           disabled={submitting}
           onChange={(event) => setDeleteMedia(event.target.checked)}

@@ -4,6 +4,7 @@ import { enUS, zhCN } from 'date-fns/locale'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../components/AccessibleDialog'
+import { Checkbox } from '../components/Checkbox'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import { DateTimePicker, TimePicker } from '../components/DateTimePicker'
 import { Dropdown } from '../components/Dropdown'
@@ -2494,8 +2495,7 @@ export const Tasks: React.FC = () => {
             />
           </label>
           <label className="task-navigation__checkbox">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={showClosedTasks}
               onChange={(event) => setShowClosedTasks(event.target.checked)}
             />
@@ -4141,8 +4141,7 @@ export const Tasks: React.FC = () => {
                                 const selected = peerTaskIds.includes(peer.id)
                                 return (
                                   <label className="task-drawer__peer-option" key={peer.id}>
-                                    <input
-                                      type="checkbox"
+                                    <Checkbox
                                       checked={selected}
                                       onChange={(event) =>
                                         setPeerTaskIds((current) =>
@@ -4280,8 +4279,7 @@ export const Tasks: React.FC = () => {
                     <strong>{t('tasks.requires_review_label')}</strong>
                     <small>{t('tasks.requires_review_hint')}</small>
                   </span>
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={taskDraft.requiresReview}
                     onChange={(event) =>
                       setTaskDraft({ ...taskDraft, requiresReview: event.target.checked })
@@ -4293,8 +4291,7 @@ export const Tasks: React.FC = () => {
                     <strong>{t('tasks.recurring_task_checkbox_label')}</strong>
                     <small>{t('tasks.recurring_task_hint')}</small>
                   </span>
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={taskDraft.repeat !== 'none'}
                     onChange={(event) => {
                       const recurring = event.target.checked

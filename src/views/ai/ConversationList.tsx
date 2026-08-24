@@ -1,5 +1,6 @@
 import { Archive, ArchiveRestore, MessageSquare, Pencil, Pin, PinOff, Plus, Search, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Checkbox } from '../../components/Checkbox'
 import { sortAIConversations, type AIChatConversation } from './chatUtils'
 
 type ConversationListProps = {
@@ -79,8 +80,7 @@ export function ConversationList({
       </label>
 
       <label className="ai-conversation-archive-toggle">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={showArchived}
           onChange={(event) => onShowArchivedChange(event.target.checked)}
         />

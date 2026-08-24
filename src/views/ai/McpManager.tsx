@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Activity, Bot, Copy, Pencil, Plug, Plus, Power, Search, ShieldAlert, ShieldCheck, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
+import { Checkbox } from '../../components/Checkbox'
 import { useDrawerTransition } from '../../components/useDrawerTransition'
 import { useConfirmation } from '../../components/ConfirmationProvider'
 import { Dropdown } from '../../components/Dropdown'
@@ -411,8 +412,7 @@ export function McpManager({ onChanged }: Props) {
                 <div className="ai-mcp-agent-grid">
                   {agents.map((agent) => (
                     <label key={agent.id}>
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={selectedAgentIds.includes(agent.id)}
                         onChange={() => setSelectedAgentIds((current) => current.includes(agent.id)
                           ? current.filter((id) => id !== agent.id)
@@ -441,7 +441,7 @@ export function McpManager({ onChanged }: Props) {
               </fieldset>
             )}
 
-            <div className="ai-provider-options"><label><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />{t('aiChat.mcp.enabled')}</label></div>
+            <div className="ai-provider-options"><label><Checkbox checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />{t('aiChat.mcp.enabled')}</label></div>
             {error && <p className="ai-provider-error" role="alert">{error}</p>}
             <div className="ai-provider-form__actions"><button className="btn" onClick={closeEditor}><X size={14} />{t('common.cancel')}</button><button className="btn primary" disabled={busy} onClick={() => void saveServer()}>{t('common.save')}</button></div>
           </div>
