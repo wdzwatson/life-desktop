@@ -17,6 +17,7 @@ import {
   type GlobalSearchResult,
 } from './globalSearch'
 import { recordGlobalSearchMetric } from './globalSearchMetrics'
+import { preloadAppearanceAnimationEngines } from './animationEngines'
 
 // Screen views
 import { AuthScreen } from './components/AuthScreen'
@@ -62,6 +63,7 @@ function App() {
 
   const isAuthenticated = useAppStore((state) => state.isAuthenticated)
   const activeScreen = useAppStore((state) => state.activeScreen)
+  const appearance = useAppStore((state) => state.appearance)
   const setActiveScreen = useAppStore((state) => state.setActiveScreen)
   const setTaskTab = useAppStore((state) => state.setTaskTab)
   const sidebarDisplayMode = useAppStore((state) => state.sidebarDisplayMode)
@@ -92,6 +94,10 @@ function App() {
   const api = (window as any).electronAPI
   const searchGroups = groupGlobalSearchResults(searchResults)
   const visibleSearchResults = searchGroups.flatMap((group) => group.items)
+
+  useEffect(() => {
+    void preloadAppearanceAnimationEngines(appearance)
+  }, [appearance.engine, appearance.secondaryEngine, appearance.motion])
 
   useEffect(() => {
     if (!hasMountedScreen.current) {
