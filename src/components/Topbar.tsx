@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { type SidebarDisplayMode, useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
+import { getNextAppearancePresetId } from '../appearance'
 import {
   Check,
   Globe,
@@ -21,8 +22,8 @@ export const Topbar: React.FC<{
   searchButtonRef?: React.RefObject<HTMLButtonElement | null>
 }> = ({ onOpenSearch, searchButtonRef }) => {
   const { t } = useTranslation()
-  const theme = useAppStore((state) => state.theme)
-  const setTheme = useAppStore((state) => state.setTheme)
+  const appearance = useAppStore((state) => state.appearance)
+  const setAppearancePreset = useAppStore((state) => state.setAppearancePreset)
   const language = useAppStore((state) => state.language)
   const setLanguage = useAppStore((state) => state.setLanguage)
   const activeScreen = useAppStore((state) => state.activeScreen)
@@ -33,12 +34,8 @@ export const Topbar: React.FC<{
   const [sidebarMenuOpen, setSidebarMenuOpen] = useState(false)
   const sidebarMenuRef = useRef<HTMLDivElement>(null)
 
-  const themes = ['Minimal', 'Dense', 'Card', 'Dark Tech']
-
-  const cycleTheme = () => {
-    const currentIndex = themes.indexOf(theme)
-    const nextIndex = (currentIndex + 1) % themes.length
-    setTheme(themes[nextIndex])
+  const cycleAppearancePreset = () => {
+    void setAppearancePreset(getNextAppearancePresetId(appearance.preset))
   }
 
   const toggleLanguage = () => {
@@ -194,7 +191,7 @@ export const Topbar: React.FC<{
         {/* Theme and Language Cyclers */}
         <button
           className="btn btn-icon"
-          onClick={cycleTheme}
+          onClick={cycleAppearancePreset}
           title={t('topbar.switch_theme')}
           aria-label={t('topbar.switch_theme')}
         >

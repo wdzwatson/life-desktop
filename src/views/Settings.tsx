@@ -8,6 +8,21 @@ import { Dropdown } from '../components/Dropdown'
 import { PasswordInput } from '../components/PasswordInput'
 import { displayShortcut, isShortcutModifierKey, shortcutFromKeyboardEvent } from '../shortcutUtils'
 import {
+  APPEARANCE_ENGINES,
+  APPEARANCE_LAYOUTS,
+  APPEARANCE_LOADING,
+  APPEARANCE_MOTION,
+  APPEARANCE_PRESET_IDS,
+  APPEARANCE_PRESETS,
+  APPEARANCE_SKINS,
+  type AppearanceEngine,
+  type AppearanceLayout,
+  type AppearanceLoading,
+  type AppearanceMotion,
+  type AppearanceSkin,
+} from '../appearance'
+import { getAnimationEngineInfo } from '../animationEngines'
+import {
   Palette,
   User,
   Shield,
@@ -34,6 +49,9 @@ const shortcutLabels: Record<ShortcutId, string> = {
   readerAnnotate: 'settings.shortcut_reader_annotate',
   readerOcr: 'settings.shortcut_reader_ocr',
 }
+
+const appearanceLabelKey = (group: string, value: string) =>
+  `settings.appearance_${group}_${value.replaceAll('-', '_')}`
 
 interface UpdateInfo {
   version: string
@@ -62,8 +80,9 @@ interface ApplicationLogInfo {
 export const Settings: React.FC = () => {
   const { t, i18n } = useTranslation()
   const { confirm } = useConfirmation()
-  const theme = useAppStore((state) => state.theme)
-  const setTheme = useAppStore((state) => state.setTheme)
+  const appearance = useAppStore((state) => state.appearance)
+  const setAppearancePreset = useAppStore((state) => state.setAppearancePreset)
+  const setAppearanceSettings = useAppStore((state) => state.setAppearanceSettings)
   const language = useAppStore((state) => state.language)
   const setLanguage = useAppStore((state) => state.setLanguage)
   const launchpadSettings = useAppStore((state) => state.launchpadSettings)
@@ -815,50 +834,179 @@ export const Settings: React.FC = () => {
             <>
               <div>
                 <h3 style={{ fontSize: '15px', fontWeight: 800, marginBottom: '4px' }}>
-                  {t('settings.theme_select')}
+                  {t('settings.appearance_title')}
                 </h3>
                 <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', marginBottom: '12px' }}>
-                  {t('settings.theme_desc')}
+                  {t('settings.appearance_desc')}
                 </p>
                 <div
-                  style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+                    gap: '10px',
+                  }}
                 >
-                  {['Minimal', 'Dense', 'Card', 'Dark Tech'].map((tName) => {
-                    const isSelected = theme === tName
+                  {APPEARANCE_PRESET_IDS.map((presetId) => {
+                    const preset = APPEARANCE_PRESETS[presetId]
+                    const isSelected = appearance.preset === presetId
                     return (
-                      <div
-                        key={tName}
-                        onClick={() => setTheme(tName)}
+                      <button
+                        key={presetId}
+                        type="button"
+                        aria-pressed={isSelected}
+                        onClick={() => void setAppearancePreset(presetId)}
                         style={{
-                          padding: '16px',
+                          minHeight: '132px',
+                          padding: '14px',
                           border: '2px solid var(--color-border)',
-                          borderRadius: '8px',
+                          borderRadius: 'var(--radius-card)',
                           cursor: 'pointer',
-                          textAlign: 'center',
-                          backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.04)' : 'transparent',
+                          textAlign: 'left',
+                          background: isSelected ? 'var(--color-accent-soft)' : 'var(--bg-elevated)',
                           borderColor: isSelected ? 'var(--color-accent)' : 'var(--color-border)',
+                          color: 'var(--text-main)',
+                          boxShadow: isSelected ? 'var(--shadow-hover)' : 'var(--shadow-app)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '9px',
                         }}
                       >
-                        <strong style={{ fontSize: '13px', display: 'block' }}>{tName}</strong>
+                        <span style={{ display: 'flex', gap: '5px' }} aria-hidden="true">
+                          {preset.swatches.map((color) => (
+                            <span
+                              key={color}
+                              style={{
+                                width: '20px',
+                                height: '20px',
+                                border: '1px solid var(--color-border)',
+                                borderRadius: '999px',
+                                background: color,
+                              }}
+                            />
+                          ))}
+                        </span>
+                        <strong style={{ fontSize: '13px', display: 'block' }}>
+                          {t(preset.labelKey)}
+                        </strong>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '11.5px', lineHeight: 1.45 }}>
+                          {t(preset.descriptionKey)}
+                        </span>
                         <span
                           style={{
                             fontSize: '11px',
-                            color: 'var(--text-muted)',
-                            marginTop: '4px',
-                            display: 'block',
+                            color: isSelected ? 'var(--color-accent)' : 'var(--text-muted)',
+                            fontWeight: 700,
                           }}
                         >
-                          {tName === 'Minimal'
-                            ? t('settings.theme_minimal_label')
-                            : tName === 'Dense'
-                              ? t('settings.theme_dense_label')
-                              : tName === 'Card'
-                                ? t('settings.theme_card_label')
-                                : t('settings.theme_dark_tech_label')}
+                          {preset.engineLabel}
                         </span>
-                      </div>
+                      </button>
                     )
                   })}
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '20px' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 800, marginBottom: '4px' }}>
+                  {t('settings.appearance_advanced_title')}
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '12.5px', marginBottom: '12px' }}>
+                  {t('settings.appearance_advanced_desc', {
+                    engine: getAnimationEngineInfo(appearance.engine).displayName,
+                  })}
+                </p>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                    gap: '12px',
+                  }}
+                >
+                  <label style={{ display: 'grid', gap: '6px', fontSize: '12px' }}>
+                    {t('settings.appearance_skin')}
+                    <Dropdown
+                      className="form-field"
+                      value={appearance.skin}
+                      onChange={(event) =>
+                        void setAppearanceSettings({ skin: event.target.value as AppearanceSkin })
+                      }
+                      searchable={false}
+                    >
+                      {APPEARANCE_SKINS.map((skin) => (
+                        <option key={skin} value={skin}>
+                          {t(appearanceLabelKey('skin', skin))}
+                        </option>
+                      ))}
+                    </Dropdown>
+                  </label>
+                  <label style={{ display: 'grid', gap: '6px', fontSize: '12px' }}>
+                    {t('settings.appearance_layout')}
+                    <Dropdown
+                      className="form-field"
+                      value={appearance.layout}
+                      onChange={(event) =>
+                        void setAppearanceSettings({ layout: event.target.value as AppearanceLayout })
+                      }
+                      searchable={false}
+                    >
+                      {APPEARANCE_LAYOUTS.map((layout) => (
+                        <option key={layout} value={layout}>
+                          {t(appearanceLabelKey('layout', layout))}
+                        </option>
+                      ))}
+                    </Dropdown>
+                  </label>
+                  <label style={{ display: 'grid', gap: '6px', fontSize: '12px' }}>
+                    {t('settings.appearance_motion')}
+                    <Dropdown
+                      className="form-field"
+                      value={appearance.motion}
+                      onChange={(event) =>
+                        void setAppearanceSettings({ motion: event.target.value as AppearanceMotion })
+                      }
+                      searchable={false}
+                    >
+                      {APPEARANCE_MOTION.map((motion) => (
+                        <option key={motion} value={motion}>
+                          {t(appearanceLabelKey('motion', motion))}
+                        </option>
+                      ))}
+                    </Dropdown>
+                  </label>
+                  <label style={{ display: 'grid', gap: '6px', fontSize: '12px' }}>
+                    {t('settings.appearance_loading')}
+                    <Dropdown
+                      className="form-field"
+                      value={appearance.loading}
+                      onChange={(event) =>
+                        void setAppearanceSettings({ loading: event.target.value as AppearanceLoading })
+                      }
+                      searchable={false}
+                    >
+                      {APPEARANCE_LOADING.map((loading) => (
+                        <option key={loading} value={loading}>
+                          {t(appearanceLabelKey('loading', loading))}
+                        </option>
+                      ))}
+                    </Dropdown>
+                  </label>
+                  <label style={{ display: 'grid', gap: '6px', fontSize: '12px' }}>
+                    {t('settings.appearance_engine')}
+                    <Dropdown
+                      className="form-field"
+                      value={appearance.engine}
+                      onChange={(event) =>
+                        void setAppearanceSettings({ engine: event.target.value as AppearanceEngine })
+                      }
+                      searchable={false}
+                    >
+                      {APPEARANCE_ENGINES.map((engine) => (
+                        <option key={engine} value={engine}>
+                          {t(appearanceLabelKey('engine', engine))}
+                        </option>
+                      ))}
+                    </Dropdown>
+                  </label>
                 </div>
               </div>
 
