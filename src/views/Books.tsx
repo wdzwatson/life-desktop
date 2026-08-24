@@ -5578,8 +5578,6 @@ export const Books: React.FC = () => {
                   }
                   style={{
                     left: isTocDrawerOpen ? `${tocDrawerWidth + 8}px` : '12px',
-                    backgroundColor: isDarkReader ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
-                    border: `1px solid ${readerBorderColor}`,
                   }}
                 >
                   {isTocDrawerOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
@@ -5605,8 +5603,6 @@ export const Books: React.FC = () => {
                   }
                   style={{
                     right: isAnnotationsDrawerOpen ? `${annotationsDrawerWidth + 8}px` : '12px',
-                    backgroundColor: isDarkReader ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
-                    border: `1px solid ${readerBorderColor}`,
                   }}
                 >
                   {isAnnotationsDrawerOpen ? (

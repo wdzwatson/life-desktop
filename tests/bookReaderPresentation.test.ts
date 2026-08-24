@@ -208,9 +208,35 @@ test('reader annotations use a right-side icon control with a count badge', () =
   assert.match(booksStyles, /\.book-reader__drawer-toggle\s*\{[\s\S]*?top:\s*56px/)
   assert.match(
     booksStyles,
+    /\.book-reader__drawer-toggle\s*\{[\s\S]*?background:\s*var\(--icon-button-bg\)[\s\S]*?color:\s*var\(--icon-button-color\)/,
+  )
+  assert.match(
+    booksStyles,
+    /\.book-reader__drawer-toggle:hover\s*\{[\s\S]*?background-color:\s*var\(--icon-button-hover-bg\)[\s\S]*?color:\s*var\(--icon-button-hover-color\)/,
+  )
+  assert.match(
+    booksStyles,
+    /\.book-reader__annotation-action\s*\{[\s\S]*?background:\s*var\(--icon-button-bg\)[\s\S]*?color:\s*var\(--icon-button-color\)/,
+  )
+  assert.match(
+    booksStyles,
+    /\.book-reader__annotation-action:hover,[\s\S]*?\.book-reader__annotation-action:focus-visible\s*\{[\s\S]*?background:\s*var\(--icon-button-hover-bg\)[\s\S]*?color:\s*var\(--icon-button-hover-color\)/,
+  )
+  assert.match(
+    booksStyles,
     /@media \(max-width: 720px\)[\s\S]*?\.book-reader__drawer-toggle\s*\{\s*top:\s*56px/,
   )
   assert.match(booksSource, /aria-controls="book-reader-annotations"/)
+  const tocToggleStyle = booksSource.match(
+    /className="book-reader__drawer-toggle book-reader__drawer-toggle--toc"[\s\S]*?style=\{\{([\s\S]*?)\n\s*\}\}/,
+  )?.[1]
+  const annotationToggleStyle = booksSource.match(
+    /className="book-reader__drawer-toggle book-reader__drawer-toggle--annotations"[\s\S]*?style=\{\{([\s\S]*?)\n\s*\}\}/,
+  )?.[1]
+  assert.ok(tocToggleStyle)
+  assert.ok(annotationToggleStyle)
+  assert.doesNotMatch(tocToggleStyle, /backgroundColor|border:/)
+  assert.doesNotMatch(annotationToggleStyle, /backgroundColor|border:/)
 })
 
 test('reader toolbar uses compact dropdowns and stable theme swatches', () => {
@@ -223,6 +249,14 @@ test('reader toolbar uses compact dropdowns and stable theme swatches', () => {
   assert.match(
     booksStyles,
     /\.book-reader__layout-dropdown \.dropdown__control--is-focused\s*\{\s*box-shadow:\s*none/,
+  )
+  assert.match(
+    booksStyles,
+    /\.book-reader__toolbar \.dropdown__control\s*\{[\s\S]*?border-color:\s*var\(--border-subtle\)[\s\S]*?background:\s*var\(--icon-button-bg\)[\s\S]*?color:\s*var\(--text-main\)/,
+  )
+  assert.match(
+    booksStyles,
+    /\.book-reader__toolbar \.dropdown__control:hover,[\s\S]*?\.book-reader__toolbar \.dropdown__control--menu-is-open\s*\{[\s\S]*?background:\s*var\(--icon-button-hover-bg\)/,
   )
 })
 
