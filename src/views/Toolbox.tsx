@@ -480,10 +480,9 @@ export const Toolbox: React.FC = () => {
         {/* SUB-VIEW: POMODORO TIMER */}
         {toolTab === 'pomodoro' && (
           <div
-            className="card"
+            className="card toolbox-pomodoro-card"
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 340px',
               gap: '24px',
               alignItems: 'center',
               justifyContent: 'center',
@@ -537,12 +536,11 @@ export const Toolbox: React.FC = () => {
 
             {/* Bind task options */}
             <div
+              className="toolbox-pomodoro-card__settings"
               style={{
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '12px',
-                paddingLeft: '16px',
-                borderLeft: '1px solid var(--color-border)',
               }}
             >
               <strong style={{ fontSize: '13.5px' }}>{t('toolbox.pomo_integration_title')}</strong>
