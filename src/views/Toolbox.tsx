@@ -6,6 +6,7 @@ import { copySecretWithAutoClear } from './toolboxVaultUtils'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import { Dropdown } from '../components/Dropdown'
 import { PasswordInput } from '../components/PasswordInput'
+import { NumberInput } from '../components/NumberInput'
 import { SystemCleaner } from './SystemCleaner'
 import { ScreenshotTool } from './ScreenshotTool'
 import { WebLike } from './WebLike'
@@ -666,11 +667,10 @@ export const Toolbox: React.FC = () => {
                 >
                   {t('toolbox.converter_label_input')}
                 </label>
-                <input
+                <NumberInput
                   className="form-field"
-                  type="number"
                   value={inputValue}
-                  onChange={(e) => setInputValue(parseFloat(e.target.value) || 0)}
+                  onValueChange={(nextValue) => setInputValue(parseFloat(nextValue) || 0)}
                 />
               </div>
 

@@ -5,9 +5,14 @@ import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../components/AccessibleDialog'
 import { Checkbox } from '../components/Checkbox'
+import { Switch } from '../components/Switch'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import { DateTimePicker, TimePicker } from '../components/DateTimePicker'
 import { Dropdown } from '../components/Dropdown'
+import { Combobox } from '../components/Combobox'
+import { NumberInput } from '../components/NumberInput'
+import { RadioGroup } from '../components/RadioGroup'
+import { Slider } from '../components/Slider'
 import { ViewportPortal } from '../components/ViewportPortal'
 import { useDrawerTransition } from '../components/useDrawerTransition'
 import {
@@ -3208,8 +3213,7 @@ export const Tasks: React.FC = () => {
                       <span>
                         {t('tasks.details_label_progress')}: {editProgress}%
                       </span>
-                      <input
-                        type="range"
+                      <Slider
                         min="0"
                         max="100"
                         value={editProgress}
@@ -3513,12 +3517,11 @@ export const Tasks: React.FC = () => {
                 {ruleScheduleMode === 'interval' && (
                   <div className="task-form-section">
                     <label>{t('tasks.interval_days_label')}</label>
-                    <input
+                    <NumberInput
                       className="form-field"
-                      type="number"
                       min={1}
                       value={ruleInterval}
-                      onChange={(e) => setRuleInterval(Math.max(1, parseInt(e.target.value) || 1))}
+                      onValueChange={(nextValue) => setRuleInterval(Math.max(1, parseInt(nextValue) || 1))}
                     />
                   </div>
                 )}
@@ -4026,14 +4029,12 @@ export const Tasks: React.FC = () => {
                   </header>
                   <label className="task-form-section">
                     <span>{t('tasks.parent_task_label')}</span>
-                    <input
-                      className={`form-field ${drawerErrors.hierarchy ? 'is-invalid' : ''}`}
+                    <Combobox
+                      className={drawerErrors.hierarchy ? 'is-invalid' : undefined}
                       value={parentTaskCode}
                       list="task-parent-options"
-                      placeholder={t('tasks.parent_task_code_placeholder')}
-                      aria-describedby="task-parent-hint"
-                      onChange={(event) => {
-                        const value = event.target.value
+                      options={parentTaskOptions.map((option) => ({ value: option.code, label: option.label }))}
+                      onValueChange={(value) => {
                         const parentId = value ? parseTaskCode(value) : null
                         setParentTaskCode(value)
                         setTaskDraft({ ...taskDraft, parentId })
@@ -4046,12 +4047,9 @@ export const Tasks: React.FC = () => {
                           setDrawerErrors((current) => ({ ...current, hierarchy: undefined }))
                         }
                       }}
+                      placeholder={t('tasks.parent_task_code_placeholder')}
+                      aria-describedby="task-parent-hint"
                     />
-                    <datalist id="task-parent-options">
-                      {parentTaskOptions.map((option) => (
-                        <option key={option.id} value={option.code} label={option.label} />
-                      ))}
-                    </datalist>
                     {selectedParentTask && (
                       <div className="task-drawer__parent-preview">
                         <span>{formatTaskCode(selectedParentTask.id)}</span>
@@ -4279,7 +4277,7 @@ export const Tasks: React.FC = () => {
                     <strong>{t('tasks.requires_review_label')}</strong>
                     <small>{t('tasks.requires_review_hint')}</small>
                   </span>
-                  <Checkbox
+                  <Switch
                     checked={taskDraft.requiresReview}
                     onChange={(event) =>
                       setTaskDraft({ ...taskDraft, requiresReview: event.target.checked })
@@ -4291,7 +4289,7 @@ export const Tasks: React.FC = () => {
                     <strong>{t('tasks.recurring_task_checkbox_label')}</strong>
                     <small>{t('tasks.recurring_task_hint')}</small>
                   </span>
-                  <Checkbox
+                  <Switch
                     checked={taskDraft.repeat !== 'none'}
                     onChange={(event) => {
                       const recurring = event.target.checked
@@ -4369,15 +4367,12 @@ export const Tasks: React.FC = () => {
                           {ruleScheduleMode === 'interval' ? (
                             <label className="task-rule-interval-field">
                               <span>{t('tasks.rule_interval_prefix')}</span>
-                              <input
+                              <NumberInput
                                 className="form-field"
-                                type="number"
                                 min={1}
                                 value={ruleInterval}
                                 aria-label={t('tasks.interval_days_label')}
-                                onChange={(event) =>
-                                  setRuleInterval(Math.max(1, Number(event.target.value) || 1))
-                                }
+                                onValueChange={(nextValue) => setRuleInterval(Math.max(1, Number(nextValue) || 1))}
                               />
                               <span>{t('tasks.rule_interval_suffix')}</span>
                             </label>
@@ -4861,62 +4856,17 @@ export const Tasks: React.FC = () => {
           {isRecurringRootTask(deletionConfirmationTask) && (
             <fieldset className="task-delete-confirm__scopes">
               <legend>{t('tasks.delete_scope_label')}</legend>
-              <label className="task-delete-confirm__scope">
-                <input
-                  type="radio"
-                  name="task-delete-scope"
-                  value="single"
-                  checked={deletionScope === 'single'}
-                  disabled={isDeletingTask}
-                  onChange={() => setDeletionScope('single')}
-                />
-                <span>
-                  <strong>{t('tasks.delete_scope_single_title')}</strong>
-                  <small>{t('tasks.delete_scope_single_description')}</small>
-                </span>
-              </label>
-              <label className="task-delete-confirm__scope">
-                <input
-                  type="radio"
-                  name="task-delete-scope"
-                  value="end-repeat"
-                  checked={deletionScope === 'end-repeat'}
-                  disabled={isDeletingTask}
-                  onChange={() => setDeletionScope('end-repeat')}
-                />
-                <span>
-                  <strong>{t('tasks.delete_scope_end_repeat_title')}</strong>
-                  <small>{t('tasks.delete_scope_end_repeat_description')}</small>
-                </span>
-              </label>
-              <label className="task-delete-confirm__scope">
-                <input
-                  type="radio"
-                  name="task-delete-scope"
-                  value="delete-repeat"
-                  checked={deletionScope === 'delete-repeat'}
-                  disabled={isDeletingTask}
-                  onChange={() => setDeletionScope('delete-repeat')}
-                />
-                <span>
-                  <strong>{t('tasks.delete_scope_delete_repeat_title')}</strong>
-                  <small>{t('tasks.delete_scope_delete_repeat_description')}</small>
-                </span>
-              </label>
-              <label className="task-delete-confirm__scope task-delete-confirm__scope--danger">
-                <input
-                  type="radio"
-                  name="task-delete-scope"
-                  value="delete-all-repeat"
-                  checked={deletionScope === 'delete-all-repeat'}
-                  disabled={isDeletingTask}
-                  onChange={() => setDeletionScope('delete-all-repeat')}
-                />
-                <span>
-                  <strong>{t('tasks.delete_scope_delete_all_repeat_title')}</strong>
-                  <small>{t('tasks.delete_scope_delete_all_repeat_description')}</small>
-                </span>
-              </label>
+              <RadioGroup
+                name="task-delete-scope"
+                value={deletionScope}
+                onValueChange={(next) => setDeletionScope(next as typeof deletionScope)}
+                options={[
+                  { value: 'single', label: t('tasks.delete_scope_single_title'), description: t('tasks.delete_scope_single_description'), disabled: isDeletingTask },
+                  { value: 'end-repeat', label: t('tasks.delete_scope_end_repeat_title'), description: t('tasks.delete_scope_end_repeat_description'), disabled: isDeletingTask },
+                  { value: 'delete-repeat', label: t('tasks.delete_scope_delete_repeat_title'), description: t('tasks.delete_scope_delete_repeat_description'), disabled: isDeletingTask },
+                  { value: 'delete-all-repeat', label: t('tasks.delete_scope_delete_all_repeat_title'), description: t('tasks.delete_scope_delete_all_repeat_description'), disabled: isDeletingTask, tone: 'danger' },
+                ]}
+              />
             </fieldset>
           )}
           <div className="task-delete-confirm__actions">

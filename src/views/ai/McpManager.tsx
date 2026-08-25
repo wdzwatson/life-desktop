@@ -3,9 +3,11 @@ import { Activity, Bot, Copy, Pencil, Plug, Plus, Power, Search, ShieldAlert, Sh
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
 import { Checkbox } from '../../components/Checkbox'
+import { Switch } from '../../components/Switch'
 import { useDrawerTransition } from '../../components/useDrawerTransition'
 import { useConfirmation } from '../../components/ConfirmationProvider'
 import { Dropdown } from '../../components/Dropdown'
+import { NumberInput } from '../../components/NumberInput'
 import { useAppStore } from '../../store/useAppStore'
 import { agentToDraft, buildAgentPayload, type AgentSummary } from './agentUtils'
 import {
@@ -400,7 +402,7 @@ export function McpManager({ onChanged }: Props) {
             {draft.transport === 'stdio' && <div className="ai-agent-risk-warning"><ShieldAlert size={15} />{t('aiChat.mcp.stdio_warning')}</div>}
 
             <div className="ai-provider-form__grid">
-              <label><span>{t('aiChat.mcp.timeout')}</span><input className="form-field" type="number" min="1" max="600" value={draft.timeoutSeconds} onChange={(event) => setDraft({ ...draft, timeoutSeconds: event.target.value })} /></label>
+              <label><span>{t('aiChat.mcp.timeout')}</span><NumberInput className="form-field" min="1" max="600" value={draft.timeoutSeconds} onValueChange={(timeoutSeconds) => setDraft({ ...draft, timeoutSeconds })} /></label>
             </div>
 
             <fieldset className="ai-mcp-agent-picker">
@@ -441,7 +443,7 @@ export function McpManager({ onChanged }: Props) {
               </fieldset>
             )}
 
-            <div className="ai-provider-options"><label><Checkbox checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />{t('aiChat.mcp.enabled')}</label></div>
+            <div className="ai-provider-options"><label><Switch checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />{t('aiChat.mcp.enabled')}</label></div>
             {error && <p className="ai-provider-error" role="alert">{error}</p>}
             <div className="ai-provider-form__actions"><button className="btn" onClick={closeEditor}><X size={14} />{t('common.cancel')}</button><button className="btn primary" disabled={busy} onClick={() => void saveServer()}>{t('common.save')}</button></div>
           </div>

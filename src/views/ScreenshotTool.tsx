@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next'
 import { GIFEncoder, applyPalette, quantize } from 'gifenc'
 import { displayShortcut } from '../shortcutUtils'
 import { getGifCapturePlan } from './screenshotCaptureUtils'
+import { NumberInput } from '../components/NumberInput'
 
 const DEFAULT_SCREENSHOT_SHORTCUT = 'CommandOrControl+Shift+S'
 const DEFAULT_RECORDING_STOP_SHORTCUT = 'CommandOrControl+Shift+R'
@@ -406,58 +407,46 @@ export function ScreenshotTool() {
       >
         <label style={{ display: 'grid', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
           {t('toolbox.screenshot_frame_count')}
-          <input
+          <NumberInput
             className="form-field"
-            type="number"
             min="2"
             max="20"
             value={frameCount}
-            onChange={(event) =>
-              setFrameCount(Math.max(2, Math.min(20, Number(event.target.value) || 2)))
-            }
+            onValueChange={(nextValue) => setFrameCount(Math.max(2, Math.min(20, Number(nextValue) || 2)))}
             style={{ width: 100 }}
           />
         </label>
         <label style={{ display: 'grid', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
           {t('toolbox.screenshot_frame_interval')}
-          <input
+          <NumberInput
             className="form-field"
-            type="number"
             min="150"
             max="3000"
             step="50"
             value={frameInterval}
-            onChange={(event) =>
-              setFrameInterval(Math.max(150, Math.min(3000, Number(event.target.value) || 150)))
-            }
+            onValueChange={(nextValue) => setFrameInterval(Math.max(150, Math.min(3000, Number(nextValue) || 150)))}
             style={{ width: 120 }}
           />
         </label>
         <label style={{ display: 'grid', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
           {t('toolbox.screenshot_delay_seconds')}
-          <input
+          <NumberInput
             className="form-field"
-            type="number"
             min="1"
             max="15"
             value={delaySeconds}
-            onChange={(event) =>
-              setDelaySeconds(Math.max(1, Math.min(15, Number(event.target.value) || 1)))
-            }
+            onValueChange={(nextValue) => setDelaySeconds(Math.max(1, Math.min(15, Number(nextValue) || 1)))}
             style={{ width: 100 }}
           />
         </label>
         <label style={{ display: 'grid', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
           {t('toolbox.screenshot_gif_duration')}
-          <input
+          <NumberInput
             className="form-field"
-            type="number"
             min="2"
             max="15"
             value={gifDurationSeconds}
-            onChange={(event) =>
-              setGifDurationSeconds(Math.max(2, Math.min(15, Number(event.target.value) || 2)))
-            }
+            onValueChange={(nextValue) => setGifDurationSeconds(Math.max(2, Math.min(15, Number(nextValue) || 2)))}
             style={{ width: 100 }}
           />
         </label>

@@ -484,6 +484,8 @@
     "title": "Notes",
     "subtitle": "Multi-format Markdown writing and PKM database.",
     "new_note": "New Note",
+    "hide_notebooks": "Hide note navigation",
+    "show_notebooks": "Show note navigation",
     "notebooks": "Notebooks",
     "all_notes": "All Notes",
     "my_notebooks": "My Notebooks",

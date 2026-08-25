@@ -11,6 +11,7 @@ import { getTaskDuePresentation } from './taskDuePresentationUtils'
 import { getActionableTasks } from './taskSemantics'
 import './DesktopTaskNote.css'
 import { SystemMonitor } from '../components/SystemMonitor'
+import { Slider } from '../components/Slider'
 import {
   buildCloseTaskTreeMutation,
   buildCompleteTaskTreeMutation,
@@ -280,7 +281,7 @@ export const DesktopTaskNote: React.FC = () => {
             title="便签透明度"
           >
             <span className="sr-only">便签透明度</span>
-            <input
+            <Slider
               type="range"
               min="0.35"
               max="1"

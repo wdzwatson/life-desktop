@@ -47,6 +47,8 @@ test('note editor keeps narrow toolbars compact and defers expensive preview wor
   assert.match(notesCss, /@container notes-editor-header \(max-width: 820px\)/)
   assert.match(notesCss, /\.notes-editor-actions \.btn:hover:not\(:disabled\)/)
   assert.match(notesCss, /transform:\s*none/)
+  assert.match(notesCss, /\.notes-editor-title-input[\s\S]*text-overflow:\s*ellipsis/)
+  assert.match(notesCss, /\.notes-editor-actions[\s\S]*flex:\s*0 0 auto/)
   assert.match(notesSource, /renderImageSizeControls\(\)/)
 })
 

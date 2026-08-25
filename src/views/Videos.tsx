@@ -77,6 +77,7 @@ import { DouyinFavoritesPanel } from './DouyinFavoritesPanel'
 import type { VideoGroupMutationResult } from './VideoGroupSidebar'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import { Dropdown } from '../components/Dropdown'
+import { MediaPlayer } from '../components/MediaPlayer'
 import { getConfiguredLocales } from '../localeRegistry'
 import { ViewportPortal } from '../components/ViewportPortal'
 import {
@@ -3003,10 +3004,9 @@ export const Videos: React.FC = () => {
                 <option value="3">3.0x</option>
               </Dropdown>
             </header>
-            <video
+            <MediaPlayer
               ref={videoRef}
               src={playbackUrl}
-              controls
               autoPlay
               style={{
                 width: '100%',

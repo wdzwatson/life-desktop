@@ -12,7 +12,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Checkbox } from '../../components/Checkbox'
+import { Switch } from '../../components/Switch'
 import { useConfirmation } from '../../components/ConfirmationProvider'
 import { Dropdown } from '../../components/Dropdown'
 
@@ -281,7 +281,7 @@ export function StorageManager() {
               {[1, 5, 10, 20].map((value) => <option key={value} value={value}>{value} GB</option>)}
             </Dropdown>
             <label>
-              <Checkbox checked={autoCleanup} onChange={(event) => setAutoCleanup(event.target.checked)} />
+              <Switch checked={autoCleanup} onChange={(event) => setAutoCleanup(event.target.checked)} />
               {t('aiChat.storage.auto_cleanup')}
             </label>
             <button className="btn" onClick={() => void savePolicy()} disabled={busy}>{t('aiChat.storage.save_policy')}</button>

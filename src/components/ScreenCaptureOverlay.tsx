@@ -35,6 +35,8 @@ import {
 } from '../utils/screenshotEditorText'
 import { normalizeScreenCaptureSelection } from '../utils/screenCaptureSelection'
 import { resizeScreenshotCrop, type ScreenshotCropHandle } from '../utils/screenshotEditorCrop'
+import { Slider } from './Slider'
+import { ColorPicker } from './ColorPicker'
 
 type Point = { x: number; y: number }
 type Rect = Point & { width: number; height: number }
@@ -1429,20 +1431,18 @@ export function ScreenCaptureOverlay({
                 </button>
               </div>
               {editorTool === 'brush' && (
-                <input
-                  aria-label={t('screen_capture.brush_color')}
+                <ColorPicker
+                  label={t('screen_capture.brush_color')}
                   title={t('screen_capture.brush_color')}
-                  type="color"
                   value={brushColor}
-                  onChange={(event) => setBrushColor(event.target.value)}
+                  onChange={setBrushColor}
                   style={{ width: 34, padding: 2 }}
                 />
               )}
               {editorTool === 'brush' && (
-                <input
+                <Slider
                   aria-label={t('screen_capture.brush_size')}
                   title={t('screen_capture.brush_size')}
-                  type="range"
                   min="2"
                   max="16"
                   value={brushSize}
@@ -1450,10 +1450,9 @@ export function ScreenCaptureOverlay({
                 />
               )}
               {editorTool === 'mosaic' && (
-                <input
+                <Slider
                   aria-label={t('screen_capture.mosaic_size')}
                   title={t('screen_capture.mosaic_size')}
-                  type="range"
                   min="16"
                   max="80"
                   value={mosaicSize}
@@ -1466,19 +1465,17 @@ export function ScreenCaptureOverlay({
                   aria-label={t('screen_capture.text_effects')}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}
                 >
-                  <input
-                    aria-label={t('screen_capture.text_color')}
+                  <ColorPicker
+                    label={t('screen_capture.text_color')}
                     title={t('screen_capture.text_color')}
-                    type="color"
                     value={activeTextStyle.color}
-                    onPointerDown={() => selectedTextId && saveEditorHistory()}
-                    onChange={(event) => updateTextStyle('color', event.target.value)}
+                    onOpen={() => selectedTextId && saveEditorHistory()}
+                    onChange={(value) => updateTextStyle('color', value)}
                     style={{ width: 34, padding: 2 }}
                   />
-                  <input
-                    aria-label={t('screen_capture.text_size')}
+                  <Slider
+                  aria-label={t('screen_capture.text_size')}
                     title={t('screen_capture.text_size')}
-                    type="range"
                     min="14"
                     max="96"
                     value={activeTextStyle.fontSize}
@@ -1546,9 +1543,8 @@ export function ScreenCaptureOverlay({
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}
                   >
                     <RotateCcw size={14} />
-                    <input
+                    <Slider
                       aria-label={t('screen_capture.text_rotation')}
-                      type="range"
                       min="-180"
                       max="180"
                       value={activeTextStyle.rotation}
@@ -1565,9 +1561,8 @@ export function ScreenCaptureOverlay({
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}
                   >
                     <ScanText size={14} />
-                    <input
+                    <Slider
                       aria-label={t('screen_capture.text_skew')}
-                      type="range"
                       min="-45"
                       max="45"
                       value={activeTextStyle.skewX}

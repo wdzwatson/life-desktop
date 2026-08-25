@@ -3,10 +3,11 @@ import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { getConfiguredLocales } from '../localeRegistry'
 import { clampVideoConcurrentDownloads } from './videoLibraryUtils'
-import { Checkbox } from '../components/Checkbox'
+import { Switch } from '../components/Switch'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import { Dropdown } from '../components/Dropdown'
 import { PasswordInput } from '../components/PasswordInput'
+import { NumberInput } from '../components/NumberInput'
 import { displayShortcut, isShortcutModifierKey, shortcutFromKeyboardEvent } from '../shortcutUtils'
 import {
   APPEARANCE_ENGINES,
@@ -1108,7 +1109,7 @@ export const Settings: React.FC = () => {
                     cursor: 'pointer',
                   }}
                 >
-                  <Checkbox
+                  <Switch
                     checked={readerTranslationEnabled}
                     onChange={(event) => void handleToggleReaderTranslation(event.target.checked)}
                   />
@@ -1726,17 +1727,16 @@ export const Settings: React.FC = () => {
                 style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px' }}
               >
                 {t('settings.video_max_downloads')}
-                <input
+                <NumberInput
                   className="form-field"
-                  type="number"
                   min={1}
                   max={10}
                   step={1}
                   value={videoSettings.maxDownloads}
-                  onChange={(e) =>
+                  onValueChange={(nextValue) =>
                     setVideoSettings({
                       ...videoSettings,
-                      maxDownloads: clampVideoConcurrentDownloads(e.target.value),
+                      maxDownloads: clampVideoConcurrentDownloads(nextValue),
                     })
                   }
                 />
@@ -2073,7 +2073,7 @@ export const Settings: React.FC = () => {
                         cursor: 'pointer',
                       }}
                     >
-                      <Checkbox
+                      <Switch
                         checked={autoCheckUpdates}
                         onChange={handleToggleAutoCheck}
                       />
@@ -2096,7 +2096,7 @@ export const Settings: React.FC = () => {
                         cursor: 'pointer',
                       }}
                     >
-                      <Checkbox
+                      <Switch
                         checked={openAtLogin}
                         onChange={(event) => void handleToggleOpenAtLogin(event.target.checked)}
                       />

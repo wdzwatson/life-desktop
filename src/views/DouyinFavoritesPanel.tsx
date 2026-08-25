@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next'
 import { Checkbox } from '../components/Checkbox'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import { ViewportPortal } from '../components/ViewportPortal'
+import { MediaPlayer } from '../components/MediaPlayer'
 import {
   filterDouyinFavoriteItems,
   type DouyinFavoriteFolderView,
@@ -1068,9 +1069,8 @@ export function DouyinFavoritesPanel({
                 {playingItem.title}
               </span>
             </header>
-            <video
+            <MediaPlayer
               src={playbackUrl}
-              controls
               autoPlay
               style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
             />

@@ -16,4 +16,6 @@ test('kanban task cards provide a hover and focus response', () => {
     css,
     /\.task-board-card:hover,\s*\.task-board-card:focus-visible\s*\{[^}]*transform:/,
   )
+  assert.match(css, /\.task-navigation__search input\.form-field:hover:not\(:disabled\)/)
+  assert.match(css, /\.task-drawer__peer-search input\.form-field:focus[\s\S]*background: transparent/)
 })

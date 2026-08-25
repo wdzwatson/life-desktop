@@ -484,6 +484,8 @@
     "title": "笔记",
     "subtitle": "多格式 Markdown 编辑与知识库管理。",
     "new_note": "新建笔记",
+    "hide_notebooks": "隐藏笔记导航",
+    "show_notebooks": "显示笔记导航",
     "notebooks": "笔记本",
     "all_notes": "全部笔记",
     "my_notebooks": "我的笔记本",

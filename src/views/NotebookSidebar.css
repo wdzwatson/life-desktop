@@ -11,8 +11,7 @@
 }
 
 .notebook-sidebar__title {
-  flex: 0 0 auto;
-  margin: 0 4px 10px;
+  margin: 0 4px 0;
   font-size: 14px;
   font-weight: 750;
   line-height: 20px;
@@ -61,6 +60,41 @@
     color 120ms ease,
     box-shadow 180ms ease,
     transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.notebook-sidebar__heading {
+  min-height: 24px;
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notebook-sidebar__close-button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-card) - 2px);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.notebook-sidebar__close-button:hover,
+.notebook-sidebar__close-button:focus-visible {
+  border-color: var(--color-border);
+  background: color-mix(in srgb, var(--text-main) 6%, transparent);
+  color: var(--text-main);
+  outline: none;
+}
+
+.notebook-sidebar__close-button svg {
+  width: 15px;
+  height: 15px;
 }
 
 .notebook-sidebar__row::before,

@@ -6,6 +6,7 @@ import { Checkbox } from '../../components/Checkbox'
 import { useDrawerTransition } from '../../components/useDrawerTransition'
 import { useConfirmation } from '../../components/ConfirmationProvider'
 import { Dropdown } from '../../components/Dropdown'
+import { Combobox } from '../../components/Combobox'
 import { useAppStore } from '../../store/useAppStore'
 
 export type AIModelCatalogItem = {
@@ -180,7 +181,7 @@ export function ModelManager({ onChanged }: Props) {
       >
         <div className="ai-model-form">
           <label className="ai-model-form__field"><span>{t('aiChat.models.model_id')}</span><input ref={nameRef} className="form-field" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder={t('aiChat.models.model_placeholder')} /></label>
-          <label className="ai-model-form__field"><span>{t('aiChat.models.category')}</span><input className="form-field" list="ai-model-category-suggestions" value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })} placeholder={t('aiChat.models.category_placeholder')} /><datalist id="ai-model-category-suggestions">{CATEGORY_SUGGESTIONS.map((category) => <option key={category} value={category} />)}</datalist></label>
+          <label className="ai-model-form__field"><span>{t('aiChat.models.category')}</span><Combobox options={CATEGORY_SUGGESTIONS.map((category) => ({ value: category, label: category }))} value={draft.category} onValueChange={(category) => setDraft({ ...draft, category })} placeholder={t('aiChat.models.category_placeholder')} ariaLabel={t('aiChat.models.category')} /></label>
           <fieldset className="ai-model-form__section"><legend>{t('aiChat.models.capability')}</legend><p className="ai-model-form__section-hint">{t('aiChat.models.capability_hint')}</p><div className="ai-model-form__capabilities">
             {(['text', 'image', 'video'] as const).map((capability) => { const Icon = CAPABILITY_ICONS[capability]; const selected = draft.capabilities.includes(capability); return <label key={capability} className={selected ? 'is-selected' : ''}>
               <Checkbox value={capability} checked={selected} onChange={() => setDraft({ ...draft, capabilities: selected ? draft.capabilities.filter((item) => item !== capability) : [...draft.capabilities, capability] })} /><Icon size={15} /><span>{t(`aiChat.models.capability_${capability}`)}</span>

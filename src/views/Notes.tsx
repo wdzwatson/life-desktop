@@ -22,6 +22,7 @@ import {
   Download,
   Languages,
   Paperclip,
+  PanelLeft,
   Heading1,
   Italic,
   KeyRound,
@@ -41,6 +42,9 @@ import { getConfiguredLocales } from '../localeRegistry'
 import { parseReaderBookDeepLink } from '../services/readerDeepLink'
 import { decorateReaderAnnotationExportHtml } from '../services/readerAnnotationSerializer'
 import { ViewportPortal } from '../components/ViewportPortal'
+import { Combobox } from '../components/Combobox'
+import { NumberInput } from '../components/NumberInput'
+import { ProgressBar } from '../components/ProgressBar'
 import { NotebookSidebar } from './NotebookSidebar'
 import {
   clampNoteImageDimension,
@@ -192,7 +196,8 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
   // Editor States
   const [noteTitle, setNoteTitle] = useState('')
   const [noteContent, setNoteContent] = useState('')
-  const [viewMode, setViewMode] = useState<'edit' | 'typora' | 'split' | 'preview'>('split')
+  const [viewMode, setViewMode] = useState<'edit' | 'typora' | 'split' | 'preview'>('edit')
+  const [isNotebookSidebarOpen, setIsNotebookSidebarOpen] = useState(true)
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [isAttaching, setIsAttaching] = useState(false)
@@ -238,7 +243,6 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
 
   const api = (window as Window & { electronAPI?: ElectronAPI }).electronAPI
   const configuredLocales = useMemo(() => getConfiguredLocales(i18n.language), [i18n.language])
-  const notebookCategoryListId = useId()
   const notebookCategoryHelpId = useId()
   const notebookTranslationsPanelId = useId()
   const currentLocaleLabel =
@@ -297,6 +301,13 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
         t.entity_type === 'notebook' && t.entity_id === String(id) && t.locale === currentLocale,
     )
     return trans ? trans.translation : name
+  }
+
+  const getNotebookScopeDisplayName = (scope: string) => {
+    if (scope === ALL_NOTES_SCOPE) return t('notes.all_notes')
+    if (scope === UNCATEGORIZED_NOTEBOOK) return t('notes.default_title')
+    const notebook = notebooks.find((item) => item.name === scope)
+    return notebook ? getNotebookDisplayName(notebook.name, notebook.id) : scope
   }
 
   const getNotebookCategoryDisplayName = (categoryName: string) => {
@@ -1773,13 +1784,13 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
         <span>{t('notes.image_size')}</span>
         <label>
           {t('notes.image_width')}
-          <input
-            type="number"
+          <NumberInput
+            className="form-field"
             min={48}
             max={4096}
             value={selectedNoteImage.width}
-            onChange={(event) => {
-              const width = Number(event.target.value)
+            onValueChange={(nextValue) => {
+              const width = Number(nextValue)
               if (Number.isFinite(width)) {
                 setSelectedNoteImage((current) => {
                   if (!current) return current
@@ -1804,13 +1815,13 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
         </label>
         <label>
           {t('notes.image_height')}
-          <input
-            type="number"
+          <NumberInput
+            className="form-field"
             min={48}
             max={4096}
             value={selectedNoteImage.height}
-            onChange={(event) => {
-              const height = Number(event.target.value)
+            onValueChange={(nextValue) => {
+              const height = Number(nextValue)
               if (Number.isFinite(height)) {
                 setSelectedNoteImage((current) => {
                   if (!current) return current
@@ -1852,15 +1863,17 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
       <div className="note-render-loading" role="status" aria-live="polite">
         <Loader2 className="note-render-loading__spinner" size={16} aria-hidden="true" />
         <span>{t('notes.rendering_preview')}</span>
-        <progress value={markdownRenderProgress || undefined} max={100} />
+        <ProgressBar value={markdownRenderProgress || 0} max={100} indeterminate={markdownRenderProgress == null} label={t('notes.rendering_preview')} />
       </div>
     ) : null
 
   return (
     <div
+      className="notes-view"
       style={{
         animation: 'enter 0.15s ease both',
         height: '100%',
+        minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
       }}
@@ -1879,6 +1892,18 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
             <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{t('notes.subtitle')}</p>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
+            {!isNotebookSidebarOpen && (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setIsNotebookSidebarOpen(true)}
+                title={t('notes.show_notebooks')}
+                aria-label={t('notes.show_notebooks')}
+              >
+                <PanelLeft size={16} />
+                {t('notes.show_notebooks')}
+              </button>
+            )}
             <button className="btn" onClick={openCreatePrivateNoteDialog}>
               <Lock size={16} />
               {t('notes.new_private_note')}
@@ -1893,11 +1918,12 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
 
       {/* Main 2-column layout */}
       <div
+        className={`notes-workspace ${isNotebookSidebarOpen ? 'notes-workspace--sidebar-open' : 'notes-workspace--sidebar-closed'}`}
         style={{
           flexGrow: 1,
           minHeight: 0,
           display: 'grid',
-          gridTemplateColumns: popup ? '1fr' : '280px 1fr',
+          gridTemplateColumns: popup || !isNotebookSidebarOpen ? '1fr' : '280px 1fr',
           border: '1px solid var(--color-border)',
           borderRadius: '8px',
           backgroundColor: 'var(--bg-surface)',
@@ -1921,6 +1947,7 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
             onRenameNotebook={(notebook) => handleRenameNotebook(notebook as Notebook)}
             onEditTranslations={(notebook) => handleRenameNotebook(notebook as Notebook, true)}
             onDeleteNotebook={(notebook) => handleDeleteNotebook(notebook as Notebook)}
+            onClose={() => setIsNotebookSidebarOpen(false)}
           />
         )}
 
@@ -1944,7 +1971,7 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
                 ? t('notes.popup_editor_restoring_description')
                 : t('notes.popup_editor_active_description')}
             </p>
-            {isEditorWindowRestoring && <progress />}
+            {isEditorWindowRestoring && <ProgressBar indeterminate label={t('notes.popup_editor_restoring_title')} />}
           </section>
         ) : activeNoteId && (!activeNoteIsPrivate || isPrivateNoteUnlocked) ? (
           <div
@@ -1970,6 +1997,22 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
                 backgroundColor: 'var(--bg-surface)',
               }}
             >
+              <button
+                type="button"
+                className="btn sm note-editor-action-button note-sidebar-toggle"
+                onClick={() => setIsNotebookSidebarOpen((current) => !current)}
+                title={isNotebookSidebarOpen ? t('notes.hide_notebooks') : t('notes.show_notebooks')}
+                aria-label={isNotebookSidebarOpen ? t('notes.hide_notebooks') : t('notes.show_notebooks')}
+                aria-pressed={isNotebookSidebarOpen}
+              >
+                <PanelLeft size={13} />
+              </button>
+              <span
+                className="notes-editor-breadcrumb"
+                title={getNotebookScopeDisplayName(activeNotebook)}
+              >
+                {getNotebookScopeDisplayName(activeNotebook)}
+              </span>
               <input
                 className="notes-editor-title-input"
                 style={{
@@ -2649,22 +2692,14 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
                   <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                     {t('notes.notebook_category')}
                   </label>
-                  <input
-                    className="form-field"
+                  <Combobox
                     style={{ width: '100%' }}
-                    list={notebookCategoryListId}
-                    aria-describedby={notebookCategoryHelpId}
-                    autoComplete="off"
+                    options={notebookCategoryOptions.map((option) => ({ value: option.displayName, label: option.displayName }))}
+                    ariaDescribedBy={notebookCategoryHelpId}
                     value={nbModalCategory}
-                    onChange={(e) => setNbModalCategory(e.target.value)}
+                    onValueChange={setNbModalCategory}
                     placeholder={t('notes.notebook_category_placeholder')}
-                    required
                   />
-                  <datalist id={notebookCategoryListId}>
-                    {notebookCategoryOptions.map((option) => (
-                      <option key={option.storageName} value={option.displayName} />
-                    ))}
-                  </datalist>
                   <span id={notebookCategoryHelpId} className="notebook-modal__field-help">
                     {t('notes.notebook_category_help')}
                   </span>

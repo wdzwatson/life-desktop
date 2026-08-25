@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, ListCollapse, LocateFixed, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { ProgressBar } from './ProgressBar'
 
 export type ReaderOutlineNode = {
   id: string
@@ -287,7 +288,7 @@ export const ReaderOutlineDrawer = React.memo(function ReaderOutlineDrawer({
         >
           <span>{statusLabel}</span>
           {(status === 'analyzing' || status === 'partial') && (
-            <progress max={100} value={percent} aria-label={statusLabel} />
+            <ProgressBar max={100} value={percent} label={statusLabel} />
           )}
           {(status === 'failed' || status === 'fallback') && onRetry ? (
             <button type="button" onClick={onRetry}>

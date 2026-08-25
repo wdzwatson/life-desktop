@@ -14,10 +14,12 @@ import {
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../../components/AccessibleDialog'
 import { Checkbox } from '../../components/Checkbox'
+import { Switch } from '../../components/Switch'
 import { useDrawerTransition } from '../../components/useDrawerTransition'
 import { useConfirmation } from '../../components/ConfirmationProvider'
 import { Dropdown } from '../../components/Dropdown'
 import { PasswordInput } from '../../components/PasswordInput'
+import { NumberInput } from '../../components/NumberInput'
 import { useAppStore } from '../../store/useAppStore'
 import {
   PROVIDER_CAPABILITIES,
@@ -393,7 +395,7 @@ export function ProviderManager({ onChanged }: Props) {
             <div className="ai-provider-form__grid">
               <label>
                 <span>{t('aiChat.providers.timeout')}</span>
-                <input className="form-field" type="number" min="1" max="600" value={draft.timeoutSeconds} onChange={(event) => setDraft({ ...draft, timeoutSeconds: event.target.value })} />
+                <NumberInput className="form-field" min="1" max="600" value={draft.timeoutSeconds} onValueChange={(timeoutSeconds) => setDraft({ ...draft, timeoutSeconds })} />
               </label>
             </div>
 
@@ -412,8 +414,8 @@ export function ProviderManager({ onChanged }: Props) {
             )}
 
             <div className="ai-provider-options">
-              <label><Checkbox checked={draft.allowLocalNetwork} onChange={(event) => setDraft({ ...draft, allowLocalNetwork: event.target.checked })} />{t('aiChat.providers.allow_local')}</label>
-              <label><Checkbox checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />{t('aiChat.providers.enabled')}</label>
+              <label><Switch checked={draft.allowLocalNetwork} onChange={(event) => setDraft({ ...draft, allowLocalNetwork: event.target.checked })} />{t('aiChat.providers.allow_local')}</label>
+              <label><Switch checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />{t('aiChat.providers.enabled')}</label>
             </div>
 
             {error && <p className="ai-provider-error" role="alert">{error}</p>}

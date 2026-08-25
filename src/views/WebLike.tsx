@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { AccessibleDialog } from '../components/AccessibleDialog'
+import { Disclosure } from '../components/Disclosure'
 import './WebLike.css'
 
 type ApiError = { code?: string; message?: string }
@@ -250,14 +251,18 @@ export function WebLike() {
       )}
 
       <section className="web-like__guides" aria-label={t('toolbox.web_like_guides_label')}>
-        <details className="web-like__guide">
-          <summary>
-            <CircleAlert size={17} aria-hidden="true" />
-            <span>
-              <strong>{t('toolbox.web_like_debug_title')}</strong>
-              <small>{t('toolbox.web_like_debug_summary')}</small>
-            </span>
-          </summary>
+        <Disclosure
+          className="web-like__guide"
+          title={
+            <>
+              <CircleAlert size={17} aria-hidden="true" />
+              <span>
+                <strong>{t('toolbox.web_like_debug_title')}</strong>
+                <small>{t('toolbox.web_like_debug_summary')}</small>
+              </span>
+            </>
+          }
+        >
           <div className="web-like__debug-status" aria-label={t('toolbox.web_like_connection_status')}>
             <div className="web-like__debug-row">
               <span className={`web-like__debug-dot ${status?.bridgeReady ? 'is-ready' : ''}`} aria-hidden="true" />
@@ -282,7 +287,7 @@ export function WebLike() {
             <CircleHelp size={15} aria-hidden="true" />
             <span>{t('toolbox.web_like_debug_note')}</span>
           </p>
-        </details>
+        </Disclosure>
       </section>
 
       {tutorialOpen ? (

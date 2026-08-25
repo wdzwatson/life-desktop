@@ -21,6 +21,7 @@ import {
   Pencil,
   Plus,
   Trash2,
+  X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { ViewportPortal } from '../components/ViewportPortal'
@@ -60,6 +61,7 @@ export type NotebookSidebarProps = {
   onRenameNotebook: (notebook: NotebookSidebarNotebook) => void
   onEditTranslations: (notebook: NotebookSidebarNotebook) => void
   onDeleteNotebook: (notebook: NotebookSidebarNotebook) => void
+  onClose?: () => void
 }
 
 type ContextMenuState = {
@@ -85,6 +87,7 @@ export function NotebookSidebar({
   onRenameNotebook,
   onEditTranslations,
   onDeleteNotebook,
+  onClose,
 }: NotebookSidebarProps) {
   const { t } = useTranslation()
   const customNotebooks = useMemo(
@@ -309,7 +312,20 @@ export function NotebookSidebar({
 
   return (
     <aside className="notebook-sidebar" aria-label={t('notes.notebooks_title')}>
-      <h2 className="notebook-sidebar__title">{t('notes.notebooks_title')}</h2>
+      <div className="notebook-sidebar__heading">
+        <h2 className="notebook-sidebar__title">{t('notes.notebooks_title')}</h2>
+        {onClose && (
+          <button
+            type="button"
+            className="notebook-sidebar__close-button"
+            onClick={onClose}
+            title={t('notes.hide_notebooks')}
+            aria-label={t('notes.hide_notebooks')}
+          >
+            <X aria-hidden="true" />
+          </button>
+        )}
+      </div>
 
       <div className="notebook-sidebar__content">
         <div className="notebook-sidebar__fixed-list">

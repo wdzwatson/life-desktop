@@ -31,6 +31,7 @@ import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from '../components/AccessibleDialog'
 import { useConfirmation } from '../components/ConfirmationProvider'
 import { Dropdown } from '../components/Dropdown'
+import { Slider } from '../components/Slider'
 import {
   ReaderAnnotationsPanel,
   type ReaderAnnotationPanelItem,
@@ -5218,17 +5219,14 @@ export const Books: React.FC = () => {
                   <span style={{ fontSize: '11px', color: isDarkReader ? '#888' : '#666' }}>
                     {t('books.progress_label') || '进度'}:
                   </span>
-                  <input
-                    type="range"
+                  <Slider
                     min="0"
                     max="100"
                     value={readingProgress}
                     onChange={(e) => handleProgressChange(parseInt(e.target.value, 10))}
                     style={{
                       width: '90px',
-                      accentColor: 'var(--color-accent)',
                       cursor: 'pointer',
-                      height: '4px',
                     }}
                   />
                   <span
@@ -6515,7 +6513,7 @@ export const Books: React.FC = () => {
                               }}
                             >
                               <strong>{t('books.reader_location_label')}</strong>
-                              <select
+                              <Dropdown
                                 className="form-field"
                                 value={
                                   pdfLocationOverride.active
@@ -6542,7 +6540,7 @@ export const Books: React.FC = () => {
                                       {entry.title}
                                     </option>
                                   ))}
-                              </select>
+                              </Dropdown>
                               <input
                                 className="form-field"
                                 value={
