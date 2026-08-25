@@ -39,6 +39,25 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-main) 7%, transparent);
 }
 
+/* Composite controls own their focus ring on the themed outer surface. */
+.ai-chat-shell :is(.ai-provider-search, .ai-conversation-search, .ai-model-toolbar label):focus-within {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 13%, transparent);
+}
+
+.ai-chat-shell :is(.ai-provider-search, .ai-conversation-search, .ai-model-toolbar label) input:focus-visible,
+.ai-chat-shell .combobox__input:focus-visible,
+.ai-chat-shell .dropdown__input:focus-visible,
+.ai-chat-shell .slider__input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.ai-chat-shell .number-input__field:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 13%, transparent);
+}
+
 .ai-chat-header {
   min-height: 58px;
   min-width: 0;

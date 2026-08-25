@@ -69,6 +69,10 @@ test('generated images and videos always expose localized accessible names', () 
 
 test('AI controls and run states retain visible keyboard focus and theme-derived contrast', () => {
   assert.match(css, /\.ai-chat-shell :is\(button, a, input, textarea, \[tabindex\]\):focus-visible,[\s\S]*\.dropdown__control--is-focused[\s\S]*outline:\s*1px solid/)
+  assert.match(css, /Composite controls own their focus ring/)
+  assert.match(css, /\.ai-chat-shell :is\(\.ai-provider-search, \.ai-conversation-search, \.ai-model-toolbar label\) input:focus-visible[\s\S]*outline: none/)
+  assert.match(css, /\.ai-chat-shell \.dropdown__input:focus-visible/)
+  assert.match(css, /\.ai-chat-shell \.number-input__field:focus-visible[\s\S]*box-shadow:/)
   assert.match(css, /\.ai-chat-composer textarea:focus-visible[\s\S]*outline:\s*0/)
   assert.match(css, /\.ai-chat-shell \.ai-chat-stage__controls \.dropdown__control--is-focused[\s\S]*outline:\s*0/)
   assert.match(css, /--ai-status-success:[\s\S]*--ai-status-warning:[\s\S]*--ai-status-danger:/)
