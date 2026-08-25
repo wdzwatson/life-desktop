@@ -94,6 +94,7 @@ import {
   PdfPageMetadataCache,
   type PdfPageTextMode,
 } from '../services/pdfPageMetadataCache'
+import { PdfPageRenderScheduler } from '../services/pdfPageRenderScheduler'
 import {
   compareReaderHighlightsByDocumentPosition,
   getActiveTocIndex,
@@ -344,10 +345,14 @@ const PdfContinuousPageSlot = React.memo(function PdfContinuousPageSlot({
   idx,
   isNearViewport,
   listProps,
+  onPageLoadReady,
+  onPageRenderSettled,
 }: {
   idx: number
   isNearViewport: boolean
   listProps: PdfContinuousScrollListProps
+  onPageLoadReady: (pageIndex: number) => void
+  onPageRenderSettled: (pageIndex: number, succeeded: boolean) => void
 }) {
   const {
     pdfEstimatedPageHeight,
@@ -407,6 +412,7 @@ const PdfContinuousPageSlot = React.memo(function PdfContinuousPageSlot({
         width={pdfPageRenderWidth || undefined}
         onLoadSuccess={(page) => {
           pdfReaderPerformanceTrace.markTargetPage('page-loaded', pageNumber)
+          onPageLoadReady(idx)
           pdfPageMetadataCache.setAspectRatio(
             pdfPageMetadataSessionId,
             pageNumber,
@@ -427,8 +433,11 @@ const PdfContinuousPageSlot = React.memo(function PdfContinuousPageSlot({
         }}
         onRenderSuccess={() => {
           pdfReaderPerformanceTrace.markTargetPage('canvas-rendered', pageNumber)
+          onPageRenderSettled(idx, true)
           onFirstVisiblePageRendered?.()
         }}
+        onLoadError={() => onPageRenderSettled(idx, false)}
+        onRenderError={() => onPageRenderSettled(idx, false)}
         loading={
           <div
             className="book-reader__pdf-page-loading"
@@ -486,18 +495,56 @@ const PdfContinuousScrollList = React.memo(
 
     // Dynamic overscan for auto-play (Option B)
     const effectiveOverscan = getEffectiveOverscan(autoPlaySpeed, isAutoPlaying)
+    const renderTarget = isAutoPlaying ? renderWindowCenter : currentPageIndex
+    const schedulerRef = useRef<PdfPageRenderScheduler | null>(null)
+    if (!schedulerRef.current) schedulerRef.current = new PdfPageRenderScheduler(2)
+    const previousTargetRef = useRef(renderTarget)
+    const [renderSchedule, setRenderSchedule] = useState(() =>
+      schedulerRef.current!.moveWindow({
+        pageCount: pdfPageIndexes.length,
+        targetPageIndex: renderTarget,
+        visiblePageIndexes: [currentPageIndex],
+        overscan: effectiveOverscan,
+        direction: 1,
+      }),
+    )
+
+    useEffect(() => {
+      const direction = Math.sign(renderTarget - previousTargetRef.current) as -1 | 0 | 1
+      previousTargetRef.current = renderTarget
+      setRenderSchedule(
+        schedulerRef.current!.moveWindow({
+          pageCount: pdfPageIndexes.length,
+          targetPageIndex: renderTarget,
+          visiblePageIndexes: [currentPageIndex],
+          overscan: effectiveOverscan,
+          direction,
+        }),
+      )
+    }, [currentPageIndex, effectiveOverscan, pdfPageIndexes.length, renderTarget])
+
+    const admittedPages = useMemo(
+      () => new Set(renderSchedule.admittedPageIndexes),
+      [renderSchedule.admittedPageIndexes],
+    )
+    const handlePageLoadReady = useCallback((pageIndex: number) => {
+      setRenderSchedule(schedulerRef.current!.markPageLoaded(pageIndex))
+    }, [])
+    const handlePageRenderSettled = useCallback((pageIndex: number, succeeded: boolean) => {
+      setRenderSchedule(schedulerRef.current!.markPageFinished(pageIndex, succeeded))
+    }, [])
 
     return (
       <>
         {pdfPageIndexes.map((idx) => {
-          const windowCenter = isAutoPlaying ? renderWindowCenter : currentPageIndex
-          const isNearViewport = Math.abs(idx - windowCenter) <= effectiveOverscan
           return (
             <PdfContinuousPageSlot
               key={idx}
               idx={idx}
-              isNearViewport={isNearViewport}
+              isNearViewport={admittedPages.has(idx)}
               listProps={props}
+              onPageLoadReady={handlePageLoadReady}
+              onPageRenderSettled={handlePageRenderSettled}
             />
           )
         })}
@@ -507,6 +554,7 @@ const PdfContinuousScrollList = React.memo(
   (prev, next) => {
     // Custom areEqual for PdfContinuousScrollList
     // Mode and speed affect the effective overscan and must not be skipped.
+    if (prev.pdfPageIndexes !== next.pdfPageIndexes) return false
     if (prev.isAutoPlaying !== next.isAutoPlaying) return false
     if (prev.autoPlaySpeed !== next.autoPlaySpeed) return false
     if (prev.pdfPageRenderWidth !== next.pdfPageRenderWidth) return false
@@ -5861,6 +5909,7 @@ export const Books: React.FC = () => {
                                 }}
                               >
                                 <PdfContinuousScrollList
+                                  key={pdfPageMetadataCache.getSessionId()}
                                   pdfPageIndexes={pdfPageIndexes}
                                   currentPageIndex={currentPageIndex}
                                   renderWindowCenter={renderWindowCenter}
