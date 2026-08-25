@@ -65,15 +65,10 @@ import {
   parseTaskCode,
 } from './taskHierarchyUtils'
 import { getAutomaticTaskStatus, TASK_STATUS } from '../taskWorkflow'
-import {
-  getActionableTasks,
-  isRecurringDateInstance,
-  isRecurringExecution,
-} from './taskSemantics'
+import { getActionableTasks, isRecurringDateInstance, isRecurringExecution } from './taskSemantics'
 import {
   buildCompleteTaskTreeMutation,
   buildAggregateTaskMutation,
-  buildCloseTaskTreeMutation,
   buildReopenTaskTreeMutation,
   buildResolveTaskTreeMutation,
 } from '../taskTreeMutation'
@@ -1010,7 +1005,16 @@ export const Tasks: React.FC = () => {
           'SELECT progress, status, is_completed FROM tasks WHERE parent_id = ?',
           [taskId],
         )
-        const task: { id: number; parent_id?: number | null; start_date?: string; start_time?: string; due_date?: string; due_time?: string } | undefined = taskResult?.data?.[0]
+        const task:
+          | {
+              id: number
+              parent_id?: number | null
+              start_date?: string
+              start_time?: string
+              due_date?: string
+              due_time?: string
+            }
+          | undefined = taskResult?.data?.[0]
         const children = childResult?.data ?? []
         if (!task) break
 
@@ -1131,9 +1135,7 @@ export const Tasks: React.FC = () => {
     if (!api) return
     const nextDone = task.is_completed === 1 ? 0 : 1
     const mutation = nextDone
-      ? tasks.some((candidate) => candidate.parent_id === task.id)
-        ? buildCloseTaskTreeMutation(task.id)
-        : buildCompleteTaskTreeMutation(task.id)
+      ? buildCompleteTaskTreeMutation(task.id)
       : buildReopenTaskTreeMutation(task.id)
     const result = await api.dbQuery('tasks', mutation.sql, mutation.params)
     if (!result?.success) return
@@ -1439,12 +1441,15 @@ export const Tasks: React.FC = () => {
         )
         if (res?.success) {
           const ruleId = res.data?.lastInsertRowid || res.data?.insertId
-          const steps = ruleStepsText.split('\n').map((step) => step.trim()).filter(Boolean)
+          const steps = ruleStepsText
+            .split('\n')
+            .map((step) => step.trim())
+            .filter(Boolean)
           if (ruleId) {
             for (const [index, step] of steps.entries()) {
               await api.dbQuery(
                 'tasks',
-                'INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order) VALUES (?, ?, \'\', ?, ?)',
+                "INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order) VALUES (?, ?, '', ?, ?)",
                 [ruleId, step, taskDraft.priority, index + 1],
               )
             }
@@ -1552,11 +1557,14 @@ export const Tasks: React.FC = () => {
               activeTask.id,
             ],
           )
-          const steps = ruleStepsText.split('\n').map((step) => step.trim()).filter(Boolean)
+          const steps = ruleStepsText
+            .split('\n')
+            .map((step) => step.trim())
+            .filter(Boolean)
           for (const [index, step] of steps.entries()) {
             await api.dbQuery(
               'tasks',
-              'INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order) VALUES (?, ?, \'\', ?, ?)',
+              "INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order) VALUES (?, ?, '', ?, ?)",
               [ruleId, step, taskDraft.priority, index + 1],
             )
           }
@@ -1589,12 +1597,17 @@ export const Tasks: React.FC = () => {
             activeTask.recur_rule_id,
           ],
         )
-        const steps = ruleStepsText.split('\n').map((step) => step.trim()).filter(Boolean)
-        await api.dbQuery('tasks', 'DELETE FROM recurring_rule_steps WHERE rule_id = ?', [activeTask.recur_rule_id])
+        const steps = ruleStepsText
+          .split('\n')
+          .map((step) => step.trim())
+          .filter(Boolean)
+        await api.dbQuery('tasks', 'DELETE FROM recurring_rule_steps WHERE rule_id = ?', [
+          activeTask.recur_rule_id,
+        ])
         for (const [index, step] of steps.entries()) {
           await api.dbQuery(
             'tasks',
-            'INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order) VALUES (?, ?, \'\', ?, ?)',
+            "INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order) VALUES (?, ?, '', ?, ?)",
             [activeTask.recur_rule_id, step, taskDraft.priority, index + 1],
           )
         }
@@ -1628,8 +1641,8 @@ export const Tasks: React.FC = () => {
   const isRecurringRootTask = (task: any) =>
     Boolean(
       task?.recur_rule_id &&
-        (task.recurring_instance_id || task.instance_key) &&
-        task.recur_instance_root === 1,
+      (task.recurring_instance_id || task.instance_key) &&
+      task.recur_instance_root === 1,
     )
 
   const deleteTaskTree = async (taskId: number) => {
@@ -1667,11 +1680,7 @@ export const Tasks: React.FC = () => {
               AND is_completed = 0
               AND (due_date > ? OR due_date = ?)
           `,
-          [
-            ruleId,
-            afterOccurrence.due_date,
-            afterOccurrence.due_date,
-          ],
+          [ruleId, afterOccurrence.due_date, afterOccurrence.due_date],
         )
       : await api.dbQuery(
           'tasks',
@@ -1727,13 +1736,13 @@ export const Tasks: React.FC = () => {
       if (canManageRepeat && (deletionScope === 'single' || deletionScope === 'end-repeat')) {
         const occurrenceKeys = task.instance_key
           ? [task.instance_key]
-          : (
+          : ((
               await api.dbQuery(
                 'tasks',
                 'SELECT instance_key FROM tasks WHERE parent_id = ? AND instance_key IS NOT NULL',
                 [task.id],
               )
-            )?.data?.map((row: any) => row.instance_key) ?? []
+            )?.data?.map((row: any) => row.instance_key) ?? [])
         for (const occurrenceKey of occurrenceKeys) {
           await api.dbQuery(
             'tasks',
@@ -1888,11 +1897,13 @@ export const Tasks: React.FC = () => {
         rulePriority,
         selectedRuleId,
       ])
-      await api.dbQuery('tasks', 'DELETE FROM recurring_rule_steps WHERE rule_id = ?', [selectedRuleId])
+      await api.dbQuery('tasks', 'DELETE FROM recurring_rule_steps WHERE rule_id = ?', [
+        selectedRuleId,
+      ])
       for (const [index, step] of steps.entries()) {
         await api.dbQuery(
           'tasks',
-          'INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order) VALUES (?, ?, \'\', ?, ?)',
+          "INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order) VALUES (?, ?, '', ?, ?)",
           [selectedRuleId, step, rulePriority, index + 1],
         )
       }
@@ -1927,7 +1938,7 @@ export const Tasks: React.FC = () => {
         for (const [index, step] of steps.entries()) {
           await api.dbQuery(
             'tasks',
-            'INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order) VALUES (?, ?, \'\', ?, ?)',
+            "INSERT INTO recurring_rule_steps (rule_id, title, description, priority, sort_order) VALUES (?, ?, '', ?, ?)",
             [ruleId, step, rulePriority, index + 1],
           )
         }
@@ -2301,9 +2312,9 @@ export const Tasks: React.FC = () => {
     const parent = tasks.find((candidate) => candidate.id === task.parent_id)
     return Boolean(
       parent?.recur_rule_id === task.recur_rule_id &&
-        isRecurringDateInstance(parent) &&
-        !parent.instance_key &&
-        parent.recurring_instance_id === task.recurring_instance_id,
+      isRecurringDateInstance(parent) &&
+      !parent.instance_key &&
+      parent.recurring_instance_id === task.recurring_instance_id,
     )
   }
   const hasActualSubtasks = (task: any) =>
@@ -2744,8 +2755,7 @@ export const Tasks: React.FC = () => {
                     const isOverdue = task.status === '已逾期'
                     const directSubtasks = tasks.filter(
                       (candidate) =>
-                        candidate.parent_id === task.id &&
-                        !isRecurringOccurrenceTask(candidate),
+                        candidate.parent_id === task.id && !isRecurringOccurrenceTask(candidate),
                     )
                     const completedSubtaskCount = directSubtasks.filter(
                       (subtask) => subtask.is_completed === 1,
@@ -3018,7 +3028,7 @@ export const Tasks: React.FC = () => {
                               total: orderedSameDayOccurrences.length,
                             })}
                           >
-                            {orderedSameDayOccurrences.map((occurrence) => (
+                            {orderedSameDayOccurrences.map((occurrence) =>
                               (() => {
                                 const occurrenceSubtasks = tasks.filter(
                                   (candidate) => candidate.parent_id === occurrence.id,
@@ -3086,8 +3096,8 @@ export const Tasks: React.FC = () => {
                                     </span>
                                   </div>
                                 )
-                              })()
-                            ))}
+                              })(),
+                            )}
                           </div>
                         )}
                         {isTaskGroupExpanded && (
@@ -3521,7 +3531,9 @@ export const Tasks: React.FC = () => {
                       className="form-field"
                       min={1}
                       value={ruleInterval}
-                      onValueChange={(nextValue) => setRuleInterval(Math.max(1, parseInt(nextValue) || 1))}
+                      onValueChange={(nextValue) =>
+                        setRuleInterval(Math.max(1, parseInt(nextValue) || 1))
+                      }
                     />
                   </div>
                 )}
@@ -4033,7 +4045,10 @@ export const Tasks: React.FC = () => {
                       className={drawerErrors.hierarchy ? 'is-invalid' : undefined}
                       value={parentTaskCode}
                       list="task-parent-options"
-                      options={parentTaskOptions.map((option) => ({ value: option.code, label: option.label }))}
+                      options={parentTaskOptions.map((option) => ({
+                        value: option.code,
+                        label: option.label,
+                      }))}
                       onValueChange={(value) => {
                         const parentId = value ? parseTaskCode(value) : null
                         setParentTaskCode(value)
@@ -4372,7 +4387,9 @@ export const Tasks: React.FC = () => {
                                 min={1}
                                 value={ruleInterval}
                                 aria-label={t('tasks.interval_days_label')}
-                                onValueChange={(nextValue) => setRuleInterval(Math.max(1, Number(nextValue) || 1))}
+                                onValueChange={(nextValue) =>
+                                  setRuleInterval(Math.max(1, Number(nextValue) || 1))
+                                }
                               />
                               <span>{t('tasks.rule_interval_suffix')}</span>
                             </label>
@@ -4861,10 +4878,31 @@ export const Tasks: React.FC = () => {
                 value={deletionScope}
                 onValueChange={(next) => setDeletionScope(next as typeof deletionScope)}
                 options={[
-                  { value: 'single', label: t('tasks.delete_scope_single_title'), description: t('tasks.delete_scope_single_description'), disabled: isDeletingTask },
-                  { value: 'end-repeat', label: t('tasks.delete_scope_end_repeat_title'), description: t('tasks.delete_scope_end_repeat_description'), disabled: isDeletingTask },
-                  { value: 'delete-repeat', label: t('tasks.delete_scope_delete_repeat_title'), description: t('tasks.delete_scope_delete_repeat_description'), disabled: isDeletingTask },
-                  { value: 'delete-all-repeat', label: t('tasks.delete_scope_delete_all_repeat_title'), description: t('tasks.delete_scope_delete_all_repeat_description'), disabled: isDeletingTask, tone: 'danger' },
+                  {
+                    value: 'single',
+                    label: t('tasks.delete_scope_single_title'),
+                    description: t('tasks.delete_scope_single_description'),
+                    disabled: isDeletingTask,
+                  },
+                  {
+                    value: 'end-repeat',
+                    label: t('tasks.delete_scope_end_repeat_title'),
+                    description: t('tasks.delete_scope_end_repeat_description'),
+                    disabled: isDeletingTask,
+                  },
+                  {
+                    value: 'delete-repeat',
+                    label: t('tasks.delete_scope_delete_repeat_title'),
+                    description: t('tasks.delete_scope_delete_repeat_description'),
+                    disabled: isDeletingTask,
+                  },
+                  {
+                    value: 'delete-all-repeat',
+                    label: t('tasks.delete_scope_delete_all_repeat_title'),
+                    description: t('tasks.delete_scope_delete_all_repeat_description'),
+                    disabled: isDeletingTask,
+                    tone: 'danger',
+                  },
                 ]}
               />
             </fieldset>

@@ -48,16 +48,23 @@ test('legacy due_date-only tasks use due_date as their period end', () => {
   )
 })
 
-test('completed tasks remain visible when their period is active or overdue', () => {
+test('today completed tasks remain visible unless they were explicitly closed', () => {
   const tasks = [
     { id: 1, start_date: '2026-07-22', end_date: '2026-07-22', is_completed: 1 },
     { id: 2, due_date: '2026-07-21', is_completed: 1, status: '已逾期' },
     { id: 3, due_date: '2026-07-22', status: '已关闭', is_completed: 1 },
+    {
+      id: 4,
+      due_date: '2026-07-22',
+      status: '已关闭',
+      closed_from_status: '待处理',
+      is_completed: 1,
+    },
   ]
 
   assert.deepEqual(
     getDesktopTasksForDate(tasks, '2026-07-22').map((task) => task.id),
-    [1, 2],
+    [1, 3],
   )
 })
 

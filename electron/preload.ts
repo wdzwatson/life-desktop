@@ -27,6 +27,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   logoutUser: () => ipcRenderer.invoke('user:logout'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: any) => ipcRenderer.invoke('settings:save', settings),
+  onAppearanceChanged: (callback: (change: { appearance?: unknown; theme?: string }) => void) => {
+    const subscription = (_event: unknown, change: { appearance?: unknown; theme?: string }) =>
+      callback(change)
+    ipcRenderer.on('appearance:changed', subscription)
+    return () => ipcRenderer.removeListener('appearance:changed', subscription)
+  },
   selectLaunchpadPoster: () => ipcRenderer.invoke('launchpad:selectPoster'),
   removeLaunchpadPoster: () => ipcRenderer.invoke('launchpad:removePoster'),
   clearAppData: () => ipcRenderer.invoke('settings:clearAppData'),

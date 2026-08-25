@@ -89,7 +89,7 @@
 }
 
 .system-monitor--note .system-monitor__popover {
-  top: calc(100% + 7px);
+  bottom: calc(100% + 7px);
   right: 0;
   left: 0;
   width: 100%;
@@ -240,10 +240,9 @@
 }
 
 .system-monitor--note {
-  margin: 0 -4px 12px;
-  padding: 7px 4px;
-  border-top: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 .system-monitor--note .system-monitor__metrics {
@@ -254,9 +253,10 @@
 
 .system-monitor--note .system-monitor__metric {
   width: 100%;
-  height: 30px;
+  height: 20px;
   gap: 3px;
-  padding: 0 2px;
+  padding: 0 3px;
+  border-radius: 5px;
   font-size: 9.5px;
 }
 

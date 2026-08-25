@@ -10,20 +10,25 @@ body:has(.desktop-task-note) #root {
   width: 100%;
   height: 100vh;
   min-height: 0;
-  padding: 16px;
-  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
-  border-radius: 16px;
+  padding: 8px 10px 10px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, var(--border-subtle));
+  border-radius: 10px;
   background: color-mix(in srgb, var(--bg-surface) 96%, transparent);
   color: var(--text-main);
   overflow: hidden;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+  box-shadow:
+    var(--shadow-app),
+    0 18px 40px color-mix(in srgb, #000 14%, transparent);
+  backdrop-filter: blur(14px) saturate(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(1.08);
 }
 
 .desktop-task-note__header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  margin-bottom: 18px;
+  gap: 8px;
+  margin-bottom: 8px;
   -webkit-app-region: drag;
 }
 
@@ -33,56 +38,107 @@ body:has(.desktop-task-note) #root {
 
 .desktop-task-note__controls {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
-.desktop-task-note__eyebrow {
-  margin-bottom: 4px;
-  color: var(--color-accent);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+.desktop-task-note__heading {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .desktop-task-note h1 {
-  font-size: 22px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 15px;
   line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-task-note__heading p {
+  margin: 1px 0 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .desktop-task-note h2 {
-  margin: 0 0 8px;
+  margin: 0 0 4px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .desktop-task-note__content {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
-  display: grid;
-  align-content: start;
-  gap: 18px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.desktop-task-note__active-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-gutter: stable;
+}
+
+.desktop-task-note__completed-section {
+  flex: 0 0 auto;
+  min-height: 28px;
+  margin-top: 6px;
+  padding-top: 2px;
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent);
+}
+
+.desktop-task-note__completed-section.is-expanded {
+  display: flex;
+  max-height: min(160px, 40%);
+  min-height: 0;
+  flex-direction: column;
+}
+
+.desktop-task-note__completed-section.is-expanded .desktop-task-note__list {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-gutter: stable;
+}
+
+.desktop-task-note__completed-section .desktop-task-note__task {
+  min-height: 28px;
+  background: transparent;
+}
+
+.desktop-task-note__completed-section .desktop-task-note__task:hover {
+  background: color-mix(in srgb, var(--surface-control-hover) 72%, transparent);
 }
 
 .desktop-task-note__list {
   display: grid;
-  gap: 4px;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
   list-style: none;
 }
 
 .desktop-task-note__task {
   display: flex;
   align-items: center;
-  min-height: 38px;
-  gap: 8px;
-  padding: 7px 8px;
+  min-height: 30px;
+  gap: 5px;
+  padding: 3px 5px;
+  border: 1px solid transparent;
   border-radius: 7px;
-  background: color-mix(in srgb, var(--bg-app) 75%, transparent);
+  background: color-mix(in srgb, var(--surface-control) 88%, transparent);
   cursor: grab;
 }
 
@@ -91,7 +147,8 @@ body:has(.desktop-task-note) #root {
 }
 
 .desktop-task-note__task:hover {
-  background: color-mix(in srgb, var(--color-accent) 8%, var(--bg-app));
+  border-color: var(--border-strong);
+  background: color-mix(in srgb, var(--surface-control-hover) 88%, transparent);
 }
 
 .desktop-task-note__check,
@@ -107,8 +164,8 @@ body:has(.desktop-task-note) #root {
 }
 
 .desktop-task-note__check {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
 }
 
 .desktop-task-note__check:hover {
@@ -123,8 +180,8 @@ body:has(.desktop-task-note) #root {
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  font-size: 13px;
-  line-height: 1.35;
+  font-size: 12px;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -186,8 +243,8 @@ body:has(.desktop-task-note) #root {
 }
 
 .desktop-task-note__refresh {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   border-radius: 6px;
 }
 
@@ -202,13 +259,28 @@ body:has(.desktop-task-note) #root {
 
 .desktop-task-note__opacity {
   display: inline-flex;
-  width: 58px;
+  width: 44px;
+  min-width: 0;
   align-items: center;
+  margin-right: 4px;
+}
+
+.desktop-task-note__opacity .slider {
+  width: 100%;
+  min-width: 0;
+  height: 20px;
+}
+
+.desktop-task-note__opacity .slider__track {
+  height: 4px;
+}
+
+.desktop-task-note__opacity .slider__thumb {
+  width: 12px;
+  height: 12px;
 }
 
 .desktop-task-note__opacity input {
-  width: 100%;
-  accent-color: var(--color-accent);
   cursor: pointer;
 }
 
@@ -217,12 +289,103 @@ body:has(.desktop-task-note) #root {
   opacity: 0.6;
 }
 
+.desktop-task-note__footer {
+  flex: 0 0 auto;
+  padding-top: 5px;
+  margin-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 78%, transparent);
+}
+
+.desktop-task-note__footer .system-monitor--note {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.desktop-task-note__footer .system-monitor--note .system-monitor__metrics {
+  gap: 2px;
+}
+
+.desktop-task-note__footer .system-monitor--note .system-monitor__metric {
+  min-height: 18px;
+  padding: 0 4px;
+}
+
+.desktop-task-note__completed-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 26px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px;
+  border: 0;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.desktop-task-note__completed-toggle:hover {
+  color: var(--text-main);
+  background: color-mix(in srgb, var(--surface-control-hover) 56%, transparent);
+}
+
+.desktop-task-note__completed-toggle:focus-visible {
+  border-radius: 5px;
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 44%, transparent);
+  outline-offset: -2px;
+}
+
+.desktop-task-note__completed-section.is-expanded .desktop-task-note__completed-toggle {
+  border-radius: 5px;
+  color: var(--text-main);
+  background: color-mix(in srgb, var(--surface-control) 52%, transparent);
+}
+
+.desktop-task-note__completed-label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.desktop-task-note__completed-label > svg {
+  color: var(--color-success);
+}
+
+.desktop-task-note__completed-count {
+  min-width: 16px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface-control);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.desktop-task-note__focus-empty {
+  margin: 8px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 .desktop-task-note__empty,
 .desktop-task-note__section-empty,
 .desktop-task-note__error {
   color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.desktop-task-note__empty,
+.desktop-task-note__section-empty {
+  flex: 1 1 auto;
+  margin: 0 0 6px;
 }
 
 .desktop-task-note__dialog-backdrop {

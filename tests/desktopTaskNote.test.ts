@@ -11,6 +11,7 @@ test('desktop task note requires confirmation and closes the complete task tree'
   assert.match(noteView, /buildCloseTaskTreeMutation\(taskToClose\.id\)/)
   assert.match(noteView, /buildCompleteTaskTreeMutation\(task\.id\)/)
   assert.match(noteView, /buildReopenTaskTreeMutation\(task\.id\)/)
+  assert.match(noteView, /status != '已关闭' OR is_completed = 1/)
   assert.doesNotMatch(noteView, /UPDATE tasks SET is_completed = .*已关闭/)
 })
 

@@ -8,6 +8,7 @@ import { DesktopTaskNote } from './views/DesktopTaskNote.tsx'
 import { ScreenCaptureEditorWindow } from './components/ScreenCaptureEditorWindow.tsx'
 import { DesktopTitlebar } from './components/DesktopTitlebar.tsx'
 import { useAppStore } from './store/useAppStore'
+import { applyAppearanceToDocument, normalizeAppearanceSettings } from './appearance'
 
 const isDesktopTaskNote = window.location.hash === '#desktop-task-note'
 const isNotesPopup = window.location.hash === '#notes-popup'
@@ -33,12 +34,26 @@ function NotesPopup() {
   )
 }
 
+function DesktopTaskNoteShell() {
+  const loadInitialConfig = useAppStore((state) => state.loadInitialConfig)
+  const api = (window as any).electronAPI
+
+  useEffect(() => {
+    void loadInitialConfig()
+    return api?.onAppearanceChanged?.((change: { appearance?: unknown; theme?: string }) => {
+      applyAppearanceToDocument(normalizeAppearanceSettings(change.appearance, change.theme))
+    })
+  }, [api, loadInitialConfig])
+
+  return <DesktopTaskNote />
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {isScreenCaptureEditor ? (
       <ScreenCaptureEditorWindow />
     ) : isDesktopTaskNote ? (
-      <DesktopTaskNote />
+      <DesktopTaskNoteShell />
     ) : isNotesPopup ? (
       <NotesPopup />
     ) : (

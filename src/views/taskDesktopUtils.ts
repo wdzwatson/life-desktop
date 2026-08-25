@@ -2,6 +2,7 @@ import { normalizeTaskDueDate } from './taskCalendarUtils'
 
 export type DesktopTask = {
   status?: string | null
+  closed_from_status?: string | null
   due_date?: string | null
   start_date?: string | null
   end_date?: string | null
@@ -44,7 +45,11 @@ export const getDesktopTaskDateState = (
   const endKey = normalizeDate(task.end_date) ?? normalizeDate(task.due_date)
   const isActiveToday = (!startKey || startKey <= todayKey) && (!endKey || endKey >= todayKey)
   const isOverdue = Boolean(endKey && endKey < todayKey)
-  const isVisible = task.status !== '已关闭' && (isActiveToday || isOverdue)
+  const isCompleted = task.is_completed === 1 || task.is_completed === true
+  const wasExplicitlyClosed = task.status === '已关闭' && Boolean(task.closed_from_status)
+  const isVisible = isCompleted
+    ? isActiveToday && !wasExplicitlyClosed
+    : task.status !== '已关闭' && (isActiveToday || isOverdue)
 
   return { todayKey, startKey, endKey, isActiveToday, isOverdue, isVisible }
 }

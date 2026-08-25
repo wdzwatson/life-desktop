@@ -18,7 +18,7 @@ test('desktop task note exposes local appearance controls and Electron settings 
   assert.match(mainProcess, /skipTaskbar: true/)
   assert.match(mainProcess, /screen\.getPrimaryDisplay\(\)\.workArea/)
   assert.match(mainProcess, /x: workArea\.x \+ workArea\.width - noteWidth - 18/)
-  assert.match(mainProcess, /layoutVersion >= 1/)
+  assert.match(mainProcess, /layoutVersion >= 2/)
   assert.match(preload, /getDesktopTaskNoteSettings/)
   assert.match(preload, /hideDesktopTaskNote/)
   assert.match(preload, /showDesktopTaskNote/)

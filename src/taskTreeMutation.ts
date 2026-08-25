@@ -29,6 +29,7 @@ export const buildCompleteTaskTreeMutation = (taskId: number): TaskTreeMutation 
     UPDATE tasks
     SET is_completed = 1,
         progress = 100,
+        closed_from_status = NULL,
         status = CASE
           WHEN (SELECT requires_review FROM tasks WHERE id = ?) = 1 THEN '${TASK_STATUS.review}'
           ELSE '${TASK_STATUS.closed}'
@@ -39,16 +40,14 @@ export const buildCompleteTaskTreeMutation = (taskId: number): TaskTreeMutation 
   params: [taskId, taskId],
 })
 
-export const buildReopenTaskTreeMutation = (
-  taskId: number,
-  now = new Date(),
-): TaskTreeMutation => {
+export const buildReopenTaskTreeMutation = (taskId: number, now = new Date()): TaskTreeMutation => {
   const localNow = getLocalDateTimeParts(now)
   return {
     sql: `${taskTreeCte}
       UPDATE tasks
       SET is_completed = 0,
           progress = 0,
+          closed_from_status = NULL,
           status = CASE
             WHEN start_date IS NOT NULL AND (
               start_date > ? OR
@@ -80,7 +79,7 @@ export const buildResolveTaskTreeMutation = (
 ): TaskTreeMutation => ({
   sql: `${taskTreeCte}
     UPDATE tasks
-    SET status = ?, is_completed = 1, progress = 100
+    SET status = ?, closed_from_status = NULL, is_completed = 1, progress = 100
     WHERE id IN (SELECT id FROM task_tree)
   `,
   params: [taskId, status],
@@ -98,10 +97,7 @@ export const buildCloseTaskTreeMutation = (taskId: number): TaskTreeMutation => 
   params: [taskId],
 })
 
-export const buildAggregateTaskMutation = (
-  taskId: number,
-  now = new Date(),
-): TaskTreeMutation => {
+export const buildAggregateTaskMutation = (taskId: number, now = new Date()): TaskTreeMutation => {
   const localNow = getLocalDateTimeParts(now)
   return {
     sql: `

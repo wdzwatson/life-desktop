@@ -1778,6 +1778,16 @@ function saveSettings(settings: any) {
   return settings
 }
 
+function broadcastAppearanceChange(settings: any) {
+  for (const targetWindow of BrowserWindow.getAllWindows()) {
+    if (targetWindow.isDestroyed()) continue
+    targetWindow.webContents.send('appearance:changed', {
+      appearance: settings.appearance,
+      theme: settings.theme,
+    })
+  }
+}
+
 // Close and clear all open databases
 function closeUserDbs() {
   aiRecoveryController?.abort()
@@ -2722,22 +2732,22 @@ function createDesktopTaskNoteWindow() {
 
   const noteSettings = getDesktopTaskNoteSettings()
   const savedBounds =
-    noteSettings.layoutVersion >= 1 &&
+    noteSettings.layoutVersion >= 2 &&
     noteSettings.bounds &&
     typeof noteSettings.bounds === 'object'
       ? noteSettings.bounds
       : null
-  const noteWidth = Number(savedBounds?.width) || 320
-  const noteHeight = Number(savedBounds?.height) || 420
+  const noteWidth = Number(savedBounds?.width) || 340
+  const noteHeight = Number(savedBounds?.height) || 360
   const workArea = screen.getPrimaryDisplay().workArea
   const defaultBounds = {
     x: workArea.x + workArea.width - noteWidth - 18,
     y: workArea.y + 18,
   }
   const bounds = savedBounds ?? defaultBounds
-  if (noteSettings.layoutVersion < 1) {
+  if (noteSettings.layoutVersion < 2) {
     saveDesktopTaskNoteSettings({
-      layoutVersion: 1,
+      layoutVersion: 2,
       bounds: { ...defaultBounds, width: noteWidth, height: noteHeight },
     })
   }
@@ -2746,8 +2756,8 @@ function createDesktopTaskNoteWindow() {
     height: noteHeight,
     x: Number(bounds.x),
     y: Number(bounds.y),
-    minWidth: 260,
-    minHeight: 240,
+    minWidth: 280,
+    minHeight: 260,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -3487,7 +3497,13 @@ ipcMain.handle('settings:save', async (_, newSettings: any) => {
       return { ...previousSettings, openAtLoginResult }
     }
   }
+  const appearanceChanged =
+    previousSettings.theme !== nextSettings.theme ||
+    JSON.stringify(previousSettings.appearance) !== JSON.stringify(nextSettings.appearance)
+
   const savedSettings = saveSettings(nextSettings)
+  if (appearanceChanged) broadcastAppearanceChange(nextSettings)
+
   const videoSettingKeys = [
     'ytDlpPath',
     'ffmpegPath',

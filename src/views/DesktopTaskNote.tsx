@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, Circle, Clock3, LayoutDashboard, Pin, RefreshCw, X } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  Clock3,
+  LayoutDashboard,
+  Pin,
+  RefreshCw,
+  X,
+} from 'lucide-react'
 import {
   getDesktopTasksForDate,
   getUserDateKey,
@@ -23,6 +33,7 @@ type DesktopTaskRecord = {
   id: number
   title: string
   status?: string | null
+  closed_from_status?: string | null
   due_date?: string | null
   due_time?: string | null
   requires_review?: number | null
@@ -42,6 +53,12 @@ const formatTaskSchedule = (task: DesktopTaskRecord, todayKey: string) => {
   return `${due.dateKey.slice(5).replace('-', '/')}${due.time ? ` ${due.time}` : ''}`
 }
 
+const formatShortDate = (dateKey: string) => {
+  const [, month, day] = dateKey.split('-')
+  if (!month || !day) return dateKey
+  return `${Number(month)}/${Number(day)}`
+}
+
 export const DesktopTaskNote: React.FC = () => {
   const api = (window as any).electronAPI
   const [tasks, setTasks] = useState<DesktopTaskRecord[]>([])
@@ -54,6 +71,8 @@ export const DesktopTaskNote: React.FC = () => {
   const [loadedStorageKey, setLoadedStorageKey] = useState<string | null>(null)
   const [opacity, setOpacity] = useState(0.96)
   const [alwaysOnTop, setAlwaysOnTop] = useState(true)
+  const [showCompleted, setShowCompleted] = useState(false)
+  const [completedPanelTouched, setCompletedPanelTouched] = useState(false)
 
   const todayKey = useMemo(() => getUserDateKey(new Date(), getUserTimeZone()), [])
 
@@ -112,10 +131,12 @@ export const DesktopTaskNote: React.FC = () => {
       setError(null)
       const result = await api.dbQuery(
         'tasks',
-        "SELECT * FROM tasks WHERE status != '已关闭' ORDER BY COALESCE(due_date, created_at) ASC, COALESCE(due_time, '23:59:59') ASC, id ASC",
+        "SELECT * FROM tasks WHERE status != '已关闭' OR is_completed = 1 ORDER BY COALESCE(due_date, created_at) ASC, COALESCE(due_time, '23:59:59') ASC, id ASC",
       )
       if (result?.success) {
-        setTasks(getDesktopTasksForDate(getActionableTasks(result.data as DesktopTaskRecord[]), todayKey))
+        setTasks(
+          getDesktopTasksForDate(getActionableTasks(result.data as DesktopTaskRecord[]), todayKey),
+        )
       } else {
         setError('任务加载失败，请稍后重试。')
       }
@@ -140,13 +161,8 @@ export const DesktopTaskNote: React.FC = () => {
 
   const toggleTask = async (task: DesktopTaskRecord) => {
     const nextDone = task.is_completed === 1 ? 0 : 1
-    const childResult: any = nextDone
-      ? await api?.dbQuery('tasks', 'SELECT id FROM tasks WHERE parent_id = ? LIMIT 1', [task.id])
-      : null
     const mutation = nextDone
-      ? childResult?.data?.length
-        ? buildCloseTaskTreeMutation(task.id)
-        : buildCompleteTaskTreeMutation(task.id)
+      ? buildCompleteTaskTreeMutation(task.id)
       : buildReopenTaskTreeMutation(task.id)
     const result = await api?.dbQuery('tasks', mutation.sql, mutation.params)
     if (result?.success) {
@@ -162,7 +178,11 @@ export const DesktopTaskNote: React.FC = () => {
     const visited = new Set<number>()
     while (currentId && !visited.has(currentId)) {
       visited.add(currentId)
-      const parentResult: any = await api?.dbQuery('tasks', 'SELECT parent_id FROM tasks WHERE id = ?', [currentId])
+      const parentResult: any = await api?.dbQuery(
+        'tasks',
+        'SELECT parent_id FROM tasks WHERE id = ?',
+        [currentId],
+      )
       const parentId: number | null | undefined = parentResult?.data?.[0]?.parent_id
       if (!parentId) break
       const mutation = buildAggregateTaskMutation(Number(parentId))
@@ -188,6 +208,7 @@ export const DesktopTaskNote: React.FC = () => {
   const completedTasks = tasks.filter((task) => task.is_completed === 1)
   const orderedActiveTasks = sortDesktopTasksByOrder(activeTasks, taskOrder.active)
   const orderedCompletedTasks = sortDesktopTasksByOrder(completedTasks, taskOrder.completed)
+  const isCompletedPanelExpanded = completedPanelTouched ? showCompleted : activeTasks.length === 0
 
   const moveTask = (group: 'active' | 'completed', sourceId: number, targetId: number) => {
     setTaskOrder((current) => ({
@@ -253,9 +274,11 @@ export const DesktopTaskNote: React.FC = () => {
   return (
     <main className="desktop-task-note">
       <header className="desktop-task-note__header">
-        <div>
-          <p className="desktop-task-note__eyebrow">LifeOS</p>
-          <h1>任务</h1>
+        <div className="desktop-task-note__heading">
+          <h1>今日任务</h1>
+          <p>
+            {formatShortDate(todayKey)} · {activeTasks.length} 项待完成
+          </p>
         </div>
         <div className="desktop-task-note__controls">
           <button
@@ -298,6 +321,7 @@ export const DesktopTaskNote: React.FC = () => {
             type="button"
             className="desktop-task-note__refresh desktop-task-note__drag-exempt"
             aria-label="刷新任务"
+            title="刷新任务"
             onClick={() => void loadTasks(true)}
             disabled={isRefreshing}
           >
@@ -315,8 +339,6 @@ export const DesktopTaskNote: React.FC = () => {
         </div>
       </header>
 
-      <SystemMonitor placement="note" />
-
       {error && (
         <p className="desktop-task-note__error" role="alert">
           {error}
@@ -328,28 +350,58 @@ export const DesktopTaskNote: React.FC = () => {
         <p className="desktop-task-note__empty">今天没有任务</p>
       ) : (
         <div className="desktop-task-note__content">
-          <section aria-labelledby="desktop-task-note-active-title">
-            <h2 id="desktop-task-note-active-title">待完成 · {activeTasks.length}</h2>
+          <div className="desktop-task-note__active-scroll">
             {activeTasks.length > 0 ? (
-              <ul className="desktop-task-note__list">
-                {orderedActiveTasks.map((task) => renderTask(task, 'active'))}
-              </ul>
+              <section aria-label="待完成">
+                <ul className="desktop-task-note__list">
+                  {orderedActiveTasks.map((task) => renderTask(task, 'active'))}
+                </ul>
+              </section>
             ) : (
-              <p className="desktop-task-note__section-empty">全部完成</p>
+              <p className="desktop-task-note__focus-empty">今日任务已全部完成</p>
             )}
-          </section>
-          <section aria-labelledby="desktop-task-note-completed-title">
-            <h2 id="desktop-task-note-completed-title">已完成 · {completedTasks.length}</h2>
-            {completedTasks.length > 0 ? (
-              <ul className="desktop-task-note__list">
-                {orderedCompletedTasks.map((task) => renderTask(task, 'completed'))}
-              </ul>
-            ) : (
-              <p className="desktop-task-note__section-empty">暂无已完成任务</p>
-            )}
-          </section>
+          </div>
+          {completedTasks.length > 0 && (
+            <section
+              className={`desktop-task-note__completed-section ${isCompletedPanelExpanded ? 'is-expanded' : ''}`}
+              aria-label="已完成"
+            >
+              <button
+                type="button"
+                className="desktop-task-note__completed-toggle"
+                aria-expanded={isCompletedPanelExpanded}
+                aria-controls="desktop-task-note-completed-list"
+                onClick={() => {
+                  setCompletedPanelTouched(true)
+                  setShowCompleted(!isCompletedPanelExpanded)
+                }}
+              >
+                <span className="desktop-task-note__completed-label">
+                  <Check size={12} aria-hidden="true" />
+                  <span>已完成</span>
+                  <span className="desktop-task-note__completed-count">
+                    {completedTasks.length}
+                  </span>
+                </span>
+                {isCompletedPanelExpanded ? (
+                  <ChevronDown size={13} aria-hidden="true" />
+                ) : (
+                  <ChevronRight size={13} aria-hidden="true" />
+                )}
+              </button>
+              {isCompletedPanelExpanded && (
+                <ul id="desktop-task-note-completed-list" className="desktop-task-note__list">
+                  {orderedCompletedTasks.map((task) => renderTask(task, 'completed'))}
+                </ul>
+              )}
+            </section>
+          )}
         </div>
       )}
+
+      <footer className="desktop-task-note__footer">
+        <SystemMonitor placement="note" />
+      </footer>
 
       {taskToClose && (
         <div className="desktop-task-note__dialog-backdrop" role="presentation">
