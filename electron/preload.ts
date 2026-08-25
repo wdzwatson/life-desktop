@@ -505,6 +505,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     tagNames: string[]
     mode: 'add' | 'remove'
   }) => ipcRenderer.invoke('video:bulkUpdateTags', payload),
+  deleteVideoRecords: (payload: { videoIds: number[]; deleteLocalFiles: boolean }) =>
+    ipcRenderer.invoke('video:deleteRecords', payload),
   startDownload: (videoData: any) => ipcRenderer.invoke('video:download', videoData),
   getVideoPlaybackUrl: (localPath: string) => ipcRenderer.invoke('video:getPlaybackUrl', localPath),
   onVideoEngineStatus: (callback: (data: any) => void) => {

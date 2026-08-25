@@ -80,6 +80,7 @@ import {
   verifyVideoCookieAccess,
   type VideoEngineStatus,
 } from './video/service'
+import { deleteVideoRecords } from './video/deleteRecords'
 import { hasBilibiliLoginCookie, writeBilibiliCookieFile } from './video/bilibiliCookies'
 import {
   DOUYIN_LOGIN_URL,
@@ -5230,6 +5231,22 @@ ipcMain.handle('video:bulkUpdateTags', async (_, payload: any) => {
   } catch (err: any) {
     console.error('Video bulk tag update error:', err)
     return { success: false, error: err?.message || String(err) }
+  }
+})
+
+ipcMain.handle('video:deleteRecords', async (_, payload: any) => {
+  try {
+    if (!Array.isArray(payload?.videoIds)) {
+      return { success: false, error: 'Video IDs are required.' }
+    }
+    const data = deleteVideoRecords(getUserDb('videos'), {
+      videoIds: payload.videoIds,
+      deleteLocalFiles: payload.deleteLocalFiles === true,
+      videoDirectory: getActiveUserVideoDir(),
+    })
+    return { success: true, data }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
 })
 
