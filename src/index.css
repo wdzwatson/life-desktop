@@ -2398,6 +2398,13 @@ body.loading-particle-burst .screen-loading__card {
   line-height: 1.55;
 }
 
+.app-confirm-dialog__checkbox {
+  margin: -6px 0 18px;
+  color: var(--text-main);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .app-confirm-dialog__actions {
   display: flex;
   justify-content: flex-end;

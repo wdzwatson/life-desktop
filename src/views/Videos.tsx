@@ -1334,12 +1334,55 @@ export const Videos: React.FC = () => {
     setPlaybackUrl(res.url)
   }
 
+  const getVideoDeletionToast = (result: any) => {
+    const messages = [
+      t('videos.delete_with_files_result', {
+        deletedRecordCount: result.deletedRecordCount,
+        deletedFileCount: result.deletedFileCount,
+      }),
+    ]
+    if (result.missingFileCount > 0) {
+      messages.push(
+        t('videos.delete_missing_files_result', { count: result.missingFileCount }),
+      )
+    }
+    if (result.retainedSharedFileCount > 0) {
+      messages.push(
+        t('videos.delete_shared_files_result', { count: result.retainedSharedFileCount }),
+      )
+    }
+    return messages.join(t('videos.delete_result_separator'))
+  }
+
   const handleDeleteVideo = async (id: number) => {
     if (!api) return
-    if (!(await confirm({ description: t('videos.confirm_delete'), confirmLabel: t('common.delete'), tone: 'danger' }))) return
-    await api.dbQuery('videos', 'DELETE FROM videos WHERE id = ?', [id])
+    const video = localVideos.find((item: any) => item.id === id)
+    const hasLocalFile = Boolean(video?.local_path || video?.path)
+    let deleteLocalFiles = false
+    if (
+      !(await confirm({
+        description: t('videos.confirm_delete'),
+        confirmLabel: t('common.delete'),
+        tone: 'danger',
+        checkboxLabel: hasLocalFile ? t('videos.delete_local_files_option') : undefined,
+        checkboxDefaultChecked: hasLocalFile,
+        onConfirm: ({ checkboxChecked }) => {
+          deleteLocalFiles = checkboxChecked
+        },
+      }))
+    )
+      return
+    const result = await api.deleteVideoRecords?.({ videoIds: [id], deleteLocalFiles })
+    if (!result?.success) {
+      showToast(t('videos.delete_failed', { error: result?.error || t('videos.delete_unknown_error') }))
+      return
+    }
     if (selectedVideo?.id === id) setSelectedVideo(null)
-    showToast(t('videos.toast_video_deleted'))
+    showToast(
+      deleteLocalFiles
+        ? getVideoDeletionToast(result.data)
+        : t('videos.toast_video_deleted'),
+    )
     void refreshData()
   }
 
@@ -1464,24 +1507,43 @@ export const Videos: React.FC = () => {
     if (!api) return
     setIsBulkMoreMenuOpen(false)
     setBulkMetadataMode(null)
+    const hasSelectedLocalFiles = bulkSelectedVideos.some(
+      (video) => video.local_path || video.path,
+    )
+    let deleteLocalFiles = false
     if (
       !(await confirm({
         description: t('videos.confirm_bulk_delete', { count: bulkSelectedVideoIds.length }),
         confirmLabel: t('common.delete'),
         tone: 'danger',
+        checkboxLabel: hasSelectedLocalFiles ? t('videos.delete_local_files_option') : undefined,
+        checkboxDefaultChecked: hasSelectedLocalFiles,
+        onConfirm: ({ checkboxChecked }) => {
+          deleteLocalFiles = checkboxChecked
+        },
       }))
     )
       return
-    for (const videoId of bulkSelectedVideoIds) {
-      const deleteResult = await api.dbQuery('videos', 'DELETE FROM videos WHERE id = ?', [videoId])
-      if (!isBulkMetadataWriteResultSuccess(deleteResult)) {
-        showBulkMetadataWriteFailure(deleteResult?.error)
-        await refreshData()
-        return
-      }
+    const deletedIds = [...bulkSelectedVideoIds]
+    const deleteResult = await api.deleteVideoRecords?.({
+      videoIds: deletedIds,
+      deleteLocalFiles,
+    })
+    if (!deleteResult?.success) {
+      showToast(
+        t('videos.delete_failed', {
+          error: deleteResult?.error || t('videos.delete_unknown_error'),
+        }),
+      )
+      await refreshData()
+      return
     }
-    if (selectedVideo && bulkSelectedVideoIds.includes(selectedVideo.id)) setSelectedVideo(null)
-    showToast(t('videos.bulk_deleted', { count: bulkSelectedVideoIds.length }))
+    if (selectedVideo && deletedIds.includes(selectedVideo.id)) setSelectedVideo(null)
+    showToast(
+      deleteLocalFiles
+        ? getVideoDeletionToast(deleteResult.data)
+        : t('videos.bulk_deleted', { count: deleteResult.data.deletedRecordCount }),
+    )
     setBulkMetadataMode(null)
     setBulkSelectedVideoIds([])
     await refreshData()

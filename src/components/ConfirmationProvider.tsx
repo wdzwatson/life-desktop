@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AccessibleDialog } from './AccessibleDialog'
+import { Checkbox } from './Checkbox'
 
 type ConfirmationTone = 'danger' | 'primary'
 
@@ -9,6 +10,9 @@ type ConfirmationOptions = {
   description: ReactNode
   confirmLabel?: ReactNode
   tone?: ConfirmationTone
+  checkboxLabel?: ReactNode
+  checkboxDefaultChecked?: boolean
+  onConfirm?: (options: { checkboxChecked: boolean }) => void
 }
 
 type PendingConfirmation = ConfirmationOptions & {
@@ -26,6 +30,7 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation()
   const [pending, setPending] = useState<PendingConfirmation | null>(null)
   const pendingRef = useRef<PendingConfirmation | null>(null)
+  const checkboxCheckedRef = useRef(false)
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null)
 
   const close = useCallback((confirmed: boolean) => {
@@ -33,6 +38,7 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
     if (!current) return
     pendingRef.current = null
     setPending(null)
+    if (confirmed) current.onConfirm?.({ checkboxChecked: checkboxCheckedRef.current })
     current.resolve(confirmed)
   }, [])
 
@@ -44,6 +50,7 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
         resolve,
         returnFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null,
       }
+      checkboxCheckedRef.current = options.checkboxDefaultChecked === true
       pendingRef.current = request
       setPending(request)
     })
@@ -69,6 +76,16 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
           contentClassName="app-confirm-dialog"
         >
           <p className="app-confirm-dialog__copy">{pending.description}</p>
+          {pending.checkboxLabel && (
+            <Checkbox
+              label={pending.checkboxLabel}
+              labelClassName="app-confirm-dialog__checkbox"
+              defaultChecked={pending.checkboxDefaultChecked === true}
+              onChange={(event) => {
+                checkboxCheckedRef.current = event.target.checked
+              }}
+            />
+          )}
           <div className="app-confirm-dialog__actions">
             <button ref={cancelButtonRef} type="button" className="btn" onClick={() => close(false)}>
               {t('common.cancel')}
