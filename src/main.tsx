@@ -1,4 +1,4 @@
-import { lazy, StrictMode, Suspense } from 'react'
+import { lazy, StrictMode, Suspense, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import './i18n'
@@ -7,6 +7,7 @@ import { ConfirmationProvider } from './components/ConfirmationProvider.tsx'
 import { DesktopTaskNote } from './views/DesktopTaskNote.tsx'
 import { ScreenCaptureEditorWindow } from './components/ScreenCaptureEditorWindow.tsx'
 import { DesktopTitlebar } from './components/DesktopTitlebar.tsx'
+import { useAppStore } from './store/useAppStore'
 
 const isDesktopTaskNote = window.location.hash === '#desktop-task-note'
 const isNotesPopup = window.location.hash === '#notes-popup'
@@ -15,6 +16,23 @@ const isScreenCaptureEditor = window.location.hash === '#screen-capture-editor'
 const electronPlatform = (window as any).electronAPI?.platform
 const hasCustomTitlebar = electronPlatform === 'win32' || electronPlatform === 'linux'
 
+function NotesPopup() {
+  const loadInitialConfig = useAppStore((state) => state.loadInitialConfig)
+
+  useEffect(() => {
+    void loadInitialConfig()
+  }, [loadInitialConfig])
+
+  return (
+    <Suspense fallback={null}>
+      <div className={`app-window${hasCustomTitlebar ? ' app-window--custom-titlebar' : ''}`}>
+        <DesktopTitlebar title="LifeOS 笔记编辑" />
+        <Notes popup />
+      </div>
+    </Suspense>
+  )
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {isScreenCaptureEditor ? (
@@ -22,9 +40,7 @@ createRoot(document.getElementById('root')!).render(
     ) : isDesktopTaskNote ? (
       <DesktopTaskNote />
     ) : isNotesPopup ? (
-      <Suspense fallback={null}>
-        <Notes popup />
-      </Suspense>
+      <NotesPopup />
     ) : (
       <ConfirmationProvider>
         <div className={`app-window${hasCustomTitlebar ? ' app-window--custom-titlebar' : ''}`}>

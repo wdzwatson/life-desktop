@@ -2666,11 +2666,14 @@ function createNoteEditorWindow() {
 
   isNoteEditorCloseConfirmed = false
   isNoteEditorCloseRequested = false
+  const useCustomTitlebar = ['win32', 'linux'].includes(process.platform)
   noteEditorWindow = new BrowserWindow({
     width: 980,
     height: 720,
     minWidth: 640,
     minHeight: 420,
+    autoHideMenuBar: true,
+    frame: !useCustomTitlebar,
     title: 'LifeOS 笔记编辑',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -2678,6 +2681,8 @@ function createNoteEditorWindow() {
       contextIsolation: true,
     },
   })
+
+  if (useCustomTitlebar) noteEditorWindow.setMenuBarVisibility(false)
 
   if (process.env.VITE_DEV_SERVER_URL) {
     noteEditorWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#notes-popup`)
@@ -2701,6 +2706,8 @@ function createNoteEditorWindow() {
     isNoteEditorCloseRequested = false
     mainWindow?.webContents.send('note:editorClosed')
   })
+  noteEditorWindow.on('maximize', () => emitWindowMaximizedState(noteEditorWindow))
+  noteEditorWindow.on('unmaximize', () => emitWindowMaximizedState(noteEditorWindow))
 
   return noteEditorWindow
 }

@@ -13,7 +13,11 @@ type WindowApi = {
 
 const CUSTOM_TITLEBAR_PLATFORMS = ['win32', 'linux']
 
-export function DesktopTitlebar() {
+type DesktopTitlebarProps = {
+  title?: string
+}
+
+export function DesktopTitlebar({ title = 'LifeOS' }: DesktopTitlebarProps) {
   const { t } = useTranslation()
   const api = (window as any).electronAPI as WindowApi | undefined
   const platform = api?.platform
@@ -47,7 +51,7 @@ export function DesktopTitlebar() {
   return (
     <header className={`desktop-titlebar desktop-titlebar--${platform}`}>
       <div className="desktop-titlebar__caption">
-        <span>LifeOS</span>
+        <span>{title}</span>
       </div>
       <div className="desktop-titlebar__controls" aria-label={t('topbar.window_controls')}>
         <button
