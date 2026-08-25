@@ -255,6 +255,10 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
   const activeNoteIsPrivate = Number(activeNote?.is_private || 0) === 1 || activeDraftIsPrivate
   const isMainNoteRenderSuspended = !popup && isEditorWindowOpen
 
+  const hideNotebookSidebarForEditing = useCallback(() => {
+    if (!popup) setIsNotebookSidebarOpen(false)
+  }, [popup])
+
   const selectNote = useCallback((note: Note, scope = note.notebook) => {
     setActiveNoteId(note.id)
     setNoteTitle(note.title)
@@ -1923,7 +1927,11 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
           flexGrow: 1,
           minHeight: 0,
           display: 'grid',
-          gridTemplateColumns: popup || !isNotebookSidebarOpen ? '1fr' : '280px 1fr',
+          gridTemplateColumns: popup
+            ? 'minmax(0, 1fr)'
+            : isNotebookSidebarOpen
+              ? '280px minmax(0, 1fr)'
+              : '0 minmax(0, 1fr)',
           border: '1px solid var(--color-border)',
           borderRadius: '8px',
           backgroundColor: 'var(--bg-surface)',
@@ -2386,6 +2394,7 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
                       color: 'var(--text-main)',
                     }}
                     value={noteContent}
+                    onPointerDown={hideNotebookSidebarForEditing}
                     onChange={(e) => setNoteContent(e.target.value)}
                     onPaste={(event) => void handleEditorPaste(event)}
                     onBlur={handleSaveNote}
@@ -2451,6 +2460,7 @@ export const Notes: React.FC<{ popup?: boolean }> = ({ popup = false }) => {
                     data-placeholder={t('notes.editor_placeholder')}
                     contentEditable
                     suppressContentEditableWarning
+                    onPointerDown={hideNotebookSidebarForEditing}
                     onInput={handleTyporaInput}
                     onPaste={(event) => void handleEditorPaste(event)}
                     onBlur={handleSaveNote}

@@ -52,6 +52,19 @@ test('note editor keeps narrow toolbars compact and defers expensive preview wor
   assert.match(notesSource, /renderImageSizeControls\(\)/)
 })
 
+test('clicking editable note content slides the notebook sidebar closed', () => {
+  assert.match(notesSource, /const hideNotebookSidebarForEditing = useCallback/)
+  assert.equal(
+    notesSource.match(/onPointerDown=\{hideNotebookSidebarForEditing\}/g)?.length,
+    2,
+  )
+  assert.match(notesCss, /transition:\s*grid-template-columns/)
+  assert.match(
+    notesCss,
+    /\.notes-workspace--sidebar-closed \.notebook-sidebar[\s\S]*transform:\s*translateX\(-100%\)/,
+  )
+})
+
 test('main note view is suspended while popup editing is active', () => {
   assert.match(notesSource, /isMainNoteRenderSuspended/)
   assert.match(notesSource, /pendingExternalEditorDraftRef/)

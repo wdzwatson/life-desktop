@@ -224,14 +224,26 @@
   height: 100%;
   position: relative;
   overflow: hidden;
+  transition: grid-template-columns var(--motion-fluid) var(--ease-fluid);
 }
 
 .notes-view {
   min-height: 0;
 }
 
+.notes-workspace .notebook-sidebar {
+  transition:
+    transform var(--motion-fluid) var(--ease-fluid),
+    opacity 140ms ease,
+    visibility 0s linear 0s;
+}
+
 .notes-workspace--sidebar-closed .notebook-sidebar {
-  display: none;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateX(-100%);
+  pointer-events: none;
+  transition-delay: 0s, 0s, var(--motion-fluid);
 }
 
 .notes-editor-breadcrumb {
@@ -601,11 +613,14 @@
     box-shadow: 14px 0 28px rgba(0, 0, 0, 0.18);
   }
 
-  .notes-workspace--sidebar-closed .notebook-sidebar {
-    display: none;
-  }
-
   .notes-editor-breadcrumb {
     max-width: 120px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notes-workspace,
+  .notes-workspace .notebook-sidebar {
+    transition: none;
   }
 }
