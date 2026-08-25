@@ -20,6 +20,10 @@ const readerAnnotationsPanel = readFileSync(
   new URL('../src/components/ReaderAnnotationsPanel.tsx', import.meta.url),
   'utf8',
 )
+const pdfPageMetadataCache = readFileSync(
+  new URL('../src/services/pdfPageMetadataCache.ts', import.meta.url),
+  'utf8',
+)
 const viteConfig = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8')
 
 test('book shelf titles support two lines while preserving the full title as a tooltip', () => {
@@ -167,13 +171,13 @@ test('PDF OCR runs on demand instead of starting after every page render', () =>
 })
 
 test('scanned PDF pages enable direct ink selection and merge strokes for 1.5 seconds', () => {
-  assert.match(booksSource, /type PdfPageTextMode = 'unknown' \| 'text' \| 'scanned'/)
+  assert.match(pdfPageMetadataCache, /type PdfPageTextMode = 'unknown' \| 'text' \| 'scanned'/)
   assert.match(booksSource, /page\.getTextContent\(\)/)
   assert.match(
     booksSource,
-    /enabled=\{\s*pdfPageTextModes\[currentPageIndex \+ 1\] === 'scanned'/,
+    /enabled=\{\s*getPdfPageTextMode\(currentPageIndex \+ 1\) === 'scanned'/,
   )
-  assert.match(booksSource, /enabled=\{pdfPageTextModes\[idx \+ 1\] === 'scanned'\}/)
+  assert.match(booksSource, /enabled=\{metadata\.textMode === 'scanned'\}/)
   assert.doesNotMatch(booksSource, /pdfInkMode/)
   assert.match(pdfInkSelectionLayer, /const INK_MERGE_WINDOW_MS = 1500/)
   assert.match(pdfInkSelectionLayer, /flushTimerRef\.current !== null \|\| isRecognizing/)

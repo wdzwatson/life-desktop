@@ -1,7 +1,15 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { TextContent } from 'pdfjs-dist/types/src/display/api'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url'
-import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
@@ -82,6 +90,10 @@ import {
 import { resolveSelectionOutlineLocation } from '../services/selectionOutlineResolver'
 import { pdfReaderPerformanceTrace } from '../services/pdfReaderPerformance'
 import { detectPdfPageTextMode } from '../services/pdfPageTextMode'
+import {
+  PdfPageMetadataCache,
+  type PdfPageTextMode,
+} from '../services/pdfPageMetadataCache'
 import {
   compareReaderHighlightsByDocumentPosition,
   getActiveTocIndex,
@@ -296,14 +308,11 @@ type PdfContinuousScrollListProps = {
   pdfEstimatedPageHeight: number
   pdfPageRenderWidth: number
   pdfPageAspectRatio: number
-  pdfPageAspectRatios: Record<number, number>
-  onPageAspectRatioLoaded?: (pageNumber: number, ratio: number) => void
-  onPageTextContentResolved?: (pageNumber: number, textContent: TextContent) => void
-  onPageTextContentError?: (pageNumber: number) => void
+  pdfPageMetadataCache: PdfPageMetadataCache
+  pdfPageMetadataSessionId: number
   pdfOcrPages: Record<number, PdfOcrPageState>
   pdfHighlightsByPage: Map<number, any[]>
   activeHighlightId: string | null
-  pdfPageTextModes: Record<number, PdfPageTextMode>
   pdfInkDraft: PdfInkDraft | null
   handlePdfInkStroke: (page: number, stroke: PdfInkStroke) => Promise<void>
   onClearInkSelection: () => void
@@ -322,6 +331,149 @@ type PdfContinuousScrollListProps = {
   t: (key: string, options?: any) => string
 }
 
+const usePdfPageMetadata = (cache: PdfPageMetadataCache, pageNumber: number) => {
+  const subscribe = useCallback(
+    (listener: () => void) => cache.subscribe(pageNumber, listener),
+    [cache, pageNumber],
+  )
+  const getSnapshot = useCallback(() => cache.getSnapshot(pageNumber), [cache, pageNumber])
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+const PdfContinuousPageSlot = React.memo(function PdfContinuousPageSlot({
+  idx,
+  isNearViewport,
+  listProps,
+}: {
+  idx: number
+  isNearViewport: boolean
+  listProps: PdfContinuousScrollListProps
+}) {
+  const {
+    pdfEstimatedPageHeight,
+    pdfPageRenderWidth,
+    pdfPageAspectRatio,
+    pdfPageMetadataCache,
+    pdfPageMetadataSessionId,
+    pdfOcrPages,
+    pdfHighlightsByPage,
+    activeHighlightId,
+    pdfInkDraft,
+    handlePdfInkStroke,
+    onClearInkSelection,
+    onOpenInkContextMenu,
+    handlePdfOcrAreasSelected,
+    openReaderContextMenu,
+    ensurePdfOcrPage,
+    handleOpenPdfOcrFallback,
+    openSavedHighlight,
+    onFirstVisiblePageRendered,
+    t,
+  } = listProps
+  const pageNumber = idx + 1
+  const metadata = usePdfPageMetadata(pdfPageMetadataCache, pageNumber)
+  const pageRatio = metadata.aspectRatio ?? pdfPageAspectRatio
+  const pageHeight = Math.round((pdfPageRenderWidth || 600) * pageRatio)
+
+  if (!isNearViewport) {
+    return (
+      <div
+        className="book-reader__pdf-page-slot is-placeholder"
+        data-page-number={pageNumber}
+        style={{
+          height: `${pageHeight || pdfEstimatedPageHeight}px`,
+          width: `${pdfPageRenderWidth || 600}px`,
+        }}
+      >
+        {t('books.page_label', { num: pageNumber })}
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="book-reader__pdf-page-slot is-rendered"
+      data-page-number={pageNumber}
+      style={{
+        height: `${pageHeight || pdfEstimatedPageHeight}px`,
+        width: `${pdfPageRenderWidth || 600}px`,
+      }}
+    >
+      <Page
+        pageNumber={pageNumber}
+        devicePixelRatio={PDF_RENDER_DEVICE_PIXEL_RATIO}
+        renderTextLayer={metadata.textMode !== 'scanned'}
+        renderAnnotationLayer={false}
+        width={pdfPageRenderWidth || undefined}
+        onLoadSuccess={(page) => {
+          pdfReaderPerformanceTrace.markTargetPage('page-loaded', pageNumber)
+          pdfPageMetadataCache.setAspectRatio(
+            pdfPageMetadataSessionId,
+            pageNumber,
+            page.height / page.width,
+          )
+        }}
+        onGetTextSuccess={(textContent) => {
+          pdfPageMetadataCache.setTextMode(
+            pdfPageMetadataSessionId,
+            pageNumber,
+            detectPdfPageTextMode(textContent),
+          )
+          pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
+        }}
+        onGetTextError={() => {
+          pdfPageMetadataCache.setTextMode(pdfPageMetadataSessionId, pageNumber, 'scanned')
+          pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
+        }}
+        onRenderSuccess={() => {
+          pdfReaderPerformanceTrace.markTargetPage('canvas-rendered', pageNumber)
+          onFirstVisiblePageRendered?.()
+        }}
+        loading={
+          <div
+            className="book-reader__pdf-page-loading"
+            style={{ height: `${pageHeight || pdfEstimatedPageHeight}px` }}
+          >
+            {t('books.pdf_rendering_page', { num: pageNumber })}
+          </div>
+        }
+      />
+      {pdfOcrPages[pageNumber] && (
+        <PdfOcrTextLayer
+          words={pdfOcrPages[pageNumber]?.data?.words || []}
+          status={pdfOcrPages[pageNumber]?.status || 'idle'}
+          progressLabel={pdfOcrPages[pageNumber]?.progressLabel}
+          onSelectAreas={(areas, selectedText) =>
+            void handlePdfOcrAreasSelected(pageNumber, areas, selectedText)
+          }
+          onOpenContextMenu={({ clientX, clientY, text }) =>
+            openReaderContextMenu(clientX, clientY, text)
+          }
+          onRetry={() => void ensurePdfOcrPage(pageNumber)}
+          onFallback={handleOpenPdfOcrFallback}
+        />
+      )}
+      <PdfInkSelectionLayer
+        enabled={metadata.textMode === 'scanned'}
+        draft={pdfInkDraft?.pageNumber === pageNumber ? pdfInkDraft : null}
+        onStroke={(stroke) => handlePdfInkStroke(pageNumber, stroke)}
+        onClearSelection={onClearInkSelection}
+        onOpenContextMenu={onOpenInkContextMenu}
+      />
+      {pdfHighlightsByPage.has(pageNumber) && (
+        <PdfAnnotationLayer
+          highlights={pdfHighlightsByPage.get(pageNumber) || EMPTY_PDF_HIGHLIGHTS}
+          activeHighlightId={activeHighlightId}
+          onOpenHighlight={openSavedHighlight}
+          onOpenContextMenu={({ clientX, clientY, text, highlight }) =>
+            openReaderContextMenu(clientX, clientY, text, highlight)
+          }
+        />
+      )}
+    </div>
+  )
+})
+
 const PdfContinuousScrollList = React.memo(
   function PdfContinuousScrollList(props: PdfContinuousScrollListProps) {
     const {
@@ -330,24 +482,6 @@ const PdfContinuousScrollList = React.memo(
       renderWindowCenter,
       isAutoPlaying,
       autoPlaySpeed,
-      pdfEstimatedPageHeight,
-      pdfPageRenderWidth,
-      pdfPageAspectRatio,
-      pdfPageAspectRatios,
-      pdfOcrPages,
-      pdfHighlightsByPage,
-      activeHighlightId,
-      pdfPageTextModes,
-      pdfInkDraft,
-      handlePdfInkStroke,
-      onClearInkSelection,
-      onOpenInkContextMenu,
-      handlePdfOcrAreasSelected,
-      openReaderContextMenu,
-      ensurePdfOcrPage,
-      handleOpenPdfOcrFallback,
-      openSavedHighlight,
-      t,
     } = props
 
     // Dynamic overscan for auto-play (Option B)
@@ -358,98 +492,13 @@ const PdfContinuousScrollList = React.memo(
         {pdfPageIndexes.map((idx) => {
           const windowCenter = isAutoPlaying ? renderWindowCenter : currentPageIndex
           const isNearViewport = Math.abs(idx - windowCenter) <= effectiveOverscan
-          const pageRatio = pdfPageAspectRatios[idx + 1] ?? pdfPageAspectRatio
-          const pageHeight = Math.round((pdfPageRenderWidth || 600) * pageRatio)
-
-          if (!isNearViewport) {
-            return (
-              <div
-                key={idx}
-                className="book-reader__pdf-page-slot is-placeholder"
-                data-page-number={idx + 1}
-                style={{
-                  height: `${pageHeight || pdfEstimatedPageHeight}px`,
-                  width: `${pdfPageRenderWidth || 600}px`,
-                }}
-              >
-                {t('books.page_label', { num: idx + 1 })}
-              </div>
-            )
-          }
-
           return (
-            <div
+            <PdfContinuousPageSlot
               key={idx}
-              className="book-reader__pdf-page-slot is-rendered"
-              data-page-number={idx + 1}
-              style={{
-                height: `${pageHeight || pdfEstimatedPageHeight}px`,
-                width: `${pdfPageRenderWidth || 600}px`,
-              }}
-            >
-              <Page
-                pageNumber={idx + 1}
-                devicePixelRatio={PDF_RENDER_DEVICE_PIXEL_RATIO}
-                renderTextLayer={pdfPageTextModes[idx + 1] !== 'scanned'}
-                renderAnnotationLayer={false}
-                width={pdfPageRenderWidth || undefined}
-                onLoadSuccess={(page) => {
-                  pdfReaderPerformanceTrace.markTargetPage('page-loaded', idx + 1)
-                  const ratio = page.height / page.width
-                  if (Number.isFinite(ratio) && ratio > 0) {
-                    props.onPageAspectRatioLoaded?.(idx + 1, ratio)
-                  }
-                }}
-                onGetTextSuccess={(textContent) =>
-                  props.onPageTextContentResolved?.(idx + 1, textContent)
-                }
-                onGetTextError={() => props.onPageTextContentError?.(idx + 1)}
-                onRenderSuccess={() => {
-                  pdfReaderPerformanceTrace.markTargetPage('canvas-rendered', idx + 1)
-                  props.onFirstVisiblePageRendered?.()
-                }}
-                loading={
-                  <div
-                    className="book-reader__pdf-page-loading"
-                    style={{ height: `${pageHeight || pdfEstimatedPageHeight}px` }}
-                  >
-                    {t('books.pdf_rendering_page', { num: idx + 1 })}
-                  </div>
-                }
-              />
-              {pdfOcrPages[idx + 1] && (
-                <PdfOcrTextLayer
-                  words={pdfOcrPages[idx + 1]?.data?.words || []}
-                  status={pdfOcrPages[idx + 1]?.status || 'idle'}
-                  progressLabel={pdfOcrPages[idx + 1]?.progressLabel}
-                  onSelectAreas={(areas, selectedText) =>
-                    void handlePdfOcrAreasSelected(idx + 1, areas, selectedText)
-                  }
-                  onOpenContextMenu={({ clientX, clientY, text }) =>
-                    openReaderContextMenu(clientX, clientY, text)
-                  }
-                  onRetry={() => void ensurePdfOcrPage(idx + 1)}
-                  onFallback={handleOpenPdfOcrFallback}
-                />
-              )}
-              <PdfInkSelectionLayer
-                enabled={pdfPageTextModes[idx + 1] === 'scanned'}
-                draft={pdfInkDraft?.pageNumber === idx + 1 ? pdfInkDraft : null}
-                onStroke={(stroke) => handlePdfInkStroke(idx + 1, stroke)}
-                onClearSelection={onClearInkSelection}
-                onOpenContextMenu={onOpenInkContextMenu}
-              />
-              {pdfHighlightsByPage.has(idx + 1) && (
-                <PdfAnnotationLayer
-                  highlights={pdfHighlightsByPage.get(idx + 1) || EMPTY_PDF_HIGHLIGHTS}
-                  activeHighlightId={activeHighlightId}
-                  onOpenHighlight={openSavedHighlight}
-                  onOpenContextMenu={({ clientX, clientY, text, highlight }) =>
-                    openReaderContextMenu(clientX, clientY, text, highlight)
-                  }
-                />
-              )}
-            </div>
+              idx={idx}
+              isNearViewport={isNearViewport}
+              listProps={props}
+            />
           )
         })}
       </>
@@ -463,11 +512,11 @@ const PdfContinuousScrollList = React.memo(
     if (prev.pdfPageRenderWidth !== next.pdfPageRenderWidth) return false
     if (prev.pdfEstimatedPageHeight !== next.pdfEstimatedPageHeight) return false
     if (prev.pdfPageAspectRatio !== next.pdfPageAspectRatio) return false
-    if (prev.pdfPageAspectRatios !== next.pdfPageAspectRatios) return false
+    if (prev.pdfPageMetadataCache !== next.pdfPageMetadataCache) return false
+    if (prev.pdfPageMetadataSessionId !== next.pdfPageMetadataSessionId) return false
     if (prev.pdfOcrPages !== next.pdfOcrPages) return false
     if (prev.pdfHighlightsByPage !== next.pdfHighlightsByPage) return false
     if (prev.activeHighlightId !== next.activeHighlightId) return false
-    if (prev.pdfPageTextModes !== next.pdfPageTextModes) return false
     if (prev.pdfInkDraft !== next.pdfInkDraft) return false
 
     // During auto-play, only care about renderWindowCenter changes
@@ -489,8 +538,6 @@ type PdfOcrPageState = {
   data?: PdfOcrPage
   progressLabel?: string
 }
-
-type PdfPageTextMode = 'unknown' | 'text' | 'scanned'
 
 type PdfInkDraft = {
   pageNumber: number
@@ -645,7 +692,7 @@ export const Books: React.FC = () => {
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null)
   const [pdfNumPages, setPdfNumPages] = useState<number>(0)
   const [pdfPageAspectRatio, setPdfPageAspectRatio] = useState(PDF_DEFAULT_PAGE_ASPECT_RATIO)
-  const [pdfPageAspectRatios, setPdfPageAspectRatios] = useState<Record<number, number>>({})
+  const pdfPageMetadataCache = useMemo(() => new PdfPageMetadataCache(), [])
   const [pdfOutlineEntries, setPdfOutlineEntries] = useState<PdfOutlineEntry[] | null>(null)
   const [pdfOutlineStatus, setPdfOutlineStatus] = useState<PdfOutlineUiStatus>('empty')
   const [pdfOutlineAnalysisMessage, setPdfOutlineAnalysisMessage] = useState<string | null>(null)
@@ -1859,6 +1906,7 @@ export const Books: React.FC = () => {
   // Open book in custom reader overlay
   const handleOpenReader = async (book: any) => {
     pdfReaderPerformanceTrace.resetSession()
+    pdfPageMetadataCache.beginSession()
     readerSessionRef.current += 1
     cancelPdfOcrRequests()
     if (readingBook && readingBook.id !== book.id && api?.cancelReaderOutlineAnalysis) {
@@ -1875,7 +1923,6 @@ export const Books: React.FC = () => {
     setPdfData(null)
     setPdfNumPages(0)
     setPdfPageAspectRatio(PDF_DEFAULT_PAGE_ASPECT_RATIO)
-    setPdfPageAspectRatios({})
     setPdfOutlineEntries(null)
     setPdfPageTextModes({})
     setPdfInkDraft(null)
@@ -2046,7 +2093,6 @@ export const Books: React.FC = () => {
     setPdfData(null)
     setPdfNumPages(0)
     setPdfPageAspectRatio(PDF_DEFAULT_PAGE_ASPECT_RATIO)
-    setPdfPageAspectRatios({})
     setPdfOutlineEntries(null)
     setPdfPageTextModes({})
     setPdfInkDraft(null)
@@ -2999,23 +3045,29 @@ export const Books: React.FC = () => {
   const handlePdfPageTextContentResolved = useCallback(
     (pageNumber: number, textContent: TextContent) => {
       const mode = detectPdfPageTextMode(textContent)
+      pdfPageMetadataCache.setTextMode(pdfPageMetadataCache.getSessionId(), pageNumber, mode)
       setPdfPageTextModes((current) =>
         current[pageNumber] === mode ? current : { ...current, [pageNumber]: mode },
       )
       pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
     },
-    [],
+    [pdfPageMetadataCache],
   )
 
   const handlePdfPageTextContentError = useCallback((pageNumber: number) => {
     // If the text layer cannot be extracted, keep the page usable through local OCR ink.
+    pdfPageMetadataCache.setTextMode(
+      pdfPageMetadataCache.getSessionId(),
+      pageNumber,
+      'scanned',
+    )
     setPdfPageTextModes((current) =>
       current[pageNumber] === 'scanned'
         ? current
         : { ...current, [pageNumber]: 'scanned' },
     )
     pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
-  }, [])
+  }, [pdfPageMetadataCache])
 
   const handlePdfLoadSuccess = async (pdfDocument: PDFDocumentProxy) => {
     const { numPages } = pdfDocument
@@ -3047,6 +3099,11 @@ export const Books: React.FC = () => {
     }
 
     if (sessionId !== readerSessionRef.current) return
+    pdfPageMetadataCache.setAspectRatio(
+      pdfPageMetadataCache.getSessionId(),
+      initialPage + 1,
+      aspectRatio,
+    )
     setPdfPageAspectRatio(aspectRatio)
     setPdfNumPages(numPages)
     setCurrentPageIndex(initialPage)
@@ -3120,14 +3177,6 @@ export const Books: React.FC = () => {
     readingBook,
     reconcileSavedSelectionLocation,
   ])
-
-  const handlePdfPageAspectRatioLoaded = (pageNumber: number, ratio: number) => {
-    setPdfPageAspectRatios((current) => {
-      const previous = current[pageNumber]
-      if (previous !== undefined && Math.abs(previous - ratio) < 0.001) return current
-      return { ...current, [pageNumber]: ratio }
-    })
-  }
 
   const handlePagedReaderWheel = (e: WheelEvent) => {
     const isPagedPdf = Boolean(isPdf && pdfLayoutMode !== 'scroll')
@@ -4769,6 +4818,8 @@ export const Books: React.FC = () => {
         (currentChIndex >= 0 && currentChIndex < chList.length - 1)
 
   const pdfFile = pdfBlobUrl
+  const getPdfPageTextMode = (pageNumber: number): PdfPageTextMode =>
+    pdfPageTextModes[pageNumber] ?? pdfPageMetadataCache.getSnapshot(pageNumber).textMode
   const isDarkReader = readerBg === '#0F0F0F'
   const readerTextColor = isDarkReader ? '#D4D4D4' : '#2F2E2C'
   const readerBorderColor = isDarkReader ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'
@@ -5818,14 +5869,11 @@ export const Books: React.FC = () => {
                                   pdfEstimatedPageHeight={pdfEstimatedPageHeight}
                                   pdfPageRenderWidth={pdfPageRenderWidth}
                                   pdfPageAspectRatio={pdfPageAspectRatio}
-                                  pdfPageAspectRatios={pdfPageAspectRatios}
-                                  onPageAspectRatioLoaded={handlePdfPageAspectRatioLoaded}
-                                  onPageTextContentResolved={handlePdfPageTextContentResolved}
-                                  onPageTextContentError={handlePdfPageTextContentError}
+                                  pdfPageMetadataCache={pdfPageMetadataCache}
+                                  pdfPageMetadataSessionId={pdfPageMetadataCache.getSessionId()}
                                   pdfOcrPages={pdfOcrPages}
                                   pdfHighlightsByPage={pdfHighlightsByPage}
                                   activeHighlightId={activeHighlightId}
-                                  pdfPageTextModes={pdfPageTextModes}
                                   pdfInkDraft={pdfInkDraft}
                                   handlePdfInkStroke={handlePdfInkStroke}
                                   onClearInkSelection={clearPendingReaderSelection}
@@ -5885,7 +5933,7 @@ export const Books: React.FC = () => {
                                           pageNumber={currentPageIndex + 1}
                                           devicePixelRatio={PDF_RENDER_DEVICE_PIXEL_RATIO}
                                           renderTextLayer={
-                                            pdfPageTextModes[currentPageIndex + 1] !== 'scanned'
+                                            getPdfPageTextMode(currentPageIndex + 1) !== 'scanned'
                                           }
                                           renderAnnotationLayer={false}
                                           width={pdfPageRenderWidth || undefined}
@@ -5950,7 +5998,7 @@ export const Books: React.FC = () => {
                                         )}
                                         <PdfInkSelectionLayer
                                           enabled={
-                                            pdfPageTextModes[currentPageIndex + 1] === 'scanned'
+                                            getPdfPageTextMode(currentPageIndex + 1) === 'scanned'
                                           }
                                           draft={
                                             pdfInkDraft?.pageNumber === currentPageIndex + 1
@@ -6000,7 +6048,7 @@ export const Books: React.FC = () => {
                                             pageNumber={currentPageIndex + 2}
                                             devicePixelRatio={PDF_RENDER_DEVICE_PIXEL_RATIO}
                                             renderTextLayer={
-                                              pdfPageTextModes[currentPageIndex + 2] !== 'scanned'
+                                              getPdfPageTextMode(currentPageIndex + 2) !== 'scanned'
                                             }
                                             renderAnnotationLayer={false}
                                             width={pdfPageRenderWidth || undefined}
@@ -6065,7 +6113,7 @@ export const Books: React.FC = () => {
                                           )}
                                           <PdfInkSelectionLayer
                                             enabled={
-                                              pdfPageTextModes[currentPageIndex + 2] === 'scanned'
+                                              getPdfPageTextMode(currentPageIndex + 2) === 'scanned'
                                             }
                                             draft={
                                               pdfInkDraft?.pageNumber === currentPageIndex + 2
@@ -6117,7 +6165,7 @@ export const Books: React.FC = () => {
                                         pageNumber={currentPageIndex + 1}
                                         devicePixelRatio={PDF_RENDER_DEVICE_PIXEL_RATIO}
                                         renderTextLayer={
-                                          pdfPageTextModes[currentPageIndex + 1] !== 'scanned'
+                                          getPdfPageTextMode(currentPageIndex + 1) !== 'scanned'
                                         }
                                         renderAnnotationLayer={false}
                                         width={pdfPageRenderWidth || undefined}
@@ -6182,7 +6230,7 @@ export const Books: React.FC = () => {
                                       )}
                                       <PdfInkSelectionLayer
                                         enabled={
-                                          pdfPageTextModes[currentPageIndex + 1] === 'scanned'
+                                          getPdfPageTextMode(currentPageIndex + 1) === 'scanned'
                                         }
                                         draft={
                                           pdfInkDraft?.pageNumber === currentPageIndex + 1
