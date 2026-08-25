@@ -1,10 +1,12 @@
 import os from 'node:os'
 import fs from 'node:fs/promises'
+import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
-const POWERSHELL_UTF8_PREFIX = '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); '
+const POWERSHELL_UTF8_PREFIX =
+  '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); '
 
 export type MonitorMetric = 'cpu' | 'memory' | 'network'
 export type MonitorStatus = 'ready' | 'stale' | 'unavailable'
@@ -72,7 +74,8 @@ const SAMPLE_INTERVAL_MS = 3_000
 const DETAIL_INTERVAL_MS = 5_000
 const BYTES_PER_MB = 1024 * 1024
 
-const clampPercent = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0))
+const clampPercent = (value: number) =>
+  Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0))
 const round = (value: number, digits = 1) => {
   const factor = 10 ** digits
   return Math.round(value * factor) / factor
@@ -83,10 +86,19 @@ const normalizeProcessName = (value: string) => {
   return trimmed || 'Unknown process'
 }
 
+export const normalizeDarwinProcessName = (value: string) => {
+  const normalized = normalizeProcessName(value)
+  const bundleMatch = normalized.match(/(?:^|\/)([^/]+)\.app(?:\/|$)/i)
+  if (bundleMatch?.[1]) return bundleMatch[1]
+  if (normalized.startsWith('/')) return path.posix.basename(normalized) || normalized
+  return normalized
+}
+
 const groupProcessRows = (processes: RawProcess[], totalMemory: number): ProcessResourceRow[] => {
   const grouped = new Map<string, ProcessResourceRow>()
   for (const process of processes) {
-    if (process.pid <= 0 || process.name === 'System Idle Process' || process.name === 'Idle') continue
+    if (process.pid <= 0 || process.name === 'System Idle Process' || process.name === 'Idle')
+      continue
     const name = normalizeProcessName(process.name)
     const key = name.toLowerCase()
     const current = grouped.get(key) ?? {
@@ -133,7 +145,10 @@ const execPowerShell = (command: string, maxBuffer = 2 * 1024 * 1024) =>
   )
 
 const parseCsvFields = (line: string) =>
-  line.replace(/^"|"$/g, '').split('","').map((field) => field.replace(/""/g, '"'))
+  line
+    .replace(/^"|"$/g, '')
+    .split('","')
+    .map((field) => field.replace(/""/g, '"'))
 
 const getCpuSample = (): CpuSample => {
   const cpus = os.cpus()
@@ -162,7 +177,10 @@ const parseLinuxNetwork = async (): Promise<Map<string, NetworkCounter>> => {
     const separator = line.indexOf(':')
     if (separator < 0) continue
     const name = line.slice(0, separator).trim()
-    const fields = line.slice(separator + 1).trim().split(/\s+/)
+    const fields = line
+      .slice(separator + 1)
+      .trim()
+      .split(/\s+/)
     if (fields.length < 9) continue
     counters.set(name, { receivedBytes: Number(fields[0]) || 0, sentBytes: Number(fields[8]) || 0 })
   }
@@ -171,7 +189,10 @@ const parseLinuxNetwork = async (): Promise<Map<string, NetworkCounter>> => {
 
 export const parseDarwinNetworkOutput = (stdout: string): Map<string, NetworkCounter> => {
   const counters = new Map<string, NetworkCounter>()
-  const lines = stdout.split('\n').map((line) => line.trim()).filter(Boolean)
+  const lines = stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
   const header = lines.find((line) => {
     const fields = line.split(/\s+/)
     return fields.includes('Name') && fields.includes('Ibytes') && fields.includes('Obytes')
@@ -185,7 +206,8 @@ export const parseDarwinNetworkOutput = (stdout: string): Map<string, NetworkCou
   const headerPosition = lines.indexOf(header)
   for (const line of lines.slice(headerPosition + 1)) {
     const fields = line.split(/\s+/)
-    if (fields[0] === 'Name' || fields.length <= Math.max(nameIndex, receivedIndex, sentIndex)) continue
+    if (fields[0] === 'Name' || fields.length <= Math.max(nameIndex, receivedIndex, sentIndex))
+      continue
     const name = fields[nameIndex]
     if (!name) continue
     const receivedBytes = Number(fields[receivedIndex]) || 0
@@ -219,18 +241,29 @@ export const parseWindowsNetworkOutput = (stdout: string): Map<string, NetworkCo
 }
 
 const parseWindowsNetwork = async (): Promise<Map<string, NetworkCounter>> => {
-  const { stdout } = await execFileAsync('netstat.exe', ['-e'], { windowsHide: true, maxBuffer: 512 * 1024 })
+  const { stdout } = await execFileAsync('netstat.exe', ['-e'], {
+    windowsHide: true,
+    maxBuffer: 512 * 1024,
+  })
   return parseWindowsNetworkOutput(stdout)
 }
 
 const getWindowsInterfaceCounters = async (): Promise<Map<string, NetworkCounter>> => {
-  const command = 'Get-NetAdapterStatistics | Select-Object Name,ReceivedBytes,SentBytes | ConvertTo-Csv -NoTypeInformation'
+  const command =
+    'Get-NetAdapterStatistics | Select-Object Name,ReceivedBytes,SentBytes | ConvertTo-Csv -NoTypeInformation'
   const { stdout } = await execPowerShell(command)
   const counters = new Map<string, NetworkCounter>()
-  for (const line of stdout.split('\n').map((item) => item.trim()).filter(Boolean).slice(1)) {
+  for (const line of stdout
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(1)) {
     const fields = parseCsvFields(line)
     if (fields.length < 3) continue
-    counters.set(fields[0], { receivedBytes: Number(fields[1]) || 0, sentBytes: Number(fields[2]) || 0 })
+    counters.set(fields[0], {
+      receivedBytes: Number(fields[1]) || 0,
+      sentBytes: Number(fields[2]) || 0,
+    })
   }
   return counters
 }
@@ -242,8 +275,12 @@ const readNetworkCounters = async () => {
   return new Map<string, NetworkCounter>()
 }
 
-const getProcessRowsWithPs = async (): Promise<RawProcess[]> => {
-  const { stdout } = await execFileAsync('ps', ['-axo', 'pid=,pcpu=,rss=,comm='], { maxBuffer: 8 * 1024 * 1024 })
+const getProcessRowsWithPs = async (
+  normalizeName: (value: string) => string = normalizeProcessName,
+): Promise<RawProcess[]> => {
+  const { stdout } = await execFileAsync('ps', ['-axo', 'pid=,pcpu=,rss=,comm='], {
+    maxBuffer: 8 * 1024 * 1024,
+  })
   return stdout
     .split('\n')
     .map((line) => line.trim())
@@ -255,7 +292,7 @@ const getProcessRowsWithPs = async (): Promise<RawProcess[]> => {
         pid: Number(match[1]),
         cpuPercent: parseNumber(match[2]) / Math.max(1, os.cpus().length),
         memoryBytes: Number(match[3]) * 1024,
-        name: normalizeProcessName(match[4]),
+        name: normalizeName(match[4]),
       }
     })
     .filter((process): process is RawProcess => process !== null)
@@ -266,14 +303,23 @@ const getLinuxProcessRows = async (): Promise<RawProcess[]> => {
   return rows
 }
 
+const getDarwinProcessRows = async (): Promise<RawProcess[]> => {
+  const rows = await getProcessRowsWithPs(normalizeDarwinProcessName)
+  return rows
+}
+
 type WindowsProcessCounter = { pid: number; name: string; cpuSeconds: number; memoryBytes: number }
 let windowsProcessPrevious = new Map<number, WindowsProcessCounter>()
 let windowsProcessPreviousAt = 0
 
 const queryWindowsProcessCounters = async (): Promise<WindowsProcessCounter[]> => {
-  const command = 'Get-Process | Select-Object Id,ProcessName,CPU,WorkingSet64 | ConvertTo-Csv -NoTypeInformation'
+  const command =
+    'Get-Process | Select-Object Id,ProcessName,CPU,WorkingSet64 | ConvertTo-Csv -NoTypeInformation'
   const { stdout } = await execPowerShell(command, 8 * 1024 * 1024)
-  const lines = stdout.split('\n').map((line) => line.trim()).filter(Boolean)
+  const lines = stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
   const rows: WindowsProcessCounter[] = []
   for (const line of lines.slice(1)) {
     const fields = parseCsvFields(line)
@@ -318,7 +364,8 @@ const getWindowsProcessRows = async (): Promise<RawProcess[]> => {
 
 const readProcessRows = async () => {
   if (process.platform === 'win32') return getWindowsProcessRows()
-  if (process.platform === 'linux' || process.platform === 'darwin') return process.platform === 'linux' ? getLinuxProcessRows() : getProcessRowsWithPs()
+  if (process.platform === 'linux') return getLinuxProcessRows()
+  if (process.platform === 'darwin') return getDarwinProcessRows()
   return []
 }
 
@@ -446,12 +493,17 @@ export class SystemMonitorService {
   private async collectNetwork() {
     const current = await readNetworkCounters()
     const defaults = getDefaultInterfaceNames()
-    const elapsedMs = this.snapshot.timestamp > 0 ? Math.max(250, Date.now() - this.snapshot.timestamp) : SAMPLE_INTERVAL_MS
+    const elapsedMs =
+      this.snapshot.timestamp > 0
+        ? Math.max(250, Date.now() - this.snapshot.timestamp)
+        : SAMPLE_INTERVAL_MS
     const interfaces = [...current.entries()]
       .filter(([name]) => name !== 'lo' && name !== 'Loopback Pseudo-Interface 1')
       .map(([name, counter]) => {
         const previous = this.networkPrevious?.get(name)
-        const receivedDelta = previous ? Math.max(0, counter.receivedBytes - previous.receivedBytes) : 0
+        const receivedDelta = previous
+          ? Math.max(0, counter.receivedBytes - previous.receivedBytes)
+          : 0
         const sentDelta = previous ? Math.max(0, counter.sentBytes - previous.sentBytes) : 0
         return {
           name,
@@ -477,7 +529,8 @@ export class SystemMonitorService {
     if (process.platform === 'darwin') {
       const { stdout } = await execFileAsync('/usr/bin/vm_stat')
       const pageSize = Number(stdout.match(/page size of (\d+) bytes/i)?.[1]) || 4096
-      const pages = (label: string) => Number(stdout.match(new RegExp(`${label}:\\s+(\\d+)`, 'i'))?.[1]) || 0
+      const pages = (label: string) =>
+        Number(stdout.match(new RegExp(`${label}:\\s+(\\d+)`, 'i'))?.[1]) || 0
       const availablePages =
         pages('Pages free') +
         pages('Pages inactive') +
@@ -490,13 +543,19 @@ export class SystemMonitorService {
 
   private async getNetworkDetailRows(): Promise<NetworkResourceRow[]> {
     let counters: Map<string, NetworkCounter>
-    counters = process.platform === 'win32' ? await getWindowsInterfaceCounters() : await readNetworkCounters()
+    counters =
+      process.platform === 'win32'
+        ? await getWindowsInterfaceCounters()
+        : await readNetworkCounters()
     let sampledAt = Date.now()
     if (!this.networkDetailPrevious) {
       this.networkDetailPrevious = counters
       this.networkDetailPreviousAt = sampledAt
       await new Promise((resolve) => setTimeout(resolve, 650))
-      counters = process.platform === 'win32' ? await getWindowsInterfaceCounters() : await readNetworkCounters()
+      counters =
+        process.platform === 'win32'
+          ? await getWindowsInterfaceCounters()
+          : await readNetworkCounters()
       sampledAt = Date.now()
     }
     const elapsedMs = Math.max(250, sampledAt - this.networkDetailPreviousAt)
@@ -509,8 +568,12 @@ export class SystemMonitorService {
           key: name,
           name,
           online: onlineNames.has(name),
-          downloadBps: previous ? Math.max(0, ((counter.receivedBytes - previous.receivedBytes) * 1000) / elapsedMs) : 0,
-          uploadBps: previous ? Math.max(0, ((counter.sentBytes - previous.sentBytes) * 1000) / elapsedMs) : 0,
+          downloadBps: previous
+            ? Math.max(0, ((counter.receivedBytes - previous.receivedBytes) * 1000) / elapsedMs)
+            : 0,
+          uploadBps: previous
+            ? Math.max(0, ((counter.sentBytes - previous.sentBytes) * 1000) / elapsedMs)
+            : 0,
           percent: 0,
         }
       })
@@ -524,7 +587,9 @@ export class SystemMonitorService {
         uploadBps: round(row.uploadBps),
         percent: total > 0 ? round(((row.downloadBps + row.uploadBps) / total) * 100) : 0,
       }))
-      .sort((left, right) => right.downloadBps + right.uploadBps - (left.downloadBps + left.uploadBps))
+      .sort(
+        (left, right) => right.downloadBps + right.uploadBps - (left.downloadBps + left.uploadBps),
+      )
       .slice(0, MAX_ROWS)
   }
 
