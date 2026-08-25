@@ -30,17 +30,58 @@ function ScreenLoading({ screen }: { screen: string }) {
       aria-live="polite"
       aria-label="Loading"
     >
-      <div className="screen-loading__visual" aria-hidden="true">
-        <span className="screen-loading__orb" />
-        <span className="screen-loading__rail" />
+      <div className="screen-loading__header" aria-hidden="true">
+        <div className="screen-loading__heading">
+          <span className="screen-loading__block screen-loading__title" />
+          <span className="screen-loading__block screen-loading__subtitle" />
+        </div>
+        <span className="screen-loading__block screen-loading__action" />
       </div>
-      <div className="screen-loading__bar" />
-      <div className="screen-loading__row screen-loading__row--wide" />
-      <div className="screen-loading__row" />
-      <div className="screen-loading__grid">
-        <div className="screen-loading__card" />
-        <div className="screen-loading__card" />
-        <div className="screen-loading__card" />
+      <div className="screen-loading__tabs" aria-hidden="true">
+        {[62, 74, 58, 70].map((width) => (
+          <span
+            key={width}
+            className="screen-loading__block screen-loading__tab"
+            style={{ width }}
+          />
+        ))}
+      </div>
+      <div className="screen-loading__body" aria-hidden="true">
+        <aside className="screen-loading__sidebar">
+          {[84, 68, 76, 60, 72].map((width) => (
+            <div key={width} className="screen-loading__nav-row">
+              <span className="screen-loading__block screen-loading__nav-icon" />
+              <span
+                className="screen-loading__block screen-loading__nav-label"
+                style={{ width: `${width}%` }}
+              />
+            </div>
+          ))}
+        </aside>
+        <div className="screen-loading__panel">
+          <div className="screen-loading__lead">
+            <span className="screen-loading__block screen-loading__lead-mark" />
+            <div className="screen-loading__lead-copy">
+              <span className="screen-loading__block screen-loading__lead-title" />
+              <span className="screen-loading__block screen-loading__lead-subtitle" />
+            </div>
+          </div>
+          <div className="screen-loading__list">
+            {[78, 62, 70, 56].map((width) => (
+              <div key={width} className="screen-loading__item">
+                <span className="screen-loading__block screen-loading__item-icon" />
+                <div className="screen-loading__item-copy">
+                  <span
+                    className="screen-loading__block screen-loading__item-title"
+                    style={{ width: `${width}%` }}
+                  />
+                  <span className="screen-loading__block screen-loading__item-subtitle" />
+                </div>
+                <span className="screen-loading__block screen-loading__item-action" />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   )

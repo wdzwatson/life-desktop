@@ -2617,10 +2617,14 @@ function createWindow() {
   activeUserId = settings.lastUserId || 'guest'
   switchUserSession(activeUserId)
   const useCustomTitlebar = ['win32', 'linux'].includes(process.platform)
+  const primaryWorkArea = screen.getPrimaryDisplay().workArea
+  const defaultWidth = Math.round(primaryWorkArea.width * 0.94)
+  const defaultHeight = Math.round(primaryWorkArea.height * 0.9)
 
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: defaultWidth,
+    height: defaultHeight,
+    center: true,
     minWidth: 800,
     minHeight: 600,
     autoHideMenuBar: true,
@@ -2634,6 +2638,7 @@ function createWindow() {
   })
 
   if (useCustomTitlebar) mainWindow.setMenuBarVisibility(false)
+  mainWindow.maximize()
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
