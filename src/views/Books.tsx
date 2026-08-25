@@ -644,7 +644,7 @@ export const Books: React.FC = () => {
   const [pdfOutlineCacheStatus, setPdfOutlineCacheStatus] = useState<'hit' | 'miss' | null>(null)
   const [selectedPdfOutlineNodeId, setSelectedPdfOutlineNodeId] = useState<string | null>(null)
   const [isLoadingReader, setIsLoadingReader] = useState(false)
-  const [pdfLayoutMode, setPdfLayoutMode] = useState<PdfLayoutMode>('single')
+  const [pdfLayoutMode, setPdfLayoutMode] = useState<PdfLayoutMode>('scroll')
   const [isPdfTransitioning, setIsPdfTransitioning] = useState(false)
   const lastMeasuredWidthRef = useRef(0)
   const activeOutlineBookIdRef = useRef<number | null>(null)
@@ -683,7 +683,7 @@ export const Books: React.FC = () => {
   )
 
   // EPUB reflow view mode: paged single-page, dual-column, or continuous scroll.
-  const [epubLayoutMode, setEpubLayoutMode] = useState<'single' | 'dual' | 'scroll'>('single')
+  const [epubLayoutMode, setEpubLayoutMode] = useState<'single' | 'dual' | 'scroll'>('scroll')
   const [isAutoPlaying, setIsAutoPlaying] = useState(false)
   const [autoPlaySpeed, setAutoPlaySpeed] = useState(10) // seconds per page
   const pdfInitializedRef = useRef(false)
@@ -5175,7 +5175,7 @@ export const Books: React.FC = () => {
             data-annotations-drawer-open={isAnnotationsDrawerOpen}
             style={{
               position: 'fixed',
-              top: 0,
+              top: 'var(--reader-viewport-top, 0px)',
               bottom: 0,
               left: 0,
               right: 0,

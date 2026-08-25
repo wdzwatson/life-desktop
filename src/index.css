@@ -731,6 +731,10 @@ body,
   grid-template-rows: var(--desktop-titlebar-height) minmax(0, 1fr);
 }
 
+body:has(.app-window--custom-titlebar) {
+  --reader-viewport-top: var(--desktop-titlebar-height);
+}
+
 .app-container {
   height: 100%;
   min-height: 0;
