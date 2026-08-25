@@ -402,7 +402,7 @@ test('reader annotation panel filters semantic kinds and paginates large lists',
 
 test('Notes export rebuilds annotation records from storage without using the active chapter', () => {
   const exportHandler = booksSource.match(
-    /const handleExportHighlights = async \(\) => \{([\s\S]*?)\n {2}\}\n\n {2}\/\/ Check if a book's category/,
+    /const handleExportHighlights = async \(\) => \{([\s\S]*?)\r?\n {2}\}\r?\n\r?\n {2}\/\/ Check if a book's category/,
   )?.[1]
   assert.ok(exportHandler)
   assert.match(exportHandler, /listReaderAnnotations/)

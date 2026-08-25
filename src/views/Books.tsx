@@ -79,6 +79,7 @@ import {
   type OcrOutlineCandidate,
 } from '../services/pdfOutlineEnhancements'
 import { resolveSelectionOutlineLocation } from '../services/selectionOutlineResolver'
+import { pdfReaderPerformanceTrace } from '../services/pdfReaderPerformance'
 import {
   compareReaderHighlightsByDocumentPosition,
   getActiveTocIndex,
@@ -390,6 +391,7 @@ const PdfContinuousScrollList = React.memo(
                 renderAnnotationLayer={false}
                 width={pdfPageRenderWidth || undefined}
                 onLoadSuccess={(page) => {
+                  pdfReaderPerformanceTrace.markTargetPage('page-loaded', idx + 1)
                   const ratio = page.height / page.width
                   if (Number.isFinite(ratio) && ratio > 0) {
                     props.onPageAspectRatioLoaded?.(idx + 1, ratio)
@@ -397,6 +399,7 @@ const PdfContinuousScrollList = React.memo(
                   props.onPageTextModeDetected?.(idx + 1, page)
                 }}
                 onRenderSuccess={() => {
+                  pdfReaderPerformanceTrace.markTargetPage('canvas-rendered', idx + 1)
                   props.onFirstVisiblePageRendered?.()
                 }}
                 loading={
@@ -1849,6 +1852,7 @@ export const Books: React.FC = () => {
 
   // Open book in custom reader overlay
   const handleOpenReader = async (book: any) => {
+    pdfReaderPerformanceTrace.resetSession()
     readerSessionRef.current += 1
     cancelPdfOcrRequests()
     if (readingBook && readingBook.id !== book.id && api?.cancelReaderOutlineAnalysis) {
@@ -2073,12 +2077,13 @@ export const Books: React.FC = () => {
   // buttons / progress / mode-entry must physically scroll the container to the page.
   const scrollPdfToPage = useCallback((pageIdx: number, behavior: ScrollBehavior = 'auto') => {
     const container = pdfScrollRef.current
-    if (!container) return
+    if (!container) return false
     const target = container.querySelector(
       `.book-reader__pdf-page-slot[data-page-number="${pageIdx + 1}"]`,
     )
-    if (!target) return
+    if (!target) return false
     container.scrollTo({ top: (target as HTMLElement).offsetTop, behavior })
+    return true
   }, [])
 
   const handleNextPage = (): boolean => {
@@ -2999,6 +3004,7 @@ export const Books: React.FC = () => {
         setPdfPageTextModes((current) =>
           current[pageNumber] === mode ? current : { ...current, [pageNumber]: mode },
         )
+        pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
       } catch {
         // If the text layer cannot be extracted, keep the page usable through local OCR ink.
         if (sessionId !== readerSessionRef.current) return
@@ -3007,6 +3013,7 @@ export const Books: React.FC = () => {
             ? current
             : { ...current, [pageNumber]: 'scanned' },
         )
+        pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
       }
     },
     [],
@@ -4606,11 +4613,20 @@ export const Books: React.FC = () => {
         if (!Number.isInteger(node.pageNumber)) return
         setSelectedPdfOutlineNodeId(node.id)
         const pageIndex = Math.max(0, Math.min(pdfNumPages - 1, (node.pageNumber as number) - 1))
+        const jumpId = pdfReaderPerformanceTrace.beginOutlineJump(pageIndex + 1)
         setCurrentPageIndex(pageIndex)
         setReadingProgress(Math.round((pageIndex / (pdfNumPages - 1 || 1)) * 100))
         if (pdfLayoutMode === 'scroll') {
           requestAnimationFrame(() => {
-            requestAnimationFrame(() => scrollPdfToPage(pageIndex, 'auto'))
+            requestAnimationFrame(() => {
+              if (scrollPdfToPage(pageIndex, 'auto')) {
+                pdfReaderPerformanceTrace.markJump(
+                  jumpId,
+                  'scroll-committed',
+                  pageIndex + 1,
+                )
+              }
+            })
           })
         }
         return
@@ -5872,10 +5888,20 @@ export const Books: React.FC = () => {
                                           renderTextLayer={true}
                                           renderAnnotationLayer={false}
                                           width={pdfPageRenderWidth || undefined}
-                                          onLoadSuccess={(page) =>
+                                          onLoadSuccess={(page) => {
+                                            pdfReaderPerformanceTrace.markTargetPage(
+                                              'page-loaded',
+                                              currentPageIndex + 1,
+                                            )
                                             void handlePdfPageTextModeDetected(
                                               currentPageIndex + 1,
                                               page,
+                                            )
+                                          }}
+                                          onRenderSuccess={() =>
+                                            pdfReaderPerformanceTrace.markTargetPage(
+                                              'canvas-rendered',
+                                              currentPageIndex + 1,
                                             )
                                           }
                                           loading={
@@ -5970,10 +5996,20 @@ export const Books: React.FC = () => {
                                             renderTextLayer={true}
                                             renderAnnotationLayer={false}
                                             width={pdfPageRenderWidth || undefined}
-                                            onLoadSuccess={(page) =>
+                                            onLoadSuccess={(page) => {
+                                              pdfReaderPerformanceTrace.markTargetPage(
+                                                'page-loaded',
+                                                currentPageIndex + 2,
+                                              )
                                               void handlePdfPageTextModeDetected(
                                                 currentPageIndex + 2,
                                                 page,
+                                              )
+                                            }}
+                                            onRenderSuccess={() =>
+                                              pdfReaderPerformanceTrace.markTargetPage(
+                                                'canvas-rendered',
+                                                currentPageIndex + 2,
                                               )
                                             }
                                             loading={
@@ -6070,10 +6106,20 @@ export const Books: React.FC = () => {
                                         renderTextLayer={true}
                                         renderAnnotationLayer={false}
                                         width={pdfPageRenderWidth || undefined}
-                                        onLoadSuccess={(page) =>
+                                        onLoadSuccess={(page) => {
+                                          pdfReaderPerformanceTrace.markTargetPage(
+                                            'page-loaded',
+                                            currentPageIndex + 1,
+                                          )
                                           void handlePdfPageTextModeDetected(
                                             currentPageIndex + 1,
                                             page,
+                                          )
+                                        }}
+                                        onRenderSuccess={() =>
+                                          pdfReaderPerformanceTrace.markTargetPage(
+                                            'canvas-rendered',
+                                            currentPageIndex + 1,
                                           )
                                         }
                                         loading={

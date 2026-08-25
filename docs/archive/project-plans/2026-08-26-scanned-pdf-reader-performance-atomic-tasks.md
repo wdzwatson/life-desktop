@@ -45,6 +45,15 @@
 
 验证：针对性测试、`npm test`、`npm run lint`、`npm run build`、`git diff --check`。
 
+完成记录：
+
+- 完成日期：2026-08-26。
+- 提交：本任务独立提交（见 Git 历史）。
+- 结果：新增有界 `PdfReaderPerformanceTrace`，把目录选择、滚动提交、目标页加载、canvas 完成、文本完成和跳转失效关联到同一个数值 jump；书籍会话切换时原子清空，不写数据库或外部遥测。
+- 审查：trace 不包含书名、路径、目录标题、文本或 OCR 内容，不进入 React state，也未改变页面准入、DPR、文本层或布局行为；旧 jump ID 和非目标页回调均被拒绝。
+- 验证：3 项 trace 针对性测试和 24 项阅读器呈现契约测试通过；`npm test`、`npm run lint`、`npx tsc -b --pretty false`、`npm run build`、`git diff --check` 通过。
+- 风险/后续：当前快照是会话内开发诊断数据，没有面向用户的遥测展示；PDF-PERF-02 将复用 `text-resolved` 节点验证文本提取去重。
+
 ### PDF-PERF-02 单一文本提取与文本模式缓存
 
 目标：删除页面类型判断对 `page.getTextContent()` 的重复调用，并避免已知扫描页重挂载时再次创建 PDF 文本层。
@@ -166,4 +175,3 @@ PDF-PERF-01
 - 审查：
 - 验证：
 - 风险/后续：
-
