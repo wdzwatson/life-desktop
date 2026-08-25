@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { classifyPdfAsync } from '@firecrawl/pdf-inspector'
 import AdmZip from 'adm-zip'
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { loadPdfOutline } from '../src/services/pdfOutlineAdapter.ts'
 
 const assetUrl = (name: string) =>
@@ -20,6 +20,30 @@ test('AT-15 PDF fixtures expose text, scanned, and mixed OCR classifications', a
     const classification = await classifyPdfAsync(readFileSync(assetUrl(name)))
     assert.equal(classification.pdfType, expectedType, name)
     assert.deepEqual(classification.pagesNeedingOcr, expectedOcrPages, name)
+  }
+})
+
+test('AT-15 hidden OCR fixture renders an image while exposing invisible text', async () => {
+  const data = new Uint8Array(readFileSync(assetUrl('at15-hidden-ocr.pdf')))
+  const loadingTask = getDocument({ data, disableWorker: true })
+  const document = await loadingTask.promise
+  try {
+    const page = await document.getPage(1)
+    const textContent = await page.getTextContent()
+    const operatorList = await page.getOperatorList()
+    const extractedText = textContent.items
+      .map((item) => ('str' in item ? item.str : ''))
+      .join(' ')
+
+    assert.match(extractedText, /invisible OCR text layer/)
+    assert.ok(
+      operatorList.fnArray.some(
+        (operator) =>
+          operator === OPS.paintImageXObject || operator === OPS.paintInlineImageXObject,
+      ),
+    )
+  } finally {
+    await document.destroy()
   }
 })
 

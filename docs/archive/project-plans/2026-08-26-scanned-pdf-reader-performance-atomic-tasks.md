@@ -190,6 +190,15 @@
 
 验证：针对性性能测试、`npm test`、`npm run lint`、`npm run build`、`git diff --check`。
 
+完成记录：
+
+- 完成日期：2026-08-26。
+- 提交：本任务独立提交（见 Git 历史）。
+- 结果：补齐纯扫描、隐藏 OCR、普通文本和混合 PDF 固定样本，新增可重复的 PDF.js 页面阶段与 320 页 DOM 结构基准，并在 `docs/archive/qa/2026-08-26-scanned-pdf-reader-performance-validation.md` 归档完整指标和验收结果。
+- 审查：目录定位结构 P95 为 0.10 ms，仅占帧预算 0.625% 和最轻冷页面阶段 2.00%；宽度重排 P95 为 1.80 ms，占帧预算 11.25%。三个预设阈值均未触发，因此依据数据不实施高风险虚拟化，保留完整轻量页槽和已完成的重页面准入/缓存控制。
+- 验证：虚拟化决策、基准资产、四类 fixture、trace、文本模式、元数据、调度器、LRU 和阅读器呈现针对性测试通过；`npm test`、`npm run lint`、`npx tsc -b --pretty false`、`npm run build`、`git diff --check` 通过。
+- 风险/后续：DOM 微基准不替代真实用户设备端到端 trace，PDF.js operator list 也是 canvas 完成的保守下界；若生产数据越过归档阈值，再以有限窗口方案开启新的独立任务。
+
 ## 四、依赖与执行顺序
 
 ```text

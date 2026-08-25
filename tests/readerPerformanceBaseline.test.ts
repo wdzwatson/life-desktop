@@ -37,7 +37,7 @@ const manifest = JSON.parse(readFileSync(manifestUrl, 'utf8')) as BaselineManife
 const booksSource = readFileSync(new URL('../src/views/Books.tsx', import.meta.url), 'utf8')
 
 test('reader baseline manifest covers every supported document and failure shape', () => {
-  assert.equal(manifest.version, 2)
+  assert.equal(manifest.version, 3)
 
   assert.deepEqual(
     manifest.samples.map((sample) => sample.id),
@@ -45,6 +45,7 @@ test('reader baseline manifest covers every supported document and failure shape
       'pdf-plain-no-outline',
       'pdf-multicolumn-deep-outline',
       'pdf-scanned',
+      'pdf-hidden-ocr',
       'pdf-mixed',
       'pdf-corrupt',
       'epub-deep-outline',
@@ -72,6 +73,10 @@ test('reader baseline manifest covers every supported document and failure shape
   )
   assert.equal(manifest.samples.find((sample) => sample.id === 'pdf-large-synthetic')?.pageCount, 320)
   assert.equal(manifest.samples.find((sample) => sample.id === 'pdf-scanned')?.selectionMode, 'ocr')
+  assert.equal(
+    manifest.samples.find((sample) => sample.id === 'pdf-hidden-ocr')?.selectionMode,
+    'text',
+  )
   assert.equal(manifest.samples.find((sample) => sample.id === 'pdf-mixed')?.selectionMode, 'mixed')
   assert.equal(manifest.samples.find((sample) => sample.id === 'pdf-corrupt')?.expectedStatus, 'error')
   assert.equal(manifest.samples.find((sample) => sample.id === 'epub-deep-outline')?.format, 'epub')

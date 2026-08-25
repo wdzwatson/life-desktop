@@ -90,6 +90,26 @@ def build_scanned_pdf(path):
     pdf.save()
 
 
+def build_hidden_ocr_pdf(path):
+    scanned = create_scanned_image(
+        "AT-15 hidden OCR PDF",
+        [
+            "The visible page is an image.",
+            "An invisible text layer supplies search and selection.",
+        ],
+    )
+    pdf = canvas.Canvas(str(path), pagesize=A4, pageCompression=1)
+    pdf.drawImage(ImageReader(scanned), 0, 0, width=PAGE_WIDTH, height=PAGE_HEIGHT)
+    text = pdf.beginText(48, PAGE_HEIGHT - 64)
+    text.setTextRenderMode(3)
+    text.setFont("Helvetica", 11)
+    text.textLine("AT-15 hidden OCR PDF")
+    text.textLine("The visible page is an image with an invisible OCR text layer.")
+    pdf.drawText(text)
+    pdf.showPage()
+    pdf.save()
+
+
 def build_mixed_pdf(path):
     pdf = canvas.Canvas(str(path), pagesize=A4, pageCompression=1)
     pdf.setFont("Helvetica-Bold", 18)
@@ -172,15 +192,17 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     multicolumn = OUTPUT_DIR / "at15-multicolumn-deep-outline.pdf"
     scanned = OUTPUT_DIR / "at15-scanned.pdf"
+    hidden_ocr = OUTPUT_DIR / "at15-hidden-ocr.pdf"
     mixed = OUTPUT_DIR / "at15-mixed.pdf"
     corrupt = OUTPUT_DIR / "at15-corrupt.pdf"
     epub = OUTPUT_DIR / "at15-deep-outline.epub"
     build_multicolumn_pdf(multicolumn)
     build_scanned_pdf(scanned)
+    build_hidden_ocr_pdf(hidden_ocr)
     build_mixed_pdf(mixed)
     build_corrupt_pdf(mixed, corrupt)
     build_deep_epub(epub)
-    for path in (multicolumn, scanned, mixed, corrupt, epub):
+    for path in (multicolumn, scanned, hidden_ocr, mixed, corrupt, epub):
         print(f"{path.relative_to(ROOT)} {path.stat().st_size} bytes")
 
 

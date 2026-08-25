@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF reader DOM benchmark</title>
+    <style>
+      body { margin: 0; font-family: sans-serif; }
+      .list { display: flex; flex-direction: column; align-items: center; gap: 24px; }
+      .slot { flex: 0 0 auto; }
+      #result { position: fixed; inset: 8px auto auto 8px; z-index: 1; background: white; }
+    </style>
+  </head>
+  <body>
+    <pre id="result">running</pre>
+    <div class="list"></div>
+    <script>
+      const pageCount = 320
+      const sampleCount = 40
+      const list = document.querySelector('.list')
+      const percentile = (values, value) => {
+        const sorted = [...values].sort((left, right) => left - right)
+        return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * value) - 1)]
+      }
+      const create = () => {
+        list.replaceChildren()
+        const fragment = document.createDocumentFragment()
+        for (let index = 0; index < pageCount; index += 1) {
+          const slot = document.createElement('div')
+          slot.className = 'slot'
+          slot.dataset.pageNumber = String(index + 1)
+          slot.style.width = '900px'
+          slot.style.height = String(1180 + (index % 7) * 13) + 'px'
+          fragment.appendChild(slot)
+        }
+        list.appendChild(fragment)
+        return list.scrollHeight
+      }
+      create()
+      const createDurations = []
+      const lookupDurations = []
+      const consecutiveDurations = []
+      const resizeDurations = []
+      for (let sample = 0; sample < sampleCount; sample += 1) {
+        let startedAt = performance.now()
+        create()
+        createDurations.push(performance.now() - startedAt)
+
+        startedAt = performance.now()
+        list.querySelector('[data-page-number="257"]').offsetTop
+        lookupDurations.push(performance.now() - startedAt)
+
+        startedAt = performance.now()
+        for (const pageNumber of [17, 201, 64, 300, 128]) {
+          list.querySelector(`[data-page-number="${pageNumber}"]`).offsetTop
+        }
+        consecutiveDurations.push((performance.now() - startedAt) / 5)
+
+        startedAt = performance.now()
+        const width = sample % 2 === 0 ? 840 : 900
+        for (const slot of list.children) {
+          slot.style.width = width + 'px'
+          slot.style.height = Math.round(width * 1.35) + 'px'
+        }
+        list.scrollHeight
+        resizeDurations.push(performance.now() - startedAt)
+      }
+      const result = {
+        pageCount,
+        sampleCount,
+        coldListCreateP50Ms: percentile(createDurations, 0.5),
+        coldListCreateP95Ms: percentile(createDurations, 0.95),
+        outlineJumpLookupP95Ms: percentile(lookupDurations, 0.95),
+        consecutiveJumpLookupP95Ms: percentile(consecutiveDurations, 0.95),
+        resizeLayoutP95Ms: percentile(resizeDurations, 0.95),
+      }
+      document.querySelector('#result').textContent = JSON.stringify(result, null, 2)
+    </script>
+  </body>
+</html>

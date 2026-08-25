@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "scenarios": [
     { "id": "pdf-first-screen", "format": "pdf", "interaction": "first-screen", "blocking": false },
     { "id": "epub-first-screen", "format": "epub", "interaction": "first-screen", "blocking": false },
@@ -40,6 +40,16 @@
       "expectedStatus": "page-only",
       "fixture": "../../../docs/archive/qa/assets/reader-at15/at15-scanned.pdf",
       "description": "Image-only PDF with one OCR-required page."
+    },
+    {
+      "id": "pdf-hidden-ocr",
+      "format": "pdf",
+      "outline": "none",
+      "pageCount": 1,
+      "selectionMode": "text",
+      "expectedStatus": "page-only",
+      "fixture": "../../../docs/archive/qa/assets/reader-at15/at15-hidden-ocr.pdf",
+      "description": "Scanned image page with an invisible searchable OCR text layer."
     },
     {
       "id": "pdf-mixed",

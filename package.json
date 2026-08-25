@@ -16,6 +16,7 @@
     "verify:package:win": "node scripts/verify-windows-package.mjs",
     "postinstall": "npm run rebuild:native",
     "test": "node scripts/run-tests.mjs",
+    "benchmark:pdf-reader": "node scripts/benchmark-pdf-reader-performance.mjs",
     "build": "tsc -b && vite build",
     "build:native-host": "node scripts/build-native-host.mjs",
     "build:app": "npm run build && npm run build:native-host && npm run verify:native && electron-builder",
