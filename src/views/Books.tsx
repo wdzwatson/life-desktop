@@ -1,4 +1,5 @@
-import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { TextContent } from 'pdfjs-dist/types/src/display/api'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url'
 import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
@@ -80,6 +81,7 @@ import {
 } from '../services/pdfOutlineEnhancements'
 import { resolveSelectionOutlineLocation } from '../services/selectionOutlineResolver'
 import { pdfReaderPerformanceTrace } from '../services/pdfReaderPerformance'
+import { detectPdfPageTextMode } from '../services/pdfPageTextMode'
 import {
   compareReaderHighlightsByDocumentPosition,
   getActiveTocIndex,
@@ -296,7 +298,8 @@ type PdfContinuousScrollListProps = {
   pdfPageAspectRatio: number
   pdfPageAspectRatios: Record<number, number>
   onPageAspectRatioLoaded?: (pageNumber: number, ratio: number) => void
-  onPageTextModeDetected?: (pageNumber: number, page: PDFPageProxy) => void
+  onPageTextContentResolved?: (pageNumber: number, textContent: TextContent) => void
+  onPageTextContentError?: (pageNumber: number) => void
   pdfOcrPages: Record<number, PdfOcrPageState>
   pdfHighlightsByPage: Map<number, any[]>
   activeHighlightId: string | null
@@ -387,7 +390,7 @@ const PdfContinuousScrollList = React.memo(
               <Page
                 pageNumber={idx + 1}
                 devicePixelRatio={PDF_RENDER_DEVICE_PIXEL_RATIO}
-                renderTextLayer={true}
+                renderTextLayer={pdfPageTextModes[idx + 1] !== 'scanned'}
                 renderAnnotationLayer={false}
                 width={pdfPageRenderWidth || undefined}
                 onLoadSuccess={(page) => {
@@ -396,8 +399,11 @@ const PdfContinuousScrollList = React.memo(
                   if (Number.isFinite(ratio) && ratio > 0) {
                     props.onPageAspectRatioLoaded?.(idx + 1, ratio)
                   }
-                  props.onPageTextModeDetected?.(idx + 1, page)
                 }}
+                onGetTextSuccess={(textContent) =>
+                  props.onPageTextContentResolved?.(idx + 1, textContent)
+                }
+                onGetTextError={() => props.onPageTextContentError?.(idx + 1)}
                 onRenderSuccess={() => {
                   pdfReaderPerformanceTrace.markTargetPage('canvas-rendered', idx + 1)
                   props.onFirstVisiblePageRendered?.()
@@ -2990,34 +2996,26 @@ export const Books: React.FC = () => {
     setReaderContextMenu(null)
   }
 
-  const handlePdfPageTextModeDetected = useCallback(
-    async (pageNumber: number, page: PDFPageProxy) => {
-      const sessionId = readerSessionRef.current
-      try {
-        const textContent = await page.getTextContent()
-        const textItems = textContent.items
-          .map((item) => (item as { str?: unknown }).str)
-          .filter((str): str is string => typeof str === 'string' && str.trim().length > 0)
-        const characterCount = textItems.reduce((total, item) => total + item.trim().length, 0)
-        const mode: PdfPageTextMode = characterCount >= 2 ? 'text' : 'scanned'
-        if (sessionId !== readerSessionRef.current) return
-        setPdfPageTextModes((current) =>
-          current[pageNumber] === mode ? current : { ...current, [pageNumber]: mode },
-        )
-        pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
-      } catch {
-        // If the text layer cannot be extracted, keep the page usable through local OCR ink.
-        if (sessionId !== readerSessionRef.current) return
-        setPdfPageTextModes((current) =>
-          current[pageNumber] === 'scanned'
-            ? current
-            : { ...current, [pageNumber]: 'scanned' },
-        )
-        pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
-      }
+  const handlePdfPageTextContentResolved = useCallback(
+    (pageNumber: number, textContent: TextContent) => {
+      const mode = detectPdfPageTextMode(textContent)
+      setPdfPageTextModes((current) =>
+        current[pageNumber] === mode ? current : { ...current, [pageNumber]: mode },
+      )
+      pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
     },
     [],
   )
+
+  const handlePdfPageTextContentError = useCallback((pageNumber: number) => {
+    // If the text layer cannot be extracted, keep the page usable through local OCR ink.
+    setPdfPageTextModes((current) =>
+      current[pageNumber] === 'scanned'
+        ? current
+        : { ...current, [pageNumber]: 'scanned' },
+    )
+    pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
+  }, [])
 
   const handlePdfLoadSuccess = async (pdfDocument: PDFDocumentProxy) => {
     const { numPages } = pdfDocument
@@ -5822,7 +5820,8 @@ export const Books: React.FC = () => {
                                   pdfPageAspectRatio={pdfPageAspectRatio}
                                   pdfPageAspectRatios={pdfPageAspectRatios}
                                   onPageAspectRatioLoaded={handlePdfPageAspectRatioLoaded}
-                                  onPageTextModeDetected={handlePdfPageTextModeDetected}
+                                  onPageTextContentResolved={handlePdfPageTextContentResolved}
+                                  onPageTextContentError={handlePdfPageTextContentError}
                                   pdfOcrPages={pdfOcrPages}
                                   pdfHighlightsByPage={pdfHighlightsByPage}
                                   activeHighlightId={activeHighlightId}
@@ -5885,19 +5884,26 @@ export const Books: React.FC = () => {
                                         <Page
                                           pageNumber={currentPageIndex + 1}
                                           devicePixelRatio={PDF_RENDER_DEVICE_PIXEL_RATIO}
-                                          renderTextLayer={true}
+                                          renderTextLayer={
+                                            pdfPageTextModes[currentPageIndex + 1] !== 'scanned'
+                                          }
                                           renderAnnotationLayer={false}
                                           width={pdfPageRenderWidth || undefined}
-                                          onLoadSuccess={(page) => {
+                                          onLoadSuccess={() => {
                                             pdfReaderPerformanceTrace.markTargetPage(
                                               'page-loaded',
                                               currentPageIndex + 1,
                                             )
-                                            void handlePdfPageTextModeDetected(
-                                              currentPageIndex + 1,
-                                              page,
-                                            )
                                           }}
+                                          onGetTextSuccess={(textContent) =>
+                                            handlePdfPageTextContentResolved(
+                                              currentPageIndex + 1,
+                                              textContent,
+                                            )
+                                          }
+                                          onGetTextError={() =>
+                                            handlePdfPageTextContentError(currentPageIndex + 1)
+                                          }
                                           onRenderSuccess={() =>
                                             pdfReaderPerformanceTrace.markTargetPage(
                                               'canvas-rendered',
@@ -5993,19 +5999,26 @@ export const Books: React.FC = () => {
                                           <Page
                                             pageNumber={currentPageIndex + 2}
                                             devicePixelRatio={PDF_RENDER_DEVICE_PIXEL_RATIO}
-                                            renderTextLayer={true}
+                                            renderTextLayer={
+                                              pdfPageTextModes[currentPageIndex + 2] !== 'scanned'
+                                            }
                                             renderAnnotationLayer={false}
                                             width={pdfPageRenderWidth || undefined}
-                                            onLoadSuccess={(page) => {
+                                            onLoadSuccess={() => {
                                               pdfReaderPerformanceTrace.markTargetPage(
                                                 'page-loaded',
                                                 currentPageIndex + 2,
                                               )
-                                              void handlePdfPageTextModeDetected(
-                                                currentPageIndex + 2,
-                                                page,
-                                              )
                                             }}
+                                            onGetTextSuccess={(textContent) =>
+                                              handlePdfPageTextContentResolved(
+                                                currentPageIndex + 2,
+                                                textContent,
+                                              )
+                                            }
+                                            onGetTextError={() =>
+                                              handlePdfPageTextContentError(currentPageIndex + 2)
+                                            }
                                             onRenderSuccess={() =>
                                               pdfReaderPerformanceTrace.markTargetPage(
                                                 'canvas-rendered',
@@ -6103,19 +6116,26 @@ export const Books: React.FC = () => {
                                       <Page
                                         pageNumber={currentPageIndex + 1}
                                         devicePixelRatio={PDF_RENDER_DEVICE_PIXEL_RATIO}
-                                        renderTextLayer={true}
+                                        renderTextLayer={
+                                          pdfPageTextModes[currentPageIndex + 1] !== 'scanned'
+                                        }
                                         renderAnnotationLayer={false}
                                         width={pdfPageRenderWidth || undefined}
-                                        onLoadSuccess={(page) => {
+                                        onLoadSuccess={() => {
                                           pdfReaderPerformanceTrace.markTargetPage(
                                             'page-loaded',
                                             currentPageIndex + 1,
                                           )
-                                          void handlePdfPageTextModeDetected(
-                                            currentPageIndex + 1,
-                                            page,
-                                          )
                                         }}
+                                        onGetTextSuccess={(textContent) =>
+                                          handlePdfPageTextContentResolved(
+                                            currentPageIndex + 1,
+                                            textContent,
+                                          )
+                                        }
+                                        onGetTextError={() =>
+                                          handlePdfPageTextContentError(currentPageIndex + 1)
+                                        }
                                         onRenderSuccess={() =>
                                           pdfReaderPerformanceTrace.markTargetPage(
                                             'canvas-rendered',
