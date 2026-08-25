@@ -1,14 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
-import {
-  CheckCircle,
-  Circle,
-  Play,
-  Clock,
-  FileText,
-  TrendingUp,
-} from 'lucide-react'
+import { CheckCircle, Circle, Play, Clock, FileText, TrendingUp } from 'lucide-react'
 import './Dashboard.css'
 import { getBookCoverUrl } from './bookCoverUtils'
 import {
@@ -24,6 +17,7 @@ export const Dashboard: React.FC = () => {
   const setTaskTab = useAppStore((state) => state.setTaskTab)
   const showToast = useAppStore((state) => state.showToast)
   const userId = useAppStore((state) => state.userId)
+  const api = (window as any).electronAPI
 
   // DB States
   const [todayTasks, setTodayTasks] = useState<any[]>([])
@@ -42,21 +36,26 @@ export const Dashboard: React.FC = () => {
   // Timer Mock/Integration State
   const [timerLeft, setTimerLeft] = useState('25:00')
 
+  const loadTaskSummary = useCallback(async () => {
+    if (!api) return
+    const todayYMD = new Date().toISOString().slice(0, 10)
+    const [tasksResult, countResult] = await Promise.all([
+      api.dbQuery('tasks', "SELECT * FROM tasks WHERE due_date = ? OR status = '已逾期' LIMIT 3", [
+        todayYMD,
+      ]),
+      api.dbQuery('tasks', 'SELECT COUNT(*) as count FROM tasks'),
+    ])
+    if (tasksResult?.success) setTodayTasks(tasksResult.data)
+    if (countResult?.success) {
+      setStats((current) => ({ ...current, tasks: countResult.data[0].count }))
+    }
+  }, [api])
+
   useEffect(() => {
-    const api = (window as any).electronAPI
     if (api) {
-      const todayYMD = new Date().toISOString().slice(0, 10)
+      void loadTaskSummary()
 
-      // 1. Fetch Today Tasks
-      api
-        .dbQuery('tasks', "SELECT * FROM tasks WHERE due_date = ? OR status = '已逾期' LIMIT 3", [
-          todayYMD,
-        ])
-        .then((res: any) => {
-          if (res?.success) setTodayTasks(res.data)
-        })
-
-      // 2. Fetch Reading Book
+      // 1. Fetch Reading Book
       api
         .dbQuery('books', "SELECT * FROM books WHERE status = 'reading' LIMIT 1")
         .then((res: any) => {
@@ -72,14 +71,14 @@ export const Dashboard: React.FC = () => {
           }
         })
 
-      // 3. Fetch Recent Note
+      // 2. Fetch Recent Note
       api
         .dbQuery('notes', 'SELECT * FROM notes ORDER BY updated_at DESC LIMIT 1')
         .then((res: any) => {
           if (res?.success && res.data.length > 0) setRecentNote(res.data[0])
         })
 
-      // 4. Fetch Recent Video
+      // 3. Fetch Recent Video
       api
         .dbQuery(
           'videos',
@@ -89,22 +88,21 @@ export const Dashboard: React.FC = () => {
           if (res?.success && res.data.length > 0) setRecentVideo(res.data[0])
         })
 
-      // 5. Fetch Aggregate Stats
+      // 4. Fetch Aggregate Stats unrelated to the task change stream.
       Promise.all([
-        api.dbQuery('tasks', 'SELECT COUNT(*) as count FROM tasks'),
         api.dbQuery('notes', 'SELECT COUNT(*) as count FROM notes'),
         api.dbQuery('books', 'SELECT COUNT(*) as count FROM books'),
         api.dbQuery('videos', 'SELECT COUNT(*) as count FROM videos'),
-      ]).then(([tRes, nRes, bRes, vRes]: any[]) => {
-        setStats({
-          tasks: tRes?.success ? tRes.data[0].count : 0,
+      ]).then(([nRes, bRes, vRes]: any[]) => {
+        setStats((current) => ({
+          ...current,
           notes: nRes?.success ? nRes.data[0].count : 0,
           books: bRes?.success ? bRes.data[0].count : 0,
           videos: vRes?.success ? vRes.data[0].count : 0,
-        })
+        }))
       })
 
-      // 6. Fetch Pomo time from background ipc if running (optional mock loop)
+      // 5. Fetch Pomo time from background ipc if running (optional mock loop)
       const interval = setInterval(() => {
         if ((window as any).pomoSecondsLeft !== undefined) {
           const totalSecs = (window as any).pomoSecondsLeft
@@ -117,7 +115,13 @@ export const Dashboard: React.FC = () => {
       }, 1000)
       return () => clearInterval(interval)
     }
-  }, [userId])
+  }, [api, loadTaskSummary, userId])
+
+  useEffect(() => {
+    return api?.onTasksChanged?.(() => {
+      void loadTaskSummary()
+    })
+  }, [api, loadTaskSummary])
 
   const toggleTask = async (id: number, currentDone: boolean) => {
     const api = (window as any).electronAPI
@@ -150,14 +154,7 @@ export const Dashboard: React.FC = () => {
       }
       showToast(nextDone ? t('dashboard.toast_task_completed') : t('dashboard.toast_task_reopened'))
 
-      // Refresh list
-      const todayYMD = new Date().toISOString().slice(0, 10)
-      const res = await api.dbQuery(
-        'tasks',
-        'SELECT * FROM tasks WHERE due_date = ? OR status = ? LIMIT 3',
-        [todayYMD, '已逾期'],
-      )
-      if (res?.success) setTodayTasks(res.data)
+      await loadTaskSummary()
     }
   }
 

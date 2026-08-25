@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
 import { AlertCircle, CheckCircle2, Info, Trash2 } from 'lucide-react'
@@ -16,6 +16,17 @@ export const Statusbar: React.FC = () => {
   const [taskCount, setTaskCount] = useState(0)
   const [recurCount, setRecurCount] = useState(0)
   const userId = useAppStore((state) => state.userId)
+  const api = (window as any).electronAPI
+
+  const loadTaskCounts = useCallback(async () => {
+    if (!api) return
+    const [taskResult, ruleResult] = await Promise.all([
+      api.dbQuery('tasks', 'SELECT COUNT(*) as count FROM tasks WHERE is_completed = 0'),
+      api.dbQuery('tasks', 'SELECT COUNT(*) as count FROM recurring_rules'),
+    ])
+    if (taskResult?.success) setTaskCount(taskResult.data[0].count)
+    if (ruleResult?.success) setRecurCount(ruleResult.data[0].count)
+  }, [api])
 
   const toastTone = renderedToast
     ? /失败|错误|无法|失败|failed|error|unable|could not|cannot|not ready/i.test(renderedToast)
@@ -23,8 +34,8 @@ export const Statusbar: React.FC = () => {
       : /删除|清除|delete|removed|cleared/i.test(renderedToast)
         ? 'warning'
         : /成功|已保存|保存|完成|解锁|已复制|created|saved|completed|success|unlocked|copied/i.test(
-            renderedToast,
-          )
+              renderedToast,
+            )
           ? 'success'
           : 'info'
     : 'info'
@@ -64,20 +75,14 @@ export const Statusbar: React.FC = () => {
 
   // Fetch counts when user database changes or screen switches
   useEffect(() => {
-    const api = (window as any).electronAPI
-    if (api) {
-      // Fetch total active tasks
-      api
-        .dbQuery('tasks', 'SELECT COUNT(*) as count FROM tasks WHERE is_completed = 0')
-        .then((res: any) => {
-          if (res?.success) setTaskCount(res.data[0].count)
-        })
-      // Fetch recurring rules count
-      api.dbQuery('tasks', 'SELECT COUNT(*) as count FROM recurring_rules').then((res: any) => {
-        if (res?.success) setRecurCount(res.data[0].count)
-      })
-    }
-  }, [activeScreen, userId, toastMessage])
+    void loadTaskCounts()
+  }, [activeScreen, loadTaskCounts, toastMessage, userId])
+
+  useEffect(() => {
+    return api?.onTasksChanged?.(() => {
+      void loadTaskCounts()
+    })
+  }, [api, loadTaskCounts])
 
   return (
     <footer className="status-bar">

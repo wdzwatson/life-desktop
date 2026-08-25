@@ -1,6 +1,34 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { getManagedVideoToolInstallSupport } from './video/toolSupport'
 
+type TaskChangePayload = { reason: string; revision: number }
+
+const taskChangeCallbacks = new Set<(data: TaskChangePayload) => void>()
+let taskChangeSubscription: ((_event: unknown, data: TaskChangePayload) => void) | null = null
+
+const onTasksChanged = (callback: (data: TaskChangePayload) => void) => {
+  taskChangeCallbacks.add(callback)
+  if (!taskChangeSubscription) {
+    taskChangeSubscription = (_event, data) => {
+      for (const subscriber of taskChangeCallbacks) subscriber(data)
+    }
+    ipcRenderer.on('tasks:changed', taskChangeSubscription)
+    ipcRenderer.send('tasks:subscribe')
+  }
+
+  let subscribed = true
+  return () => {
+    if (!subscribed) return
+    subscribed = false
+    taskChangeCallbacks.delete(callback)
+    if (taskChangeCallbacks.size === 0 && taskChangeSubscription) {
+      ipcRenderer.removeListener('tasks:changed', taskChangeSubscription)
+      taskChangeSubscription = null
+      ipcRenderer.send('tasks:unsubscribe')
+    }
+  }
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   isMac: process.platform === 'darwin',
   platform: process.platform,
@@ -559,13 +587,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('scheduler:overdue', subscription)
     }
   },
-  onTasksChanged: (callback: (data: { reason?: string }) => void) => {
-    const subscription = (_event: unknown, data: { reason?: string }) => callback(data)
-    ipcRenderer.on('tasks:changed', subscription)
-    return () => {
-      ipcRenderer.removeListener('tasks:changed', subscription)
-    }
-  },
+  onTasksChanged,
   onDownloadFailed: (callback: (data: any) => void) => {
     const subscription = (_event: any, data: any) => callback(data)
     ipcRenderer.on('video:download-failed', subscription)

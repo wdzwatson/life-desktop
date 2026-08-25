@@ -174,6 +174,7 @@ import {
   normalizeLogSource,
 } from './logging/service'
 import { systemMonitorService } from './systemMonitor'
+import { TaskChangeBus } from './taskChangeBus'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const execFile = promisify(execFileCallback)
@@ -246,6 +247,11 @@ let activeBurstSession: {
 
 const systemMonitorDetailSubscriptions = new Map<string, Map<string, () => void>>()
 const systemMonitorOverviewSubscriptions = new Map<string, () => void>()
+const taskChangeBus = new TaskChangeBus((webContentsId) => {
+  const contents = webContents.fromId(webContentsId)
+  if (!contents || contents.isDestroyed()) return null
+  return { send: (channel, payload) => contents.send(channel, payload) }
+})
 
 const getSystemMonitorWindowKey = (webContentsId: number) => String(webContentsId)
 
@@ -2423,9 +2429,7 @@ function startScheduler() {
 }
 
 function emitTaskDataChanged(reason: string) {
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed()) window.webContents.send('tasks:changed', { reason })
-  }
+  taskChangeBus.publish(reason)
 }
 
 function runSchedulerCycle(options: { notify?: boolean } = {}) {
@@ -4799,6 +4803,15 @@ ipcMain.handle('tasks:runScheduler', async () => {
     return { success: false, error: err?.message || String(err) }
   }
 })
+
+ipcMain.on('tasks:subscribe', (event) => {
+  const webContentsId = event.sender.id
+  if (taskChangeBus.subscribe(webContentsId)) {
+    event.sender.once('destroyed', () => taskChangeBus.unsubscribe(webContentsId))
+  }
+})
+
+ipcMain.on('tasks:unsubscribe', (event) => taskChangeBus.unsubscribe(event.sender.id))
 
 ipcMain.handle('desktopTaskNote:getSettings', async () => getDesktopTaskNoteSettings())
 
