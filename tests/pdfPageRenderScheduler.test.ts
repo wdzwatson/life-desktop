@@ -103,3 +103,46 @@ test('PDF render scheduler releases a failed page without blocking the queue', (
   assert.equal(schedule.inFlightPageIndexes.length, 2)
   assert.ok(schedule.admittedPageIndexes.includes(5))
 })
+
+test('PDF render scheduler keeps only completed pages retained by the cache policy', () => {
+  const scheduler = new PdfPageRenderScheduler(2)
+  scheduler.moveWindow({ pageCount: 100, targetPageIndex: 10, overscan: 1 })
+  scheduler.markPageLoaded(10)
+  scheduler.markPageFinished(10)
+  scheduler.markPageFinished(11)
+  scheduler.setRetainedPageIndexes([10, 11])
+
+  let schedule = scheduler.moveWindow({ pageCount: 100, targetPageIndex: 80, overscan: 1 })
+  assert.ok(schedule.admittedPageIndexes.includes(10))
+  assert.ok(schedule.admittedPageIndexes.includes(11))
+  assert.ok(schedule.admittedPageIndexes.includes(80))
+
+  schedule = scheduler.moveWindow({ pageCount: 100, targetPageIndex: 10, overscan: 1 })
+  assert.ok(schedule.admittedPageIndexes.includes(10))
+  assert.ok(!schedule.inFlightPageIndexes.includes(10))
+
+  schedule = scheduler.setRetainedPageIndexes([11])
+  assert.ok(!schedule.admittedPageIndexes.includes(10))
+  assert.ok(schedule.admittedPageIndexes.includes(11))
+})
+
+test('PDF render scheduler unmounts an evicted neighbor without rerendering it in a loop', () => {
+  const scheduler = new PdfPageRenderScheduler(2)
+  scheduler.moveWindow({ pageCount: 100, targetPageIndex: 10, overscan: 1 })
+  scheduler.markPageLoaded(10)
+  scheduler.markPageFinished(10)
+  scheduler.markPageFinished(11)
+
+  let schedule = scheduler.setRetainedPageIndexes([10])
+  assert.ok(!schedule.admittedPageIndexes.includes(11))
+  assert.ok(!schedule.pendingPageIndexes.includes(11))
+
+  schedule = scheduler.moveWindow({
+    pageCount: 100,
+    targetPageIndex: 11,
+    visiblePageIndexes: [11],
+    overscan: 1,
+  })
+  assert.ok(schedule.admittedPageIndexes.includes(11))
+  assert.ok(schedule.inFlightPageIndexes.includes(11))
+})

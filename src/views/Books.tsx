@@ -95,6 +95,7 @@ import {
   type PdfPageTextMode,
 } from '../services/pdfPageMetadataCache'
 import { PdfPageRenderScheduler } from '../services/pdfPageRenderScheduler'
+import { PdfPageRenderCache } from '../services/pdfPageRenderCache'
 import {
   compareReaderHighlightsByDocumentPosition,
   getActiveTocIndex,
@@ -276,6 +277,7 @@ const getEffectiveOverscan = (speed: number, isAutoPlaying: boolean): number => 
   return speed <= 5 ? 4 : 3
 }
 const PDF_RENDER_DEVICE_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 1.5)
+const PDF_RENDER_CACHE_BYTE_BUDGET = 96 * 1024 * 1024
 const EMPTY_PDF_HIGHLIGHTS: never[] = []
 
 const setReaderHighlightHoverState = (highlightId: string, isHovered: boolean) => {
@@ -498,6 +500,35 @@ const PdfContinuousScrollList = React.memo(
     const renderTarget = isAutoPlaying ? renderWindowCenter : currentPageIndex
     const schedulerRef = useRef<PdfPageRenderScheduler | null>(null)
     if (!schedulerRef.current) schedulerRef.current = new PdfPageRenderScheduler(2)
+    const renderCacheRef = useRef<PdfPageRenderCache | null>(null)
+    if (!renderCacheRef.current) {
+      renderCacheRef.current = new PdfPageRenderCache({
+        sessionId: props.pdfPageMetadataSessionId,
+        renderWidth: props.pdfPageRenderWidth || 600,
+        devicePixelRatio: PDF_RENDER_DEVICE_PIXEL_RATIO,
+        byteBudget: PDF_RENDER_CACHE_BYTE_BUDGET,
+      })
+    }
+    const interactionPageIndexes = useMemo(() => {
+      const pages = new Set<number>()
+      if (props.pdfInkDraft) pages.add(props.pdfInkDraft.pageNumber - 1)
+      for (const [pageNumber, ocrPage] of Object.entries(props.pdfOcrPages)) {
+        if (ocrPage.status === 'loading') pages.add(Number(pageNumber) - 1)
+      }
+      if (props.activeHighlightId) {
+        for (const [pageNumber, highlights] of props.pdfHighlightsByPage) {
+          if (highlights.some((highlight) => highlight.id === props.activeHighlightId)) {
+            pages.add(pageNumber - 1)
+            break
+          }
+        }
+      }
+      return [...pages].filter((pageIndex) => pageIndex >= 0)
+    }, [props.activeHighlightId, props.pdfHighlightsByPage, props.pdfInkDraft, props.pdfOcrPages])
+    const protectedPageIndexes = useMemo(
+      () => [...new Set([renderTarget, currentPageIndex, ...interactionPageIndexes])],
+      [currentPageIndex, interactionPageIndexes, renderTarget],
+    )
     const previousTargetRef = useRef(renderTarget)
     const [renderSchedule, setRenderSchedule] = useState(() =>
       schedulerRef.current!.moveWindow({
@@ -512,6 +543,9 @@ const PdfContinuousScrollList = React.memo(
     useEffect(() => {
       const direction = Math.sign(renderTarget - previousTargetRef.current) as -1 | 0 | 1
       previousTargetRef.current = renderTarget
+      const cacheSnapshot = renderCacheRef.current!.setProtectedPages(protectedPageIndexes)
+      renderCacheRef.current!.touchPages([renderTarget, currentPageIndex])
+      schedulerRef.current!.setRetainedPageIndexes(cacheSnapshot.retainedPageIndexes)
       setRenderSchedule(
         schedulerRef.current!.moveWindow({
           pageCount: pdfPageIndexes.length,
@@ -521,7 +555,13 @@ const PdfContinuousScrollList = React.memo(
           direction,
         }),
       )
-    }, [currentPageIndex, effectiveOverscan, pdfPageIndexes.length, renderTarget])
+    }, [
+      currentPageIndex,
+      effectiveOverscan,
+      pdfPageIndexes.length,
+      protectedPageIndexes,
+      renderTarget,
+    ])
 
     const admittedPages = useMemo(
       () => new Set(renderSchedule.admittedPageIndexes),
@@ -530,9 +570,23 @@ const PdfContinuousScrollList = React.memo(
     const handlePageLoadReady = useCallback((pageIndex: number) => {
       setRenderSchedule(schedulerRef.current!.markPageLoaded(pageIndex))
     }, [])
-    const handlePageRenderSettled = useCallback((pageIndex: number, succeeded: boolean) => {
-      setRenderSchedule(schedulerRef.current!.markPageFinished(pageIndex, succeeded))
-    }, [])
+    const handlePageRenderSettled = useCallback(
+      (pageIndex: number, succeeded: boolean) => {
+        let schedule = schedulerRef.current!.markPageFinished(pageIndex, succeeded)
+        if (succeeded) {
+          const pageNumber = pageIndex + 1
+          const aspectRatio =
+            props.pdfPageMetadataCache.getSnapshot(pageNumber).aspectRatio ?? props.pdfPageAspectRatio
+          renderCacheRef.current!.setProtectedPages(protectedPageIndexes)
+          const cacheSnapshot = renderCacheRef.current!.recordRenderedPage(pageIndex, aspectRatio)
+          schedule = schedulerRef.current!.setRetainedPageIndexes(
+            cacheSnapshot.retainedPageIndexes,
+          )
+        }
+        setRenderSchedule(schedule)
+      },
+      [protectedPageIndexes, props.pdfPageAspectRatio, props.pdfPageMetadataCache],
+    )
 
     return (
       <>
@@ -5909,7 +5963,7 @@ export const Books: React.FC = () => {
                                 }}
                               >
                                 <PdfContinuousScrollList
-                                  key={pdfPageMetadataCache.getSessionId()}
+                                  key={`${pdfPageMetadataCache.getSessionId()}:${pdfPageRenderWidth}:${PDF_RENDER_DEVICE_PIXEL_RATIO}`}
                                   pdfPageIndexes={pdfPageIndexes}
                                   currentPageIndex={currentPageIndex}
                                   renderWindowCenter={renderWindowCenter}

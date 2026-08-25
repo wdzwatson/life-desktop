@@ -56,6 +56,7 @@ export class PdfPageRenderScheduler {
   private inFlight = new Set<number>()
   private completed = new Set<number>()
   private failed = new Set<number>()
+  private retained = new Set<number>()
   private lastSnapshot: PdfRenderSchedule | null = null
   private lastSnapshotKey = ''
 
@@ -71,18 +72,37 @@ export class PdfPageRenderScheduler {
       this.inFlight.clear()
       this.completed.clear()
       this.failed.clear()
+      this.retained.clear()
       return this.getSnapshot()
     }
 
+    const previousPriority = new Set(this.priority)
     this.targetPageIndex = priority[0]
     this.priority = priority
     this.failed.clear()
-    const desired = new Set(priority)
+    const desired = new Set([...priority, ...this.retained])
     for (const pageIndex of this.admitted) {
       if (desired.has(pageIndex)) continue
       this.admitted.delete(pageIndex)
       this.inFlight.delete(pageIndex)
       this.completed.delete(pageIndex)
+    }
+
+    const criticalPages = new Set([
+      this.targetPageIndex,
+      ...(request.visiblePageIndexes ?? []).filter(
+        (pageIndex) => Number.isInteger(pageIndex) && pageIndex >= 0 && pageIndex < request.pageCount,
+      ),
+    ])
+    for (const pageIndex of this.completed) {
+      if (this.admitted.has(pageIndex)) continue
+      if (!desired.has(pageIndex)) {
+        this.completed.delete(pageIndex)
+        continue
+      }
+      if (criticalPages.has(pageIndex) || !previousPriority.has(pageIndex)) {
+        this.completed.delete(pageIndex)
+      }
     }
 
     if (!this.admitted.has(this.targetPageIndex)) {
@@ -117,8 +137,23 @@ export class PdfPageRenderScheduler {
     return this.getSnapshot()
   }
 
+  setRetainedPageIndexes(pageIndexes: Iterable<number>): PdfRenderSchedule {
+    this.retained = new Set(pageIndexes)
+    for (const pageIndex of this.completed) {
+      if (this.retained.has(pageIndex)) continue
+      this.admitted.delete(pageIndex)
+      if (!this.priority.includes(pageIndex)) this.completed.delete(pageIndex)
+    }
+    return this.getSnapshot()
+  }
+
   getSnapshot(): PdfRenderSchedule {
-    const pending = this.priority.filter((pageIndex) => !this.admitted.has(pageIndex))
+    const pending = this.priority.filter(
+      (pageIndex) =>
+        !this.admitted.has(pageIndex) &&
+        !this.completed.has(pageIndex) &&
+        !this.failed.has(pageIndex),
+    )
     const snapshot: PdfRenderSchedule = {
       targetPageIndex: this.targetPageIndex,
       admittedPageIndexes: [...this.admitted],
@@ -142,7 +177,13 @@ export class PdfPageRenderScheduler {
   private fillAvailableSlots(): void {
     for (const pageIndex of this.priority) {
       if (this.inFlight.size >= this.maxConcurrent) return
-      if (this.admitted.has(pageIndex) || this.failed.has(pageIndex)) continue
+      if (
+        this.admitted.has(pageIndex) ||
+        this.completed.has(pageIndex) ||
+        this.failed.has(pageIndex)
+      ) {
+        continue
+      }
       this.admitted.add(pageIndex)
       this.inFlight.add(pageIndex)
     }
