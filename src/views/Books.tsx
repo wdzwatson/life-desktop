@@ -1,4 +1,4 @@
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist'
 import type { TextContent } from 'pdfjs-dist/types/src/display/api'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url'
 import React, {
@@ -335,6 +335,7 @@ type PdfContinuousScrollListProps = {
   handleOpenPdfOcrFallback: () => void
   openSavedHighlight: (highlight: any) => void
   onFirstVisiblePageRendered?: () => void
+  onScannedPdfDetected?: () => void
   t: (key: string, options?: any) => string
 }
 
@@ -379,12 +380,87 @@ const PdfContinuousPageSlot = React.memo(function PdfContinuousPageSlot({
     handleOpenPdfOcrFallback,
     openSavedHighlight,
     onFirstVisiblePageRendered,
+    onScannedPdfDetected,
     t,
   } = listProps
   const pageNumber = idx + 1
   const metadata = usePdfPageMetadata(pdfPageMetadataCache, pageNumber)
   const pageRatio = metadata.aspectRatio ?? pdfPageAspectRatio
   const pageHeight = Math.round((pdfPageRenderWidth || 600) * pageRatio)
+  const pageProxyRef = useRef<PDFPageProxy | null>(null)
+  const textProbeCancelRef = useRef<(() => void) | null>(null)
+  const textProbeGenerationRef = useRef(0)
+
+  const setPageTextMode = useCallback(
+    (textMode: PdfPageTextMode) => {
+      pdfPageMetadataCache.setTextMode(pdfPageMetadataSessionId, pageNumber, textMode)
+      if (textMode === 'scanned') onScannedPdfDetected?.()
+      pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
+    },
+    [onScannedPdfDetected, pageNumber, pdfPageMetadataCache, pdfPageMetadataSessionId],
+  )
+
+  const scheduleTextModeProbe = useCallback(() => {
+    if (metadata.textMode !== 'unknown') return
+    const page = pageProxyRef.current
+    if (!page) return
+
+    textProbeCancelRef.current?.()
+    const generation = textProbeGenerationRef.current + 1
+    textProbeGenerationRef.current = generation
+    const sessionId = pdfPageMetadataSessionId
+    const runProbe = () => {
+      textProbeCancelRef.current = null
+      void page
+        .getTextContent()
+        .then((textContent) => {
+          if (textProbeGenerationRef.current !== generation) return
+          const mode = detectPdfPageTextMode(textContent)
+          pdfPageMetadataCache.setTextMode(sessionId, pageNumber, mode)
+          if (mode === 'scanned') onScannedPdfDetected?.()
+          pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
+        })
+        .catch(() => {
+          if (textProbeGenerationRef.current !== generation) return
+          pdfPageMetadataCache.setTextMode(sessionId, pageNumber, 'scanned')
+          onScannedPdfDetected?.()
+          pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
+        })
+    }
+
+    if ('requestIdleCallback' in window) {
+      const idleId = window.requestIdleCallback(runProbe, { timeout: 500 })
+      textProbeCancelRef.current = () => window.cancelIdleCallback(idleId)
+    } else {
+      const timeoutId = globalThis.setTimeout(runProbe, 0)
+      textProbeCancelRef.current = () => globalThis.clearTimeout(timeoutId)
+    }
+  }, [
+    metadata.textMode,
+    onScannedPdfDetected,
+    pageNumber,
+    pdfPageMetadataCache,
+    pdfPageMetadataSessionId,
+  ])
+
+  useEffect(
+    () => () => {
+      textProbeGenerationRef.current += 1
+      textProbeCancelRef.current?.()
+      textProbeCancelRef.current = null
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!isNearViewport || listProps.isAutoPlaying || !listProps.isPdfScrollSettled) return
+    scheduleTextModeProbe()
+  }, [
+    isNearViewport,
+    listProps.isAutoPlaying,
+    listProps.isPdfScrollSettled,
+    scheduleTextModeProbe,
+  ])
 
   if (!isNearViewport) {
     return (
@@ -413,13 +489,11 @@ const PdfContinuousPageSlot = React.memo(function PdfContinuousPageSlot({
       <Page
         pageNumber={pageNumber}
         devicePixelRatio={PDF_RENDER_DEVICE_PIXEL_RATIO}
-        renderTextLayer={
-          (listProps.isAutoPlaying || listProps.isPdfScrollSettled) &&
-          metadata.textMode !== 'scanned'
-        }
+        renderTextLayer={!listProps.isAutoPlaying && metadata.textMode === 'text'}
         renderAnnotationLayer={false}
         width={pdfPageRenderWidth || undefined}
         onLoadSuccess={(page) => {
+          pageProxyRef.current = page
           pdfReaderPerformanceTrace.markTargetPage('page-loaded', pageNumber)
           onPageLoadReady(idx)
           pdfPageMetadataCache.setAspectRatio(
@@ -429,20 +503,15 @@ const PdfContinuousPageSlot = React.memo(function PdfContinuousPageSlot({
           )
         }}
         onGetTextSuccess={(textContent) => {
-          pdfPageMetadataCache.setTextMode(
-            pdfPageMetadataSessionId,
-            pageNumber,
-            detectPdfPageTextMode(textContent),
-          )
-          pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
+          setPageTextMode(detectPdfPageTextMode(textContent))
         }}
         onGetTextError={() => {
-          pdfPageMetadataCache.setTextMode(pdfPageMetadataSessionId, pageNumber, 'scanned')
-          pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
+          setPageTextMode('scanned')
         }}
         onRenderSuccess={() => {
           pdfReaderPerformanceTrace.markTargetPage('canvas-rendered', pageNumber)
           onPageRenderSettled(idx, true)
+          if (!listProps.isAutoPlaying && listProps.isPdfScrollSettled) scheduleTextModeProbe()
           onFirstVisiblePageRendered?.()
         }}
         onLoadError={() => onPageRenderSettled(idx, false)}
@@ -580,9 +649,12 @@ const PdfContinuousScrollList = React.memo(
       () => new Set(renderSchedule.admittedPageIndexes),
       [renderSchedule.admittedPageIndexes],
     )
-    const handlePageLoadReady = useCallback((pageIndex: number) => {
-      setRenderSchedule(schedulerRef.current!.markPageLoaded(pageIndex))
-    }, [])
+    const handlePageLoadReady = useCallback(
+      (pageIndex: number) => {
+        setRenderSchedule(schedulerRef.current!.markPageLoaded(pageIndex, isAutoPlaying))
+      },
+      [isAutoPlaying],
+    )
     const handlePageRenderSettled = useCallback(
       (pageIndex: number, succeeded: boolean) => {
         let schedule = schedulerRef.current!.markPageFinished(pageIndex, succeeded)
@@ -894,6 +966,7 @@ export const Books: React.FC = () => {
   const [renderWindowCenter, setRenderWindowCenter] = useState(0)
   const prevIsAutoPlayingRef = useRef(false)
   const hasNotifiedFirstPageRef = useRef(false)
+  const scannedPdfNoticeShownRef = useRef(false)
   const resumeAutoPlayAfterResizeRef = useRef(false)
   const annotationInputRef = useRef<HTMLInputElement | null>(null)
   // Guards the scroll handler from fighting a programmatic scroll (button / progress jump).
@@ -908,6 +981,13 @@ export const Books: React.FC = () => {
     right: 16,
     top: 0,
   })
+
+  const notifyScannedPdfDetected = useCallback(() => {
+    if (scannedPdfNoticeShownRef.current) return
+    scannedPdfNoticeShownRef.current = true
+    showToast(t('books.toast_scanned_pdf_notice'))
+  }, [showToast, t])
+
   // Category editing and deleting states
   const [editingCategory, setEditingCategory] = useState<any | null>(null)
   const [editCatName, setEditCatName] = useState('')
@@ -2031,6 +2111,7 @@ export const Books: React.FC = () => {
     pdfReaderPerformanceTrace.resetSession()
     pdfPageMetadataCache.beginSession()
     readerSessionRef.current += 1
+    scannedPdfNoticeShownRef.current = false
     cancelPdfOcrRequests()
     if (readingBook && readingBook.id !== book.id && api?.cancelReaderOutlineAnalysis) {
       void api.cancelReaderOutlineAnalysis(readingBook.id)
@@ -2203,6 +2284,7 @@ export const Books: React.FC = () => {
       }
     }
     readerSessionRef.current += 1
+    scannedPdfNoticeShownRef.current = false
     if (pdfScrollIdleTimerRef.current !== null) {
       window.clearTimeout(pdfScrollIdleTimerRef.current)
       pdfScrollIdleTimerRef.current = null
@@ -3174,28 +3256,33 @@ export const Books: React.FC = () => {
     (pageNumber: number, textContent: TextContent) => {
       const mode = detectPdfPageTextMode(textContent)
       pdfPageMetadataCache.setTextMode(pdfPageMetadataCache.getSessionId(), pageNumber, mode)
+      if (mode === 'scanned') notifyScannedPdfDetected()
       setPdfPageTextModes((current) =>
         current[pageNumber] === mode ? current : { ...current, [pageNumber]: mode },
       )
       pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
     },
-    [pdfPageMetadataCache],
+    [notifyScannedPdfDetected, pdfPageMetadataCache],
   )
 
-  const handlePdfPageTextContentError = useCallback((pageNumber: number) => {
-    // If the text layer cannot be extracted, keep the page usable through local OCR ink.
-    pdfPageMetadataCache.setTextMode(
-      pdfPageMetadataCache.getSessionId(),
-      pageNumber,
-      'scanned',
-    )
-    setPdfPageTextModes((current) =>
-      current[pageNumber] === 'scanned'
-        ? current
-        : { ...current, [pageNumber]: 'scanned' },
-    )
-    pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
-  }, [pdfPageMetadataCache])
+  const handlePdfPageTextContentError = useCallback(
+    (pageNumber: number) => {
+      // If the text layer cannot be extracted, keep the page usable through local OCR ink.
+      pdfPageMetadataCache.setTextMode(
+        pdfPageMetadataCache.getSessionId(),
+        pageNumber,
+        'scanned',
+      )
+      notifyScannedPdfDetected()
+      setPdfPageTextModes((current) =>
+        current[pageNumber] === 'scanned'
+          ? current
+          : { ...current, [pageNumber]: 'scanned' },
+      )
+      pdfReaderPerformanceTrace.markTargetPage('text-resolved', pageNumber)
+    },
+    [notifyScannedPdfDetected, pdfPageMetadataCache],
+  )
 
   const handlePdfLoadSuccess = async (pdfDocument: PDFDocumentProxy) => {
     const { numPages } = pdfDocument
@@ -3472,6 +3559,7 @@ export const Books: React.FC = () => {
   // We update the ref immediately for internal logic, but only commit to React state after the user stops scrolling for a short period.
   const handlePdfScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (pdfLayoutMode !== 'scroll' || pdfNumPages <= 0) return
+    if (isAutoPlaying) return
 
     const container = e.currentTarget
     const pageElements = pdfPageElementsRef.current
@@ -6026,6 +6114,7 @@ export const Books: React.FC = () => {
                                   ensurePdfOcrPage={ensurePdfOcrPage}
                                   handleOpenPdfOcrFallback={handleOpenPdfOcrFallback}
                                   openSavedHighlight={openSavedHighlight}
+                                  onScannedPdfDetected={notifyScannedPdfDetected}
                                   onFirstVisiblePageRendered={() => {
                                     if (!hasNotifiedFirstPageRef.current) {
                                       hasNotifiedFirstPageRef.current = true

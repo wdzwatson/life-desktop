@@ -883,6 +883,7 @@
     "pdf_rendering_page": "正在渲染第 {{num}} 页...",
     "pdf_reloading": "正在切换视图...",
     "toast_pdf_read_error": "无法读取 PDF 电子书",
+    "toast_scanned_pdf_notice": "检测到这份 PDF 可能是扫描版/图片版，目录分析和 OCR 响应可能需要更久，请稍候。",
     "toast_parse_failed": "解析失败: {{error}}"
   },
   "videos": {

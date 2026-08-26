@@ -883,6 +883,7 @@
     "pdf_rendering_page": "Rendering page {{num}}...",
     "pdf_reloading": "Switching view...",
     "toast_pdf_read_error": "Unable to read PDF e-book",
+    "toast_scanned_pdf_notice": "This PDF may be scanned/image-based, so outline analysis and OCR responses may take longer.",
     "toast_parse_failed": "Parse failed: {{error}}"
   },
   "videos": {

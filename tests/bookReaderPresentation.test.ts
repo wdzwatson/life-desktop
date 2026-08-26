@@ -4,6 +4,8 @@ import test from 'node:test'
 
 const booksSource = readFileSync(new URL('../src/views/Books.tsx', import.meta.url), 'utf8')
 const booksStyles = readFileSync(new URL('../src/views/Books.css', import.meta.url), 'utf8')
+const zhLocale = JSON.parse(readFileSync(new URL('../src/locales/zh-CN.json', import.meta.url), 'utf8'))
+const enLocale = JSON.parse(readFileSync(new URL('../src/locales/en-US.json', import.meta.url), 'utf8'))
 const pdfAnnotationLayer = readFileSync(
   new URL('../src/components/PdfAnnotationLayer.tsx', import.meta.url),
   'utf8',
@@ -123,12 +125,51 @@ test('PDF continuous prefetch waits for a 400ms scroll idle window', () => {
   assert.match(booksSource, /isAutoPlaying \|\| isPdfScrollSettled \? getEffectiveOverscan/)
 })
 
-test('PDF continuous scrolling gates unknown text layers until idle', () => {
+test('PDF auto-play owns page tracking while programmatically scrolling', () => {
+  const scrollHandler = booksSource.match(
+    /const handlePdfScroll = \(e: React\.UIEvent<HTMLDivElement>\) => \{([\s\S]*?)\n {2}\}/,
+  )?.[1]
+  assert.ok(scrollHandler)
+  assert.match(scrollHandler, /if \(isAutoPlaying\) return/)
+  const autoPlayEffect = booksSource.match(
+    /const animate = \(time: number\) => \{([\s\S]*?)pdfAutoScrollRafRef\.current = requestAnimationFrame\(animate\)/,
+  )?.[1]
+  assert.ok(autoPlayEffect)
+  assert.match(autoPlayEffect, /renderWindowCenterRef\.current = nextWindowCenter/)
+  assert.match(autoPlayEffect, /setRenderWindowCenter\(nextWindowCenter\)/)
+})
+
+test('PDF continuous scrolling probes unknown text mode after canvas render settles', () => {
   assert.match(
     booksSource,
-    /\(listProps\.isAutoPlaying \|\| listProps\.isPdfScrollSettled\)[\s\S]*?metadata\.textMode !== 'scanned'/,
+    /renderTextLayer=\{!listProps\.isAutoPlaying && metadata\.textMode === 'text'\}/,
+  )
+  assert.match(booksSource, /requestIdleCallback/)
+  assert.match(booksSource, /page\s*\.\s*getTextContent\(\)/)
+  assert.match(booksSource, /scheduleTextModeProbe\(\)/)
+  assert.match(
+    booksSource,
+    /if \(!isNearViewport \|\| listProps\.isAutoPlaying \|\| !listProps\.isPdfScrollSettled\) return/,
   )
   assert.match(booksSource, /overscanBefore: isPdfScrollSettled \? PDF_CONTINUOUS_OVERSCAN_BEFORE : 0/)
+})
+
+test('scanned PDF detection shows one friendly notice for outline and OCR latency', () => {
+  assert.equal(
+    zhLocale.books.toast_scanned_pdf_notice,
+    '检测到这份 PDF 可能是扫描版/图片版，目录分析和 OCR 响应可能需要更久，请稍候。',
+  )
+  assert.match(enLocale.books.toast_scanned_pdf_notice, /scanned\/image-based/)
+  assert.match(enLocale.books.toast_scanned_pdf_notice, /OCR responses/)
+  assert.match(booksSource, /const scannedPdfNoticeShownRef = useRef\(false\)/)
+  assert.match(booksSource, /const notifyScannedPdfDetected = useCallback\(\(\) => \{/)
+  assert.match(booksSource, /if \(scannedPdfNoticeShownRef\.current\) return/)
+  assert.match(booksSource, /showToast\(t\('books\.toast_scanned_pdf_notice'\)\)/)
+  assert.match(booksSource, /scannedPdfNoticeShownRef\.current = false/)
+  assert.match(booksSource, /if \(mode === 'scanned'\) notifyScannedPdfDetected\(\)/)
+  assert.match(booksSource, /notifyScannedPdfDetected\(\)/)
+  assert.match(booksSource, /onScannedPdfDetected=\{notifyScannedPdfDetected\}/)
+  assert.match(booksSource, /if \(textMode === 'scanned'\) onScannedPdfDetected\?\.\(\)/)
 })
 
 test('paged EPUB and PDF readers share edge-gated, throttled wheel paging', () => {

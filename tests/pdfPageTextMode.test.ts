@@ -34,6 +34,6 @@ test('PDF page classification reuses the react-pdf text-layer result', () => {
   assert.match(booksSource, /onGetTextSuccess=\{\(textContent\)/)
   assert.match(booksSource, /detectPdfPageTextMode\(textContent\)/)
   assert.doesNotMatch(booksSource, /handlePdfPageTextModeDetected/)
-  assert.match(booksSource, /metadata\.textMode !== 'scanned'/)
-  assert.match(booksSource, /listProps\.isPdfScrollSettled/)
+  assert.match(booksSource, /renderTextLayer=\{!listProps\.isAutoPlaying && metadata\.textMode === 'text'\}/)
+  assert.match(booksSource, /scheduleTextModeProbe\(\)/)
 })
