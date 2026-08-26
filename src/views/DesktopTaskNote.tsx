@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Check,
   ChevronDown,
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import {
   getDesktopTasksForDate,
+  getMillisecondsUntilNextLocalDay,
   getUserDateKey,
   moveDesktopTaskId,
   sortDesktopTasksByOrder,
@@ -46,6 +47,8 @@ type DesktopTaskRecord = {
 
 const getUserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 
+const getCurrentUserDateKey = () => getUserDateKey(new Date(), getUserTimeZone())
+
 const formatTaskSchedule = (task: DesktopTaskRecord, todayKey: string) => {
   const due = getTaskDuePresentation(task.due_date, task.due_time)
   if (!due.dateKey) return null
@@ -74,7 +77,50 @@ export const DesktopTaskNote: React.FC = () => {
   const [showCompleted, setShowCompleted] = useState(false)
   const [completedPanelTouched, setCompletedPanelTouched] = useState(false)
 
-  const todayKey = useMemo(() => getUserDateKey(new Date(), getUserTimeZone()), [])
+  const [todayKey, setTodayKey] = useState(getCurrentUserDateKey)
+
+  useEffect(() => {
+    let rolloverTimer: number | undefined
+
+    const updateTodayKey = () => {
+      setTodayKey((current) => {
+        const next = getCurrentUserDateKey()
+        return next === current ? current : next
+      })
+    }
+
+    const scheduleRollover = () => {
+      if (rolloverTimer !== undefined) window.clearTimeout(rolloverTimer)
+      const now = new Date()
+      rolloverTimer = window.setTimeout(() => {
+        updateTodayKey()
+        scheduleRollover()
+      }, getMillisecondsUntilNextLocalDay(now) + 250)
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) return
+      updateTodayKey()
+      scheduleRollover()
+    }
+
+    const handleFocus = () => {
+      updateTodayKey()
+      scheduleRollover()
+    }
+
+    scheduleRollover()
+    const heartbeat = window.setInterval(updateTodayKey, 60_000)
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      if (rolloverTimer !== undefined) window.clearTimeout(rolloverTimer)
+      window.clearInterval(heartbeat)
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
 
   useEffect(() => {
     void api?.getCurrentUser?.().then((user: { userId?: string } | null) => {

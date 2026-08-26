@@ -34,6 +34,12 @@ export const getUserDateKey = (date: Date, timeZone: string) => {
 export const getSystemDateKey = (date: Date) =>
   `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`
 
+export const getMillisecondsUntilNextLocalDay = (date: Date) => {
+  const nextDay = new Date(date)
+  nextDay.setHours(24, 0, 0, 0)
+  return Math.max(0, nextDay.getTime() - date.getTime())
+}
+
 const normalizeDate = (value: string | null | undefined) => normalizeTaskDueDate(value)
 
 export const getDesktopTaskDateState = (
