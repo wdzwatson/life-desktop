@@ -22,3 +22,13 @@ test('desktop task note uses the shared execution-date deadline presentation', (
   assert.match(noteView, /const formatTaskSchedule/)
   assert.match(noteView, /const schedule = formatTaskSchedule\(task, todayKey\)/)
 })
+
+test('desktop task note advances its date and reloads tasks after midnight', () => {
+  const noteView = readFileSync(join(process.cwd(), 'src', 'views', 'DesktopTaskNote.tsx'), 'utf8')
+
+  assert.match(noteView, /const \[todayKey, setTodayKey\] = useState\(getCurrentUserDateKey\)/)
+  assert.match(noteView, /getMillisecondsUntilNextLocalDay\(now\)/)
+  assert.match(noteView, /window\.setInterval\(updateTodayKey, 60_000\)/)
+  assert.match(noteView, /document\.addEventListener\('visibilitychange', handleVisibilityChange\)/)
+  assert.match(noteView, /\[api, todayKey\]/)
+})

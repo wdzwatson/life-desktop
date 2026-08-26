@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   getDesktopTaskDateState,
   getDesktopTasksForDate,
+  getMillisecondsUntilNextLocalDay,
   getUserDateKey,
   moveDesktopTaskId,
   sortDesktopTasksByOrder,
@@ -13,6 +14,17 @@ test('uses the requested user timezone when deriving the natural-day key', () =>
 
   assert.equal(getUserDateKey(date, 'Asia/Shanghai'), '2026-07-22')
   assert.equal(getUserDateKey(date, 'America/Los_Angeles'), '2026-07-21')
+})
+
+test('calculates the delay until the next local day', () => {
+  assert.equal(
+    getMillisecondsUntilNextLocalDay(new Date(2026, 6, 22, 23, 59, 30)),
+    30_000,
+  )
+  assert.equal(
+    getMillisecondsUntilNextLocalDay(new Date(2026, 6, 22, 12, 0, 0)),
+    12 * 60 * 60 * 1000,
+  )
 })
 
 test('a task is active when today is inside its inclusive task period', () => {
