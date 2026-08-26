@@ -2631,8 +2631,10 @@ function createWindow() {
     center: true,
     minWidth: 800,
     minHeight: 600,
+    show: false,
     autoHideMenuBar: true,
     frame: !useCustomTitlebar,
+    backgroundColor: '#fafafa',
     title: 'LifeOS',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -2643,6 +2645,11 @@ function createWindow() {
 
   if (useCustomTitlebar) mainWindow.setMenuBarVisibility(false)
   mainWindow.maximize()
+  mainWindow.once('ready-to-show', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    mainWindow.show()
+    mainWindow.focus()
+  })
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
@@ -2675,6 +2682,8 @@ function createWindow() {
   setupAutoUpdater()
   startScheduler()
   void loadVideoEngine()
+
+  return mainWindow
 }
 
 function createNoteEditorWindow() {
@@ -2767,6 +2776,7 @@ function createDesktopTaskNoteWindow() {
     y: Number(bounds.y),
     minWidth: 280,
     minHeight: 260,
+    show: false,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -2781,6 +2791,11 @@ function createDesktopTaskNoteWindow() {
       nodeIntegration: false,
       contextIsolation: true,
     },
+  })
+
+  desktopTaskNoteWindow.once('ready-to-show', () => {
+    if (!desktopTaskNoteWindow || desktopTaskNoteWindow.isDestroyed()) return
+    desktopTaskNoteWindow.showInactive()
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -2929,8 +2944,8 @@ app.whenReady().then(async () => {
   setupLandingPosterProtocol()
   configureApplicationMenu()
   registerWindowControlIpc()
-  createWindow()
-  createDesktopTaskNoteWindow()
+  const startupMainWindow = createWindow()
+  startupMainWindow.once('ready-to-show', () => createDesktopTaskNoteWindow())
   createAppTray()
   registerScreenshotShortcut()
 })
