@@ -177,6 +177,7 @@ const PDF_DEFAULT_PAGE_ASPECT_RATIO = 1.414
 const PDF_CONTINUOUS_OVERSCAN = 4
 const PDF_CONTINUOUS_OVERSCAN_BEFORE = 1
 const PDF_CONTINUOUS_OVERSCAN_AFTER = 3
+const PDF_SCROLL_IDLE_DELAY_MS = 400
 const PAGED_WHEEL_THRESHOLD = 180
 const PAGED_WHEEL_LINE_THRESHOLD = 96
 const PAGED_WHEEL_FINE_THRESHOLD = 150
@@ -308,6 +309,7 @@ type PdfContinuousScrollListProps = {
   pdfPageIndexes: number[]
   currentPageIndex: number
   renderWindowCenter: number
+  isPdfScrollSettled: boolean
   isAutoPlaying: boolean
   autoPlaySpeed: number
   pdfEstimatedPageHeight: number
@@ -493,12 +495,14 @@ const PdfContinuousScrollList = React.memo(
       pdfPageIndexes,
       currentPageIndex,
       renderWindowCenter,
+      isPdfScrollSettled,
       isAutoPlaying,
       autoPlaySpeed,
     } = props
 
     // Dynamic overscan for auto-play (Option B)
-    const effectiveOverscan = getEffectiveOverscan(autoPlaySpeed, isAutoPlaying)
+    const effectiveOverscan =
+      isAutoPlaying || isPdfScrollSettled ? getEffectiveOverscan(autoPlaySpeed, isAutoPlaying) : 0
     const renderTarget = isAutoPlaying ? renderWindowCenter : currentPageIndex
     const schedulerRef = useRef<PdfPageRenderScheduler | null>(null)
     if (!schedulerRef.current) schedulerRef.current = new PdfPageRenderScheduler(2)
@@ -616,6 +620,7 @@ const PdfContinuousScrollList = React.memo(
     // Mode and speed affect the effective overscan and must not be skipped.
     if (prev.pdfPageIndexes !== next.pdfPageIndexes) return false
     if (prev.isAutoPlaying !== next.isAutoPlaying) return false
+    if (prev.isPdfScrollSettled !== next.isPdfScrollSettled) return false
     if (prev.autoPlaySpeed !== next.autoPlaySpeed) return false
     if (prev.pdfPageRenderWidth !== next.pdfPageRenderWidth) return false
     if (prev.pdfEstimatedPageHeight !== next.pdfEstimatedPageHeight) return false
@@ -809,6 +814,7 @@ export const Books: React.FC = () => {
   const [selectedPdfOutlineNodeId, setSelectedPdfOutlineNodeId] = useState<string | null>(null)
   const [isLoadingReader, setIsLoadingReader] = useState(false)
   const [pdfLayoutMode, setPdfLayoutMode] = useState<PdfLayoutMode>('scroll')
+  const [isPdfScrollSettled, setIsPdfScrollSettled] = useState(true)
   const [isPdfTransitioning, setIsPdfTransitioning] = useState(false)
   const lastMeasuredWidthRef = useRef(0)
   const activeOutlineBookIdRef = useRef<number | null>(null)
@@ -859,6 +865,7 @@ export const Books: React.FC = () => {
   const pdfScrollFrameRef = useRef<number | null>(null)
   const currentPdfPageIndexRef = useRef(0)
   const pdfScrollEndTimerRef = useRef<number | null>(null)
+  const pdfScrollIdleTimerRef = useRef<number | null>(null)
   const pdfAutoScrollRafRef = useRef<number | null>(null)
   const pagedWheelAccumulatorRef = useRef(0)
   const pagedWheelDirectionRef = useRef(0)
@@ -2013,6 +2020,11 @@ export const Books: React.FC = () => {
 
   // Open book in custom reader overlay
   const handleOpenReader = async (book: any) => {
+    if (pdfScrollIdleTimerRef.current !== null) {
+      window.clearTimeout(pdfScrollIdleTimerRef.current)
+      pdfScrollIdleTimerRef.current = null
+    }
+    setIsPdfScrollSettled(true)
     pdfReaderPerformanceTrace.resetSession()
     pdfPageMetadataCache.beginSession()
     readerSessionRef.current += 1
@@ -2188,6 +2200,11 @@ export const Books: React.FC = () => {
       }
     }
     readerSessionRef.current += 1
+    if (pdfScrollIdleTimerRef.current !== null) {
+      window.clearTimeout(pdfScrollIdleTimerRef.current)
+      pdfScrollIdleTimerRef.current = null
+    }
+    setIsPdfScrollSettled(true)
     activeOutlineBookIdRef.current = null
     setPdfOutlineAnalysisMessage(null)
     setPdfOutlineProgress(0)
@@ -3459,6 +3476,15 @@ export const Books: React.FC = () => {
 
     const viewportAnchor = container.scrollTop + container.clientHeight / 2
     const nextPageIndex = getPdfPageIndexAtOffset(pageElements, viewportAnchor)
+
+    setIsPdfScrollSettled(false)
+    if (pdfScrollIdleTimerRef.current !== null) {
+      window.clearTimeout(pdfScrollIdleTimerRef.current)
+    }
+    pdfScrollIdleTimerRef.current = window.setTimeout(() => {
+      pdfScrollIdleTimerRef.current = null
+      setIsPdfScrollSettled(true)
+    }, PDF_SCROLL_IDLE_DELAY_MS)
 
     // Always keep the ref up-to-date (used by other logic / TOC highlighting)
     currentPdfPageIndexRef.current = nextPageIndex
@@ -4881,6 +4907,10 @@ export const Books: React.FC = () => {
   useEffect(
     () => () => {
       if (pdfScrollFrameRef.current !== null) cancelAnimationFrame(pdfScrollFrameRef.current)
+      if (pdfScrollIdleTimerRef.current !== null) {
+        window.clearTimeout(pdfScrollIdleTimerRef.current)
+        pdfScrollIdleTimerRef.current = null
+      }
     },
     [],
   )
@@ -5973,6 +6003,7 @@ export const Books: React.FC = () => {
                                   pdfPageIndexes={pdfPageIndexes}
                                   currentPageIndex={currentPageIndex}
                                   renderWindowCenter={renderWindowCenter}
+                                  isPdfScrollSettled={isPdfScrollSettled}
                                   isAutoPlaying={isAutoPlaying}
                                   autoPlaySpeed={autoPlaySpeed}
                                   pdfEstimatedPageHeight={pdfEstimatedPageHeight}

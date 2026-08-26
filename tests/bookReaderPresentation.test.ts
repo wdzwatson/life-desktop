@@ -116,6 +116,13 @@ test('PDF continuous mode owns its scroll viewport and excludes page-flip mode',
   assert.doesNotMatch(booksSource, /pdf-flip-page/)
 })
 
+test('PDF continuous prefetch waits for a 400ms scroll idle window', () => {
+  assert.match(booksSource, /const PDF_SCROLL_IDLE_DELAY_MS = 400/)
+  assert.match(booksSource, /setIsPdfScrollSettled\(false\)/)
+  assert.match(booksSource, /setIsPdfScrollSettled\(true\)/)
+  assert.match(booksSource, /isAutoPlaying \|\| isPdfScrollSettled \? getEffectiveOverscan/)
+})
+
 test('paged EPUB and PDF readers share edge-gated, throttled wheel paging', () => {
   assert.match(booksSource, /const PAGED_WHEEL_THRESHOLD = 180/)
   assert.match(booksSource, /const PAGED_WHEEL_LINE_THRESHOLD = 96/)
