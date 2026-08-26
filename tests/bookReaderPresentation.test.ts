@@ -123,6 +123,14 @@ test('PDF continuous prefetch waits for a 400ms scroll idle window', () => {
   assert.match(booksSource, /isAutoPlaying \|\| isPdfScrollSettled \? getEffectiveOverscan/)
 })
 
+test('PDF continuous scrolling gates unknown text layers until idle', () => {
+  assert.match(
+    booksSource,
+    /\(listProps\.isAutoPlaying \|\| listProps\.isPdfScrollSettled\)[\s\S]*?metadata\.textMode !== 'scanned'/,
+  )
+  assert.match(booksSource, /overscanBefore: isPdfScrollSettled \? PDF_CONTINUOUS_OVERSCAN_BEFORE : 0/)
+})
+
 test('paged EPUB and PDF readers share edge-gated, throttled wheel paging', () => {
   assert.match(booksSource, /const PAGED_WHEEL_THRESHOLD = 180/)
   assert.match(booksSource, /const PAGED_WHEEL_LINE_THRESHOLD = 96/)

@@ -413,7 +413,10 @@ const PdfContinuousPageSlot = React.memo(function PdfContinuousPageSlot({
       <Page
         pageNumber={pageNumber}
         devicePixelRatio={PDF_RENDER_DEVICE_PIXEL_RATIO}
-        renderTextLayer={metadata.textMode !== 'scanned'}
+        renderTextLayer={
+          (listProps.isAutoPlaying || listProps.isPdfScrollSettled) &&
+          metadata.textMode !== 'scanned'
+        }
         renderAnnotationLayer={false}
         width={pdfPageRenderWidth || undefined}
         onLoadSuccess={(page) => {
@@ -542,7 +545,7 @@ const PdfContinuousScrollList = React.memo(
         targetPageIndex: renderTarget,
         visiblePageIndexes: [currentPageIndex],
         overscan: PDF_CONTINUOUS_OVERSCAN,
-        overscanBefore: PDF_CONTINUOUS_OVERSCAN_BEFORE,
+        overscanBefore: isPdfScrollSettled ? PDF_CONTINUOUS_OVERSCAN_BEFORE : 0,
         overscanAfter: effectiveOverscan,
         direction: 1,
       }),
@@ -560,7 +563,7 @@ const PdfContinuousScrollList = React.memo(
           targetPageIndex: renderTarget,
           visiblePageIndexes: [currentPageIndex],
           overscan: PDF_CONTINUOUS_OVERSCAN,
-          overscanBefore: PDF_CONTINUOUS_OVERSCAN_BEFORE,
+          overscanBefore: isPdfScrollSettled ? PDF_CONTINUOUS_OVERSCAN_BEFORE : 0,
           overscanAfter: effectiveOverscan,
           direction,
         }),

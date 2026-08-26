@@ -53,6 +53,19 @@ test('PDF render priority supports an asymmetric forward-reading window', () => 
   )
 })
 
+test('PDF render priority can temporarily keep only the active page', () => {
+  assert.deepEqual(
+    buildPdfRenderPriority({
+      pageCount: 20,
+      targetPageIndex: 9,
+      overscan: 0,
+      overscanBefore: 0,
+      overscanAfter: 0,
+    }),
+    [9],
+  )
+})
+
 test('PDF render scheduler preserves the concurrency cap when the target moves nearby', () => {
   const scheduler = new PdfPageRenderScheduler(2)
   scheduler.moveWindow({ pageCount: 100, targetPageIndex: 10, overscan: 4 })
