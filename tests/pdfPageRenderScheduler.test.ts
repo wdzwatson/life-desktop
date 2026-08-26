@@ -29,6 +29,30 @@ test('PDF render priority starts at the target and follows reading direction', (
   )
 })
 
+test('PDF render priority supports an asymmetric forward-reading window', () => {
+  assert.deepEqual(
+    buildPdfRenderPriority({
+      pageCount: 200,
+      targetPageIndex: 98,
+      overscan: 4,
+      overscanBefore: 1,
+      overscanAfter: 3,
+      direction: 1,
+    }),
+    [98, 99, 100, 101, 97],
+  )
+  assert.deepEqual(
+    buildPdfRenderPriority({
+      pageCount: 5,
+      targetPageIndex: 0,
+      overscan: 4,
+      overscanBefore: 1,
+      overscanAfter: 3,
+    }),
+    [0, 1, 2, 3],
+  )
+})
+
 test('PDF render scheduler preserves the concurrency cap when the target moves nearby', () => {
   const scheduler = new PdfPageRenderScheduler(2)
   scheduler.moveWindow({ pageCount: 100, targetPageIndex: 10, overscan: 4 })

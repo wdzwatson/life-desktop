@@ -10,6 +10,8 @@ export type PdfRenderWindowRequest = {
   pageCount: number
   targetPageIndex: number
   visiblePageIndexes?: readonly number[]
+  overscanBefore?: number
+  overscanAfter?: number
   overscan: number
   direction?: -1 | 0 | 1
 }
@@ -18,12 +20,15 @@ export const buildPdfRenderPriority = ({
   pageCount,
   targetPageIndex,
   visiblePageIndexes = [],
+  overscanBefore,
+  overscanAfter,
   overscan,
   direction = 1,
 }: PdfRenderWindowRequest): number[] => {
   if (pageCount <= 0) return []
   const target = Math.max(0, Math.min(pageCount - 1, Math.floor(targetPageIndex)))
-  const radius = Math.max(0, Math.floor(overscan))
+  const beforeRadius = Math.max(0, Math.floor(overscanBefore ?? overscan))
+  const afterRadius = Math.max(0, Math.floor(overscanAfter ?? overscan))
   const priority = [target]
   const seen = new Set(priority)
   for (const pageIndex of visiblePageIndexes) {
@@ -34,16 +39,32 @@ export const buildPdfRenderPriority = ({
   }
   const preferPrevious = direction < 0
 
-  for (let distance = 1; distance <= radius; distance += 1) {
-    const previous = target - distance
-    const next = target + distance
-    if (preferPrevious) {
-      if (previous >= 0 && !seen.has(previous)) priority.push(previous)
-      if (next < pageCount && !seen.has(next)) priority.push(next)
-    } else {
-      if (next < pageCount && !seen.has(next)) priority.push(next)
-      if (previous >= 0 && !seen.has(previous)) priority.push(previous)
+  const appendRange = (radius: number, step: -1 | 1) => {
+    for (let distance = 1; distance <= radius; distance += 1) {
+      const pageIndex = target + distance * step
+      if (pageIndex < 0 || pageIndex >= pageCount || seen.has(pageIndex)) continue
+      priority.push(pageIndex)
+      seen.add(pageIndex)
     }
+  }
+  if (beforeRadius === afterRadius) {
+    for (let distance = 1; distance <= beforeRadius; distance += 1) {
+      const previous = target - distance
+      const next = target + distance
+      if (preferPrevious) {
+        if (previous >= 0 && !seen.has(previous)) priority.push(previous)
+        if (next < pageCount && !seen.has(next)) priority.push(next)
+      } else {
+        if (next < pageCount && !seen.has(next)) priority.push(next)
+        if (previous >= 0 && !seen.has(previous)) priority.push(previous)
+      }
+    }
+  } else if (preferPrevious) {
+    appendRange(beforeRadius, -1)
+    appendRange(afterRadius, 1)
+  } else {
+    appendRange(afterRadius, 1)
+    appendRange(beforeRadius, -1)
   }
   return priority
 }

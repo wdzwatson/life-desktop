@@ -175,6 +175,8 @@ const PDF_OCR_ENGINE_VERSION = 'tesseract-v3'
 const PDF_OUTLINE_OCR_PAGE_LIMIT = 12
 const PDF_DEFAULT_PAGE_ASPECT_RATIO = 1.414
 const PDF_CONTINUOUS_OVERSCAN = 4
+const PDF_CONTINUOUS_OVERSCAN_BEFORE = 1
+const PDF_CONTINUOUS_OVERSCAN_AFTER = 3
 const PAGED_WHEEL_THRESHOLD = 180
 const PAGED_WHEEL_LINE_THRESHOLD = 96
 const PAGED_WHEEL_FINE_THRESHOLD = 150
@@ -271,10 +273,10 @@ const UPDATE_READER_SELECTION_LOCATION_QUERY = `
 // Keep a small, bounded render window during auto-play. The window advances
 // ahead of the active page instead of mounting a large speed-dependent range.
 const getEffectiveOverscan = (speed: number, isAutoPlaying: boolean): number => {
-  if (!isAutoPlaying) return PDF_CONTINUOUS_OVERSCAN
+  if (!isAutoPlaying) return PDF_CONTINUOUS_OVERSCAN_AFTER
 
-  // The fastest available setting gets one extra page of lead time.
-  return speed <= 5 ? 4 : 3
+  // Auto-play keeps one extra page of forward lead time at its fastest setting.
+  return speed <= 5 ? PDF_CONTINUOUS_OVERSCAN_AFTER + 1 : PDF_CONTINUOUS_OVERSCAN_AFTER
 }
 const PDF_RENDER_DEVICE_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 1.5)
 const PDF_RENDER_CACHE_BYTE_BUDGET = 96 * 1024 * 1024
@@ -535,7 +537,9 @@ const PdfContinuousScrollList = React.memo(
         pageCount: pdfPageIndexes.length,
         targetPageIndex: renderTarget,
         visiblePageIndexes: [currentPageIndex],
-        overscan: effectiveOverscan,
+        overscan: PDF_CONTINUOUS_OVERSCAN,
+        overscanBefore: PDF_CONTINUOUS_OVERSCAN_BEFORE,
+        overscanAfter: effectiveOverscan,
         direction: 1,
       }),
     )
@@ -551,7 +555,9 @@ const PdfContinuousScrollList = React.memo(
           pageCount: pdfPageIndexes.length,
           targetPageIndex: renderTarget,
           visiblePageIndexes: [currentPageIndex],
-          overscan: effectiveOverscan,
+          overscan: PDF_CONTINUOUS_OVERSCAN,
+          overscanBefore: PDF_CONTINUOUS_OVERSCAN_BEFORE,
+          overscanAfter: effectiveOverscan,
           direction,
         }),
       )
