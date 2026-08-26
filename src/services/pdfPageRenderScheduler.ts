@@ -75,6 +75,7 @@ export class PdfPageRenderScheduler {
   private priority: number[] = []
   private admitted = new Set<number>()
   private inFlight = new Set<number>()
+  private loaded = new Set<number>()
   private completed = new Set<number>()
   private failed = new Set<number>()
   private retained = new Set<number>()
@@ -91,6 +92,7 @@ export class PdfPageRenderScheduler {
       this.priority = []
       this.admitted.clear()
       this.inFlight.clear()
+      this.loaded.clear()
       this.completed.clear()
       this.failed.clear()
       this.retained.clear()
@@ -106,6 +108,7 @@ export class PdfPageRenderScheduler {
       if (desired.has(pageIndex)) continue
       this.admitted.delete(pageIndex)
       this.inFlight.delete(pageIndex)
+      this.loaded.delete(pageIndex)
       this.completed.delete(pageIndex)
     }
 
@@ -119,6 +122,7 @@ export class PdfPageRenderScheduler {
       if (this.admitted.has(pageIndex)) continue
       if (!desired.has(pageIndex)) {
         this.completed.delete(pageIndex)
+        this.loaded.delete(pageIndex)
         continue
       }
       if (criticalPages.has(pageIndex) || !previousPriority.has(pageIndex)) {
@@ -134,12 +138,19 @@ export class PdfPageRenderScheduler {
 
     // A newly requested target starts alone. Its page-load callback opens the
     // second slot, proving that the target reached PDF.js before any neighbor.
-    if (this.completed.has(this.targetPageIndex)) this.fillAvailableSlots()
+    if (this.loaded.has(this.targetPageIndex) || this.completed.has(this.targetPageIndex)) {
+      this.fillAvailableSlots()
+    }
     return this.getSnapshot()
   }
 
-  markPageLoaded(pageIndex: number): PdfRenderSchedule {
-    if (pageIndex === this.targetPageIndex && this.inFlight.has(pageIndex)) {
+  markPageLoaded(pageIndex: number, releaseSlot = false): PdfRenderSchedule {
+    if (!this.admitted.has(pageIndex)) return this.getSnapshot()
+    this.loaded.add(pageIndex)
+    if (releaseSlot && this.inFlight.has(pageIndex)) {
+      this.inFlight.delete(pageIndex)
+      this.fillAvailableSlots()
+    } else if (pageIndex === this.targetPageIndex && this.inFlight.has(pageIndex)) {
       this.fillAvailableSlots()
     }
     return this.getSnapshot()
@@ -148,10 +159,13 @@ export class PdfPageRenderScheduler {
   markPageFinished(pageIndex: number, succeeded = true): PdfRenderSchedule {
     if (!this.admitted.has(pageIndex)) return this.getSnapshot()
     this.inFlight.delete(pageIndex)
-    if (succeeded) this.completed.add(pageIndex)
-    else {
+    if (succeeded) {
+      this.loaded.add(pageIndex)
+      this.completed.add(pageIndex)
+    } else {
       this.admitted.delete(pageIndex)
       this.completed.delete(pageIndex)
+      this.loaded.delete(pageIndex)
       this.failed.add(pageIndex)
     }
     this.fillAvailableSlots()
@@ -163,6 +177,7 @@ export class PdfPageRenderScheduler {
     for (const pageIndex of this.completed) {
       if (this.retained.has(pageIndex)) continue
       this.admitted.delete(pageIndex)
+      this.loaded.delete(pageIndex)
       if (!this.priority.includes(pageIndex)) this.completed.delete(pageIndex)
     }
     return this.getSnapshot()

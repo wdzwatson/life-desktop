@@ -141,6 +141,57 @@ test('PDF render scheduler releases a failed page without blocking the queue', (
   assert.ok(schedule.admittedPageIndexes.includes(5))
 })
 
+test('PDF render scheduler can pipeline auto-play pages after load readiness', () => {
+  const scheduler = new PdfPageRenderScheduler(2)
+  let schedule = scheduler.moveWindow({
+    pageCount: 20,
+    targetPageIndex: 4,
+    overscan: 4,
+    overscanBefore: 1,
+    overscanAfter: 3,
+  })
+  assert.deepEqual(schedule.admittedPageIndexes, [4])
+
+  schedule = scheduler.markPageLoaded(4)
+  assert.deepEqual(schedule.admittedPageIndexes, [4, 5])
+
+  schedule = scheduler.markPageLoaded(5, true)
+  assert.ok(schedule.admittedPageIndexes.includes(6))
+  assert.ok(schedule.inFlightPageIndexes.includes(4))
+  assert.ok(schedule.inFlightPageIndexes.includes(6))
+  assert.ok(!schedule.inFlightPageIndexes.includes(5))
+  assert.equal(schedule.inFlightPageIndexes.length, 2)
+})
+
+test('PDF render scheduler continues when auto-play advances onto a loaded target', () => {
+  const scheduler = new PdfPageRenderScheduler(2)
+  scheduler.moveWindow({
+    pageCount: 20,
+    targetPageIndex: 4,
+    overscan: 4,
+    overscanBefore: 1,
+    overscanAfter: 3,
+  })
+  scheduler.markPageLoaded(4, true)
+  scheduler.markPageLoaded(5, true)
+  scheduler.markPageLoaded(6, true)
+
+  const schedule = scheduler.moveWindow({
+    pageCount: 20,
+    targetPageIndex: 5,
+    overscan: 4,
+    overscanBefore: 1,
+    overscanAfter: 3,
+    direction: 1,
+  })
+
+  assert.ok(schedule.admittedPageIndexes.includes(7))
+  assert.ok(schedule.admittedPageIndexes.includes(8))
+  assert.ok(schedule.inFlightPageIndexes.includes(7))
+  assert.ok(schedule.inFlightPageIndexes.includes(8))
+  assert.equal(schedule.inFlightPageIndexes.length, 2)
+})
+
 test('PDF render scheduler keeps only completed pages retained by the cache policy', () => {
   const scheduler = new PdfPageRenderScheduler(2)
   scheduler.moveWindow({ pageCount: 100, targetPageIndex: 10, overscan: 1 })
